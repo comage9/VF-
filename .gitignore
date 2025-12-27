@@ -5,7 +5,6 @@
 env
 .git_backup_before_github/
 
-# Sample / legacy artifacts (do not upload by default)
 sample/
 legacy/
 *.bak

@@ -68,6 +68,43 @@
 - `GOOGLE_SHEETS_API_KEY` (또는 `GOOGLE_API_KEY`)
   - `/api/google-sheets/connect`, `/api/google-sheets/refresh/<id>` 사용 시 필요
 
+## GitHub 업로드/수정 반영 방법 (HTTPS 권장)
+
+이 프로젝트는 GitHub 저장소(`https://github.com/comage9/VF-.git`)에 HTTPS로 업로드합니다.
+
+### 보안 원칙
+
+- `env`, `.env` 등 토큰/키가 들어갈 수 있는 파일은 GitHub에 올리지 않습니다. (`.gitignore`로 제외)
+- 샘플 데이터(`sample/`) 및 레거시 자료(`legacy/`)는 기본 업로드 대상에서 제외합니다.
+  - 필요 시에만 별도 브랜치/별도 저장소로 관리하거나, 민감정보 제거 후 포함을 검토합니다.
+
+### 최초 업로드(초기 1회)
+
+1.  원격 저장소 설정
+    - `git remote add origin https://github.com/comage9/VF-.git`
+2.  커밋 생성
+    - `git add .`
+    - `git commit -m "Initial commit"`
+3.  푸시
+    - `git push -u origin main`
+
+### 이후 코드 수정 후 업로드(반복)
+
+1.  변경사항 확인
+    - `git status`
+2.  커밋
+    - `git add .`
+    - `git commit -m "<변경 내용>"`
+3.  푸시
+    - `git push`
+
+### HTTPS 인증(PAT) 권장 설정
+
+- GitHub Personal Access Token(PAT)을 사용합니다.
+- 매번 입력이 번거로우면 credential helper를 설정합니다.
+  - 예: `git config --global credential.helper 'cache --timeout=36000'`
+  - push 시 Username은 GitHub 아이디, Password는 PAT를 입력합니다.
+
 ---
 
 자세한 내용은 `PROJECT_DESCRIPTION.md` 파일을 참조하십시오.
