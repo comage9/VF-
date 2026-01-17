@@ -9,8 +9,8 @@ interface SummaryCardProps {
 
 function SummaryCard({ title, value, icon, iconColor, subtitle, onClick }: SummaryCardProps) {
   const Wrapper = onClick ? 'button' : 'div';
-  const baseClass = 'bg-card rounded-lg border border-border p-6 shadow-sm transition-colors';
-  const clickableClass = onClick ? 'w-full text-left cursor-pointer hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50' : '';
+  const baseClass = 'bg-white/90 backdrop-blur-sm rounded-xl border border-border p-6 shadow-md hover:shadow-xl transition-all duration-300';
+  const clickableClass = onClick ? 'w-full text-left cursor-pointer hover:border-blue-400 hover:-translate-y-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50' : 'hover:-translate-y-1';
 
   return (
     <Wrapper
@@ -20,15 +20,15 @@ function SummaryCard({ title, value, icon, iconColor, subtitle, onClick }: Summa
     >
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm text-muted-foreground">{title}</p>
-          <p className="text-2xl font-bold text-foreground">{value}</p>
+          <p className="text-sm font-medium text-muted-foreground mb-1">{title}</p>
+          <p className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">{value}</p>
         </div>
-        <div className={`w-12 h-12 ${iconColor} rounded-lg flex items-center justify-center`}>
-          <i className={`fas ${icon} ${iconColor.replace('bg-', 'text-').replace('/10', '')}`}></i>
+        <div className={`w-14 h-14 ${iconColor} rounded-xl flex items-center justify-center shadow-lg transform transition-transform duration-300 hover:scale-110`}>
+          <i className={`fas ${icon} text-xl ${iconColor.replace('bg-', 'text-').replace('/10', '')}`}></i>
         </div>
       </div>
       {subtitle && (
-        <div className="mt-4 text-muted-foreground text-sm">{subtitle}</div>
+        <div className="mt-4 text-muted-foreground text-sm font-medium">{subtitle}</div>
       )}
     </Wrapper>
   );
