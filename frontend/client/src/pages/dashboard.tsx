@@ -177,23 +177,23 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50">
       <Sidebar items={NAV_ITEMS} activeKey={activeKey === "unknown" ? "delivery" : activeKey} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="bg-card border-b border-border px-6 py-4 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-white via-blue-50 to-purple-50 border-b border-border px-6 py-4 flex items-center justify-between shadow-md">
           <div className="flex items-center">
             <MobileNav items={NAV_ITEMS} activeKey={activeKey === "unknown" ? "delivery" : activeKey} />
             <div>
-              <h2 className="text-lg font-semibold text-foreground" data-testid="content-title">
+              <h2 className="text-lg font-bold text-foreground bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent" data-testid="content-title">
                 {meta.title}
               </h2>
               <p className="text-sm text-muted-foreground hidden md:block">{meta.description}</p>
             </div>
           </div>
           <div className="flex items-center space-x-4">
-            <div className="flex items-center text-sm text-muted-foreground">
-              <i className="fas fa-clock mr-2" aria-hidden />
+            <div className="flex items-center text-sm text-muted-foreground bg-white/80 px-3 py-2 rounded-lg shadow-sm">
+              <i className="fas fa-clock mr-2 text-blue-500" aria-hidden />
               <span data-testid="last-updated">마지막 갱신: {lastUpdated}</span>
             </div>
           </div>
