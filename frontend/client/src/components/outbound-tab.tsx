@@ -118,7 +118,7 @@ export default function OutboundTab() {
 
   const filteredData = useMemo(() => {
     const rangeFiltered = outboundRecords.filter((record) => {
-      const matchesSearch = !searchQuery || record.productName.toLowerCase().includes(searchQuery.toLowerCase()) || record.category.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = !searchQuery || searchQuery.length >= 2 && (record.productName.toLowerCase().includes(searchQuery.toLowerCase()) || record.category.toLowerCase().includes(searchQuery.toLowerCase()));
       const matchesCategory = !filterCategory || record.category === filterCategory;
       return matchesSearch && matchesCategory;
     });

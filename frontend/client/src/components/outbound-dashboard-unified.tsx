@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format, subDays, subMonths, subYears, eachDayOfInterval, parseISO, isSameDay, isValid } from "date-fns";
 import {
@@ -209,7 +209,9 @@ const CompactPivotTable = ({
     rowKey,
     rowLabel,
     valueKey,
-    secondaryValueKey
+    secondaryValueKey,
+    selectedItems = [],
+    onItemToggle
 }: {
     title: string;
     data: any[];
@@ -218,6 +220,8 @@ const CompactPivotTable = ({
     rowLabel: string;
     valueKey: string;
     secondaryValueKey?: string;
+    selectedItems?: string[];
+    onItemToggle?: (item: string) => void;
 }) => {
     const maxVal = data.reduce((max, row) => {
         const rowMax = dates.reduce((m, d) => {
@@ -258,8 +262,16 @@ const CompactPivotTable = ({
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {data.map((row, idx) => (
-                                        <tr key={idx} className="hover:bg-gray-50">
+                                        <tr key={idx} className={`hover:bg-gray-50 ${selectedItems.includes(row[rowKey]) ? 'bg-blue-50' : ''}`}>
                                             <td className="px-2 py-1 whitespace-nowrap font-medium text-gray-900 sticky left-0 bg-white border-r">
+                                                {onItemToggle && (
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedItems.includes(row[rowKey])}
+                                                        onChange={() => onItemToggle(row[rowKey])}
+                                                        className="mr-2 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                    />
+                                                )}
                                                 {row[rowKey]}
                                             </td>
                                             {dates.map((date, dIdx) => {
@@ -331,8 +343,10 @@ export default function OutboundDashboardUnified() {
     const [endDate, setEndDate] = useState(() => format(subDays(new Date(), 1), 'yyyy-MM-dd'));
     const [selectedCategory, setSelectedCategory] = useState<string>("all");
     const [searchQuery, setSearchQuery] = useState("");
+    const [searchInput, setSearchInput] = useState("");
     const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
     const [groupByMode, setGroupByMode] = useState<'auto' | 'day' | 'week' | 'month'>('auto');
+    const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
     const rangeDays = useMemo(() => {
         try {
@@ -351,6 +365,27 @@ export default function OutboundDashboardUnified() {
         if (selectedCategory && selectedCategory !== 'all') return selectedCategory;
         return null;
     }, [selectedCategory]);
+
+    const handleCategoryToggle = useCallback((category: string) => {
+        setSelectedCategories(prev => {
+            if (prev.includes(category)) {
+                return prev.filter(c => c !== category);
+            } else {
+                return [...prev, category];
+            }
+        });
+    }, []);
+
+    // 검색어 debounce (최소 2글자, 300ms 지연)
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (searchInput.length === 0 || searchInput.length >= 2) {
+                setSearchQuery(searchInput);
+            }
+        }, 300);
+
+        return () => clearTimeout(timer);
+    }, [searchInput]);
 
     // Quick Date Selection Handler
     const handleQuickDateChange = (value: string) => {
@@ -573,24 +608,34 @@ export default function OutboundDashboardUnified() {
         });
 
         const filtered = (() => {
-            if (selectedCategory === 'all') return filteredBase;
-            if (selectedCategory === '__others__') {
-                const topCats = filteredBase
-                    .reduce((acc: Map<string, number>, r) => {
-                        const prev = acc.get(r.category) || 0;
-                        acc.set(r.category, prev + (r.salesAmount ?? 0));
-                        return acc;
-                    }, new Map<string, number>());
+            let result = filteredBase;
 
-                const top10 = new Set(
-                    Array.from(topCats.entries())
-                        .sort((a, b) => b[1] - a[1])
-                        .slice(0, 10)
-                        .map(([cat]) => cat)
-                );
-                return filteredBase.filter(r => !top10.has(r.category));
+            // selectedCategories (다중 선택)가 있으면 우선 적용
+            if (selectedCategories.length > 0) {
+                result = result.filter(r => selectedCategories.includes(r.category));
+            } else if (selectedCategory !== 'all') {
+                // selectedCategories가 없을 때만 selectedCategory (단일 선택) 적용
+                if (selectedCategory === '__others__') {
+                    const topCats = filteredBase
+                        .reduce((acc: Map<string, number>, r) => {
+                            const prev = acc.get(r.category) || 0;
+                            acc.set(r.category, prev + (r.salesAmount ?? 0));
+                            return acc;
+                        }, new Map<string, number>());
+
+                    const top10 = new Set(
+                        Array.from(topCats.entries())
+                            .sort((a, b) => b[1] - a[1])
+                            .slice(0, 10)
+                            .map(([cat]) => cat)
+                    );
+                    result = filteredBase.filter(r => !top10.has(r.category));
+                } else {
+                    result = filteredBase.filter(r => r.category === selectedCategory);
+                }
             }
-            return filteredBase.filter(r => r.category === selectedCategory);
+
+            return result;
         })();
         console.log(`🔍 Filtered Records: ${filtered.length}`);
 
@@ -878,9 +923,9 @@ export default function OutboundDashboardUnified() {
                     <div className="relative w-full md:w-[250px]">
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
                         <Input
-                            placeholder="품목명 검색..."
-                            value={searchQuery}
-                            onChange={e => setSearchQuery(e.target.value)}
+                            placeholder="품목명 검색 (최소 2글자)..."
+                            value={searchInput}
+                            onChange={e => setSearchInput(e.target.value)}
                             className="pl-8 h-9"
                         />
                     </div>
@@ -1105,6 +1150,8 @@ export default function OutboundDashboardUnified() {
                             rowLabel="분류"
                             valueKey="quantity"
                             secondaryValueKey="salesAmount"
+                            selectedItems={selectedCategories}
+                            onItemToggle={handleCategoryToggle}
                         />
                     )}
                 </div>
@@ -1163,6 +1210,23 @@ export default function OutboundDashboardUnified() {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Row 2.5: Selected Categories' Products Daily Pivot */}
+            {selectedCategories.length > 0 && canShowDailyPivot && (
+                <div className="h-[500px] overflow-hidden">
+                    <CompactPivotTable
+                        title={`선택된 분류 품목별 일별 집계 (${selectedCategories.join(', ')})`}
+                        data={productPivot.filter((p: any) =>
+                            filtered.some(r => r.category === p.key && selectedCategories.includes(r.category))
+                        )}
+                        dates={dates}
+                        rowKey="key"
+                        rowLabel="품목"
+                        valueKey="quantity"
+                        secondaryValueKey="salesAmount"
+                    />
+                </div>
+            )}
 
             {/* Row 3: Product Pivot (60%) + AI Report (40%) */}
             <div className="flex flex-col lg:flex-row gap-4 h-[500px]">

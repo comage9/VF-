@@ -47,7 +47,7 @@ export default function DataTable({
   // Filter and search data
   let filteredData = data;
   
-  if (searchQuery) {
+  if (searchQuery && searchQuery.length >= 2) {
     filteredData = filteredData.filter(item =>
       Object.values(item).some(value => 
         String(value).toLowerCase().includes(searchQuery.toLowerCase())
