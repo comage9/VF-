@@ -32,6 +32,13 @@ const NAV_ITEMS: SidebarItem[] = [
     description: "시간대별 출고 실적, 카테고리 필터, CSV/Google Sheets 연동 기능을 제공합니다.",
   },
   {
+    key: "fc-inbound",
+    path: "/fc-inbound",
+    label: "FC 입고",
+    icon: "fa-warehouse",
+    description: "FC 물류센터별 입고 데이터 분석 및 품목별 현황을 모니터링합니다.",
+  },
+  {
     key: "inventory",
     path: "/inventory/enhanced",
     label: "전산 재고 수량",
@@ -50,7 +57,7 @@ const NAV_ITEMS: SidebarItem[] = [
     path: "/master",
     label: "제품 마스터 관리",
     icon: "fa-database",
-    description: "제품명, 금형번호, 색상 등 제품 사양 데이터를 관리합니다.",
+    description: "제품명, 바코드, 색상 등 제품 사양 데이터를 관리합니다.",
   },
 ];
 
@@ -65,6 +72,12 @@ const PAGE_META: Record<string, PageMeta> = {
     title: "출고 수량 분석",
     description: "실시간 출고 데이터와 품목별 현황을 모니터링합니다.",
     ctaLabel: "데이터 내보내기",
+  },
+  fc_inbound: {
+    key: "fc-inbound",
+    title: "FC 입고 분석",
+    description: "FC 물류센터별 입고 데이터와 품목별 현황을 모니터링합니다.",
+    ctaLabel: "CSV 다운로드",
   },
   inventory: {
     key: "inventory",
@@ -105,6 +118,10 @@ function resolveActiveKey(pathname: string): string {
     case "/outbound/records":
     case "/outbound/analysis":
       return "outbound";
+    case "/fc-inbound":
+    case "/fc-inbound/records":
+    case "/fc-inbound/analysis":
+      return "fc-inbound";
     case "/inventory":
     case "/inventory/enhanced":
       return "inventory";
@@ -152,6 +169,12 @@ export default function Dashboard() {
       case "/outbound":
       case "/outbound/records":
       case "/outbound/analysis":
+        return (
+          <OutboundTabs />
+        );
+      case "/fc-inbound":
+      case "/fc-inbound/records":
+      case "/fc-inbound/analysis":
         return (
           <OutboundTabs />
         );

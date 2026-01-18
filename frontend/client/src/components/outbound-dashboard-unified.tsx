@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { format, subDays, subMonths, subYears, eachDayOfInterval, parseISO, isSameDay, isValid } from "date-fns";
+import { format, subDays, subMonths, subYears, eachDayOfInterval, parseISO, isSameDay, isValid, startOfWeek, startOfMonth } from "date-fns";
 import {
     ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
     PieChart, Pie, Cell, BarChart, LabelList
@@ -96,11 +96,11 @@ function safeFormatDate(dateStr: string | Date | null | undefined, fmt: string =
 // --- Components ---
 
 // AI Report Component
-const OutboundAIReport = ({ startDate, endDate, category, searchQuery, product, summaryStats }: any) => {
+const OutboundAIReport = ({ startDate, endDate, category, searchQuery, product, summaryStats, apiPrefix }: any) => {
     const { data, isLoading, isError } = useQuery({
-        queryKey: ['/api/outbound/ai-analysis', startDate, endDate, category, searchQuery, product],
+        queryKey: [apiPrefix + '/ai-analysis', startDate, endDate, category, searchQuery, product],
         queryFn: async () => {
-            const res = await fetch('/api/outbound/ai-analysis', {
+            const res = await fetch(`${apiPrefix}/ai-analysis`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ startDate, endDate, category, searchQuery, product, summaryStats })
@@ -337,7 +337,13 @@ const KPICard = ({ title, value, subValue, icon: Icon, colorClass }: any) => (
 );
 
 // --- Main Component ---
-export default function OutboundDashboardUnified() {
+interface OutboundDashboardUnifiedProps {
+    dataSource?: 'vf' | 'fc';
+    activeTab?: string;
+}
+
+export default function OutboundDashboardUnified({ dataSource = 'vf', activeTab }: OutboundDashboardUnifiedProps = {}) {
+    const getApiPrefix = () => dataSource === 'fc' ? '/api/fc-inbound' : '/api/outbound';
     // Default: Last Week (Ending Yesterday)
     const [startDate, setStartDate] = useState(() => format(subDays(new Date(), 7), 'yyyy-MM-dd'));
     const [endDate, setEndDate] = useState(() => format(subDays(new Date(), 1), 'yyyy-MM-dd'));
@@ -345,6 +351,9 @@ export default function OutboundDashboardUnified() {
     const [searchQuery, setSearchQuery] = useState("");
     const [searchInput, setSearchInput] = useState("");
     const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
+    const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
+    const [showAutocomplete, setShowAutocomplete] = useState(false);
+    const [highlightedIndex, setHighlightedIndex] = useState(-1);
     const [groupByMode, setGroupByMode] = useState<'auto' | 'day' | 'week' | 'month'>('auto');
     const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
@@ -375,6 +384,8 @@ export default function OutboundDashboardUnified() {
             }
             return [...prev, normalized];
         });
+        setSelectedCategory('all');
+        setSelectedProduct(null);
     }, []);
 
     // 검색어 debounce (최소 2글자, 300ms 지연)
@@ -437,7 +448,7 @@ export default function OutboundDashboardUnified() {
 
     // Fetch Aggregated Stats (Fast)
     const { data: outboundStats, isLoading: isStatsLoading, isError: isStatsError, error: statsError } = useQuery({
-        queryKey: ['/api/outbound/stats', startDate, endDate, selectedCategory, searchQuery, selectedProduct, groupBy],
+        queryKey: ['/api/outbound/stats', startDate, endDate, selectedCategory, selectedCategories, searchQuery, selectedProduct, groupBy],
         queryFn: async () => {
             const params = new URLSearchParams({
                 start: startDate,
@@ -454,7 +465,7 @@ export default function OutboundDashboardUnified() {
     });
 
     const { data: outboundTopProducts = [] } = useQuery<any[]>({
-        queryKey: ['/api/outbound/top-products', startDate, endDate, selectedCategory, searchQuery, selectedProduct],
+        queryKey: [getApiPrefix() + '/top-products', startDate, endDate, selectedCategory, selectedCategories, searchQuery, selectedProduct],
         queryFn: async () => {
             const params = new URLSearchParams({
                 start: startDate,
@@ -464,7 +475,7 @@ export default function OutboundDashboardUnified() {
                 limit: '200',
                 ...(selectedProduct ? { product: selectedProduct } : {}),
             });
-            const res = await fetch(`/api/outbound/top-products?${params.toString()}`);
+            const res = await fetch(`${getApiPrefix()}/top-products?${params.toString()}`);
             if (!res.ok) throw new Error('Failed to fetch top products');
             const json = await res.json();
             return Array.isArray(json) ? json : [];
@@ -476,7 +487,7 @@ export default function OutboundDashboardUnified() {
     const canShowDailyPivot = rangeDays <= 60;
 
     const { data: categoryPivotServer = [] } = useQuery<any[]>({
-        queryKey: ['/api/outbound/pivot', 'category', startDate, endDate, selectedCategory, searchQuery, selectedProduct],
+        queryKey: [getApiPrefix() + '/pivot', 'category', startDate, endDate, selectedCategory, selectedCategories, searchQuery, selectedProduct],
         queryFn: async () => {
             const params = new URLSearchParams({
                 row: 'category',
@@ -488,7 +499,7 @@ export default function OutboundDashboardUnified() {
                 limit: '200',
                 ...(selectedProduct ? { product: selectedProduct } : {}),
             });
-            const res = await fetch(`/api/outbound/pivot?${params.toString()}`);
+            const res = await fetch(`${getApiPrefix()}/pivot?${params.toString()}`);
             if (!res.ok) throw new Error('Failed to fetch category pivot');
             const json = await res.json();
             return Array.isArray(json) ? json : [];
@@ -498,7 +509,7 @@ export default function OutboundDashboardUnified() {
     });
 
     const { data: productPivotServer = [] } = useQuery<any[]>({
-        queryKey: ['/api/outbound/pivot', 'product', startDate, endDate, selectedCategory, searchQuery, selectedProduct],
+        queryKey: [getApiPrefix() + '/pivot', 'product', startDate, endDate, selectedCategory, selectedCategories, searchQuery, selectedProduct],
         queryFn: async () => {
             const params = new URLSearchParams({
                 row: 'product',
@@ -510,7 +521,7 @@ export default function OutboundDashboardUnified() {
                 limit: '100',
                 ...(selectedProduct ? { product: selectedProduct } : {}),
             });
-            const res = await fetch(`/api/outbound/pivot?${params.toString()}`);
+            const res = await fetch(`${getApiPrefix()}/pivot?${params.toString()}`);
             if (!res.ok) throw new Error('Failed to fetch product pivot');
             const json = await res.json();
             return Array.isArray(json) ? json : [];
@@ -521,11 +532,10 @@ export default function OutboundDashboardUnified() {
 
     // Fetch Records (Limited for Performance)
     const { data: outboundRecords = [], isLoading: isRecordsLoading, isError: isRecordsError, error: recordsError } = useQuery<OutboundRecordWithBoxes[]>({
-        queryKey: ['/api/outbound', startDate, endDate], // Records fetch is independent of grouping
+        queryKey: [getApiPrefix(), startDate, endDate], // Records fetch is independent of grouping
         queryFn: async () => {
-            // Limit increased to 10000 to fetch all records
             const params = new URLSearchParams({ start: startDate, end: endDate, limit: '10000' });
-            const res = await fetch(`/api/outbound?${params.toString()}`);
+            const res = await fetch(`${getApiPrefix()}?${params.toString()}`);
             if (!res.ok) throw new Error('Failed to fetch data');
             const raw = await res.json();
             if (!Array.isArray(raw)) return [];
@@ -534,6 +544,73 @@ export default function OutboundDashboardUnified() {
     });
 
     const isLoading = isStatsLoading || isRecordsLoading;
+
+    // Extract unique product names for autocomplete
+    const uniqueProductNames = useMemo(() => {
+        const productNames = new Set<string>();
+        outboundRecords.forEach(record => {
+            if (record.productName && record.productName.trim()) {
+                productNames.add(record.productName.trim());
+            }
+        });
+        return Array.from(productNames).sort();
+    }, [outboundRecords]);
+
+    // Filter product names based on search input
+    const filteredProductNames = useMemo(() => {
+        if (!searchInput || searchInput.length < 1) return [];
+        const query = searchInput.toLowerCase();
+        return uniqueProductNames.filter(name => 
+            name.toLowerCase().includes(query)
+        ).slice(0, 10); // Limit to 10 suggestions
+    }, [uniqueProductNames, searchInput]);
+
+    // Handle autocomplete selection
+    const handleAutocompleteSelect = (productName: string) => {
+        setSearchInput(productName);
+        setSearchQuery(productName);
+        setShowAutocomplete(false);
+        setHighlightedIndex(-1);
+        setSelectedProduct(null);
+    };
+
+    // Handle input focus and blur
+    const handleInputFocus = () => {
+        if (searchInput.length >= 1 && filteredProductNames.length > 0) {
+            setShowAutocomplete(true);
+        }
+    };
+
+    const handleInputBlur = () => {
+        // Delay to allow click on autocomplete item
+        setTimeout(() => {
+            setShowAutocomplete(false);
+            setHighlightedIndex(-1);
+        }, 150);
+    };
+
+    // Handle keyboard navigation in autocomplete
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            if (highlightedIndex >= 0 && filteredProductNames[highlightedIndex]) {
+                handleAutocompleteSelect(filteredProductNames[highlightedIndex]);
+            } else {
+                setSearchQuery(searchInput);
+                setShowAutocomplete(false);
+            }
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setHighlightedIndex(prev => 
+                prev < filteredProductNames.length - 1 ? prev + 1 : prev
+            );
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setHighlightedIndex(prev => prev > 0 ? prev - 1 : -1);
+        } else if (e.key === 'Escape') {
+            setShowAutocomplete(false);
+            setHighlightedIndex(-1);
+        }
+    };
 
     // Extract Categories
     const categories = useMemo(() => {
@@ -585,6 +662,8 @@ export default function OutboundDashboardUnified() {
             diffDays = 0;
         }
 
+        const normalizeCategoryKey = (value: string) => value.trim();
+
         // 1. Filter Records (Client-side)
         const filteredBase = outboundRecords.filter(r => {
             const matchSearch = !searchQuery ||
@@ -594,75 +673,103 @@ export default function OutboundDashboardUnified() {
             return matchSearch && matchProduct;
         });
 
-        const filtered = (() => {
-            let result = filteredBase;
+        const topCategories = new Set(
+            Array.from(
+                filteredBase
+                    .reduce((acc: Map<string, number>, r) => {
+                        const key = normalizeCategoryKey(String(r.category || ''));
+                        if (!key) return acc;
+                        const prev = acc.get(key) || 0;
+                        acc.set(key, prev + (r.salesAmount ?? 0));
+                        return acc;
+                    }, new Map<string, number>())
+                    .entries()
+            )
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10)
+                .map(([cat]) => cat)
+        );
 
+        const matchesCategorySelection = (rawCategory: string) => {
+            const key = normalizeCategoryKey(rawCategory || '');
+            if (!key) return false;
             if (selectedCategories.length > 0) {
-                result = result.filter(r => selectedCategories.includes(String(r.category || '').trim()));
-            } else if (selectedCategory !== 'all') {
-                if (selectedCategory === '__others__') {
-                    const topCats = filteredBase
-                        .reduce((acc: Map<string, number>, r) => {
-                            const key = String(r.category || '').trim();
-                            const prev = acc.get(key) || 0;
-                            acc.set(key, prev + (r.salesAmount ?? 0));
-                            return acc;
-                        }, new Map<string, number>());
+                return selectedCategories.includes(key);
+            }
+            if (selectedCategory === 'all') return true;
+            if (selectedCategory === '__others__') {
+                return !topCategories.has(key);
+            }
+            return key === normalizeCategoryKey(selectedCategory || '');
+        };
 
-                    const top10 = new Set(
-                        Array.from(topCats.entries())
-                            .sort((a, b) => b[1] - a[1])
-                            .slice(0, 10)
-                            .map(([cat]) => cat)
-                    );
-                    result = filteredBase.filter(r => !top10.has(String(r.category || '').trim()));
-                } else {
-                    result = filteredBase.filter(r => String(r.category || '').trim() === String(selectedCategory || '').trim());
+        const filtered = filteredBase.filter(r => matchesCategorySelection(String(r.category || '')));
+
+        const hasMultiCategorySelection = selectedCategories.length > 0;
+
+        const aggregateRecords = (records: OutboundRecordWithBoxes[], mode: 'day' | 'week' | 'month') => {
+            const map = new Map<string, { fullDate: string; date: string; sales: number; quantity: number }>();
+            records.forEach(record => {
+                const rawDate = record.outboundDate;
+                const parsed = rawDate ? parseISO(String(rawDate)) : null;
+                if (!parsed || !isValid(parsed)) return;
+                let keyDate = parsed;
+                if (mode === 'week') keyDate = startOfWeek(parsed, { weekStartsOn: 1 });
+                if (mode === 'month') keyDate = startOfMonth(parsed);
+                const key = format(keyDate, 'yyyy-MM-dd');
+                const label = mode === 'month'
+                    ? format(keyDate, 'yyyy-MM')
+                    : mode === 'week'
+                        ? key
+                        : format(keyDate, 'MM/dd');
+                const entry = map.get(key) || { fullDate: key, date: label, sales: 0, quantity: 0 };
+                entry.sales += Number(record.salesAmount ?? 0);
+                const qty = record.boxQuantity ?? record.quantity ?? 0;
+                entry.quantity += Number(qty);
+                map.set(key, entry);
+            });
+            return Array.from(map.values()).sort((a, b) => a.fullDate.localeCompare(b.fullDate));
+        };
+
+        const dailyTrend = hasMultiCategorySelection
+            ? aggregateRecords(filtered, groupBy)
+            : (outboundStats.dailyTrend ? outboundStats.dailyTrend.map((d: any) => {
+                try {
+                    return {
+                        fullDate: d.date,
+                        date: groupBy === 'month' ? d.date : groupBy === 'week' ? d.date : d.date.substring(5).replace('-', '/'),
+                        sales: Number(d.salesAmount ?? 0),
+                        quantity: Number(d.quantity ?? 0)
+                    };
+                } catch {
+                    return { fullDate: '', date: '', sales: 0, quantity: 0 };
                 }
-            }
+            }) : []);
 
-            return result;
-        })();
+        const totalSales = hasMultiCategorySelection
+            ? filtered.reduce((sum, r) => sum + Number(r.salesAmount ?? 0), 0)
+            : Number(outboundStats.summary?.totalSalesAmount ?? 0);
+        const totalQty = hasMultiCategorySelection
+            ? filtered.reduce((sum, r) => sum + Number(r.boxQuantity ?? r.quantity ?? 0), 0)
+            : Number(outboundStats.summary?.totalQuantity ?? 0);
 
-        // Use Server Stats if available
-        void outboundStats;
-
-        // 2. KPIs
-        const totalSales = Number(outboundStats.summary?.totalSalesAmount ?? 0);
-        const totalQty = Number(outboundStats.summary?.totalQuantity ?? 0);
-
-        // Avg Daily Sales
         let avgDailySales = 0;
-        if (outboundStats.dailyTrend?.length) {
-            avgDailySales = totalSales / outboundStats.dailyTrend.length;
-        } else {
-            // Fallback for avg calculation (using filtered records)
-            try {
-                const uniqueDays = new Set(filtered.map(r => safeFormatDate(r.outboundDate, 'yyyy-MM-dd'))).size || 1;
-                avgDailySales = totalSales / uniqueDays;
-            } catch (e) {
-                console.error("❌ Error calculating uniqueDays:", e);
-                avgDailySales = 0;
-            }
+        if (dailyTrend.length) {
+            avgDailySales = totalSales / dailyTrend.length;
         }
 
-        // 3. Trend Data
-        const dailyTrend = outboundStats.dailyTrend ? outboundStats.dailyTrend.map((d: any) => {
-            try {
-                return {
-                    fullDate: d.date,
-                    date: groupBy === 'month' ? d.date : groupBy === 'week' ? d.date : d.date.substring(5).replace('-', '/'),
-                    sales: Number(d.salesAmount ?? 0),
-                    quantity: Number(d.quantity ?? 0)
-                };
-            } catch {
-                return { fullDate: '', date: '', sales: 0, quantity: 0 };
-            }
-        }) : [];
-
-        // 4. Category Share
         let categoryShare: Array<{ name: string; value: number }> = [];
-        if (outboundStats.categoryBreakdown) {
+        if (hasMultiCategorySelection) {
+            const categoryMap = new Map<string, { name: string; value: number }>();
+            filtered.forEach(r => {
+                const key = normalizeCategoryKey(String(r.category || ''));
+                if (!key) return;
+                const entry = categoryMap.get(key) || { name: key, value: 0 };
+                entry.value += Number(r.salesAmount ?? 0);
+                categoryMap.set(key, entry);
+            });
+            categoryShare = Array.from(categoryMap.values()).sort((a, b) => b.value - a.value);
+        } else if (outboundStats.categoryBreakdown) {
             const serverCats = outboundStats.categoryBreakdown.map((c: any) => ({
                 name: c.category,
                 value: Number(c.salesAmount ?? 0)
@@ -673,21 +780,30 @@ export default function OutboundDashboardUnified() {
             if (others > 0) categoryShare.push({ name: "기타", value: others });
         }
 
-        // 5. Top Products
-        const topProducts = (outboundTopProducts || [])
-            .map((r: any) => ({
-                name: String(r?.name || '-'),
-                value: Number(r?.quantity || 0),
-                sales: Number(r?.salesAmount || 0),
-            }))
-            .sort((a: any, b: any) => (b.value || 0) - (a.value || 0))
-            .slice(0, 10);
+        const topProducts = hasMultiCategorySelection
+            ? Array.from(filtered.reduce((acc, r) => {
+                const name = String(r.productName || '-');
+                const entry = acc.get(name) || { name, value: 0, sales: 0 };
+                entry.value += Number(r.boxQuantity ?? r.quantity ?? 0);
+                entry.sales += Number(r.salesAmount ?? 0);
+                acc.set(name, entry);
+                return acc;
+            }, new Map<string, { name: string; value: number; sales: number }>()).values())
+                .sort((a, b) => b.value - a.value)
+                .slice(0, 10)
+            : (outboundTopProducts || [])
+                .map((r: any) => ({
+                    name: String(r?.name || '-'),
+                    value: Number(r?.quantity || 0),
+                    sales: Number(r?.salesAmount || 0),
+                }))
+                .sort((a: any, b: any) => (b.value || 0) - a.value)
+                .slice(0, 10);
 
-        // 6. Pivot Data Helper
-        const createTotalPivot = (groupBy: (r: OutboundRecordWithBoxes) => string) => {
+        const createTotalPivot = (groupByKey: (r: OutboundRecordWithBoxes) => string) => {
             const map = new Map();
             filtered.forEach(r => {
-                const key = groupBy(r);
+                const key = groupByKey(r);
                 if (!map.has(key)) map.set(key, { total: { quantity: 0, salesAmount: 0 } });
                 const entry = map.get(key);
                 const qty = r.boxQuantity ?? r.quantity ?? 0;
@@ -700,40 +816,79 @@ export default function OutboundDashboardUnified() {
                 .sort((a, b) => b.total.salesAmount - a.total.salesAmount);
         };
 
-        const categoryPivot = canShowDailyPivot ? categoryPivotServer : [];
-        const productPivot = canShowDailyPivot ? productPivotServer : [];
-        const categoryTotalPivot = Array.isArray(outboundStats.categoryBreakdown)
-            ? outboundStats.categoryBreakdown
-                .map((c: any) => ({
-                    key: String(c?.category || '기타'),
-                    total: {
-                        quantity: Number(c?.quantity || 0),
-                        salesAmount: Number(c?.salesAmount || 0),
-                    }
-                }))
-                .sort((a: any, b: any) => (b.total.salesAmount || 0) - (a.total.salesAmount || 0))
-            : createTotalPivot(r => r.category);
-
-        const productTotalPivot = (outboundTopProducts || [])
-            .map((r: any) => ({
-                key: String(r?.name || '-'),
-                total: {
-                    quantity: Number(r?.quantity || 0),
-                    salesAmount: Number(r?.salesAmount || 0),
+        const createPivotByRange = (
+            records: OutboundRecordWithBoxes[],
+            groupByKey: (r: OutboundRecordWithBoxes) => string,
+            mode: 'day' | 'week' | 'month'
+        ) => {
+            const map = new Map();
+            records.forEach(r => {
+                const key = groupByKey(r);
+                if (!map.has(key)) {
+                    map.set(key, { values: {}, total: { quantity: 0, salesAmount: 0 } });
                 }
-            }))
-            .sort((a: any, b: any) => (b.total.quantity || 0) - (a.total.quantity || 0));
+                const entry = map.get(key);
+                const date = r.outboundDate ? parseISO(String(r.outboundDate)) : null;
+                if (!date || !isValid(date)) return;
 
-        // 제품별 카테고리 매핑 생성 (필터링된 레코드에서)
-        const productCategoryMap = useMemo(() => {
-            const map = new Map<string, string>();
-            filtered.forEach(r => {
-                if (r.productName && r.category) {
-                    map.set(r.productName, r.category);
+                let dateKey = format(date, 'yyyy-MM-dd');
+                if (mode === 'week') {
+                    dateKey = format(startOfWeek(date, { weekStartsOn: 1 }), 'yyyy-MM-dd');
                 }
+                if (mode === 'month') {
+                    dateKey = format(startOfMonth(date), 'yyyy-MM-dd');
+                }
+
+                if (!entry.values[dateKey]) {
+                    entry.values[dateKey] = { quantity: 0, salesAmount: 0 };
+                }
+
+                const qty = r.boxQuantity ?? r.quantity ?? 0;
+                const sales = r.salesAmount ?? 0;
+                entry.values[dateKey].quantity += qty;
+                entry.values[dateKey].salesAmount += sales;
+                entry.total.quantity += qty;
+                entry.total.salesAmount += sales;
             });
-            return map;
-        }, [filtered]);
+
+            return Array.from(map.entries())
+                .map(([key, val]) => ({ key, ...val }))
+                .sort((a, b) => b.total.salesAmount - a.total.salesAmount);
+        };
+
+        const categoryPivot = canShowDailyPivot
+            ? (hasMultiCategorySelection ? createPivotByRange(filtered, r => r.category, groupBy) : categoryPivotServer)
+            : [];
+        const productPivot = canShowDailyPivot
+            ? (hasMultiCategorySelection ? createPivotByRange(filtered, r => r.productName, groupBy) : productPivotServer)
+            : [];
+        const categoryTotalPivot = createTotalPivot(r => r.category);
+        const productTotalPivot = createTotalPivot(r => r.productName);
+
+        const displayDates = (() => {
+            if (!canShowDailyPivot) return [] as Date[];
+            if (groupBy === 'week') {
+                const weeks = new Set<string>();
+                const start = parseISO(startDate);
+                const end = parseISO(endDate);
+                if (isValid(start) && isValid(end)) {
+                    const range = eachDayOfInterval({ start, end }).filter(d => !isSameDay(d, new Date()));
+                    range.forEach(d => weeks.add(format(startOfWeek(d, { weekStartsOn: 1 }), 'yyyy-MM-dd')));
+                }
+                return Array.from(weeks).sort().map(d => parseISO(d));
+            }
+            if (groupBy === 'month') {
+                const months = new Set<string>();
+                const start = parseISO(startDate);
+                const end = parseISO(endDate);
+                if (isValid(start) && isValid(end)) {
+                    const range = eachDayOfInterval({ start, end }).filter(d => !isSameDay(d, new Date()));
+                    range.forEach(d => months.add(format(startOfMonth(d), 'yyyy-MM-dd')));
+                }
+                return Array.from(months).sort().map(d => parseISO(d));
+            }
+            return dates;
+        })();
 
         return {
             filtered,
@@ -745,18 +900,17 @@ export default function OutboundDashboardUnified() {
             topProducts,
             categoryPivot,
             productPivot,
-            dates: dates.reverse(),
+            dates: displayDates,
             diffDays,
             categoryTotalPivot,
             productTotalPivot,
-            productCategoryMap,
             summaryStats: {
                 totalSales,
                 totalQty,
                 topCategory: categoryShare[0]?.name || 'N/A'
             }
         };
-    }, [outboundRecords, outboundStats, startDate, endDate, selectedCategory, searchQuery, selectedProduct, groupBy, outboundTopProducts, canShowDailyPivot, categoryPivotServer, productPivotServer]);
+    }, [outboundRecords, outboundStats, startDate, endDate, selectedCategory, selectedCategories, searchQuery, selectedProduct, groupBy, outboundTopProducts, canShowDailyPivot, categoryPivotServer, productPivotServer]);
 
     const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#8dd1e1'];
 
@@ -806,7 +960,7 @@ export default function OutboundDashboardUnified() {
     }
     if (!processedData) return <div className="p-12 text-center text-gray-500">데이터가 없습니다.</div>;
 
-    const { totalSales, totalQty, avgDailySales, dailyTrend, categoryShare, topProducts, categoryPivot, productPivot, dates, summaryStats, categoryTotalPivot, productTotalPivot, productCategoryMap } = processedData;
+    const { totalSales, totalQty, avgDailySales, dailyTrend, categoryShare, topProducts, categoryPivot, productPivot, dates, summaryStats, categoryTotalPivot, productTotalPivot } = processedData;
 
     const trendTitle = groupBy === 'day'
         ? '일별 매출 및 출고량 추이'
@@ -891,13 +1045,14 @@ export default function OutboundDashboardUnified() {
                     </div>
 
                     <div className="flex items-center gap-2 min-w-[180px]">
-                        <Select
-                            value={selectedCategory}
-                            onValueChange={(v) => {
-                                setSelectedCategory(v);
-                                setSelectedProduct(null);
-                            }}
-                        >
+                            <Select
+                                value={selectedCategory}
+                                onValueChange={(v) => {
+                                    setSelectedCategory(v);
+                                    setSelectedCategories([]);
+                                    setSelectedProduct(null);
+                                }}
+                            >
                             <SelectTrigger className="h-9">
                                 <SelectValue placeholder="분류 선택" />
                             </SelectTrigger>
@@ -916,14 +1071,37 @@ export default function OutboundDashboardUnified() {
                         <Input
                             placeholder="품목명 검색 (엔터키로 검색)"
                             value={searchInput}
-                            onChange={e => setSearchInput(e.target.value)}
-                            onKeyDown={e => {
-                                if (e.key === 'Enter') {
-                                    setSearchQuery(e.currentTarget.value);
+                            onChange={e => {
+                                setSearchInput(e.target.value);
+                                if (e.target.value.length >= 1) {
+                                    setShowAutocomplete(true);
+                                } else {
+                                    setShowAutocomplete(false);
                                 }
+                                setHighlightedIndex(-1);
                             }}
+                            onKeyDown={handleKeyDown}
+                            onFocus={handleInputFocus}
+                            onBlur={handleInputBlur}
                             className="pl-8 h-9"
                         />
+                        {showAutocomplete && filteredProductNames.length > 0 && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-30 max-h-60 overflow-y-auto">
+                                <ul className="py-1">
+                                    {filteredProductNames.map((productName, index) => (
+                                        <li
+                                            key={productName}
+                                            className={`px-3 py-2 text-sm cursor-pointer hover:bg-gray-100 ${
+                                                index === highlightedIndex ? 'bg-gray-100' : ''
+                                            }`}
+                                            onClick={() => handleAutocompleteSelect(productName)}
+                                        >
+                                            {productName}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -1080,48 +1258,53 @@ export default function OutboundDashboardUnified() {
                 </Card>
 
                 {/* Pie Chart */}
-                <Card className="flex-[0.4] h-full" onClick={() => setSelectedCategory('all')}>
-                    <CardHeader>
-                        <CardTitle className="text-sm">분류별 매출 비중 {selectedPieCategory && <span className="text-xs font-normal text-muted-foreground ml-1">({selectedPieCategory})</span>}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="h-[520px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                                <Pie
-                                    data={categoryShare}
-                                    cx="50%"
-                                    cy="50%"
-                                    innerRadius={100}
-                                    outerRadius={200}
-                                    paddingAngle={2}
-                                    dataKey="value"
-                                    onClick={(data, _index, e) => {
-                                        e.stopPropagation();
-                                        const next = selectedCategory === '__others__' ? '기타' : selectedCategory;
-                                        if (next === data.name) {
-                                            setSelectedCategory('all');
-                                        } else {
-                                            setSelectedCategory(data.name === '기타' ? '__others__' : String(data.name));
-                                        }
-                                        setSelectedProduct(null);
-                                    }}
-                                    cursor="pointer"
-                                    label={({ name, percent }) => percent < 0.02 ? '' : `${name} ${(percent * 100).toFixed(0)}%`}
-                                >
-                                    {categoryShare.map((entry, index) => (
-                                        <Cell
-                                            key={`cell-${index}`}
-                                            fill={entry.name === selectedPieCategory ? '#2563EB' : COLORS[index % COLORS.length]}
-                                            opacity={selectedPieCategory && selectedPieCategory !== entry.name ? 0.3 : 1}
-                                        />
-                                    ))}
-                                </Pie>
-                                <RechartsTooltip formatter={(value: number) => formatCurrency(value)} />
-                                <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '12px' }} />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    </CardContent>
-                </Card>
+                        <Card className="flex-[0.4] h-full" onClick={() => {
+                            if (selectedCategories.length === 0) {
+                                setSelectedCategory('all');
+                            }
+                        }}>
+                            <CardHeader>
+                                <CardTitle className="text-sm">분류별 매출 비중 {selectedPieCategory && <span className="text-xs font-normal text-muted-foreground ml-1">({selectedPieCategory})</span>}</CardTitle>
+                            </CardHeader>
+                            <CardContent className="h-[520px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={categoryShare}
+                                            cx="50%"
+                                            cy="50%"
+                                            innerRadius={100}
+                                            outerRadius={200}
+                                            paddingAngle={2}
+                                            dataKey="value"
+                                            onClick={(data, _index, e) => {
+                                                e.stopPropagation();
+                                                if (selectedCategories.length > 0) return;
+                                                const next = selectedCategory === '__others__' ? '기타' : selectedCategory;
+                                                if (next === data.name) {
+                                                    setSelectedCategory('all');
+                                                } else {
+                                                    setSelectedCategory(data.name === '기타' ? '__others__' : String(data.name));
+                                                }
+                                                setSelectedProduct(null);
+                                            }}
+                                            cursor={selectedCategories.length > 0 ? 'default' : 'pointer'}
+                                            label={({ name, percent }) => percent < 0.02 ? '' : `${name} ${(percent * 100).toFixed(0)}%`}
+                                        >
+                                            {categoryShare.map((entry, index) => (
+                                                <Cell
+                                                    key={`cell-${index}`}
+                                                    fill={entry.name === selectedPieCategory ? '#2563EB' : COLORS[index % COLORS.length]}
+                                                    opacity={selectedPieCategory && selectedPieCategory !== entry.name ? 0.3 : 1}
+                                                />
+                                            ))}
+                                        </Pie>
+                                        <RechartsTooltip formatter={(value: number) => formatCurrency(value)} />
+                                        <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '12px' }} />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </CardContent>
+                        </Card>
             </div>
 
             {/* Row 2: Category Pivot (60%) + Top 10 (40%) */}
@@ -1153,7 +1336,11 @@ export default function OutboundDashboardUnified() {
                 </div>
 
                 {/* Top 10 Products */}
-                <Card className="flex-[0.4] h-full" onClick={() => setSelectedProduct(null)}>
+                <Card className="flex-[0.4] h-full" onClick={() => {
+                    if (selectedCategories.length === 0) {
+                        setSelectedProduct(null);
+                    }
+                }}>
                     <CardHeader>
                         <CardTitle className="text-sm">
                             TOP 10 출고 품목
@@ -1183,9 +1370,10 @@ export default function OutboundDashboardUnified() {
                                             barSize={14}
                                             onClick={(data, _index, e) => {
                                                 e.stopPropagation();
+                                                if (selectedCategories.length > 0) return;
                                                 setSelectedProduct(data.name === selectedProduct ? null : data.name);
                                             }}
-                                            cursor="pointer"
+                                            cursor={selectedCategories.length > 0 ? 'default' : 'pointer'}
                                         >
                                             {topProducts.map((entry, index) => (
                                                 <Cell key={`cell-${index}`} fill={entry.name === selectedProduct ? '#2563EB' : COLORS[index % COLORS.length]} />
@@ -1206,24 +1394,6 @@ export default function OutboundDashboardUnified() {
                     </CardContent>
                 </Card>
             </div>
-
-            {/* Row 2.5: Selected Categories' Products Daily Pivot */}
-            {selectedCategories.length > 0 && canShowDailyPivot && (
-                <div className="h-[500px] overflow-hidden">
-                    <CompactPivotTable
-                        title={`선택된 분류 품목별 일별 집계 (${selectedCategories.join(', ')})`}
-                        data={productPivot.filter((p: any) => {
-                            const productCategory = productCategoryMap.get(p.key);
-                            return productCategory && selectedCategories.includes(productCategory);
-                        })}
-                        dates={dates}
-                        rowKey="key"
-                        rowLabel="품목"
-                        valueKey="quantity"
-                        secondaryValueKey="salesAmount"
-                    />
-                </div>
-            )}
 
             {/* Row 3: Product Pivot (60%) + AI Report (40%) */}
             <div className="flex flex-col lg:flex-row gap-4 h-[500px]">
@@ -1260,6 +1430,7 @@ export default function OutboundDashboardUnified() {
                         searchQuery={searchQuery}
                         product={selectedProduct}
                         summaryStats={summaryStats}
+                        apiPrefix={getApiPrefix()}
                     />
                 </div>
             </div>

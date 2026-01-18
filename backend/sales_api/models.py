@@ -341,3 +341,29 @@ class InboundPolicy(models.Model):
 
     def __str__(self):
         return f"Policy ({self.status_mode})"
+
+
+class FCInboundRecord(models.Model):
+    """FC 입고 기록"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    inbound_date = models.DateField(db_index=True)
+    sku_id = models.CharField(max_length=100, db_index=True)
+    barcode = models.CharField(max_length=100, db_index=True)
+    product_name = models.CharField(max_length=255, db_index=True)
+    category = models.CharField(max_length=255, blank=True, default='')
+    subcategory = models.CharField(max_length=255, blank=True, default='')
+    color = models.CharField(max_length=100, blank=True, default='')
+    quantity = models.IntegerField(default=0)
+    logistics_center = models.CharField(max_length=100, db_index=True, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'fc_inbound_records'
+        indexes = [
+            models.Index(fields=['inbound_date', 'category']),
+            models.Index(fields=['inbound_date', 'logistics_center']),
+        ]
+
+    def __str__(self):
+        return f"{self.inbound_date} - {self.product_name} ({self.logistics_center})"

@@ -64,4 +64,9 @@ urlpatterns = [
     path('master/specs', views.master_specs, name='master-specs'),
     path('master/specs/<int:id>', views.master_specs_detail, name='master-specs-detail'),
     path('master/extract', views.master_extract, name='master-extract'),
+    path('fc-inbound', views.get_fc_inbound_records, name='fc-inbound'),
+    path('fc-inbound/stats', views.get_fc_inbound_stats, name='fc-inbound-stats'),
+    path('fc-inbound/top-products', views.get_fc_inbound_top_products, name='fc-inbound-top-products'),
+    path('fc-inbound/pivot', views.get_fc_inbound_pivot, name='fc-inbound-pivot'),
+    path('fc-inbound/upload', views.fc_inbound_upload, name='fc-inbound-upload'),
 ]

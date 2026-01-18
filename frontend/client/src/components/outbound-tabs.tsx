@@ -4,24 +4,36 @@ import OutboundDashboardUnified from "./outbound-dashboard-unified";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "./ui/button";
-import { RefreshCw, PieChart } from "lucide-react";
+import { RefreshCw, PieChart, Package, ArrowDownToLine } from "lucide-react";
 
-export type OutboundTabKey = 'unified-v1';
+export type OutboundTabKey = 'vf-outbound' | 'fc-inbound';
+export type DataSource = 'vf' | 'fc';
 
 interface OutboundTabsProps {
   initialTab?: OutboundTabKey;
   onTabChange?: (tab: OutboundTabKey) => void;
+  initialDataSource?: DataSource;
 }
 
-export default function OutboundTabs({ initialTab = 'unified-v1', onTabChange }: OutboundTabsProps = {}) {
+export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, initialDataSource = 'vf' }: OutboundTabsProps = {}) {
   const [location] = useLocation();
+
+  const [dataSource, setDataSource] = useState<DataSource>(initialDataSource);
+
+  const updateDataSourceBasedOnTab = (tab: OutboundTabKey) => {
+    if (tab === 'vf-outbound') {
+      setDataSource('vf');
+    } else if (tab === 'fc-inbound') {
+      setDataSource('fc');
+    }
+  };
 
   // URL 파라미터에서 초기 탭 상태 읽기
   const getInitialTabFromUrl = (): OutboundTabKey => {
     try {
       const url = new URL(window.location.href);
       const tabParam = url.searchParams.get('tab');
-      if (tabParam && ['unified-v1'].includes(tabParam)) {
+      if (tabParam && ['vf-outbound', 'fc-inbound'].includes(tabParam)) {
         return tabParam as OutboundTabKey;
       }
     } catch (error) {
@@ -184,23 +196,34 @@ export default function OutboundTabs({ initialTab = 'unified-v1', onTabChange }:
     setActiveTab(tab);
     onTabChange?.(tab);
 
-    // URL 업데이트
+    updateDataSourceBasedOnTab(tab);
+
     const url = new URL(window.location.href);
     url.searchParams.set('tab', tab);
     window.history.pushState(null, '', url.toString());
   };
 
+  const handleDataSourceChange = (newDataSource: DataSource) => {
+    setDataSource(newDataSource);
+  };
+
   const tabs = [
     {
-      key: 'unified-v1' as OutboundTabKey,
-      label: '통합 대시보드',
-      icon: PieChart,
-      description: '모든 출고 데이터를 통합하여 분석하는 대시보드'
+      key: 'vf-outbound' as OutboundTabKey,
+      label: 'VF 출고',
+      icon: Package,
+      description: 'VF 출고 데이터 분석 대시보드'
+    },
+    {
+      key: 'fc-inbound' as OutboundTabKey,
+      label: 'FC 입고',
+      icon: ArrowDownToLine,
+      description: 'FC 입고 데이터 분석 대시보드'
     }
   ];
 
   const renderContent = () => {
-    return <OutboundDashboardUnified />;
+    return <OutboundDashboardUnified dataSource={dataSource} activeTab={activeTab} />;
   };
 
   return (

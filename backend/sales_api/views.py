@@ -26,6 +26,7 @@ from .models import (
     InboundOrderUpload,
     InboundOrderLine,
     InboundPolicy,
+    FCInboundRecord,
 )
 from .serializers import (
     OutboundRecordSerializer, InventoryItemSerializer, DataSourceSerializer, DeliverySpecialNoteSerializer,
@@ -4143,3 +4144,336 @@ def inbound_policy(request):
         'statusMode': policy.status_mode,
         'statuses': policy.statuses or [],
     })
+
+@api_view(['GET'])
+def get_fc_inbound_records(request):
+    start = request.query_params.get('start')
+    end = request.query_params.get('end')
+    try:
+        limit = int(request.query_params.get('limit') or 10000)
+    except Exception:
+        limit = 10000
+
+    queryset = FCInboundRecord.objects.all()
+    if start:
+        queryset = queryset.filter(inbound_date__gte=start)
+    if end:
+        queryset = queryset.filter(inbound_date__lte=end)
+
+    queryset = queryset.order_by('-inbound_date')[:limit]
+
+    serializer = FCInboundRecordSerializer(queryset, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+def get_fc_inbound_stats(request):
+    start = request.query_params.get('start') or request.query_params.get('startDate')
+    end = request.query_params.get('end') or request.query_params.get('endDate')
+    group_by = request.query_params.get('groupBy', 'day')
+    category = request.query_params.get('category')
+    search = request.query_params.get('search')
+    product = request.query_params.get('product')
+    logistics_center = request.query_params.get('logisticsCenter')
+
+    queryset = FCInboundRecord.objects.all()
+
+    if start:
+        queryset = queryset.filter(inbound_date__gte=start)
+    if end:
+        queryset = queryset.filter(inbound_date__lte=end)
+
+    if category and category != 'all':
+        if category == '__others__':
+            top_cats = list(
+                queryset.values('category')
+                .annotate(totalQty=Sum('quantity'))
+                .order_by('-totalQty')
+                .values_list('category', flat=True)[:10]
+            )
+            if top_cats:
+                queryset = queryset.exclude(category__in=top_cats)
+        else:
+            queryset = queryset.filter(category=category)
+
+    if logistics_center:
+        queryset = queryset.filter(logistics_center__icontains=logistics_center)
+
+    if search:
+        queryset = queryset.filter(product_name__icontains=search)
+
+    if product:
+        queryset = queryset.filter(product_name=product)
+
+    summary = queryset.aggregate(
+        totalCount=Count('id'),
+        totalQuantity=Coalesce(Sum('quantity'), 0),
+    )
+
+    trunc_func = TruncDay
+    if group_by == 'week':
+        trunc_func = TruncWeek
+    elif group_by == 'month':
+        trunc_func = TruncMonth
+
+    daily_trend = queryset.annotate(
+        date=trunc_func('inbound_date')
+    ).values('date').annotate(
+        quantity=Coalesce(Sum('quantity'), 0)
+    ).order_by('date')
+
+    trend_data = []
+    for item in daily_trend:
+        if item['date']:
+            trend_data.append({
+                'date': item['date'].strftime('%Y-%m-%d'),
+                'quantity': item['quantity'] or 0,
+            })
+
+    category_breakdown = queryset.values('category').annotate(
+        quantity=Coalesce(Sum('quantity'), 0)
+    ).order_by('-quantity')
+
+    return Response({
+        'summary': {
+            'totalCount': summary['totalCount'] or 0,
+            'totalQuantity': summary['totalQuantity'] or 0,
+        },
+        'dailyTrend': trend_data,
+        'categoryBreakdown': category_breakdown
+    })
+
+
+@api_view(['GET'])
+def get_fc_inbound_top_products(request):
+    start = request.query_params.get('start') or request.query_params.get('startDate')
+    end = request.query_params.get('end') or request.query_params.get('endDate')
+    category = request.query_params.get('category')
+    search = request.query_params.get('search')
+    product = request.query_params.get('product')
+    logistics_center = request.query_params.get('logisticsCenter')
+    try:
+        limit = int(request.query_params.get('limit') or 100)
+    except Exception:
+        limit = 100
+    limit = max(1, min(limit, 500))
+
+    queryset = FCInboundRecord.objects.all()
+    if start:
+        queryset = queryset.filter(inbound_date__gte=start)
+    if end:
+        queryset = queryset.filter(inbound_date__lte=end)
+
+    if category and category != 'all':
+        if category == '__others__':
+            top_cats = list(
+                queryset.values('category')
+                .annotate(totalQty=Sum('quantity'))
+                .order_by('-totalQty')
+                .values_list('category', flat=True)[:10]
+            )
+            if top_cats:
+                queryset = queryset.exclude(category__in=top_cats)
+        else:
+            queryset = queryset.filter(category=category)
+
+    if logistics_center:
+        queryset = queryset.filter(logistics_center__icontains=logistics_center)
+
+    if search:
+        queryset = queryset.filter(product_name__icontains=search)
+
+    if product:
+        queryset = queryset.filter(product_name=product)
+
+    rows = queryset.values('product_name').annotate(
+        quantity=Coalesce(Sum('quantity'), 0),
+    ).order_by('-quantity')[:limit]
+
+    return Response([
+        {
+            'name': r.get('product_name') or '-',
+            'quantity': r.get('quantity') or 0,
+        }
+        for r in rows
+    ])
+
+
+@api_view(['GET'])
+def get_fc_inbound_pivot(request):
+    start = request.query_params.get('start') or request.query_params.get('startDate')
+    end = request.query_params.get('end') or request.query_params.get('endDate')
+    row = request.query_params.get('row', 'category')
+    group_by = request.query_params.get('groupBy', 'day')
+    category = request.query_params.get('category')
+    search = request.query_params.get('search')
+    product = request.query_params.get('product')
+    logistics_center = request.query_params.get('logisticsCenter')
+    try:
+        limit = int(request.query_params.get('limit') or 100)
+    except Exception:
+        limit = 100
+    limit = max(1, min(limit, 500))
+
+    if row not in ['category', 'product']:
+        return Response({'message': 'row must be category or product'}, status=status.HTTP_400_BAD_REQUEST)
+    if group_by not in ['day', 'week', 'month']:
+        return Response({'message': 'groupBy must be day, week, or month'}, status=status.HTTP_400_BAD_REQUEST)
+
+    queryset = FCInboundRecord.objects.all()
+    if start:
+        queryset = queryset.filter(inbound_date__gte=start)
+    if end:
+        queryset = queryset.filter(inbound_date__lte=end)
+
+    if category and category != 'all':
+        if category == '__others__':
+            top_cats = list(
+                queryset.values('category')
+                .annotate(totalQty=Sum('quantity'))
+                .order_by('-totalQty')
+                .values_list('category', flat=True)[:10]
+            )
+            if top_cats:
+                queryset = queryset.exclude(category__in=top_cats)
+        else:
+            queryset = queryset.filter(category=category)
+
+    if logistics_center:
+        queryset = queryset.filter(logistics_center__icontains=logistics_center)
+
+    if search:
+        queryset = queryset.filter(product_name__icontains=search)
+
+    if product:
+        queryset = queryset.filter(product_name=product)
+
+    trunc_func = TruncDay
+    if group_by == 'week':
+        trunc_func = TruncWeek
+    elif group_by == 'month':
+        trunc_func = TruncMonth
+
+    if row == 'category':
+        rows = queryset.values('category')
+    else:
+        rows = queryset.values('product_name')
+
+    row_field = 'category' if row == 'category' else 'product_name'
+
+    rows_data = []
+    for r in rows.annotate(total=Coalesce(Sum('quantity'), 0)).order_by('-total')[:limit]:
+        row_key = r.get(row_field) or '-'
+        row_data = {'key': row_key, 'values': {}, 'total': {'quantity': r['total'] or 0}}
+
+        row_queryset = queryset.filter(**{row_field: row_key})
+        daily_data = row_queryset.annotate(
+            date=trunc_func('inbound_date')
+        ).values('date').annotate(
+            quantity=Coalesce(Sum('quantity'), 0)
+        ).order_by('date')
+
+        for d in daily_data:
+            if d['date']:
+                date_key = d['date'].strftime('%Y-%m-%d')
+                row_data['values'][date_key] = {'quantity': d['quantity'] or 0}
+
+        rows_data.append(row_data)
+
+    return Response(rows_data)
+
+
+@api_view(['POST'])
+def fc_inbound_upload(request):
+    """FC 입고 엑셀 파일 업로드 및 파싱"""
+    if 'file' not in request.FILES:
+        return Response(
+            {'error': 'No file provided'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    file = request.FILES['file']
+    if not file.name.endswith(('.xlsx', '.xls')):
+        return Response(
+            {'error': 'Only Excel files are supported'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        import io
+        df = pd.read_excel(io.BytesIO(file.read()))
+
+        required_columns = ['SKU번호', 'SKU명', '입고/반출시각', '물류센터', '수량']
+        missing = [col for col in required_columns if col not in df.columns]
+        if missing:
+            return Response(
+                {'error': f'Missing required columns: {", ".join(missing)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        records_created = 0
+        records_skipped = 0
+
+        for _, row in df.iterrows():
+            try:
+                date_str = str(row.get('입고/반출시각', ''))
+                if not date_str or date_str == 'nan':
+                    records_skipped += 1
+                    continue
+
+                try:
+                    date_obj = pd.to_datetime(date_str, errors='coerce')
+                    if pd.isna(date_obj):
+                        records_skipped += 1
+                        continue
+                    inbound_date = date_obj.date()
+                except Exception:
+                    records_skipped += 1
+                    continue
+
+                sku_id = str(row.get('SKU번호', '')).strip()
+                barcode = str(row.get('SKU번호', '')).strip()
+                product_name = str(row.get('SKU명', '')).strip()
+
+                try:
+                    quantity = int(float(str(row.get('수량', 0)).replace(',', '')))
+                except Exception:
+                    quantity = 0
+
+                logistics_center = str(row.get('물류센터', '')).strip()
+
+                if not sku_id or not product_name or quantity <= 0:
+                    records_skipped += 1
+                    continue
+
+                FCInboundRecord.objects.create(
+                    inbound_date=inbound_date,
+                    sku_id=sku_id,
+                    barcode=barcode,
+                    product_name=product_name,
+                    category='',
+                    subcategory='',
+                    color='',
+                    quantity=quantity,
+                    logistics_center=logistics_center,
+                )
+                records_created += 1
+
+            except Exception as e:
+                logger.error(f'Error processing row: {e}')
+                records_skipped += 1
+                continue
+
+        return Response({
+            'success': True,
+            'recordsCreated': records_created,
+            'recordsSkipped': records_skipped,
+            'totalRows': len(df),
+        })
+
+    except Exception as e:
+        logger.error(f'FC Inbound upload error: {e}')
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
