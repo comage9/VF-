@@ -367,25 +367,17 @@ export default function OutboundDashboardUnified() {
     }, [selectedCategory]);
 
     const handleCategoryToggle = useCallback((category: string) => {
+        const normalized = String(category || '').trim();
+        if (!normalized) return;
         setSelectedCategories(prev => {
-            if (prev.includes(category)) {
-                return prev.filter(c => c !== category);
-            } else {
-                return [...prev, category];
+            if (prev.includes(normalized)) {
+                return prev.filter(c => c !== normalized);
             }
+            return [...prev, normalized];
         });
     }, []);
 
     // 검색어 debounce (최소 2글자, 300ms 지연)
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            if (searchInput.length === 0 || searchInput.length >= 2) {
-                setSearchQuery(searchInput);
-            }
-        }, 300);
-
-        return () => clearTimeout(timer);
-    }, [searchInput]);
 
     // Quick Date Selection Handler
     const handleQuickDateChange = (value: string) => {
@@ -562,12 +554,10 @@ export default function OutboundDashboardUnified() {
 
     // Process Data
     const processedData = useMemo(() => {
-        console.log("🚀 Processing Data Start");
 
         // Data not ready yet? Return null to show loading state
         if (isStatsLoading || !outboundStats) {
-            console.log("⏳ Data not ready (Stats Loading or Null)");
-            return null;
+                return null;
         }
 
         // 0. Generate Dates Array based on Range (Moved to Top Level Scope)
@@ -578,7 +568,6 @@ export default function OutboundDashboardUnified() {
             const end = parseISO(endDate);
 
             if (!isValid(start) || !isValid(end)) {
-                console.warn("⚠️ Invalid startDate or endDate detected:", startDate, endDate);
                 dates = [];
             } else {
                 const diffTime = Math.abs(end.getTime() - start.getTime());
@@ -588,12 +577,10 @@ export default function OutboundDashboardUnified() {
                     dates = eachDayOfInterval({ start, end }).filter(d => !isSameDay(d, new Date()));
                 } else {
                     // If > 60 days, we don't show pivot table details, so dates can be empty
-                    console.log("📅 Range too large for daily pivot, skipping date generation");
                     dates = [];
                 }
             }
-        } catch (e) {
-            console.error("❌ Error generating dates:", e);
+        } catch {
             dates = [];
             diffDays = 0;
         }
@@ -610,16 +597,15 @@ export default function OutboundDashboardUnified() {
         const filtered = (() => {
             let result = filteredBase;
 
-            // selectedCategories (다중 선택)가 있으면 우선 적용
             if (selectedCategories.length > 0) {
-                result = result.filter(r => selectedCategories.includes(r.category));
+                result = result.filter(r => selectedCategories.includes(String(r.category || '').trim()));
             } else if (selectedCategory !== 'all') {
-                // selectedCategories가 없을 때만 selectedCategory (단일 선택) 적용
                 if (selectedCategory === '__others__') {
                     const topCats = filteredBase
                         .reduce((acc: Map<string, number>, r) => {
-                            const prev = acc.get(r.category) || 0;
-                            acc.set(r.category, prev + (r.salesAmount ?? 0));
+                            const key = String(r.category || '').trim();
+                            const prev = acc.get(key) || 0;
+                            acc.set(key, prev + (r.salesAmount ?? 0));
                             return acc;
                         }, new Map<string, number>());
 
@@ -629,15 +615,14 @@ export default function OutboundDashboardUnified() {
                             .slice(0, 10)
                             .map(([cat]) => cat)
                     );
-                    result = filteredBase.filter(r => !top10.has(r.category));
+                    result = filteredBase.filter(r => !top10.has(String(r.category || '').trim()));
                 } else {
-                    result = filteredBase.filter(r => r.category === selectedCategory);
+                    result = filteredBase.filter(r => String(r.category || '').trim() === String(selectedCategory || '').trim());
                 }
             }
 
             return result;
         })();
-        console.log(`🔍 Filtered Records: ${filtered.length}`);
 
         // Use Server Stats if available
         void outboundStats;
@@ -662,7 +647,6 @@ export default function OutboundDashboardUnified() {
         }
 
         // 3. Trend Data
-        console.log("📊 Processing Trend Data...");
         const dailyTrend = outboundStats.dailyTrend ? outboundStats.dailyTrend.map((d: any) => {
             try {
                 return {
@@ -671,14 +655,12 @@ export default function OutboundDashboardUnified() {
                     sales: Number(d.salesAmount ?? 0),
                     quantity: Number(d.quantity ?? 0)
                 };
-            } catch (e) {
-                console.error("❌ Error mapping trend data:", d, e);
+            } catch {
                 return { fullDate: '', date: '', sales: 0, quantity: 0 };
             }
         }) : [];
 
         // 4. Category Share
-        console.log("🍰 Processing Category Share...");
         let categoryShare: Array<{ name: string; value: number }> = [];
         if (outboundStats.categoryBreakdown) {
             const serverCats = outboundStats.categoryBreakdown.map((c: any) => ({
@@ -692,7 +674,6 @@ export default function OutboundDashboardUnified() {
         }
 
         // 5. Top Products
-        console.log("🏆 Processing Top Products...");
         const topProducts = (outboundTopProducts || [])
             .map((r: any) => ({
                 name: String(r?.name || '-'),
@@ -703,7 +684,6 @@ export default function OutboundDashboardUnified() {
             .slice(0, 10);
 
         // 6. Pivot Data Helper
-        console.log("📅 Creating Pivots...");
         const createTotalPivot = (groupBy: (r: OutboundRecordWithBoxes) => string) => {
             const map = new Map();
             filtered.forEach(r => {
@@ -744,7 +724,17 @@ export default function OutboundDashboardUnified() {
             }))
             .sort((a: any, b: any) => (b.total.quantity || 0) - (a.total.quantity || 0));
 
-        console.log("✅ Data Processing Complete");
+        // 제품별 카테고리 매핑 생성 (필터링된 레코드에서)
+        const productCategoryMap = useMemo(() => {
+            const map = new Map<string, string>();
+            filtered.forEach(r => {
+                if (r.productName && r.category) {
+                    map.set(r.productName, r.category);
+                }
+            });
+            return map;
+        }, [filtered]);
+
         return {
             filtered,
             totalSales,
@@ -759,13 +749,14 @@ export default function OutboundDashboardUnified() {
             diffDays,
             categoryTotalPivot,
             productTotalPivot,
+            productCategoryMap,
             summaryStats: {
                 totalSales,
                 totalQty,
                 topCategory: categoryShare[0]?.name || 'N/A'
             }
         };
-    }, [outboundRecords, outboundStats, startDate, endDate, selectedCategory, searchQuery, selectedProduct, groupBy, outboundTopProducts, canShowDailyPivot, categoryPivotServer, productPivotServer]);
+    }, [outboundRecords, outboundStats, startDate, endDate, selectedCategory, searchQuery, selectedProduct, groupBy, outboundTopProducts, canShowDailyPivot, categoryPivotServer, productPivotServer, filtered]);
 
     const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#8dd1e1'];
 
@@ -923,9 +914,14 @@ export default function OutboundDashboardUnified() {
                     <div className="relative w-full md:w-[250px]">
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
                         <Input
-                            placeholder="품목명 검색 (최소 2글자)..."
+                            placeholder="품목명 검색 (엔터키로 검색)"
                             value={searchInput}
                             onChange={e => setSearchInput(e.target.value)}
+                            onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                    setSearchQuery(e.currentTarget.value);
+                                }
+                            }}
                             className="pl-8 h-9"
                         />
                     </div>
@@ -1216,9 +1212,10 @@ export default function OutboundDashboardUnified() {
                 <div className="h-[500px] overflow-hidden">
                     <CompactPivotTable
                         title={`선택된 분류 품목별 일별 집계 (${selectedCategories.join(', ')})`}
-                        data={productPivot.filter((p: any) =>
-                            filtered.some(r => r.category === p.key && selectedCategories.includes(r.category))
-                        )}
+                        data={productPivot.filter((p: any) => {
+                            const productCategory = productCategoryMap.get(p.key);
+                            return productCategory && selectedCategories.includes(productCategory);
+                        })}
                         dates={dates}
                         rowKey="key"
                         rowLabel="품목"
