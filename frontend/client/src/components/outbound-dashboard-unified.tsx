@@ -756,7 +756,7 @@ export default function OutboundDashboardUnified() {
                 topCategory: categoryShare[0]?.name || 'N/A'
             }
         };
-    }, [outboundRecords, outboundStats, startDate, endDate, selectedCategory, searchQuery, selectedProduct, groupBy, outboundTopProducts, canShowDailyPivot, categoryPivotServer, productPivotServer, filtered]);
+    }, [outboundRecords, outboundStats, startDate, endDate, selectedCategory, searchQuery, selectedProduct, groupBy, outboundTopProducts, canShowDailyPivot, categoryPivotServer, productPivotServer]);
 
     const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#8dd1e1'];
 
@@ -806,7 +806,7 @@ export default function OutboundDashboardUnified() {
     }
     if (!processedData) return <div className="p-12 text-center text-gray-500">데이터가 없습니다.</div>;
 
-    const { totalSales, totalQty, avgDailySales, dailyTrend, categoryShare, topProducts, categoryPivot, productPivot, dates, summaryStats, categoryTotalPivot, productTotalPivot } = processedData;
+    const { totalSales, totalQty, avgDailySales, dailyTrend, categoryShare, topProducts, categoryPivot, productPivot, dates, summaryStats, categoryTotalPivot, productTotalPivot, productCategoryMap } = processedData;
 
     const trendTitle = groupBy === 'day'
         ? '일별 매출 및 출고량 추이'
