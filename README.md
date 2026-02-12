@@ -162,6 +162,10 @@ git commit -m "설명"
 git push
 ```
 
+## 기여 방법
+
+프로젝트에 기여하실 때는 [CONTRIBUTING.md](CONTRIBUTING.md)을 참고해 주세요.
+
 ## 보안 원칙
 
 - `.env`, `.env.local` 등 토큰/키가 들어간 파일은 GitHub에 올리지 않습니다 (`.gitignore`로 제외)
