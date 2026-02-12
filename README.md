@@ -19,11 +19,18 @@
 ### 0. 환경변수 설정 (첫 실행 시 필수)
 
 ```bash
-# 1. .env 파일 생성
+# 방법 A: 템플릿 복사 (다른 컴퓨터에서 실행할 때 권장)
 cp .env.sample .env
 
-# 2. .env 파일에 실제 값 입력 (편집기 열기)
-nano .env  # 또는 메모장 열기
+# 방법 B: 폴더별 분리된 .env.local 복사 (로컬 개발 환경)
+# 이미 backend/.env.local, frontend/.env.local이 생성되어 있음
+```
+
+**폴더별 설정 파일 구조:**
+```
+.env.local           # AI 토큰 등 (로컬 전용 - 깃 제외)
+backend/.env.local  # 백엔드: Google Sheets URL 등
+frontend/.env.local # 프론트엔드: DJANGO_BASE_URL, PORT 등
 ```
 
 **필수 환경변수:**
@@ -38,14 +45,20 @@ nano .env  # 또는 메모장 열기
     - `backend/.venv/bin/pip install -r requirements.txt`
 3.  (최초 1회) DB 마이그레이션
     - `backend/.venv/bin/python manage.py migrate`
-4.  Django 서버 실행 (포트: 5176)
+4.  **환경변수 설정 (.env.local 사용)**
+    - `backend/.env.local` 파일이 자동 생성됨 (OUTBOUND_GOOGLE_SHEET_URL 포함)
+    - 필요시 직접 수정: `nano backend/.env.local`
+5.  Django 서버 실행 (포트: 5176)
     - `backend/.venv/bin/python manage.py runserver 0.0.0.0:5176`
 
 ### 프론트엔드 (React)
 
 1.  `frontend` 디렉토리로 이동.
 2.  (최초 1회) `npm install`
-3.  개발 서버 실행 (포트: 5174)
+3.  **환경변수 설정 (.env.local 사용)**
+    - `frontend/.env.local` 파일이 자동 생성됨 (DJANGO_BASE_URL, SERVER_HOST, PORT 포함)
+    - 필요시 직접 수정: `nano frontend/.env.local`
+4.  개발 서버 실행 (포트: 5174)
     - 로컬에서만 접속(기본값)
       - `npm run dev`
     - 외부 접속 허용(권장: 같은 네트워크/다른 PC/모바일에서 접속)
@@ -65,6 +78,27 @@ nano .env  # 또는 메모장 열기
     - 예: `http://192.168.0.10:5174/sales/outbound`
 3.  방화벽/공유기 설정에서 `5174/tcp` 포트가 외부에서 접근 가능해야 합니다.
     - API는 프론트(5174)가 Django(5176)로 프록시하므로, 보통 외부에서는 `5176`을 직접 열 필요가 없습니다.
+
+### 다른 컴퓨터에서 실행
+
+**폴더별 .env.local 구조 (깃에 포함):**
+```
+.env.local           # AI 토큰 등 (로컬 전용 - 깃 제외)
+backend/.env.local  # 백엔드: Google Sheets URL 등
+frontend/.env.local # 프론트엔드: DJANGO_BASE_URL, PORT 등
+```
+
+**실행 순서:**
+1. `git clone https://github.com/comage9/VF-.git`
+2. `cd "VF 출고 대시보드"`
+3. 백엔드: `cd backend && source .venv/bin/activate && pip install -r requirements.txt`
+4. 백엔드 환경변수 자동 생성됨 (backend/.env.local에 OUTBOUND_GOOGLE_SHEET_URL 포함)
+5. 프론트엔드: `cd frontend && npm install`
+6. 프론트엔드 환경변수 자동 생성됨 (frontend/.env.local에 DJANGO_BASE_URL, SERVER_HOST, PORT 포함)
+7. 백엔드 실행: `cd backend && python manage.py runserver 0.0.0.0:5176`
+8. 프론트엔드 실행: `cd frontend && npm run dev`
+
+**참고:** backend/.env.local, frontend/.env.local은 이미 깃에 포함되어 있으므로 별도 수정 불필요!
 
 ### Node.js 프록시 서버
 
