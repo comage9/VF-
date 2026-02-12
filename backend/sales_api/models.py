@@ -223,6 +223,11 @@ class MasterSpec(models.Model):
     color1 = models.CharField(max_length=255, blank=True, default='')
     color2 = models.CharField(max_length=255, blank=True, default='')
     default_quantity = models.IntegerField(default=0)
+    # FC 카테고리 매핑을 위한 필드
+    sku_id = models.CharField(max_length=100, blank=True, default='', db_index=True)
+    barcode = models.CharField(max_length=100, blank=True, default='', db_index=True)
+    category_lg = models.CharField(max_length=255, blank=True, default='', db_index=True)  # 대분류
+    category_md = models.CharField(max_length=255, blank=True, default='')  # 중분류
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -354,6 +359,7 @@ class FCInboundRecord(models.Model):
     subcategory = models.CharField(max_length=255, blank=True, default='')
     color = models.CharField(max_length=100, blank=True, default='')
     quantity = models.IntegerField(default=0)
+    supply_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0, null=True, blank=True)
     logistics_center = models.CharField(max_length=100, db_index=True, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -367,3 +373,24 @@ class FCInboundRecord(models.Model):
 
     def __str__(self):
         return f"{self.inbound_date} - {self.product_name} ({self.logistics_center})"
+
+
+class FCInboundFileUpload(models.Model):
+    """FC 입고 엑셀 파일 업로드 이력"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    file_name = models.CharField(max_length=255, db_index=True)
+    file_hash = models.CharField(max_length=64, db_index=True, unique=True)  # SHA-256 hash
+    upload_date = models.DateTimeField(auto_now_add=True, db_index=True)
+    records_processed = models.IntegerField(default=0)
+    records_created = models.IntegerField(default=0)
+    records_skipped = models.IntegerField(default=0)
+    records_duplicate = models.IntegerField(default=0)
+    status = models.CharField(max_length=20, default='completed')  # completed, failed, partial
+    error_message = models.TextField(blank=True, default='')
+
+    class Meta:
+        db_table = 'fc_inbound_file_uploads'
+        ordering = ['-upload_date']
+
+    def __str__(self):
+        return f"{self.file_name} ({self.upload_date.strftime('%Y-%m-%d %H:%M')}) - {self.records_created} created"

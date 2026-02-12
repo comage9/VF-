@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider, useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { DollarSign, Package, AlertTriangle, TrendingUp, AlertCircle } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
 import LatestDataIndicator from './latest-data-indicator';
 import EditableStockSettings from './editable-stock-settings';
 import ThreeMonthAnalysis from './three-month-analysis';
@@ -361,16 +363,28 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
   }, [inventoryItemsForInventoryTab, locationConflictBarcodeSet, locationConflictOnly]);
 
   const statusSummary = React.useMemo(() => {
-    const summary = { critical: 0, low: 0, normal: 0, high: 0 };
+    const summary = { critical: 0, low: 0, normal: 0, high: 0, totalValue: 0, totalItems: 0 };
     inventoryItemsForInventoryTabDisplayed.forEach((item: any) => {
       const key = item?.stockStatus;
       if (key === 'critical') summary.critical += 1;
       else if (key === 'low') summary.low += 1;
       else if (key === 'high') summary.high += 1;
       else summary.normal += 1;
+      // Calculate total inventory value
+      const stockValue = Number(item?.stockValue || 0);
+      const stockQty = Number(item?.stockQuantity || 0);
+      summary.totalValue += stockValue * stockQty;
+      summary.totalItems += 1;
     });
     return summary;
   }, [inventoryItemsForInventoryTabDisplayed]);
+
+  // Format currency for KPI cards
+  const formatCurrency = (value: number) => {
+    if (value >= 100000000) return `${(value / 100000000).toFixed(1)}억`;
+    if (value >= 10000) return `${(value / 10000).toFixed(0)}만`;
+    return value.toLocaleString('ko-KR');
+  };
 
   const toggleStockStatusFilter = (status: string) => {
     setStockStatusFilter((prev) => (prev === status ? null : status));
@@ -571,6 +585,81 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
           <div className="p-4">
             {activeTab === 'inventory' && (
               <div className="space-y-4">
+                {/* KPI Overview - Z-Layout 기반 */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {/* 1순위: 총 재고금액 - 가장 강조 */}
+                  <Card
+                    className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200 cursor-pointer hover:shadow-lg transition-shadow"
+                    onClick={() => setStockStatusFilter(null)}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-medium text-blue-700 uppercase">총 재고금액</p>
+                          <h3 className="text-xl font-bold text-blue-900">{formatCurrency(statusSummary.totalValue)}</h3>
+                          <p className="text-xs text-blue-700 mt-1">현재 재고 기준</p>
+                        </div>
+                        <DollarSign className="w-8 h-8 text-blue-600 bg-white rounded-full p-1.5" />
+                      </div>
+                      <p className="text-xs text-blue-600 mt-2">클릭시 전체 품목 표시</p>
+                    </CardContent>
+                  </Card>
+
+                  {/* 2순위: 위험 품목 수 - 강조 */}
+                  <Card
+                    className="bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-200 cursor-pointer hover:shadow-lg transition-shadow"
+                    onClick={() => setStockStatusFilter('critical')}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-medium text-red-700 uppercase">위험 품목</p>
+                          <h3 className="text-xl font-bold text-red-900">{statusSummary.critical}</h3>
+                          <p className="text-xs text-red-700 mt-1">즉시 보충 필요</p>
+                        </div>
+                        <AlertCircle className="w-8 h-8 text-red-600 bg-white rounded-full p-1.5" />
+                      </div>
+                      <p className="text-xs text-red-600 mt-2">클릭시 위험 품목만 표시</p>
+                    </CardContent>
+                  </Card>
+
+                  {/* 3순위: 총 품목 수 */}
+                  <Card
+                    className="bg-gray-50 border border-gray-200 cursor-pointer hover:shadow-lg transition-shadow"
+                    onClick={() => setStockStatusFilter(null)}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-medium text-gray-600 uppercase">총 품목 수</p>
+                          <h3 className="text-xl font-bold text-gray-900">{statusSummary.totalItems}</h3>
+                          <p className="text-xs text-gray-500 mt-1">전체 관리 품목</p>
+                        </div>
+                        <Package className="w-8 h-8 text-gray-500 bg-white rounded-full p-1.5" />
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">클릭시 전체 품목 표시</p>
+                    </CardContent>
+                  </Card>
+
+                  {/* 4순위: 부족 품목 수 */}
+                  <Card
+                    className="bg-gray-50 border border-gray-200 cursor-pointer hover:shadow-lg transition-shadow"
+                    onClick={() => setStockStatusFilter('low')}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-medium text-gray-600 uppercase">부족 품목</p>
+                          <h3 className="text-xl font-bold text-gray-900">{statusSummary.low}</h3>
+                          <p className="text-xs text-gray-500 mt-1">발주 요청 필요</p>
+                        </div>
+                        <AlertTriangle className="w-8 h-8 text-amber-500 bg-white rounded-full p-1.5" />
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">클릭시 부족 품목만 표시</p>
+                    </CardContent>
+                  </Card>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                     <h3 className="text-lg font-semibold text-blue-900 mb-4">📤 재고 데이터 업로드</h3>
@@ -673,47 +762,50 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                  <div
-                    className={`bg-white border rounded-lg p-4 cursor-pointer hover:bg-gray-50 ${stockStatusFilter === 'critical' ? 'border-red-400 ring-2 ring-red-100' : 'border-gray-200'}`}
-                    onClick={() => toggleStockStatusFilter('critical')}
-                  >
-                    <div className="text-sm text-gray-600">위험</div>
-                    <div className="text-2xl font-bold text-red-600">{statusSummary.critical}</div>
-                  </div>
-                  <div
-                    className={`bg-white border rounded-lg p-4 cursor-pointer hover:bg-gray-50 ${stockStatusFilter === 'low' ? 'border-yellow-400 ring-2 ring-yellow-100' : 'border-gray-200'}`}
-                    onClick={() => toggleStockStatusFilter('low')}
-                  >
-                    <div className="text-sm text-gray-600">부족(발주요청)</div>
-                    <div className="text-2xl font-bold text-yellow-600">{statusSummary.low}</div>
-                  </div>
-                  <div
-                    className={`bg-white border rounded-lg p-4 cursor-pointer hover:bg-gray-50 ${stockStatusFilter === 'normal' ? 'border-green-400 ring-2 ring-green-100' : 'border-gray-200'}`}
-                    onClick={() => toggleStockStatusFilter('normal')}
-                  >
-                    <div className="text-sm text-gray-600">안전</div>
-                    <div className="text-2xl font-bold text-green-600">{statusSummary.normal}</div>
-                  </div>
-                  <div
-                    className={`bg-white border rounded-lg p-4 cursor-pointer hover:bg-gray-50 ${stockStatusFilter === 'high' ? 'border-blue-400 ring-2 ring-blue-100' : 'border-gray-200'}`}
-                    onClick={() => toggleStockStatusFilter('high')}
-                  >
-                    <div className="text-sm text-gray-600">과잉</div>
-                    <div className="text-2xl font-bold text-blue-600">{statusSummary.high}</div>
-                  </div>
-
-                  {hasLocationConflicts ? (
-                    <div
-                      className={`bg-white border rounded-lg p-4 cursor-pointer hover:bg-gray-50 ${locationConflictOnly ? 'border-purple-400 ring-2 ring-purple-100' : 'border-purple-200'}`}
+                {/* 상태 필터 바 - 간소화된 버전 */}
+                <div className="flex flex-wrap gap-2 items-center">
+                  <span className="text-sm text-gray-600">필터:</span>
+                  {stockStatusFilter ? (
+                    <button
+                      onClick={() => setStockStatusFilter(null)}
+                      className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm rounded-md hover:bg-gray-200"
+                    >
+                      전체
+                    </button>
+                  ) : (
+                    <span className="px-3 py-1.5 bg-blue-100 text-blue-700 text-sm rounded-md font-medium">전체</span>
+                  )}
+                  {[
+                    { key: 'critical', label: '위험', count: statusSummary.critical, color: 'red' },
+                    { key: 'low', label: '부족', count: statusSummary.low, color: 'yellow' },
+                    { key: 'normal', label: '안전', count: statusSummary.normal, color: 'green' },
+                    { key: 'high', label: '과잉', count: statusSummary.high, color: 'blue' },
+                  ].map((filter) => (
+                    <button
+                      key={filter.key}
+                      onClick={() => toggleStockStatusFilter(filter.key)}
+                      className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                        stockStatusFilter === filter.key
+                          ? `bg-${filter.color}-100 text-${filter.color}-700 font-medium border-2 border-${filter.color}-300`
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {filter.label} ({filter.count})
+                    </button>
+                  ))}
+                  {hasLocationConflicts && (
+                    <button
                       onClick={() => setLocationConflictOnly((prev) => !prev)}
+                      className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                        locationConflictOnly
+                          ? 'bg-purple-100 text-purple-700 font-medium border-2 border-purple-300'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
                       title="클릭하면 로케이션이 2개 이상인 바코드만 테이블에 표시합니다."
                     >
-                      <div className="text-sm text-gray-600">로케이션 불일치</div>
-                      <div className="text-2xl font-bold text-purple-700">{locationConflictBarcodeSet.size}</div>
-                      <div className="text-xs text-gray-500 mt-1">바코드별 로케이션 2개 이상</div>
-                    </div>
-                  ) : null}
+                      로케이션 불일치 ({locationConflictBarcodeSet.size})
+                    </button>
+                  )}
                 </div>
 
                 {/* 업로드 이력 패널 */}

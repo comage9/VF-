@@ -1,38 +1,91 @@
 import { useEffect, useRef, useState } from "react";
+import { Truck, History, TrendingUp, Clock, DollarSign, Package } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 
 const NUMBER_FORMATTER = new Intl.NumberFormat("ko-KR");
 const FALLBACK_PORTS = [5174, 5173, 5176, 5177, 5178, 5179, 5180];
 
-function StatCard({
-  title,
-  icon,
-  valueId,
-  defaultValue,
-  subtitleId,
-  defaultSubtitle,
-}: {
+interface StatCardProps {
   title: string;
-  icon: string;
+  icon: React.ComponentType<{ className?: string }>;
   valueId: string;
   defaultValue: string;
   subtitleId: string;
   defaultSubtitle: string;
-}) {
+  priority?: 'high' | 'medium' | 'low';
+  colorTheme?: 'blue' | 'emerald' | 'gray' | 'amber' | 'red';
+}
+
+function StatCard({
+  title,
+  icon: Icon,
+  valueId,
+  defaultValue,
+  subtitleId,
+  defaultSubtitle,
+  priority = 'low',
+  colorTheme
+}: StatCardProps) {
+  // Determine theme based on priority if not explicitly set
+  const theme = colorTheme || (priority === 'high' ? 'blue' : 'gray');
+
+  const colorStyles = {
+    blue: {
+      card: 'bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200',
+      title: 'text-blue-700',
+      value: 'text-blue-900',
+      subtitle: 'text-blue-700',
+      icon: 'text-blue-600 bg-white'
+    },
+    emerald: {
+      card: 'bg-gradient-to-br from-emerald-50 to-emerald-100 border-2 border-emerald-200',
+      title: 'text-emerald-700',
+      value: 'text-emerald-900',
+      subtitle: 'text-emerald-700',
+      icon: 'text-emerald-600 bg-white'
+    },
+    gray: {
+      card: 'bg-gray-50 border border-gray-200',
+      title: 'text-gray-600',
+      value: 'text-gray-900',
+      subtitle: 'text-gray-500',
+      icon: 'text-gray-500 bg-white'
+    },
+    amber: {
+      card: 'bg-gradient-to-br from-amber-50 to-amber-100 border-2 border-amber-200',
+      title: 'text-amber-700',
+      value: 'text-amber-900',
+      subtitle: 'text-amber-700',
+      icon: 'text-amber-600 bg-white'
+    },
+    red: {
+      card: 'bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-200',
+      title: 'text-red-700',
+      value: 'text-red-900',
+      subtitle: 'text-red-700',
+      icon: 'text-red-600 bg-white'
+    }
+  };
+
+  const styles = colorStyles[theme];
+
   return (
-    <div className="bg-card border border-border rounded-lg p-2 shadow-sm flex items-start">
-      <div className="flex-1">
-        <p className="text-xs text-muted-foreground mb-0.5">{title}</p>
-        <p className="text-lg font-semibold text-foreground leading-tight" id={valueId}>
-          {defaultValue}
-        </p>
-        <p className="text-[11px] text-muted-foreground mt-1" id={subtitleId}>
-          {defaultSubtitle}
-        </p>
-      </div>
-      <div className="ml-2 text-primary/80">
-        <i className={`fas ${icon} text-lg`} aria-hidden />
-      </div>
-    </div>
+    <Card className={styles.card}>
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className={`text-xs font-medium uppercase ${styles.title}`}>{title}</p>
+            <h3 className={`text-xl font-bold ${styles.value}`} id={valueId}>
+              {defaultValue}
+            </h3>
+            <p className={`text-xs mt-1 ${styles.subtitle}`} id={subtitleId}>
+              {defaultSubtitle}
+            </p>
+          </div>
+          <Icon className={`w-8 h-8 ${styles.icon} rounded-full p-1.5`} />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -401,6 +454,15 @@ function DeliveryOverview() {
         }
 
         const apiBase = await resolveApiBase();
+        // 테스트 데이터 설정
+        if (typeof window !== 'undefined') {
+          window.testDeliveryData = [
+            {date: "2025-02-07", dayOfWeek: "금", total: 145, hour_00: 0, hour_01: 0, hour_02: 0, hour_03: 0, hour_04: 0, hour_05: 0, hour_06: 2, hour_07: 5, hour_08: 12, hour_09: 18, hour_10: 15, hour_11: 14, hour_12: 16, hour_13: 13, hour_14: 11, hour_15: 9, hour_16: 8, hour_17: 7, hour_18: 6, hour_19: 5, hour_20: 4, hour_21: 3, hour_22: 2, hour_23: 1},
+            {date: "2025-02-06", dayOfWeek: "목", total: 132, hour_00: 0, hour_01: 0, hour_02: 0, hour_03: 0, hour_04: 0, hour_05: 0, hour_06: 1, hour_07: 4, hour_08: 10, hour_09: 16, hour_10: 14, hour_11: 13, hour_12: 15, hour_13: 12, hour_14: 10, hour_15: 8, hour_16: 7, hour_17: 6, hour_18: 5, hour_19: 4, hour_20: 3, hour_21: 2, hour_22: 1, hour_23: 0}
+          ];
+          console.log("테스트 데이터 설정 완료");
+        }
+
         if (!mounted) return;
 
         const dashboard = new DashboardClass(null, "hourly-chart", {
@@ -593,38 +655,45 @@ function DeliveryOverview() {
           </div>
 
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            {/* KPI Overview - Z-Layout 기반 (2x2 그리드) */}
+            <div className="grid grid-cols-2 gap-3">
               <StatCard
                 title="오늘 누적 출고"
-                icon="fa-truck-loading"
+                icon={Truck}
                 valueId="today-total"
                 defaultValue={NUMBER_FORMATTER.format(0)}
                 subtitleId="today-desc"
                 defaultSubtitle="현재까지"
-              />
-              <StatCard
-                title="어제 최종 출고"
-                icon="fa-history"
-                valueId="yesterday-last"
-                defaultValue={NUMBER_FORMATTER.format(0)}
-                subtitleId="yesterday-desc"
-                defaultSubtitle="최종 기록"
+                priority="high"
+                colorTheme="blue"
               />
               <StatCard
                 title="오늘 예상 출고"
-                icon="fa-chart-line"
+                icon={TrendingUp}
                 valueId="max-hourly"
                 defaultValue={NUMBER_FORMATTER.format(0)}
                 subtitleId="max-hourly-desc"
                 defaultSubtitle="23시 예상값"
+                priority="high"
+                colorTheme="emerald"
+              />
+              <StatCard
+                title="어제 최종 출고"
+                icon={History}
+                valueId="yesterday-last"
+                defaultValue={NUMBER_FORMATTER.format(0)}
+                subtitleId="yesterday-desc"
+                defaultSubtitle="최종 기록"
+                priority="medium"
               />
               <StatCard
                 title="평균 시간당 출고"
-                icon="fa-stopwatch"
+                icon={Clock}
                 valueId="avg-hourly"
                 defaultValue={NUMBER_FORMATTER.format(0)}
                 subtitleId="avg-hourly-desc"
                 defaultSubtitle="이전 3일 평균"
+                priority="medium"
               />
             </div>
 

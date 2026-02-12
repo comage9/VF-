@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { FileText, Plus, Trash2, Upload, Loader2, Edit, Play, CheckCircle, Clock, RotateCcw } from "lucide-react";
+import { FileText, Plus, Trash2, Upload, Loader2, Edit, Play, CheckCircle, Clock, RotateCcw, Package, TrendingUp, BarChart3 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -1120,30 +1120,61 @@ export default function ProductionPlan() {
         </div>
       </div>
 
-      {/* 요약 카드 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4 flex flex-col items-center justify-center text-center">
-            <p className="text-xs text-muted-foreground mb-1">총 레코드</p>
-            <p className="text-2xl font-bold">{NUMBER_FORMATTER.format(summary.totalRecords)}</p>
+      {/* KPI Overview - Z-Layout 기반 (2x2 그리드) */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* 1순위: 총 수량 - 가장 강조 */}
+        <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-blue-700 uppercase">총 수량</p>
+                <h3 className="text-xl font-bold text-blue-900">{NUMBER_FORMATTER.format(summary.totalQuantity)}</h3>
+                <p className="text-xs text-blue-700 mt-1">전체 생산 수량</p>
+              </div>
+              <Package className="w-8 h-8 text-blue-600 bg-white rounded-full p-1.5" />
+            </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4 flex flex-col items-center justify-center text-center">
-            <p className="text-xs text-muted-foreground mb-1">총 수량</p>
-            <p className="text-2xl font-bold">{NUMBER_FORMATTER.format(summary.totalQuantity)}</p>
+
+        {/* 2순위: 총 단위수량 - 강조 */}
+        <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100 border-2 border-emerald-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-emerald-700 uppercase">총 단위수량</p>
+                <h3 className="text-xl font-bold text-emerald-900">{NUMBER_FORMATTER.format(summary.totalUnitQuantity)}</h3>
+                <p className="text-xs text-emerald-700 mt-1">누적 단위 생산</p>
+              </div>
+              <BarChart3 className="w-8 h-8 text-emerald-600 bg-white rounded-full p-1.5" />
+            </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4 flex flex-col items-center justify-center text-center">
-            <p className="text-xs text-muted-foreground mb-1">총 단위수량</p>
-            <p className="text-2xl font-bold">{NUMBER_FORMATTER.format(summary.totalUnitQuantity)}</p>
+
+        {/* 3순위: 총 레코드 */}
+        <Card className="bg-gray-50 border border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-gray-600 uppercase">총 레코드</p>
+                <h3 className="text-xl font-bold text-gray-900">{NUMBER_FORMATTER.format(summary.totalRecords)}</h3>
+                <p className="text-xs text-gray-500 mt-1">생산 계획 수</p>
+              </div>
+              <FileText className="w-8 h-8 text-gray-500 bg-white rounded-full p-1.5" />
+            </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4 flex flex-col items-center justify-center text-center">
-            <p className="text-xs text-muted-foreground mb-1">총계</p>
-            <p className="text-2xl font-bold">{NUMBER_FORMATTER.format(summary.totalOutput)}</p>
+
+        {/* 4순위: 총계 */}
+        <Card className="bg-gray-50 border border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-gray-600 uppercase">총 생산량</p>
+                <h3 className="text-xl font-bold text-gray-900">{NUMBER_FORMATTER.format(summary.totalOutput)}</h3>
+                <p className="text-xs text-gray-500 mt-1">전체 생산 완료</p>
+              </div>
+              <TrendingUp className="w-8 h-8 text-amber-500 bg-white rounded-full p-1.5" />
+            </div>
           </CardContent>
         </Card>
       </div>

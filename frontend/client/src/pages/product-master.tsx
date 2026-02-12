@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { Plus, Trash2, Loader2, Edit, Wand2 } from "lucide-react";
+import { Plus, Trash2, Loader2, Edit, Wand2, Package, CheckCircle, PauseCircle, XCircle } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -133,6 +133,67 @@ export default function ProductMasterPage() {
 
   return (
     <div className="space-y-6">
+      {/* KPI Overview - Z-Layout 기반 (2x2 그리드) */}
+      {!isLoading && specs.length > 0 && (
+        <div className="grid grid-cols-2 gap-3">
+          {/* 1순위: 총 제품 수 - 강조 */}
+          <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-blue-700 uppercase">총 제품 수</p>
+                  <h3 className="text-xl font-bold text-blue-900">{specs.length}</h3>
+                  <p className="text-xs text-blue-700 mt-1">등록된 스펙</p>
+                </div>
+                <Package className="w-8 h-8 text-blue-600 bg-white rounded-full p-1.5" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 2순위: 활성 상태 - 강조 */}
+          <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100 border-2 border-emerald-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-emerald-700 uppercase">활성 상태</p>
+                  <h3 className="text-xl font-bold text-emerald-900">{specs.length}</h3>
+                  <p className="text-xs text-emerald-700 mt-1">사용 가능 스펙</p>
+                </div>
+                <CheckCircle className="w-8 h-8 text-emerald-600 bg-white rounded-full p-1.5" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 3순위: 최근 추출 건 */}
+          <Card className="bg-gray-50 border border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-gray-600 uppercase">자동 추출</p>
+                  <h3 className="text-xl font-bold text-gray-900">사용 가능</h3>
+                  <p className="text-xs text-gray-500 mt-1">생산 로그 기반</p>
+                </div>
+                <Wand2 className="w-8 h-8 text-purple-500 bg-white rounded-full p-1.5" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 4순위: 관리 기능 */}
+          <Card className="bg-gray-50 border border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-gray-600 uppercase">데이터 관리</p>
+                  <h3 className="text-xl font-bold text-gray-900">CRUD</h3>
+                  <p className="text-xs text-gray-500 mt-1">추가/수정/삭제</p>
+                </div>
+                <Edit className="w-8 h-8 text-gray-500 bg-white rounded-full p-1.5" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>제품 마스터 관리</CardTitle>

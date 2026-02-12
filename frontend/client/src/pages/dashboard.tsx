@@ -8,6 +8,7 @@ import DeliveryOverview from "@/pages/delivery-overview";
 import ProductionPlan from "@/pages/production-plan";
 import ProductMaster from "@/pages/product-master";
 import NotFound from "@/pages/not-found";
+import { AIChatWidget } from "@/components/ai-chatbot";
 
 interface PageMeta {
   key: string;
@@ -30,13 +31,6 @@ const NAV_ITEMS: SidebarItem[] = [
     label: "출고 수량",
     icon: "fa-truck",
     description: "시간대별 출고 실적, 카테고리 필터, CSV/Google Sheets 연동 기능을 제공합니다.",
-  },
-  {
-    key: "fc-inbound",
-    path: "/fc-inbound",
-    label: "FC 입고",
-    icon: "fa-warehouse",
-    description: "FC 물류센터별 입고 데이터 분석 및 품목별 현황을 모니터링합니다.",
   },
   {
     key: "inventory",
@@ -72,12 +66,6 @@ const PAGE_META: Record<string, PageMeta> = {
     title: "출고 수량 분석",
     description: "실시간 출고 데이터와 품목별 현황을 모니터링합니다.",
     ctaLabel: "데이터 내보내기",
-  },
-  fc_inbound: {
-    key: "fc-inbound",
-    title: "FC 입고 분석",
-    description: "FC 물류센터별 입고 데이터와 품목별 현황을 모니터링합니다.",
-    ctaLabel: "CSV 다운로드",
   },
   inventory: {
     key: "inventory",
@@ -118,10 +106,6 @@ function resolveActiveKey(pathname: string): string {
     case "/outbound/records":
     case "/outbound/analysis":
       return "outbound";
-    case "/fc-inbound":
-    case "/fc-inbound/records":
-    case "/fc-inbound/analysis":
-      return "fc-inbound";
     case "/inventory":
     case "/inventory/enhanced":
       return "inventory";
@@ -162,19 +146,16 @@ export default function Dashboard() {
   }, [activeKey, normalizedPath]);
 
   const renderContent = () => {
+    console.log('🎯🎯🎯 DASHBOARD renderContent called with:', normalizedPath);
     switch (normalizedPath) {
       case "/":
       case "/delivery":
+        console.log('📦 Rendering DeliveryOverview');
         return <DeliveryOverview />;
       case "/outbound":
       case "/outbound/records":
       case "/outbound/analysis":
-        return (
-          <OutboundTabs />
-        );
-      case "/fc-inbound":
-      case "/fc-inbound/records":
-      case "/fc-inbound/analysis":
+        console.log('🚚🚚🚚 Rendering OutboundTabs for /outbound');
         return (
           <OutboundTabs />
         );
@@ -225,6 +206,18 @@ export default function Dashboard() {
         <div className="flex-1 overflow-auto p-6">
           {renderContent()}
         </div>
+
+        {/* Global AI Chatbot Widget */}
+        <AIChatWidget
+          pageContext={{
+            name: activeKey === "outbound" ? "VF 출고 대시보드" :
+                   activeKey === "delivery" ? "배송 현황" :
+                   activeKey === "production" ? "생산 계획" :
+                   activeKey === "master" ? "제품 마스터" : "대시보드",
+            type: activeKey === "outbound" ? "vf-outbound" :
+                   activeKey === "inventory" ? "inventory" : "dashboard"
+          }}
+        />
       </div>
     </div>
   );

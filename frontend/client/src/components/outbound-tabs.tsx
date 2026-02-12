@@ -16,17 +16,8 @@ interface OutboundTabsProps {
 }
 
 export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, initialDataSource = 'vf' }: OutboundTabsProps = {}) {
+  console.log('🔥🔥🔥 OutboundTabs RENDERING!!!', { initialTab, initialDataSource });
   const [location] = useLocation();
-
-  const [dataSource, setDataSource] = useState<DataSource>(initialDataSource);
-
-  const updateDataSourceBasedOnTab = (tab: OutboundTabKey) => {
-    if (tab === 'vf-outbound') {
-      setDataSource('vf');
-    } else if (tab === 'fc-inbound') {
-      setDataSource('fc');
-    }
-  };
 
   // URL 파라미터에서 초기 탭 상태 읽기
   const getInitialTabFromUrl = (): OutboundTabKey => {
@@ -42,6 +33,22 @@ export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, 
     return initialTab;
   };
 
+  // URL 파라미터에서 초기 dataSource 읽기
+  const getInitialDataSourceFromUrl = (): DataSource => {
+    const tabParam = getInitialTabFromUrl();
+    return tabParam === 'fc-inbound' ? 'fc' : 'vf';
+  };
+
+  const [dataSource, setDataSource] = useState<DataSource>(getInitialDataSourceFromUrl());
+
+  const updateDataSourceBasedOnTab = (tab: OutboundTabKey) => {
+    if (tab === 'vf-outbound') {
+      setDataSource('vf');
+    } else if (tab === 'fc-inbound') {
+      setDataSource('fc');
+    }
+  };
+
   const [activeTab, setActiveTab] = useState<OutboundTabKey>(getInitialTabFromUrl());
   const [isSyncing, setIsSyncing] = useState(false);
   const queryClient = useQueryClient();
@@ -49,7 +56,9 @@ export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, 
 
   const outboundQueryPredicate = (query: any) => {
     const key = query?.queryKey;
-    return Array.isArray(key) && typeof key[0] === 'string' && key[0].startsWith('/api/outbound');
+    return Array.isArray(key) && typeof key[0] === 'string' && (
+      key[0].startsWith('/api/outbound') || key[0].startsWith('/api/fc-inbound')
+    );
   };
 
   const normalizeGoogleSheetUrlToCsv = (input: string) => {
@@ -86,10 +95,58 @@ export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, 
     setIsSyncing(true);
     try {
       let result: any = null;
-
       let refreshWarning: string | null = null;
       let dsUrl: string | null = null;
 
+      // FC 입고 탭인 경우: 마스터 데이터 동기화 후 FC 입고 데이터 동기화
+      if (activeTab === 'fc-inbound') {
+        // 1. 마스터 데이터 동기화 (카테고리 정보)
+        try {
+          const masterRes = await fetch('/api/master/sync-from-sheet', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+          });
+          const masterJson = await masterRes.json().catch(() => ({}));
+          if (!masterRes.ok) {
+            refreshWarning = `마스터 데이터 동기화 실패: ${masterJson?.error || masterJson?.message || '알 수 없는 오류'}`;
+          }
+        } catch (e) {
+          refreshWarning = `마스터 데이터 동기화 오류: ${(e as Error)?.message || '알 수 없는 오류'}`;
+        }
+
+        // 2. FC 입고 데이터 동기화
+        const fcRes = await fetch('/api/fc-inbound/sync-from-sheet', {
+          method: 'POST',
+        });
+        const fcJson = await fcRes.json().catch(() => ({}));
+        if (!fcRes.ok) {
+          throw new Error(fcJson?.error || fcJson?.message || 'FC 입고 동기화 실패');
+        }
+        result = fcJson;
+
+        // FC 관련 쿼리 invalidate
+        await queryClient.invalidateQueries({ predicate: (q: any) => {
+          const key = q?.queryKey;
+          return Array.isArray(key) && typeof key[0] === 'string' && key[0].startsWith('/api/fc-inbound');
+        }});
+        await queryClient.refetchQueries({ predicate: (q: any) => {
+          const key = q?.queryKey;
+          return Array.isArray(key) && typeof key[0] === 'string' && key[0].startsWith('/api/fc-inbound');
+        } });
+
+        const created = result?.created ?? 0;
+        const updated = result?.updated ?? 0;
+        toast({
+          title: "FC 입고 데이터 동기화 완료",
+          description: refreshWarning
+            ? `${created}건 생성, ${updated}건 업데이트\n(${refreshWarning})`
+            : `${created}건 생성, ${updated}건 업데이트`,
+        });
+        return;
+      }
+
+      // VF 출고 탭인 경우: 기존 VF 출고 데이터 동기화 로직
       try {
         const dsRes = await fetch('/api/data-sources');
         if (dsRes.ok) {
@@ -189,6 +246,7 @@ export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, 
     const urlTab = getInitialTabFromUrl();
     if (urlTab !== activeTab) {
       setActiveTab(urlTab);
+      setDataSource(urlTab === 'fc-inbound' ? 'fc' : 'vf');
     }
   }, [location, activeTab]);
 
@@ -246,7 +304,7 @@ export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, 
             );
           })}
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <div className="text-sm text-gray-600 hidden md:block">
             {tabs.find(tab => tab.key === activeTab)?.description}
           </div>

@@ -3834,8 +3834,8 @@ class Dashboard {
 
         const currentHour = this.getEffectiveCurrentHour(currentData);
 
-        // 🔮 AI를 위한 통계적 기준값 계산
-        const basePredictions = this.calculateBasePredictionsForAI(currentHour, currentData);
+        // 🔮 백엔드의 개선된 예측 로직을 사용하기 위해 basePredictions를 비활성화
+        const basePredictions = null;
 
         // 🧪 AI 자가 보정을 위한 백테스트 실행 (최근 90일)
         console.log('🧪 [DEBUG] 백테스트 시작 전 - this.data 크기:', this.data?.length);
