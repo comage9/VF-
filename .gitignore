@@ -3,8 +3,8 @@
 .env.local
 .env.*.local
 # 하위 폴더의 .env.local도 제외
-backend/.env.local
-frontend/.env.local
+# backend/.env.local
+# frontend/.env.local
 env
 .git_backup_before_github/
 

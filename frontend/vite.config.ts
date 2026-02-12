@@ -8,9 +8,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export default defineConfig(async () => {
-  // .env.local도 로딩하도록 설정
-  const env = loadEnv("", "frontend");
-
   const plugins = [react(), runtimeErrorOverlay()];
 
   if (process.env.NODE_ENV !== "production" && process.env.REPL_ID !== undefined) {
@@ -21,7 +18,6 @@ export default defineConfig(async () => {
 
   return {
     // base: '/sales/',
-    envDir: "../",  // 프로젝트 루트에서 .env.local 찾도록 설정
     plugins,
     resolve: {
       alias: {

@@ -1,157 +1,172 @@
 # VF Analytics Dashboard - 리뉴얼 버전
 
-이 프로젝트는 VF의 판매 및 재고 데이터를 시각화하고 분석하기 위한 대시보드 애플리케이션의 리뉴얼 버전입니다. 기존 시스템의 성능 문제와 오류를 개선하고, 안정적이며 확장 가능한 구조로 재구축되었습니다.
+이 프로젝트는 VF의 판매 및 재고 데이터를 시각화하고 분석하기 위한 대시보드 애플리케이션입니다. Django 백엔드와 React 프론트엔드로 구성되어 있습니다.
 
 ## 아키텍처
 
-*   **프론트엔드:** React (Vite)
-*   **백엔드:** Django 6.0, Django REST Framework (SQLite)
-*   **서버:** Node.js (정적 파일 서빙 및 Django API 프록시)
+```
+Browser → Node.js (5174) → Django API (5176) → SQLite DB
+         ↳ Static Files    ↳ Data Processing
+```
+
+- **프론트엔드:** React + Vite
+- **백엔드:** Django 6.0 + Django REST Framework
+- **데이터베이스:** SQLite
+- **서버:** Node.js (정적 파일 서빙 및 Django API 프록시)
 
 ## 주요 개선 사항
 
-*   **성능:** 대용량 데이터 처리를 위한 Django 백엔드 도입 및 서버사이드 데이터 집계.
-*   **안정성:** 프론트엔드 `RangeError: Invalid time value` 오류 해결 및 데이터 유효성 검사 강화.
-*   **최적화:** 프론트엔드 차트 렌더링 최적화 (다운샘플링, 불필요한 요소 제거).
+- **성능:** 대용량 데이터 처리를 위한 Django 백엔드 도입
+- **안정성:** 프론트엔드 `RangeError: Invalid time value` 오류 해결
+- **최적화:** 차트 렌더링 최적화 (다운샘플링)
 
-## 실행 방법
+## 다른 컴퓨터에서 실행 방법
 
-### 0. 환경변수 설정 (첫 실행 시 필수)
+### 1. 프로젝트 클론
 
 ```bash
-# 방법 A: 템플릿 복사 (다른 컴퓨터에서 실행할 때 권장)
-cp .env.sample .env
-
-# 방법 B: 폴더별 분리된 .env.local 복사 (로컬 개발 환경)
-# 이미 backend/.env.local, frontend/.env.local이 생성되어 있음
+git clone https://github.com/comage9/VF-.git
+cd "VF 출고 대시보드"
 ```
 
-**폴더별 설정 파일 구조:**
-```
-.env.local           # AI 토큰 등 (로컬 전용 - 깃 제외)
-backend/.env.local  # 백엔드: Google Sheets URL 등
-frontend/.env.local # 프론트엔드: DJANGO_BASE_URL, PORT 등
-```
+### 2. 환경변수 설정 (.env.local 생성)
 
-**필수 환경변수:**
-- `gittoken`: 깃허브 토큰 (푸시용)
-- `OUTBOUND_GOOGLE_SHEET_URL`: VF 출고 Google Sheets URL
+프로젝트는 `.env.example` 파일들을 제공합니다. 이를 복사하여 `.env.local`을 만듭니다.
 
-### 백엔드 (Django)
+```bash
+# 방법 A: .env.example을 복사
+cp backend/.env.example backend/.env.local
+cp frontend/.env.example frontend/.env.local
 
-1.  `backend` 디렉토리에서 가상환경을 준비/사용합니다.
-    - 이미 생성된 가상환경이 있으면 `backend/.venv/bin/python` 을 사용하세요.
-2.  (최초 1회) 의존성 설치
-    - `backend/.venv/bin/pip install -r requirements.txt`
-3.  (최초 1회) DB 마이그레이션
-    - `backend/.venv/bin/python manage.py migrate`
-4.  **환경변수 설정 (.env.local 사용)**
-    - `backend/.env.local` 파일이 자동 생성됨 (OUTBOUND_GOOGLE_SHEET_URL 포함)
-    - 필요시 직접 수정: `nano backend/.env.local`
-5.  Django 서버 실행 (포트: 5176)
-    - `backend/.venv/bin/python manage.py runserver 0.0.0.0:5176`
+# 방법 B: (Linux/Mac) 한 줄로 복사
+cat backend/.env.example > backend/.env.local
+cat frontend/.env.example > frontend/.env.local
 
-### 프론트엔드 (React)
-
-1.  `frontend` 디렉토리로 이동.
-2.  (최초 1회) `npm install`
-3.  **환경변수 설정 (.env.local 사용)**
-    - `frontend/.env.local` 파일이 자동 생성됨 (DJANGO_BASE_URL, SERVER_HOST, PORT 포함)
-    - 필요시 직접 수정: `nano frontend/.env.local`
-4.  개발 서버 실행 (포트: 5174)
-    - 로컬에서만 접속(기본값)
-      - `npm run dev`
-    - 외부 접속 허용(권장: 같은 네트워크/다른 PC/모바일에서 접속)
-      - `SERVER_HOST=0.0.0.0 PORT=5174 npm run dev`
-    - Node(5174)가 프론트 화면을 서빙하고, `/api/*` 요청을 Django(5176)로 프록시합니다.
-    - 기본 프록시 대상은 `DJANGO_BASE_URL` 환경변수(기본값 `http://localhost:5176`)입니다.
-
-### 접속 URL
-
-- `http://localhost:5174/sales/outbound`
-
-#### 외부 접속(다른 PC/모바일)
-
-1.  위 실행 방법대로 백엔드(5176) + 프론트(5174)를 실행합니다.
-2.  외부(같은 네트워크)에서 아래 URL로 접속합니다.
-    - `http://<서버IP>:5174`
-    - 예: `http://192.168.0.10:5174/sales/outbound`
-3.  방화벽/공유기 설정에서 `5174/tcp` 포트가 외부에서 접근 가능해야 합니다.
-    - API는 프론트(5174)가 Django(5176)로 프록시하므로, 보통 외부에서는 `5176`을 직접 열 필요가 없습니다.
-
-### 다른 컴퓨터에서 실행
-
-**폴더별 .env.local 구조 (깃에 포함):**
-```
-.env.local           # AI 토큰 등 (로컬 전용 - 깃 제외)
-backend/.env.local  # 백엔드: Google Sheets URL 등
-frontend/.env.local # 프론트엔드: DJANGO_BASE_URL, PORT 등
+# 방법 C: (Windows) 한 줄로 복사
+copy backend\.env.example + backend\.env.local
+copy frontend\.env.example + frontend\.env.local
 ```
 
-**실행 순서:**
-1. `git clone https://github.com/comage9/VF-.git`
-2. `cd "VF 출고 대시보드"`
-3. 백엔드: `cd backend && source .venv/bin/activate && pip install -r requirements.txt`
-4. 백엔드 환경변수 자동 생성됨 (backend/.env.local에 OUTBOUND_GOOGLE_SHEET_URL 포함)
-5. 프론트엔드: `cd frontend && npm install`
-6. 프론트엔드 환경변수 자동 생성됨 (frontend/.env.local에 DJANGO_BASE_URL, SERVER_HOST, PORT 포함)
-7. 백엔드 실행: `cd backend && python manage.py runserver 0.0.0.0:5176`
-8. 프론트엔드 실행: `cd frontend && npm run dev`
+**중요:** `.env.local` 파일은 수동으로 생성해야 합니다 (자동 생성되지 않음).
 
-**참고:** backend/.env.local, frontend/.env.local은 이미 깃에 포함되어 있으므로 별도 수정 불필요!
+**백엔드/.env.local 내용:**
+- `FC_GOOGLE_SHEET_CSV_URL` - FC 입고 데이터 구글 시트 URL
+- `MASTER_DATA_CSV_URL` - 마스터 데이터(카테고리) 구글 시트 URL
 
-### Node.js 프록시 서버
+**프론트엔드/.env.local 내용:**
+- `DJANGO_BASE_URL` - Django 백엔드 URL (기본값: http://localhost:5176)
+- `SERVER_HOST` - 서버 호스트 (외부 접속: 0.0.0.0, 로컬만: localhost)
+- `PORT` - 서버 포트 (기본값: 5174)
 
-1.  프로젝트 루트 디렉토리로 이동.
-2.  `node server.js` 명령으로 Node.js 서버 실행. (프론트엔드 정적 파일 서빙 및 Django API 프록시 역할)
+**참고:** `.env.local` 파일은 깃에 올라가지 않습니다 (`.gitignore`로 제외). 민감한 토큰 등은 `.env.local`에 직접 입력하세요.
 
-## 환경변수 (선택)
+### 3. 의존성 설치
 
-- `DJANGO_BASE_URL`
-  - 프론트/프록시(5174)가 API를 프록시할 Django 주소
-  - 기본값: `http://localhost:5176`
-- `OUTBOUND_GOOGLE_SHEET_URL`
-  - `/api/outbound/sync` 가 CSV를 읽어 DB에 동기화할 때 사용할 Google Sheets CSV export URL
-  - 설정하지 않으면, UI의 데이터 소스 연결(`/api/google-sheets/connect`)을 통해 연결해야 합니다.
-- `GOOGLE_SHEETS_API_KEY` (또는 `GOOGLE_API_KEY`)
-  - `/api/google-sheets/connect`, `/api/google-sheets/refresh/<id>` 사용 시 필요
+**백엔드:**
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# 또
+.venv\Scripts\activate     # Windows
 
-## GitHub 업로드/수정 반영 방법 (HTTPS 권장)
+pip install -r requirements.txt
+```
 
-이 프로젝트는 GitHub 저장소(`https://github.com/comage9/VF-.git`)에 HTTPS로 업로드합니다.
+**프론트엔드:**
+```bash
+cd frontend
+npm install
+```
 
-### 보안 원칙
+### 4. 데이터베이스 마이그레이션
 
-- `env`, `.env` 등 토큰/키가 들어갈 수 있는 파일은 GitHub에 올리지 않습니다. (`.gitignore`로 제외)
-- 샘플 데이터(`sample/`) 및 레거시 자료(`legacy/`)는 기본 업로드 대상에서 제외합니다.
-  - 필요 시에만 별도 브랜치/별도 저장소로 관리하거나, 민감정보 제거 후 포함을 검토합니다.
+```bash
+cd backend
+source .venv/bin/activate
+python manage.py migrate
+```
 
-### 최초 업로드(초기 1회)
+### 5. 서버 실행
 
-1.  원격 저장소 설정
-    - `git remote add origin https://github.com/comage9/VF-.git`
-2.  커밋 생성
-    - `git add .`
-    - `git commit -m "Initial commit"`
-3.  푸시
-    - `git push -u origin main`
+**백엔드 (포트 5176):**
+```bash
+cd backend
+source .venv/bin/activate
+python manage.py runserver 0.0.0.0:5176
+```
 
-### 이후 코드 수정 후 업로드(반복)
+**프론트엔드 (포트 5174):**
+```bash
+cd frontend
+# 로컬에서만 접속
+npm run dev
 
-1.  변경사항 확인
-    - `git status`
-2.  커밋
-    - `git add .`
-    - `git commit -m "<변경 내용>"`
-3.  푸시
-    - `git push`
+# 외부에서 접속 허용
+SERVER_HOST=0.0.0.0 PORT=5174 npm run dev
+```
 
-### HTTPS 인증(PAT) 권장 설정
+### 6. 접속
 
-- GitHub Personal Access Token(PAT)을 사용합니다.
-- 매번 입력이 번거로우면 credential helper를 설정합니다.
-  - 예: `git config --global credential.helper 'cache --timeout=36000'`
-  - push 시 Username은 GitHub 아이디, Password는 PAT를 입력합니다.
+- **로컬:** http://localhost:5174/sales/outbound
+- **외부:** http://<서버IP>:5174/sales/outbound
+
+## 환경변수 (선택사항)
+
+| 변수 | 설명 | 기본값 |
+|------|------|------|
+| `DJANGO_BASE_URL` | 프론트/프록시가 API를 프록시할 Django 주소 | `http://localhost:5176` |
+| `SERVER_HOST` | 서버 호스트 (외부 접속용) | `0.0.0.0` |
+| `PORT` | 프론트엔드 서버 포트 | `5174` |
+| `OUTBOUND_GOOGLE_SHEET_URL` | VF 출고 데이터 Google Sheets URL | - |
+| `GOOGLE_SHEETS_API_KEY` | Google Sheets API 키 | - |
+
+## 구글 시트 정보
+
+### VF 출고
+- **시트 ID:** 2PACX-1vQwqI0BG-d2aMrql7DK4fQQTjvu57VtToSLAkY_nq92a4Cg5GFVbIn6
+- **데이터 시트(GID):** 1152588885
+- **URL:** https://docs.google.com/spreadsheets/d/e/[시트ID]/pub?gid=1152588885&single=true&output=csv
+
+### FC 입고
+- **시트 ID:** 2PACX-1vQwqI0BG-d2aMrql7DK4fQTjvu57VtToSLAkY_nq92a4Cg5GFVbIn6
+- **데이터 시트(GID):** 810884704
+- **마스터 시트(GID):** 1777152272
+- **URL:** https://docs.google.com/spreadsheets/d/e/[시트ID]/pub?gid=810884704&single=true&output=csv
+
+## 주요 API 엔드포인트
+
+| 엔드포인트 | 설명 |
+|---------|------|
+| `GET /api/outbound` | VF 출고 레코드 |
+| `GET /api/outbound/stats` | VF 출고 통계 |
+| `GET /api/outbound/top-products` | VF 출고 인기 제품 |
+| `GET /api/inventory/unified` | 통합 재고 |
+| `GET /api/production` | 생산 계획 |
+| `GET /api/fc-inbound` | FC 입고 레코드 |
+| `GET /api/fc-inbound/stats` | FC 입고 통계 |
+| `POST /api/fc-inbound/sync-from-sheet` | FC 입고 동기화 |
+
+## GitHub 업로드/수정 반영 방법
+
+이 프로젝트는 GitHub 저장소(`https://github.com/comage9/VF-.git`)에 업로드합니다.
+
+```bash
+# 변경사항 추가
+git add .
+
+# 커밋
+git commit -m "설명"
+
+# 푸시
+git push
+```
+
+## 보안 원칙
+
+- `.env`, `.env.local` 등 토큰/키가 들어간 파일은 GitHub에 올리지 않습니다 (`.gitignore`로 제외)
+- 샘플 데이터(`sample/`) 및 레거시 자료(`legacy/`)는 기본 업로드 대상에서 제외합니다
+
 ---
 
 자세한 내용은 `PROJECT_DESCRIPTION.md` 파일을 참조하십시오.

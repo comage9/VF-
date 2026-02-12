@@ -42,9 +42,12 @@ def _load_project_env(path: Path):
 
 _load_project_env(BASE_DIR.parent / '.env')
 _load_project_env(BASE_DIR / '.env')
-# 폴더별 .env.local 로딩 (backend/.env.local 우선)
-_load_project_env(BASE_DIR / '.env.local')
-_load_project_env(BASE_DIR / 'backend/.env.local')
+# 폴더별 .env.local 로딩 (.env.local이 있으면 우선 적용)
+try:
+    _load_project_env(BASE_DIR / '.env.local')
+    _load_project_env(BASE_DIR / 'backend/.env.local')
+except Exception:
+    pass  # .env.local이 없으면 무시하고 계속 진행
 
 
 # Quick-start development settings - unsuitable for production
