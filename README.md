@@ -16,6 +16,20 @@
 
 ## 실행 방법
 
+### 0. 환경변수 설정 (첫 실행 시 필수)
+
+```bash
+# 1. .env 파일 생성
+cp .env.sample .env
+
+# 2. .env 파일에 실제 값 입력 (편집기 열기)
+nano .env  # 또는 메모장 열기
+```
+
+**필수 환경변수:**
+- `gittoken`: 깃허브 토큰 (푸시용)
+- `OUTBOUND_GOOGLE_SHEET_URL`: VF 출고 Google Sheets URL
+
 ### 백엔드 (Django)
 
 1.  `backend` 디렉토리에서 가상환경을 준비/사용합니다.
