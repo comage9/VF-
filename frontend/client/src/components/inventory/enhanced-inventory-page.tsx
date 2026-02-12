@@ -597,7 +597,8 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                         <div>
                           <p className="text-xs font-medium text-blue-700 uppercase">총 재고금액</p>
                           <h3 className="text-xl font-bold text-blue-900">{formatCurrency(statusSummary.totalValue)}</h3>
-                          <p className="text-xs text-blue-700 mt-1">현재 재고 기준</p>
+                          <p className="text-xs text-blue-700 mt-1">현재 재고 기준(보유 총: {statusSummary.totalItems}개)</p>
+                          <p className="text-xs text-blue-700 mt-1">현재 재고 기준(보유 총: {statusSummary.totalItems}개)</p>
                         </div>
                         <DollarSign className="w-8 h-8 text-blue-600 bg-white rounded-full p-1.5" />
                       </div>
