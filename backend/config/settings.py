@@ -32,7 +32,7 @@ def _load_project_env(path: Path):
 
         k, v = s.split('=', 1)
         key = (k or '').strip()
-        if not (key.startswith('ANTHROPIC_') or key == 'API_TIMEOUT_MS'):
+        if not (key.startswith('ANTHROPIC_') or key.startswith('OLLAMA_') or key in ('AI_BACKEND', 'API_TIMEOUT_MS')):
             continue
 
         value = (v or '').strip().strip('"').strip("'")

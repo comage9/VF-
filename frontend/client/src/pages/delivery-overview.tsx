@@ -457,8 +457,8 @@ function DeliveryOverview() {
         // 테스트 데이터 설정
         if (typeof window !== 'undefined') {
           window.testDeliveryData = [
-            {date: "2025-02-07", dayOfWeek: "금", total: 145, hour_00: 0, hour_01: 0, hour_02: 0, hour_03: 0, hour_04: 0, hour_05: 0, hour_06: 2, hour_07: 5, hour_08: 12, hour_09: 18, hour_10: 15, hour_11: 14, hour_12: 16, hour_13: 13, hour_14: 11, hour_15: 9, hour_16: 8, hour_17: 7, hour_18: 6, hour_19: 5, hour_20: 4, hour_21: 3, hour_22: 2, hour_23: 1},
-            {date: "2025-02-06", dayOfWeek: "목", total: 132, hour_00: 0, hour_01: 0, hour_02: 0, hour_03: 0, hour_04: 0, hour_05: 0, hour_06: 1, hour_07: 4, hour_08: 10, hour_09: 16, hour_10: 14, hour_11: 13, hour_12: 15, hour_13: 12, hour_14: 10, hour_15: 8, hour_16: 7, hour_17: 6, hour_18: 5, hour_19: 4, hour_20: 3, hour_21: 2, hour_22: 1, hour_23: 0}
+            { date: "2025-02-07", dayOfWeek: "금", total: 145, hour_00: 0, hour_01: 0, hour_02: 0, hour_03: 0, hour_04: 0, hour_05: 0, hour_06: 2, hour_07: 5, hour_08: 12, hour_09: 18, hour_10: 15, hour_11: 14, hour_12: 16, hour_13: 13, hour_14: 11, hour_15: 9, hour_16: 8, hour_17: 7, hour_18: 6, hour_19: 5, hour_20: 4, hour_21: 3, hour_22: 2, hour_23: 1 },
+            { date: "2025-02-06", dayOfWeek: "목", total: 132, hour_00: 0, hour_01: 0, hour_02: 0, hour_03: 0, hour_04: 0, hour_05: 0, hour_06: 1, hour_07: 4, hour_08: 10, hour_09: 16, hour_10: 14, hour_11: 13, hour_12: 15, hour_13: 12, hour_14: 10, hour_15: 8, hour_16: 7, hour_17: 6, hour_18: 5, hour_19: 4, hour_20: 3, hour_21: 2, hour_22: 1, hour_23: 0 }
           ];
           console.log("테스트 데이터 설정 완료");
         }
@@ -529,128 +529,128 @@ function DeliveryOverview() {
 
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px] gap-6 items-start">
           <div className="bg-card border border-border rounded-lg p-5 shadow-sm space-y-6">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">
-                시간별 출고 현황 (최근 3일)
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                0시부터 23시까지 누적 출고량, 예측 포함
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">
+                  시간별 출고 현황 (최근 3일)
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  0시부터 23시까지 누적 출고량, 예측 포함
+                </p>
+              </div>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                <div className="flex items-center gap-2">
+                  <input id="start-date" type="date" className="input input-sm input-bordered" />
+                  <span className="text-sm text-muted-foreground">~</span>
+                  <input id="end-date" type="date" className="input input-sm input-bordered" />
+                  <button id="range-search-btn" className="btn btn-sm">
+                    기간 조회
+                  </button>
+                  <button id="range-clear-btn" className="btn btn-sm btn-ghost">
+                    해제
+                  </button>
+                  <span id="range-result" className="text-xs text-muted-foreground"></span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button id="export-excel-btn" className="btn btn-sm">
+                    엑셀 내보내기
+                  </button>
+                  <button
+                    id="upload-btn"
+                    className="btn btn-sm btn-primary"
+                    data-react-upload="1"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const nativeEvent = (e as any)?.nativeEvent;
+                      if (nativeEvent?.stopImmediatePropagation) {
+                        nativeEvent.stopImmediatePropagation();
+                      }
+                      const input = document.getElementById("file-input") as HTMLInputElement | null;
+                      input?.click();
+                    }}
+                  >
+                    데이터 업로드
+                  </button>
+                  <input
+                    id="file-input"
+                    type="file"
+                    accept=".json,.csv,.txt,.xlsx,.xls"
+                    className="hidden"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div className="h-[750px] min-w-0 bg-card border border-border rounded-lg shadow-sm p-4 relative">
+                <canvas id="hourly-chart" className="w-full h-full" />
+              </div>
+              <BarcodeStatsPanel />
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-end">
+                <button id="toggle-aux-stats" className="btn btn-sm">
+                  증감/편차 보기
+                </button>
+              </div>
+              <div id="aux-stats-body" className="hidden space-y-4">
+                <div className="bg-muted/40 border border-border rounded-lg p-4">
+                  <h3 className="text-sm font-semibold text-foreground mb-3">
+                    금일/전일/최근7일 시간별 증감
+                  </h3>
+                  <div id="table-diff-day" className="overflow-x-auto text-sm" />
+                </div>
+                <div className="bg-muted/40 border border-border rounded-lg p-4">
+                  <h3 className="text-sm font-semibold text-foreground mb-3">
+                    최근 7일 시간별 평균 증감
+                  </h3>
+                  <div id="table-weekly-hourly" className="overflow-x-auto text-sm" />
+                </div>
+              </div>
+            </div>
+
+            <div className="text-sm text-muted-foreground space-y-1">
+              <p>• 0시부터 23시까지 시간별 누적 출고량입니다 (23시가 하루 최종값)</p>
+              <p>• 오늘 데이터는 실선, 어제는 점선, 그저께는 긴 점선으로 표시됩니다</p>
+              <p>• 오늘 데이터의 각 포인트에 값 라벨이 표시되며 예측은 * 로 강조됩니다</p>
+              <p>
+                • 마지막 업데이트: <span id="last-update">-</span>
               </p>
             </div>
-            <div className="flex flex-col gap-3 md:flex-row md:items-center">
-              <div className="flex items-center gap-2">
-                <input id="start-date" type="date" className="input input-sm input-bordered" />
-                <span className="text-sm text-muted-foreground">~</span>
-                <input id="end-date" type="date" className="input input-sm input-bordered" />
-                <button id="range-search-btn" className="btn btn-sm">
-                  기간 조회
-                </button>
-                <button id="range-clear-btn" className="btn btn-sm btn-ghost">
-                  해제
-                </button>
-                <span id="range-result" className="text-xs text-muted-foreground"></span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button id="export-excel-btn" className="btn btn-sm">
-                  엑셀 내보내기
-                </button>
-                <button
-                  id="upload-btn"
-                  className="btn btn-sm btn-primary"
-                  data-react-upload="1"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const nativeEvent = (e as any)?.nativeEvent;
-                    if (nativeEvent?.stopImmediatePropagation) {
-                      nativeEvent.stopImmediatePropagation();
-                    }
-                    const input = document.getElementById("file-input") as HTMLInputElement | null;
-                    input?.click();
-                  }}
-                >
-                  데이터 업로드
-                </button>
-                <input
-                  id="file-input"
-                  type="file"
-                  accept=".json,.csv,.txt,.xlsx,.xls"
-                  className="hidden"
-                />
-              </div>
-            </div>
-          </div>
 
-              <div className="space-y-6">
-            <div className="h-[750px] min-w-0 bg-card border border-border rounded-lg shadow-sm p-4 relative">
-              <canvas id="hourly-chart" className="w-full h-full" />
-            </div>
-            <BarcodeStatsPanel />
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex items-center justify-end">
-              <button id="toggle-aux-stats" className="btn btn-sm">
-                증감/편차 보기
-              </button>
-            </div>
-            <div id="aux-stats-body" className="hidden space-y-4">
-              <div className="bg-muted/40 border border-border rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-foreground mb-3">
-                  금일/전일/최근7일 시간별 증감
-                </h3>
-                <div id="table-diff-day" className="overflow-x-auto text-sm" />
+            <details className="bg-muted/30 border border-border rounded-lg p-4">
+              <summary className="cursor-pointer text-sm font-medium text-foreground">
+                예측 모델 정보 보기
+              </summary>
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-muted-foreground">
+                <div>
+                  <h4 className="font-semibold mb-2">적용된 예측 모델</h4>
+                  <ul className="space-y-1">
+                    <li>• 요일별 패턴 분석 (25%)</li>
+                    <li>• 시간대별 성장 패턴 (20%)</li>
+                    <li>• 최근 트렌드 분석 (25%)</li>
+                    <li>• 계절성 패턴 (15%)</li>
+                    <li>• 지수 평활법 (15%)</li>
+                  </ul>
+                </div>
+                <div>
+                  <h4 className="font-semibold mb-2">예측 정확도 개선 요소</h4>
+                  <ul className="space-y-1">
+                    <li>• 같은 요일 과거 데이터 활용</li>
+                    <li>• 시간대별 고유 증가 패턴</li>
+                    <li>• 최근 3시간 트렌드 반영</li>
+                    <li>• 주말/평일 구분 적용</li>
+                    <li>• 다중 모델 가중 평균</li>
+                  </ul>
+                </div>
               </div>
-              <div className="bg-muted/40 border border-border rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-foreground mb-3">
-                  최근 7일 시간별 평균 증감
-                </h3>
-                <div id="table-weekly-hourly" className="overflow-x-auto text-sm" />
+              <div className="mt-3 p-3 bg-info/10 rounded text-xs text-info-content">
+                <strong>참고:</strong> 예측값은 과거 데이터 패턴을 기반으로 계산되며 실제 결과와 차이가 있을 수 있습니다. 더 많은
+                과거 데이터가 축적될수록 예측 정확도가 향상됩니다.
               </div>
-            </div>
-          </div>
-
-          <div className="text-sm text-muted-foreground space-y-1">
-            <p>• 0시부터 23시까지 시간별 누적 출고량입니다 (23시가 하루 최종값)</p>
-            <p>• 오늘 데이터는 실선, 어제는 점선, 그저께는 긴 점선으로 표시됩니다</p>
-            <p>• 오늘 데이터의 각 포인트에 값 라벨이 표시되며 예측은 * 로 강조됩니다</p>
-            <p>
-              • 마지막 업데이트: <span id="last-update">-</span>
-            </p>
-          </div>
-
-          <details className="bg-muted/30 border border-border rounded-lg p-4">
-            <summary className="cursor-pointer text-sm font-medium text-foreground">
-              예측 모델 정보 보기
-            </summary>
-            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-muted-foreground">
-              <div>
-                <h4 className="font-semibold mb-2">적용된 예측 모델</h4>
-                <ul className="space-y-1">
-                  <li>• 요일별 패턴 분석 (25%)</li>
-                  <li>• 시간대별 성장 패턴 (20%)</li>
-                  <li>• 최근 트렌드 분석 (25%)</li>
-                  <li>• 계절성 패턴 (15%)</li>
-                  <li>• 지수 평활법 (15%)</li>
-                </ul>
-              </div>
-              <div>
-                <h4 className="font-semibold mb-2">예측 정확도 개선 요소</h4>
-                <ul className="space-y-1">
-                  <li>• 같은 요일 과거 데이터 활용</li>
-                  <li>• 시간대별 고유 증가 패턴</li>
-                  <li>• 최근 3시간 트렌드 반영</li>
-                  <li>• 주말/평일 구분 적용</li>
-                  <li>• 다중 모델 가중 평균</li>
-                </ul>
-              </div>
-            </div>
-            <div className="mt-3 p-3 bg-info/10 rounded text-xs text-info-content">
-              <strong>참고:</strong> 예측값은 과거 데이터 패턴을 기반으로 계산되며 실제 결과와 차이가 있을 수 있습니다. 더 많은
-              과거 데이터가 축적될수록 예측 정확도가 향상됩니다.
-            </div>
-          </details>
+            </details>
 
           </div>
 
@@ -706,7 +706,7 @@ function DeliveryOverview() {
                 <div className="flex-1">
                   <h3 className="text-sm font-bold text-indigo-900 mb-1 flex items-center gap-2">
                     AI 배송 예측 분석
-                    <span className="text-[10px] px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full">GLM4.7</span>
+                    <span className="text-[10px] px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full">AI (OLLAMA)</span>
                   </h3>
                   <div id="ai-insight-content" className="text-sm text-indigo-800 leading-relaxed whitespace-pre-line">
                     데이터 분석 중...

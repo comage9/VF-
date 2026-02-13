@@ -153,12 +153,19 @@ def _production_model_to_dict(obj: ProductionLog):
 
 
 def _zai_get_config():
-    base_url = (os.getenv('ANTHROPIC_BASE_URL') or '').strip().rstrip('/')
-    api_key = (os.getenv('ANTHROPIC_AUTH_TOKEN') or '').strip()
-    model = (os.getenv('ANTHROPIC_DEFAULT_SONNET_MODEL') or 'glm-4.7').strip()
-    # Backward-compat: transparently move old default/model name forward.
-    if (model or '').strip().lower() == 'glm-4.6':
-        model = 'glm-4.7'
+    backend = (os.getenv('AI_BACKEND') or 'anthropic').strip().lower()
+    
+    if backend == 'ollama':
+        base_url = (os.getenv('OLLAMA_BASE_URL') or 'http://localhost:11434').strip().rstrip('/')
+        model = (os.getenv('OLLAMA_MODEL') or 'lfm2.5-thinking:latest').strip()
+        api_key = 'none' # Ollama doesn't usually require keys locally
+    else:
+        base_url = (os.getenv('ANTHROPIC_BASE_URL') or '').strip().rstrip('/')
+        api_key = (os.getenv('ANTHROPIC_AUTH_TOKEN') or '').strip()
+        model = (os.getenv('ANTHROPIC_DEFAULT_SONNET_MODEL') or 'glm-4.7').strip()
+        # Backward-compat: transparently move old default/model name forward.
+        if (model or '').strip().lower() == 'glm-4.6':
+            model = 'glm-4.7'
 
     timeout_ms_raw = (os.getenv('API_TIMEOUT_MS') or '').strip()
     timeout_s = 60
@@ -168,10 +175,11 @@ def _zai_get_config():
         except Exception:
             timeout_s = 60
 
-    if not base_url or not api_key:
+    if backend == 'anthropic' and (not base_url or not api_key):
         return None
 
     return {
+        'backend': backend,
         'base_url': base_url,
         'api_key': api_key,
         'model': model,
@@ -184,35 +192,62 @@ def _zai_call_messages(*, system: str, user: str, max_tokens: int = 2048, temper
     if not cfg:
         return None
 
-    url = f"{cfg['base_url']}/v1/messages"
-    payload = {
-        'model': cfg['model'],
-        'messages': [{'role': 'user', 'content': user}],
-        'system': system,
-        'max_tokens': max_tokens,
-        'temperature': temperature,
-    }
+    backend = cfg.get('backend', 'anthropic')
 
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode('utf-8'),
-        headers={
+    if backend == 'ollama':
+        url = f"{cfg['base_url']}/api/chat"
+        payload = {
+            'model': cfg['model'],
+            'messages': [
+                {'role': 'system', 'content': system},
+                {'role': 'user', 'content': user}
+            ],
+            'stream': False,
+            'options': {
+                'num_predict': max_tokens,
+                'temperature': temperature,
+            }
+        }
+        headers = {'Content-Type': 'application/json'}
+    else:
+        url = f"{cfg['base_url']}/v1/messages"
+        payload = {
+            'model': cfg['model'],
+            'messages': [{'role': 'user', 'content': user}],
+            'system': system,
+            'max_tokens': max_tokens,
+            'temperature': temperature,
+        }
+        headers = {
             'x-api-key': cfg['api_key'],
             'anthropic-version': '2023-06-01',
             'Content-Type': 'application/json',
-        },
-        method='POST',
-    )
+        }
 
-    with urllib.request.urlopen(req, timeout=cfg['timeout_s']) as resp:
-        raw = resp.read().decode('utf-8')
+    try:
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode('utf-8'),
+            headers=headers,
+            method='POST',
+        )
 
-    data = json.loads(raw) if raw else {}
-    content = data.get('content')
-    if isinstance(content, list):
-        for item in content:
-            if isinstance(item, dict) and item.get('type') == 'text':
-                return (item.get('text') or '').strip()
+        with urllib.request.urlopen(req, timeout=cfg['timeout_s']) as resp:
+            raw = resp.read().decode('utf-8')
+
+        data = json.loads(raw) if raw else {}
+        
+        if backend == 'ollama':
+            return (data.get('message', {}).get('content') or '').strip()
+        else:
+            content = data.get('content')
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict) and item.get('type') == 'text':
+                        return (item.get('text') or '').strip()
+    except Exception as e:
+        logger.error(f"AI call failed ({backend}): {e}")
+        return None
 
     return None
 
@@ -5518,3 +5553,39 @@ def delete_fc_inbound_uploaded_data(request):
         return Response({
             'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+def ai_chat(request):
+    """
+    AI 챗봇 엔드포인트
+    Request Body: { "message": "사용자 메시지", "pageContext": {...}, "filters": {...} }
+    """
+    try:
+        user_message = request.data.get('message', '').strip()
+        if not user_message:
+            return Response({'error': 'Message required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 시스템 프롬프트 구성
+        system_prompt = "You are a helpful AI data assistant for a warehouse management system. Answer in Korean."
+        
+        # 페이지 컨텍스트 활용 (선택사항)
+        page_context = request.data.get('pageContext')
+        if page_context:
+            page_name = page_context.get('name', '')
+            system_prompt += f"\nUser is currently on the '{page_name}' page."
+
+        # AI 호출
+        response_text = _zai_call_messages(
+            system=system_prompt,
+            user=user_message,
+        )
+
+        if response_text:
+            return Response({'answer': response_text, 'success': True})
+        else:
+            return Response({'error': 'Failed to get response from AI'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    except Exception as e:
+        logger.error(f"AI Chat Error: {e}")
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
