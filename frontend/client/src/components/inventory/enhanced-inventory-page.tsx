@@ -362,22 +362,87 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
     return inventoryItemsForInventoryTab.filter((item: any) => locationConflictBarcodeSet.has(String(item?.barcode || '').trim()));
   }, [inventoryItemsForInventoryTab, locationConflictBarcodeSet, locationConflictOnly]);
 
+  // Calculate Unit Price from Outbound Data (Last 90 days)
+  const { data: outboundRecords } = useQuery({
+    queryKey: ['outbound-for-price-calculation'],
+    queryFn: async () => {
+      // Calculate start date (90 days ago)
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(endDate.getDate() - 90);
+
+      const startStr = startDate.toISOString().split('T')[0];
+      const endStr = endDate.toISOString().split('T')[0];
+
+      const res = await fetch(`/api/outbound?startDate=${startStr}&endDate=${endStr}`);
+      if (!res.ok) return [];
+      const json = await res.json();
+      return Array.isArray(json) ? json : [];
+    },
+    staleTime: 300000, // 5 minutes
+  });
+
+  const priceMap = React.useMemo(() => {
+    const map = new Map<string, number>();
+    if (!outboundRecords) return map;
+
+    // Group by product name -> list of unit prices
+    // We'll take the average of the most recent transactions or just the latest one
+    // Here we use a simple approach: map product/barcode to the latest calculated unit price
+
+    // Sort records by date descending
+    const sorted = [...outboundRecords].sort((a: any, b: any) => {
+      const dateA = a.outboundDate || a.outbound_date || a.inboundDate || a.inbound_date || 0;
+      const dateB = b.outboundDate || b.outbound_date || b.inboundDate || b.inbound_date || 0;
+      return new Date(dateB).getTime() - new Date(dateA).getTime();
+    });
+
+    for (const record of sorted) {
+      const name = String(record.productName || record.product_name || '').trim();
+      const barcode = String(record.barcode || '').trim();
+      const sales = Number(record.salesAmount || record.sales_amount || 0);
+      // Use boxQuantity first, then quantity
+      const qty = Number(record.boxQuantity || record.box_quantity || record.quantity || 0);
+
+      if (sales > 0 && qty > 0) {
+        const unitPrice = sales / qty;
+
+        // Priority: Barcode -> Product Name
+        if (barcode && !map.has(barcode)) {
+          map.set(barcode, unitPrice);
+        }
+        if (name && !map.has(name)) {
+          map.set(name, unitPrice);
+        }
+      }
+    }
+    return map;
+  }, [outboundRecords]);
+
   const statusSummary = React.useMemo(() => {
-    const summary = { critical: 0, low: 0, normal: 0, high: 0, totalValue: 0, totalItems: 0 };
+    const summary = { critical: 0, low: 0, normal: 0, high: 0, totalValue: 0, totalItems: 0, totalQuantity: 0 };
     inventoryItemsForInventoryTabDisplayed.forEach((item: any) => {
       const key = item?.stockStatus;
       if (key === 'critical') summary.critical += 1;
       else if (key === 'low') summary.low += 1;
       else if (key === 'high') summary.high += 1;
       else summary.normal += 1;
+
       // Calculate total inventory value
-      const stockValue = Number(item?.stockValue || 0);
-      const stockQty = Number(item?.stockQuantity || 0);
-      summary.totalValue += stockValue * stockQty;
+      // Use currentStock from item
+      const stockQty = Number(item?.currentStock || 0);
+
+      // Attempt to find price
+      const bc = String(item?.barcode || '').trim();
+      const name = String(item?.productName || '').trim();
+      const unitPrice = priceMap.get(bc) || priceMap.get(name) || 0;
+
+      summary.totalValue += unitPrice * stockQty;
       summary.totalItems += 1;
+      summary.totalQuantity += stockQty;
     });
     return summary;
-  }, [inventoryItemsForInventoryTabDisplayed]);
+  }, [inventoryItemsForInventoryTabDisplayed, priceMap]);
 
   // Format currency for KPI cards
   const formatCurrency = (value: number) => {
@@ -566,11 +631,10 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                 <button
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
-                  className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                    activeTab === tab.key
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
+                  className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === tab.key
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
                 >
                   <div className="flex flex-col items-center space-y-1">
                     <span>{tab.label}</span>
@@ -596,9 +660,9 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-xs font-medium text-blue-700 uppercase">총 재고금액</p>
-                          <h3 className="text-xl font-bold text-blue-900"{statusSummary.totalValue.toLocaleString()}</h3>
-                          <p className="text-xs text-blue-700 mt-1">현재 재고 기준(보유 총: {statusSummary.totalItems}개)</p>
-                          <p className="text-xs text-blue-700 mt-1">현재 재고 기준(보유 총: {statusSummary.totalItems}개)</p>
+                          <h3 className="text-xl font-bold text-blue-900">{statusSummary.totalValue.toLocaleString()}원</h3>
+                          <p className="text-xs text-blue-700 mt-1">총 수량: {statusSummary.totalQuantity.toLocaleString()}개</p>
+                          <p className="text-xs text-blue-700 mt-1">등록 품목: {statusSummary.totalItems.toLocaleString()}종</p>
                         </div>
                         <DollarSign className="w-8 h-8 text-blue-600 bg-white rounded-full p-1.5" />
                       </div>
@@ -785,11 +849,10 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                     <button
                       key={filter.key}
                       onClick={() => toggleStockStatusFilter(filter.key)}
-                      className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                        stockStatusFilter === filter.key
-                          ? `bg-${filter.color}-100 text-${filter.color}-700 font-medium border-2 border-${filter.color}-300`
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
+                      className={`px-3 py-1.5 text-sm rounded-md transition-colors ${stockStatusFilter === filter.key
+                        ? `bg-${filter.color}-100 text-${filter.color}-700 font-medium border-2 border-${filter.color}-300`
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
                     >
                       {filter.label} ({filter.count})
                     </button>
@@ -797,11 +860,10 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                   {hasLocationConflicts && (
                     <button
                       onClick={() => setLocationConflictOnly((prev) => !prev)}
-                      className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                        locationConflictOnly
-                          ? 'bg-purple-100 text-purple-700 font-medium border-2 border-purple-300'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
+                      className={`px-3 py-1.5 text-sm rounded-md transition-colors ${locationConflictOnly
+                        ? 'bg-purple-100 text-purple-700 font-medium border-2 border-purple-300'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
                       title="클릭하면 로케이션이 2개 이상인 바코드만 테이블에 표시합니다."
                     >
                       로케이션 불일치 ({locationConflictBarcodeSet.size})
@@ -838,7 +900,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                       </div>
                     </div>
                   </div>
-                  
+
                   {showUploadHistory && (
                     <div className="p-4">
                       {isLoadingUploads ? (
@@ -1029,7 +1091,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                     예외(숨김)로 설정한 품목은 재고 현황 테이블에서 표시되지 않습니다.
                   </div>
                 </div>
-                
+
                 <div className="space-y-4">
                   {isLoadingInventory || isLoadingBarcodeMaster ? (
                     <div className="text-center py-8">

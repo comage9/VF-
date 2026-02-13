@@ -5163,12 +5163,15 @@ def delete_fc_inbound_upload(request, upload_id):
         )
 
 
+
 @api_view(['POST'])
 def sync_master_specs_from_sheet(request):
     """구글 시트에서 마스터 데이터 동기화 (FC 카테고리 매핑)"""
     import requests
 
-    sheet_url = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRPjO9qxLlACh8vfMLlrSoRZlVMtkuuKLxd7HH-XAZFW-f9QGrSsdckK5p_pmHDss4CVgLbZDqQjgFh/pub?gid=1777152272&single=true&output=csv'
+    sheet_url = os.environ.get('MASTER_DATA_CSV_URL')
+    if not sheet_url:
+        return Response({'error': 'MASTER_DATA_CSV_URL 환경변수가 설정되지 않았습니다.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     try:
         # CSV 다운로드
@@ -5261,8 +5264,9 @@ def sync_master_specs_from_sheet(request):
 
 # ==================== FC 입고 구글 시트 연동 ====================
 
-GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQwqI0BG-d2aMrql7DK4fQQTjvu57VtToSLAkY_nq92a4Cg5GFVbIn6_IR7Fq6_O-2TloFSNlXT8ZWC/pub?gid=810884704&single=true&output=csv"
-MASTER_DATA_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRPjO9qxLlACh8vfMLlrSoRZlVMtkuuKLxd7HH-XAZFW-f9QGrSsdckK5p_pmHDss4CVgLbZDqQjgFh/pub?gid=1777152272&single=true&output=csv"
+
+
+
 
 
 def fetch_category_mapping():
@@ -5342,7 +5346,11 @@ def sync_fc_inbound_from_sheet(request):
         category_mapping = fetch_category_mapping()
 
         # 구글 시트 CSV 가져오기
-        response = requests.get(GOOGLE_SHEET_CSV_URL, timeout=30)
+        csv_url = os.environ.get('FC_GOOGLE_SHEET_CSV_URL')
+        if not csv_url:
+             return Response({'error': 'FC_GOOGLE_SHEET_CSV_URL 환경변수가 설정되지 않았습니다.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        response = requests.get(csv_url, timeout=30)
         response.raise_for_status()
 
         csv_text = response.text
