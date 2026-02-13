@@ -93,7 +93,9 @@ cd backend
 
 # 가상환경 생성 (최초 1회)
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate
+97: # Windows (Command Prompt/PowerShell):
+98: # venv\Scripts\activate
 
 # 패키지 설치
 pip install -r requirements.txt
@@ -128,5 +130,9 @@ A:
 2. 로컬에서 Ollama가 실행 중인지 확인하세요 (`ollama serve`).
 3. 백엔드 서버 로그에 에러 메시지가 있는지 확인하세요.
 
-**Q: 포트가 이미 사용 중이에요.**
+**Q: 윈도우에서 CSV 데이터가 보이지 않아요 (인코딩 문제).**
+133: A: 최신 버전(2026-02-13 업데이트)에서 윈도우 엑셀 저장 시 발생하는 BOM(`\ufeff`) 및 인코딩 문제를 수정했습니다.
+134: `git pull origin main`으로 최신 코드를 내려받은 후 서버를 재시작해 보세요.
+135:
+136: **Q: 포트가 이미 사용 중이에요.**
 A: 기존에 실행 중인 노드나 파이썬 프로세스를 종료하거나, `.env` 및 실행 명령어에서 포트 번호를 변경하세요.

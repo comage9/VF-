@@ -1904,7 +1904,23 @@ def outbound_sync(request):
             return None
 
     try:
-        df = pd.read_csv(url, dtype=str).fillna('')
+        # Use simple read first, but for proper BOM handling with URL, might need request
+        if url.startswith('http'):
+            import requests
+            import io
+            r = requests.get(url, timeout=30)
+            r.raise_for_status()
+            # Try utf-8-sig first to remove BOM, fallback to cp949
+            try:
+                decoded = r.content.decode('utf-8-sig')
+            except UnicodeDecodeError:
+                decoded = r.content.decode('cp949')
+            df = pd.read_csv(io.StringIO(decoded), dtype=str).fillna('')
+        else:
+            df = pd.read_csv(url, dtype=str, encoding='utf-8-sig').fillna('')
+            
+        # Normalize headers (strip whitespace and BOM)
+        df.columns = [str(c).strip().lstrip('\ufeff') for c in df.columns]
     except Exception as e:
         return Response({'error': f'Failed to fetch/parse CSV: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -5213,8 +5229,16 @@ def sync_master_specs_from_sheet(request):
         response = requests.get(sheet_url, timeout=30)
         response.raise_for_status()
 
-        # CSV 파싱
-        df = pd.read_csv(io.StringIO(response.content.decode('utf-8')))
+        # CSV 파싱 (BOM 제거를 위해 utf-8-sig 사용)
+        try:
+            decoded_content = response.content.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            decoded_content = response.content.decode('cp949')
+            
+        df = pd.read_csv(io.StringIO(decoded_content), dtype=str)
+        
+        # 헤더 정규화
+        df.columns = [str(c).strip().lstrip('\ufeff') for c in df.columns]
 
         # 필수 컬럼 확인
         required_cols = ['SKU ID', '바코드', '대분류']
@@ -5388,8 +5412,26 @@ def sync_fc_inbound_from_sheet(request):
         response = requests.get(csv_url, timeout=30)
         response.raise_for_status()
 
-        csv_text = response.text
-        csv_reader = csv.DictReader(StringIO(csv_text))
+        # CSV 텍스트 디코딩 (BOM 제거 처리)
+        try:
+            csv_text = response.content.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            # 윈도우 엑셀 저장 CSV일 경우 cp949 시도
+            csv_text = response.content.decode('cp949')
+
+        # DictReader의 fieldnames에 공백/BOM이 들어가는 문제 해결을 위해 iterator 사용
+        # 혹은 첫 줄(헤더)를 미리 정규화
+        f = StringIO(csv_text)
+        reader = csv.reader(f)
+        headers = next(reader, None)
+        
+        if not headers:
+            return Response({'error': 'CSV 파일이 비어있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # 헤더 정규화 (BOM 제거, 공백 제거)
+        normalized_headers = [h.strip().lstrip('\ufeff') for h in headers]
+        
+        csv_reader = csv.DictReader(f, fieldnames=normalized_headers)
 
         # 기존 데이터 전체 조회 (단일 쿼리) - 메모리에 맵핑
         all_existing = list(FCInboundRecord.objects.all().values(
@@ -5555,6 +5597,95 @@ def delete_fc_inbound_uploaded_data(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+def _get_project_context():
+    """
+    프로젝트의 전반적인 데이터 상태를 요약하여 문자열로 반환
+    (출고, 재고, 입고, 생산, 특이사항)
+    """
+    from django.utils import timezone
+    from datetime import timedelta
+    from django.db.models import Sum, Count, Q
+    
+    now = timezone.now()
+    today = now.date()
+    yesterday = today - timedelta(days=1)
+    
+    lines = []
+    lines.append(f"=== System Info ===")
+    lines.append(f"Current Time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # 1. 출고 (Sales/Outbound)
+    sales_today = OutboundRecord.objects.filter(outbound_date=today).aggregate(
+        count=Count('id'), qty=Sum('quantity')
+    )
+    sales_yesterday = OutboundRecord.objects.filter(outbound_date=yesterday).aggregate(
+        count=Count('id'), qty=Sum('quantity')
+    )
+    
+    lines.append(f"\n=== Sales (Outbound) ===")
+    lines.append(f"Today ({today}): {sales_today['qty'] or 0} items ({sales_today['count']} records)")
+    lines.append(f"Yesterday ({yesterday}): {sales_yesterday['qty'] or 0} items ({sales_yesterday['count']} records)")
+    
+    # Top 5 products usually (Recent 3 days)
+    recent_start = today - timedelta(days=3)
+    top_products = list(OutboundRecord.objects.filter(outbound_date__gte=recent_start)
+        .values('product_name')
+        .annotate(total_qty=Sum('quantity'))
+        .order_by('-total_qty')[:5])
+    
+    if top_products:
+        top_str = ", ".join([f"{p['product_name']}({p['total_qty']})" for p in top_products])
+        lines.append(f"Top 5 Products (3 days): {top_str}")
+
+    # 2. 재고 (Inventory)
+    # Low stock items (current < minimum)
+    low_stock_items = InventoryItem.objects.filter(current_stock__lt=models.F('minimum_stock'))
+    low_stock_count = low_stock_items.count()
+    
+    lines.append(f"\n=== Inventory ===")
+    lines.append(f"Total Items: {InventoryItem.objects.count()}")
+    if low_stock_count > 0:
+        lines.append(f"WARNING: {low_stock_count} items are below minimum stock.")
+        # List up to 5 critical items
+        critical_list = [f"{item.name} (Curr:{item.current_stock}/Min:{item.minimum_stock})" for item in low_stock_items[:5]]
+        lines.append(f"Critical Items: {', '.join(critical_list)}")
+    else:
+        lines.append("All items are above minimum stock levels.")
+
+    # 3. 생산 (Production)
+    prod_today = ProductionLog.objects.filter(date=today, status__in=['running', 'completed'])
+    prod_lines = prod_today.values('machine_number', 'product_name', 'total')
+    
+    lines.append(f"\n=== Production (Today) ===")
+    if prod_lines:
+        for p in prod_lines:
+            lines.append(f"Machine {p['machine_number']}: {p['product_name']} ({p['total']} produced)")
+    else:
+        lines.append("No active production logs for today.")
+
+    # 4. 입고 (Inbound - FC)
+    # Recent 3 days
+    inbound_recent = FCInboundRecord.objects.filter(inbound_date__gte=recent_start).aggregate(
+        total_qty=Sum('quantity')
+    )
+    lines.append(f"\n=== Inbound (FC) ===")
+    lines.append(f"Total Inbound (Last 3 days): {inbound_recent['total_qty'] or 0}")
+
+    # 5. 특이사항/이슈 (Issues)
+    # Recent 7 days of DeliverySpecialNote
+    issue_start = today - timedelta(days=7)
+    issues = DeliverySpecialNote.objects.filter(date__gte=issue_start).order_by('-date')[:5]
+    
+    lines.append(f"\n=== Special Notes / Issues (Last 7 days) ===")
+    if issues.exists():
+        for issue in issues:
+            lines.append(f"[{issue.date}] {issue.product_name}: {issue.memo}")
+    else:
+        lines.append("No special notes recorded in the last 7 days.")
+        
+    return "\n".join(lines)
+
+
 @api_view(['POST'])
 def ai_chat(request):
     """
@@ -5567,13 +5698,25 @@ def ai_chat(request):
             return Response({'error': 'Message required'}, status=status.HTTP_400_BAD_REQUEST)
 
         # 시스템 프롬프트 구성
-        system_prompt = "You are a helpful AI data assistant for a warehouse management system. Answer in Korean."
+        system_prompt = (
+            "You are a helpful AI data assistant for a warehouse management system (VF). "
+            "Answer in Korean. Be concise and professional.\n"
+            "Below is the current system status and data context (Sales, Inventory, Production, Issues):\n\n"
+        )
         
+        # 프로젝트 전체 데이터 컨텍스트 주입
+        try:
+            context_data = _get_project_context()
+            system_prompt += context_data
+        except Exception as e:
+            logger.error(f"Failed to get project context: {e}")
+            system_prompt += "(Data context unavailable due to error)\n"
+
         # 페이지 컨텍스트 활용 (선택사항)
         page_context = request.data.get('pageContext')
         if page_context:
             page_name = page_context.get('name', '')
-            system_prompt += f"\nUser is currently on the '{page_name}' page."
+            system_prompt += f"\n[User is currently on page: '{page_name}']"
 
         # AI 호출
         response_text = _zai_call_messages(
