@@ -55,21 +55,57 @@
     .machine-tile.active   { border-color: #86efac; background: #f0fdf4; }
     .machine-tile.inactive { border-color: #fca5a5; background: #fef2f2; }
 
-    .quick-link-row {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 12px; margin-bottom: 24px;
+    /* ── 생산 관리 바로가기 배너 ── */
+    .pms-shortcut-banner {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 60%, #3b82f6 100%);
+      border-radius: var(--radius);
+      padding: 18px 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 16px rgba(37,99,235,.25);
     }
-    .quick-link {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 16px;
-      text-align: center; text-decoration: none; color: var(--text);
-      box-shadow: var(--shadow); transition: all .2s;
-      display: flex; flex-direction: column; align-items: center; gap: 8px;
+    .pms-banner-label {
+      font-size: 12px; font-weight: 700; color: rgba(255,255,255,.7);
+      letter-spacing: 1px; text-transform: uppercase; white-space: nowrap;
+      margin-right: 8px;
     }
-    .quick-link:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
-    .quick-link .ql-icon { font-size: 28px; }
-    .quick-link .ql-name { font-size: 12px; font-weight: 600; }
-    .quick-link .ql-sub  { font-size: 11px; color: var(--text-muted); }
+    .pms-banner-divider {
+      width: 1px; height: 36px; background: rgba(255,255,255,.2); flex-shrink: 0;
+    }
+    .pms-banner-links {
+      display: flex; gap: 10px; flex: 1; flex-wrap: wrap;
+    }
+    .pms-quick-btn {
+      display: flex; align-items: center; gap: 10px;
+      background: rgba(255,255,255,.12);
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 10px; padding: 10px 18px;
+      text-decoration: none; color: #fff;
+      transition: all .2s; flex: 1; min-width: 160px;
+    }
+    .pms-quick-btn:hover {
+      background: rgba(255,255,255,.22);
+      border-color: rgba(255,255,255,.45);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 18px rgba(0,0,0,.18);
+    }
+    .pms-quick-btn .pqb-icon {
+      font-size: 26px; flex-shrink: 0;
+      background: rgba(255,255,255,.18); border-radius: 8px;
+      width: 42px; height: 42px; display: flex; align-items: center; justify-content: center;
+    }
+    .pms-quick-btn .pqb-text { display: flex; flex-direction: column; gap: 2px; }
+    .pms-quick-btn .pqb-name { font-size: 13px; font-weight: 700; }
+    .pms-quick-btn .pqb-sub  { font-size: 11px; color: rgba(255,255,255,.65); }
+
+    @media (max-width: 700px) {
+      .pms-shortcut-banner { flex-direction: column; align-items: flex-start; padding: 14px 16px; }
+      .pms-banner-divider  { display: none; }
+      .pms-banner-links    { width: 100%; }
+      .pms-quick-btn       { min-width: 130px; }
+    }
 
     .rank-item {
       display: flex; align-items: center; gap: 10px;
@@ -134,38 +170,33 @@
 
     <main class="content">
 
-      <!-- 바로가기 -->
-      <div class="quick-link-row">
-        <a href="outbound.html" class="quick-link">
-          <div class="ql-icon">📊</div>
-          <div class="ql-name">출고 분석</div>
-          <div class="ql-sub">판매 통계</div>
-        </a>
-        <a href="delivery.html" class="quick-link">
-          <div class="ql-icon">🚚</div>
-          <div class="ql-name">배송 관리</div>
-          <div class="ql-sub">출고 내역</div>
-        </a>
-        <a href="inventory.html" class="quick-link">
-          <div class="ql-icon">🏪</div>
-          <div class="ql-name">재고 현황</div>
-          <div class="ql-sub">입고 가능 수량</div>
-        </a>
-        <a href="production.html" class="quick-link">
-          <div class="ql-icon">📋</div>
-          <div class="ql-name">생산 계획</div>
-          <div class="ql-sub">일별 CRUD</div>
-        </a>
-        <a href="molds.html" class="quick-link">
-          <div class="ql-icon">🔩</div>
-          <div class="ql-name">금형 관리</div>
-          <div class="ql-sub">마스터</div>
-        </a>
-        <a href="machines.html" class="quick-link">
-          <div class="ql-icon">⚙️</div>
-          <div class="ql-name">기계 관리</div>
-          <div class="ql-sub">설비</div>
-        </a>
+      <!-- 생산 관리 바로가기 배너 -->
+      <div class="pms-shortcut-banner">
+        <span class="pms-banner-label"><i class="fas fa-bolt" style="margin-right:4px;"></i>생산 관리</span>
+        <div class="pms-banner-divider"></div>
+        <div class="pms-banner-links">
+          <a href="production.html" class="pms-quick-btn">
+            <div class="pqb-icon">📋</div>
+            <div class="pqb-text">
+              <span class="pqb-name">생산 계획</span>
+              <span class="pqb-sub">일별 CRUD</span>
+            </div>
+          </a>
+          <a href="molds.html" class="pms-quick-btn">
+            <div class="pqb-icon">🔩</div>
+            <div class="pqb-text">
+              <span class="pqb-name">금형 관리</span>
+              <span class="pqb-sub">마스터 정보</span>
+            </div>
+          </a>
+          <a href="machines.html" class="pms-quick-btn">
+            <div class="pqb-icon">⚙️</div>
+            <div class="pqb-text">
+              <span class="pqb-name">기계 관리</span>
+              <span class="pqb-sub">설비 현황</span>
+            </div>
+          </a>
+        </div>
       </div>
 
       <!-- ① VF 출고·영업 섹션 -->
