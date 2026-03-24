@@ -7,186 +7,149 @@
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
   <style>
-    /* ── 생산 관리 바로가기 배너 ── */
-    .pms-shortcut-banner {
-      display: flex; align-items: center; gap: 12px;
-      background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 60%, #3b82f6 100%);
-      border-radius: var(--radius); padding: 16px 24px;
-      margin-bottom: 28px;
-      box-shadow: 0 4px 16px rgba(37,99,235,.25);
-    }
-    .pms-banner-label {
-      font-size: 11px; font-weight: 700; color: rgba(255,255,255,.7);
-      letter-spacing: 1px; text-transform: uppercase; white-space: nowrap; margin-right: 6px;
-    }
-    .pms-banner-divider { width: 1px; height: 32px; background: rgba(255,255,255,.2); flex-shrink: 0; }
-    .pms-banner-links   { display: flex; gap: 10px; flex: 1; flex-wrap: wrap; }
-    .pms-quick-btn {
-      display: flex; align-items: center; gap: 9px;
-      background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.22);
-      border-radius: 9px; padding: 8px 16px;
-      text-decoration: none; color: #fff; transition: all .2s; flex: 1; min-width: 150px;
-    }
-    .pms-quick-btn:hover {
-      background: rgba(255,255,255,.24); border-color: rgba(255,255,255,.5);
-      transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.18);
-    }
-    .pms-quick-btn .pqb-icon {
-      font-size: 22px; flex-shrink: 0;
-      background: rgba(255,255,255,.18); border-radius: 7px;
-      width: 38px; height: 38px; display: flex; align-items: center; justify-content: center;
-    }
-    .pms-quick-btn .pqb-name { font-size: 13px; font-weight: 700; display: block; }
-    .pms-quick-btn .pqb-sub  { font-size: 11px; color: rgba(255,255,255,.62); }
-
     /* ── 섹션 헤더 ── */
     .dash-section {
       display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 12px; margin-top: 4px;
+      margin: 0 0 14px;
     }
     .dash-section-title {
-      display: flex; align-items: center; gap: 7px;
-      font-size: 13px; font-weight: 700; color: var(--text);
+      display: flex; align-items: center; gap: 8px;
+      font-size: 14px; font-weight: 700; color: var(--text);
     }
-    .dash-section-title .ds-icon {
-      width: 28px; height: 28px; border-radius: 7px;
+    .ds-icon {
+      width: 30px; height: 30px; border-radius: 8px;
       display: flex; align-items: center; justify-content: center;
       font-size: 14px; flex-shrink: 0;
     }
-    .ds-icon.blue   { background: #eff6ff; color: #2563eb; }
-    .ds-icon.green  { background: #f0fdf4; color: #16a34a; }
-    .ds-icon.amber  { background: #fffbeb; color: #d97706; }
+    .ds-icon.blue   { background:#eff6ff; color:#2563eb; }
+    .ds-icon.green  { background:#f0fdf4; color:#16a34a; }
+    .ds-icon.amber  { background:#fffbeb; color:#d97706; }
     .dash-section-link {
-      font-size: 12px; color: var(--primary-light); text-decoration: none;
-      display: flex; align-items: center; gap: 4px; font-weight: 500;
+      font-size: 12px; color: var(--primary); text-decoration: none;
+      display: flex; align-items: center; gap: 3px; font-weight: 500;
+      opacity: .75;
     }
-    .dash-section-link:hover { text-decoration: underline; }
+    .dash-section-link:hover { opacity: 1; text-decoration: underline; }
 
     /* ── KPI 카드 행 ── */
     .kpi-row {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 12px; margin-bottom: 28px;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 14px; margin-bottom: 32px;
     }
     .kpi-card {
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); padding: 16px 18px;
+      border-radius: var(--radius-sm); padding: 18px 20px;
       box-shadow: var(--shadow); display: flex; align-items: center; gap: 14px;
     }
     .kpi-card-icon {
-      width: 40px; height: 40px; border-radius: 10px;
+      width: 44px; height: 44px; border-radius: 12px;
       display: flex; align-items: center; justify-content: center;
-      font-size: 18px; flex-shrink: 0;
+      font-size: 20px; flex-shrink: 0;
     }
-    .kpi-card-icon.blue   { background: #eff6ff; color: #2563eb; }
-    .kpi-card-icon.green  { background: #f0fdf4; color: #16a34a; }
-    .kpi-card-icon.amber  { background: #fffbeb; color: #d97706; }
-    .kpi-card-icon.red    { background: #fef2f2; color: #dc2626; }
-    .kpi-card-icon.teal   { background: #f0fdfa; color: #0f766e; }
-    .kpi-card-icon.purple { background: #faf5ff; color: #7c3aed; }
-    .kpi-label { font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
-    .kpi-value { font-size: 22px; font-weight: 800; color: var(--text); line-height: 1.1; }
-    .kpi-sub   { font-size: 11px; color: var(--text-light); margin-top: 2px; }
+    .kpi-card-icon.blue   { background:#eff6ff; color:#2563eb; }
+    .kpi-card-icon.green  { background:#f0fdf4; color:#16a34a; }
+    .kpi-card-icon.amber  { background:#fffbeb; color:#d97706; }
+    .kpi-card-icon.red    { background:#fef2f2; color:#dc2626; }
+    .kpi-card-icon.teal   { background:#f0fdfa; color:#0f766e; }
+    .kpi-label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+    .kpi-value { font-size: 24px; font-weight: 800; color: var(--text); line-height: 1.1; }
+    .kpi-sub   { font-size: 11px; color: var(--text-light); margin-top: 3px; }
 
-    /* ── 재고 상태 바 ── */
-    .stock-summary {
+    /* ── 재고 상태 칩 ── */
+    .stock-row {
       display: grid; grid-template-columns: repeat(4, 1fr);
-      gap: 10px; margin-bottom: 28px;
+      gap: 14px; margin-bottom: 32px;
     }
     .stock-chip {
-      border-radius: var(--radius-sm); padding: 12px 14px;
-      display: flex; align-items: center; gap: 10px;
+      border-radius: var(--radius-sm); padding: 16px 18px;
+      display: flex; align-items: center; gap: 12px;
     }
-    .stock-chip.red    { background:#fef2f2; border:1px solid #fecaca; }
-    .stock-chip.amber  { background:#fffbeb; border:1px solid #fde68a; }
-    .stock-chip.green  { background:#f0fdf4; border:1px solid #bbf7d0; }
-    .stock-chip.blue   { background:#eff6ff; border:1px solid #bfdbfe; }
-    .stock-chip .sc-icon { font-size: 20px; flex-shrink: 0; }
-    .stock-chip .sc-val  { font-size: 20px; font-weight: 800; }
-    .stock-chip.red   .sc-val { color: #dc2626; }
-    .stock-chip.amber .sc-val { color: #d97706; }
-    .stock-chip.green .sc-val { color: #16a34a; }
-    .stock-chip.blue  .sc-val { color: #2563eb; }
-    .stock-chip .sc-lbl { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+    .stock-chip.red   { background:#fef2f2; border:1px solid #fecaca; }
+    .stock-chip.amber { background:#fffbeb; border:1px solid #fde68a; }
+    .stock-chip.green { background:#f0fdf4; border:1px solid #bbf7d0; }
+    .stock-chip.blue  { background:#eff6ff; border:1px solid #bfdbfe; }
+    .sc-icon { font-size: 22px; flex-shrink: 0; }
+    .sc-val  { font-size: 26px; font-weight: 800; }
+    .stock-chip.red   .sc-val { color:#dc2626; }
+    .stock-chip.amber .sc-val { color:#d97706; }
+    .stock-chip.green .sc-val { color:#16a34a; }
+    .stock-chip.blue  .sc-val { color:#2563eb; }
+    .sc-lbl  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
-    /* ── 생산 상태 요약 ── */
-    .prod-summary {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-      gap: 10px; margin-bottom: 28px;
+    /* ── 생산 요약 칩 ── */
+    .prod-row {
+      display: grid; grid-template-columns: repeat(6, 1fr);
+      gap: 14px; margin-bottom: 32px;
     }
     .prod-chip {
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); padding: 14px 16px;
+      border-radius: var(--radius-sm); padding: 16px 18px;
       box-shadow: var(--shadow); text-align: center;
     }
-    .prod-chip .pc-val { font-size: 26px; font-weight: 800; color: var(--text); }
-    .prod-chip .pc-lbl { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
-    .prod-chip .pc-bar {
-      height: 3px; border-radius: 2px; margin-top: 8px; background: var(--border);
-      overflow: hidden;
-    }
-    .prod-chip .pc-bar-fill { height: 100%; border-radius: 2px; }
-    .pc-bar-fill.blue   { background: #3b82f6; }
-    .pc-bar-fill.amber  { background: #f59e0b; }
-    .pc-bar-fill.green  { background: #22c55e; }
-    .pc-bar-fill.teal   { background: #14b8a6; }
-    .pc-bar-fill.purple { background: #a855f7; }
+    .pc-val { font-size: 28px; font-weight: 800; color: var(--text); }
+    .pc-lbl { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+    .pc-bar { height: 4px; border-radius: 2px; margin-top: 10px; background: var(--border); overflow: hidden; }
+    .pc-bar-fill        { height: 100%; border-radius: 2px; }
+    .pc-bar-fill.blue   { background:#3b82f6; }
+    .pc-bar-fill.amber  { background:#f59e0b; }
+    .pc-bar-fill.green  { background:#22c55e; }
+    .pc-bar-fill.teal   { background:#14b8a6; }
+    .pc-bar-fill.purple { background:#a855f7; }
 
-    /* ── 기계 상태 요약 ── */
-    .machine-summary {
-      display: flex; align-items: center; gap: 16px;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); padding: 16px 20px;
-      box-shadow: var(--shadow); margin-bottom: 28px; flex-wrap: wrap;
-    }
-    .ms-stat { text-align: center; min-width: 70px; }
-    .ms-stat .ms-val { font-size: 24px; font-weight: 800; }
-    .ms-stat .ms-lbl { font-size: 11px; color: var(--text-muted); }
-    .ms-stat.active  .ms-val { color: #16a34a; }
-    .ms-stat.stop    .ms-val { color: #dc2626; }
-    .ms-stat.total   .ms-val { color: var(--primary); }
-    .ms-divider { width: 1px; height: 36px; background: var(--border); flex-shrink: 0; }
-    .ms-chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
-    .ms-chip {
-      font-size: 11px; font-weight: 600; border-radius: 6px;
-      padding: 4px 9px; border: 1px solid;
-    }
-    .ms-chip.on  { background: #f0fdf4; border-color: #86efac; color: #15803d; }
-    .ms-chip.off { background: #fef2f2; border-color: #fca5a5; color: #dc2626; }
-
-    /* ── 최근 생산 미니 리스트 ── */
-    .recent-mini { margin-bottom: 0; }
-    .recent-mini-item {
-      display: flex; align-items: center; gap: 10px;
-      padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12px;
-    }
-    .recent-mini-item:last-child { border: none; padding-bottom: 0; }
-    .rmi-date  { color: var(--text-muted); width: 38px; flex-shrink: 0; }
-    .rmi-machine { color: var(--text-muted); width: 28px; flex-shrink: 0; text-align: center; }
-    .rmi-name  { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-    .rmi-qty   { font-weight: 700; color: var(--primary); white-space: nowrap; }
-
-    /* ── 2컬럼 하단 ── */
+    /* ── 하단 2컬럼 ── */
     .dash-bottom {
       display: grid; grid-template-columns: 1fr 1fr;
-      gap: 16px; margin-bottom: 8px;
+      gap: 16px;
     }
 
-    @media (max-width: 900px) {
+    /* ── 기계 현황 칩 ── */
+    .machine-bar {
+      display: flex; align-items: center; gap: 16px;
+      padding: 0 0 14px; border-bottom: 1px solid var(--border);
+      margin-bottom: 14px; flex-wrap: wrap;
+    }
+    .ms-stat { text-align: center; min-width: 56px; }
+    .ms-val  { font-size: 26px; font-weight: 800; }
+    .ms-lbl  { font-size: 11px; color: var(--text-muted); }
+    .ms-stat.active .ms-val { color:#16a34a; }
+    .ms-stat.stop   .ms-val { color:#dc2626; }
+    .ms-stat.total  .ms-val { color:var(--primary); }
+    .ms-div  { width:1px; height:36px; background:var(--border); flex-shrink:0; }
+    .ms-chips { display:flex; flex-wrap:wrap; gap:6px; flex:1; }
+    .ms-chip {
+      font-size:11px; font-weight:600; border-radius:6px;
+      padding:4px 10px; border:1px solid;
+    }
+    .ms-chip.on  { background:#f0fdf4; border-color:#86efac; color:#15803d; }
+    .ms-chip.off { background:#fef2f2; border-color:#fca5a5; color:#dc2626; }
+
+    /* ── 최근 생산계획 리스트 ── */
+    .recent-item {
+      display:flex; align-items:center; gap:10px;
+      padding:9px 0; border-bottom:1px solid var(--border); font-size:12px;
+    }
+    .recent-item:last-child { border:none; padding-bottom:0; }
+    .ri-date    { color:var(--text-muted); width:38px; flex-shrink:0; }
+    .ri-machine { color:var(--text-muted); width:28px; flex-shrink:0; text-align:center; }
+    .ri-name    { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
+    .ri-qty     { font-weight:700; color:var(--primary); white-space:nowrap; }
+
+    /* ── 반응형 ── */
+    @media (max-width:1200px) {
+      .kpi-row  { grid-template-columns: repeat(3,1fr); }
+      .prod-row { grid-template-columns: repeat(3,1fr); }
+    }
+    @media (max-width:900px) {
+      .kpi-row   { grid-template-columns: repeat(2,1fr); }
+      .stock-row { grid-template-columns: repeat(2,1fr); }
+      .prod-row  { grid-template-columns: repeat(2,1fr); }
       .dash-bottom { grid-template-columns: 1fr; }
-      .stock-summary { grid-template-columns: repeat(2, 1fr); }
     }
-    @media (max-width: 700px) {
-      .pms-shortcut-banner { flex-direction: column; align-items: flex-start; padding: 14px 16px; }
-      .pms-banner-divider  { display: none; }
-      .pms-banner-links    { width: 100%; }
-      .pms-quick-btn       { min-width: 120px; }
-      .kpi-row { grid-template-columns: repeat(2, 1fr); }
-      .stock-summary { grid-template-columns: repeat(2, 1fr); }
-      .machine-summary { flex-direction: column; align-items: flex-start; }
-    }
-    @media (max-width: 480px) {
-      .kpi-row { grid-template-columns: 1fr 1fr; }
+    @media (max-width:600px) {
+      .kpi-row   { grid-template-columns: repeat(2,1fr); }
+      .stock-row { grid-template-columns: repeat(2,1fr); }
+      .prod-row  { grid-template-columns: repeat(2,1fr); }
     }
   </style>
 </head>
@@ -210,40 +173,12 @@
 
     <main class="content">
 
-      <!-- ── 생산 관리 바로가기 배너 ── -->
-      <div class="pms-shortcut-banner">
-        <span class="pms-banner-label"><i class="fas fa-bolt" style="margin-right:4px;"></i>바로가기</span>
-        <div class="pms-banner-divider"></div>
-        <div class="pms-banner-links">
-          <a href="production.html" class="pms-quick-btn">
-            <div class="pqb-icon">📋</div>
-            <div>
-              <span class="pqb-name">생산 계획</span>
-              <span class="pqb-sub">일별 CRUD</span>
-            </div>
-          </a>
-          <a href="molds.html" class="pms-quick-btn">
-            <div class="pqb-icon">🔩</div>
-            <div>
-              <span class="pqb-name">금형 관리</span>
-              <span class="pqb-sub">마스터 정보</span>
-            </div>
-          </a>
-          <a href="machines.html" class="pms-quick-btn">
-            <div class="pqb-icon">⚙️</div>
-            <div>
-              <span class="pqb-name">기계 관리</span>
-              <span class="pqb-sub">설비 현황</span>
-            </div>
-          </a>
-        </div>
-      </div>
-
-      <!-- ── ① 영업·출고 KPI ── -->
+      <!-- ① 영업·출고 KPI -->
       <div class="dash-section">
         <div class="dash-section-title">
           <span class="ds-icon blue"><i class="fas fa-store"></i></span>
-          영업·출고 현황 <small style="font-weight:400;color:var(--text-muted);margin-left:4px;">최근 30일</small>
+          영업·출고 현황
+          <small style="font-weight:400;color:var(--text-muted);font-size:12px;">최근 30일</small>
         </div>
         <a href="outbound.html" class="dash-section-link">상세보기 <i class="fas fa-chevron-right" style="font-size:10px;"></i></a>
       </div>
@@ -289,7 +224,7 @@
         </div>
       </div>
 
-      <!-- ── ② 재고 현황 ── -->
+      <!-- ② 재고 현황 -->
       <div class="dash-section">
         <div class="dash-section-title">
           <span class="ds-icon green"><i class="fas fa-warehouse"></i></span>
@@ -297,38 +232,26 @@
         </div>
         <a href="inventory.html" class="dash-section-link">상세보기 <i class="fas fa-chevron-right" style="font-size:10px;"></i></a>
       </div>
-      <div class="stock-summary">
+      <div class="stock-row">
         <div class="stock-chip red">
           <span class="sc-icon">❌</span>
-          <div>
-            <div class="sc-val" id="al-out">-</div>
-            <div class="sc-lbl">재고 없음 (SKU)</div>
-          </div>
+          <div><div class="sc-val" id="al-out">-</div><div class="sc-lbl">재고 없음 (SKU)</div></div>
         </div>
         <div class="stock-chip amber">
           <span class="sc-icon">⚠️</span>
-          <div>
-            <div class="sc-val" id="al-low">-</div>
-            <div class="sc-lbl">재고 부족 (SKU)</div>
-          </div>
+          <div><div class="sc-val" id="al-low">-</div><div class="sc-lbl">재고 부족 (SKU)</div></div>
         </div>
         <div class="stock-chip green">
           <span class="sc-icon">✅</span>
-          <div>
-            <div class="sc-val" id="al-normal">-</div>
-            <div class="sc-lbl">정상 재고 (SKU)</div>
-          </div>
+          <div><div class="sc-val" id="al-normal">-</div><div class="sc-lbl">정상 재고 (SKU)</div></div>
         </div>
         <div class="stock-chip blue">
           <span class="sc-icon">📦</span>
-          <div>
-            <div class="sc-val" id="al-total-qty">-</div>
-            <div class="sc-lbl">총 재고량 (개)</div>
-          </div>
+          <div><div class="sc-val" id="al-total-qty">-</div><div class="sc-lbl">총 재고량 (개)</div></div>
         </div>
       </div>
 
-      <!-- ── ③ 생산 관리 현황 ── -->
+      <!-- ③ 생산 관리 현황 -->
       <div class="dash-section">
         <div class="dash-section-title">
           <span class="ds-icon amber"><i class="fas fa-industry"></i></span>
@@ -336,7 +259,7 @@
         </div>
         <a href="production.html" class="dash-section-link">상세보기 <i class="fas fa-chevron-right" style="font-size:10px;"></i></a>
       </div>
-      <div class="prod-summary">
+      <div class="prod-row">
         <div class="prod-chip">
           <div class="pc-val" id="stat-total">-</div>
           <div class="pc-lbl">전체 계획</div>
@@ -369,38 +292,34 @@
         </div>
       </div>
 
-      <!-- ── ④ 기계 현황 + 최근 생산계획 ── -->
+      <!-- ④ 기계 현황 + 최근 생산계획 -->
       <div class="dash-bottom">
 
-        <!-- 기계 현황 -->
         <div class="card" style="margin-bottom:0;">
           <div class="card-header">
             <div class="card-title"><i class="fas fa-industry" style="color:#f59e0b;"></i> 기계 현황</div>
             <a href="machines.html" class="btn btn-secondary btn-sm">관리</a>
           </div>
-          <div class="card-body" style="padding:16px 18px;">
-            <div class="machine-summary" id="machine-summary-area">
+          <div class="card-body" style="padding:16px 20px;">
+            <div class="machine-bar">
               <div class="ms-stat total"><div class="ms-val" id="ms-total">-</div><div class="ms-lbl">전체</div></div>
-              <div class="ms-divider"></div>
+              <div class="ms-div"></div>
               <div class="ms-stat active"><div class="ms-val" id="ms-active">-</div><div class="ms-lbl">가동 중</div></div>
-              <div class="ms-divider"></div>
+              <div class="ms-div"></div>
               <div class="ms-stat stop"><div class="ms-val" id="ms-stop">-</div><div class="ms-lbl">정지</div></div>
-              <div class="ms-divider"></div>
+              <div class="ms-div"></div>
               <div class="ms-chips" id="ms-chips"><span style="color:var(--text-light);font-size:12px;">로딩 중…</span></div>
             </div>
           </div>
         </div>
 
-        <!-- 최근 생산계획 -->
         <div class="card" style="margin-bottom:0;">
           <div class="card-header">
             <div class="card-title"><i class="fas fa-clock" style="color:#3b82f6;"></i> 최근 생산계획</div>
             <a href="production.html" class="btn btn-secondary btn-sm">전체보기</a>
           </div>
-          <div class="card-body" style="padding:12px 18px;">
-            <div class="recent-mini" id="recent-mini-list">
-              <div class="spinner"></div>
-            </div>
+          <div class="card-body" style="padding:12px 20px;">
+            <div id="recent-list"><div class="spinner"></div></div>
           </div>
         </div>
 
@@ -412,48 +331,40 @@
 
 <script src="js/common.js"></script>
 <script>
-// ── VF 출고·재고 데이터 ──
 async function loadVFData() {
   try {
     const [statsData, invData] = await Promise.all([
       VF_API.outboundStats(30, 'day'),
       VF_API.inventory({ limit: 2000 })
     ]);
-
-    // 출고 KPI
     const s     = statsData.summary || {};
     const trend = (statsData.dailyTrend || statsData.trend || []).filter(d => {
       const dt = new Date(d.date || d.outboundDate || '');
       return !isNaN(dt.getTime()) && dt.getFullYear() > 2000;
     });
-    const qty30 = trend.reduce((sum,d) => sum + (Number(d.quantity) || 0), 0);
-    const sal30 = trend.reduce((sum,d) => sum + (Number(d.salesAmount ?? d.sales_amount ?? 0)), 0);
+    const qty30 = trend.reduce((s,d) => s + (Number(d.quantity)||0), 0);
+    const sal30 = trend.reduce((s,d) => s + (Number(d.salesAmount ?? d.sales_amount ?? 0)), 0);
     const avg   = trend.length ? Math.round(qty30 / trend.length) : 0;
 
-    document.getElementById('vf-count').textContent    = NumUtil.fmt(s.totalCount);
-    document.getElementById('vf-qty30').textContent    = NumUtil.fmt(qty30);
-    document.getElementById('vf-sales30').textContent  = NumUtil.fmtKRW(sal30);
-    document.getElementById('vf-avg').textContent      = NumUtil.fmt(avg);
+    document.getElementById('vf-count').textContent   = NumUtil.fmt(s.totalCount);
+    document.getElementById('vf-qty30').textContent   = NumUtil.fmt(qty30);
+    document.getElementById('vf-sales30').textContent = NumUtil.fmtKRW(sal30);
+    document.getElementById('vf-avg').textContent     = NumUtil.fmt(avg);
 
-    // 재고 상태
-    const invRows    = Array.isArray(invData) ? invData : (invData.data || []);
-    const outCount   = invRows.filter(r => r.stockStatus==='out' || Number(r.currentStock)===0).length;
-    const lowCount   = invRows.filter(r => r.stockStatus==='low').length;
-    const normCount  = invRows.filter(r => r.stockStatus==='normal').length;
-    const totalQty   = invRows.reduce((s,r) => s + (Number(r.currentStock)||0), 0);
+    const invRows  = Array.isArray(invData) ? invData : (invData.data || []);
+    const outCount = invRows.filter(r => r.stockStatus==='out' || Number(r.currentStock)===0).length;
+    const lowCount = invRows.filter(r => r.stockStatus==='low').length;
+    const normCount= invRows.filter(r => r.stockStatus==='normal').length;
+    const totalQty = invRows.reduce((s,r) => s+(Number(r.currentStock)||0), 0);
 
     document.getElementById('vf-stock-alert').textContent = NumUtil.fmt(outCount + lowCount);
     document.getElementById('al-out').textContent         = NumUtil.fmt(outCount);
     document.getElementById('al-low').textContent         = NumUtil.fmt(lowCount);
     document.getElementById('al-normal').textContent      = NumUtil.fmt(normCount);
     document.getElementById('al-total-qty').textContent   = NumUtil.fmt(totalQty);
-
-  } catch (e) {
-    console.warn('VF API 로드 실패:', e.message);
-  }
+  } catch(e) { console.warn('VF API 실패:', e.message); }
 }
 
-// ── PMS 생산·기계·금형 데이터 ──
 async function loadPMSData() {
   try {
     const [planRes, moldRes, machineRes] = await Promise.all([
@@ -461,18 +372,15 @@ async function loadPMSData() {
       API.get('molds',    { limit: 200 }),
       API.get('machines', { limit: 50  })
     ]);
-
     const plans    = planRes.data    || [];
     const molds    = moldRes.data    || [];
     const machines = machineRes.data || [];
     const total    = plans.length;
+    const planned  = plans.filter(p=>p.status==='planned').length;
+    const inprog   = plans.filter(p=>p.status==='in_progress').length;
+    const completed= plans.filter(p=>p.status==='completed').length;
+    const totalQty = plans.reduce((s,p)=>s+(Number(p.planned_qty)||0),0);
 
-    const planned   = plans.filter(p=>p.status==='planned').length;
-    const inprog    = plans.filter(p=>p.status==='in_progress').length;
-    const completed = plans.filter(p=>p.status==='completed').length;
-    const totalQty  = plans.reduce((s,p)=>s+(Number(p.planned_qty)||0),0);
-
-    // 생산 카드 수치
     document.getElementById('stat-total').textContent      = NumUtil.fmt(total);
     document.getElementById('stat-planned').textContent    = NumUtil.fmt(planned);
     document.getElementById('stat-inprogress').textContent = NumUtil.fmt(inprog);
@@ -480,44 +388,39 @@ async function loadPMSData() {
     document.getElementById('stat-qty').textContent        = NumUtil.fmt(totalQty);
     document.getElementById('stat-molds').textContent      = NumUtil.fmt(molds.length);
 
-    // 상태 비율 바
     if (total > 0) {
       document.getElementById('bar-planned').style.width    = Math.round(planned/total*100)+'%';
       document.getElementById('bar-inprogress').style.width = Math.round(inprog/total*100)+'%';
       document.getElementById('bar-completed').style.width  = Math.round(completed/total*100)+'%';
     }
 
-    // 기계 요약
+    // 기계 현황
     const activeM = machines.filter(m=>m.status==='active');
     const stopM   = machines.filter(m=>m.status!=='active');
     document.getElementById('ms-total').textContent  = machines.length;
     document.getElementById('ms-active').textContent = activeM.length;
     document.getElementById('ms-stop').textContent   = stopM.length;
-    document.getElementById('ms-chips').innerHTML    = machines.length
-      ? machines.map(m =>
-          `<span class="ms-chip ${m.status==='active'?'on':'off'}">${m.machine_number||'-'}${m.tonnage?'·'+m.tonnage+'T':''}</span>`
-        ).join('')
+    document.getElementById('ms-chips').innerHTML = machines.length
+      ? machines.map(m=>`<span class="ms-chip ${m.status==='active'?'on':'off'}">${m.machine_number||'-'}${m.tonnage?'·'+m.tonnage+'T':''}</span>`).join('')
       : '<span style="color:var(--text-light);font-size:12px;">기계 정보 없음</span>';
 
-    // 최근 생산계획 5건
-    const recent = [...plans].sort((a,b)=>{
-      return String(b.created_at||b.plan_date||'').localeCompare(String(a.created_at||a.plan_date||''));
-    }).slice(0,5);
+    // 최근 생산계획 7건
+    const recent = [...plans].sort((a,b)=>
+      String(b.created_at||b.plan_date||'').localeCompare(String(a.created_at||a.plan_date||''))
+    ).slice(0,7);
 
-    document.getElementById('recent-mini-list').innerHTML = recent.length
-      ? recent.map(p => `
-          <div class="recent-mini-item">
-            <span class="rmi-date">${DateUtil.fmtShort(p.plan_date)}</span>
-            <span class="rmi-machine">${p.machine_number||'-'}</span>
-            <span class="rmi-name" title="${p.product_name_kr||''}">${p.product_name_kr||p.product_name_en||'-'}</span>
-            <span class="rmi-qty">${NumUtil.fmt(p.planned_qty)}</span>
+    document.getElementById('recent-list').innerHTML = recent.length
+      ? recent.map(p=>`
+          <div class="recent-item">
+            <span class="ri-date">${DateUtil.fmtShort(p.plan_date)}</span>
+            <span class="ri-machine">${p.machine_number||'-'}</span>
+            <span class="ri-name" title="${p.product_name_kr||''}">${p.product_name_kr||p.product_name_en||'-'}</span>
+            <span class="ri-qty">${NumUtil.fmt(p.planned_qty)}</span>
             <span class="badge badge-${p.status}" style="font-size:10px;">${StatusUtil.labels[p.status]||p.status}</span>
           </div>`).join('')
-      : '<div style="text-align:center;color:#94a3b8;padding:20px;font-size:12px;">등록된 생산계획이 없습니다</div>';
+      : '<div style="text-align:center;color:#94a3b8;padding:24px;font-size:12px;">등록된 생산계획이 없습니다</div>';
 
-  } catch (e) {
-    console.warn('PMS 데이터 로드 실패:', e.message);
-  }
+  } catch(e) { console.warn('PMS 데이터 실패:', e.message); }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
