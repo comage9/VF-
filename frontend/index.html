@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>통합 대시보드 - BONO PMS</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+  <style>
+    .dash-grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px; margin-bottom: 24px;
+    }
+    .dash-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px; margin-bottom: 24px;
+    }
+    .dash-grid-73 {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 20px; margin-bottom: 24px;
+    }
+    .chart-box { height: 280px; position: relative; }
+    .chart-box-sm { height: 220px; position: relative; }
+    .section-label {
+      font-size: 11px; font-weight: 700; letter-spacing: 1px;
+      color: var(--text-muted); text-transform: uppercase;
+      padding: 0 0 8px; border-bottom: 1px solid var(--border);
+      margin-bottom: 16px; display: flex; align-items: center; gap: 6px;
+    }
+    .mini-stat-row {
+      display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px;
+    }
+    .mini-stat {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 14px; flex: 1; min-width: 100px;
+      text-align: center;
+    }
+    .mini-val { font-size: 20px; font-weight: 800; color: var(--primary); }
+    .mini-lbl { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .recent-table th, .recent-table td { font-size: 12px; padding: 7px 12px; }
+    .machine-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+      gap: 8px;
+    }
+    .machine-tile {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px; text-align: center; font-size: 12px;
+    }
+    .machine-tile .m-num { font-size: 18px; font-weight: 800; color: var(--primary); }
+    .machine-tile.active   { border-color: #86efac; background: #f0fdf4; }
+    .machine-tile.inactive { border-color: #fca5a5; background: #fef2f2; }
+
+    .quick-link-row {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px; margin-bottom: 24px;
+    }
+    .quick-link {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px;
+      text-align: center; text-decoration: none; color: var(--text);
+      box-shadow: var(--shadow); transition: all .2s;
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+    }
+    .quick-link:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
+    .quick-link .ql-icon { font-size: 28px; }
+    .quick-link .ql-name { font-size: 12px; font-weight: 600; }
+    .quick-link .ql-sub  { font-size: 11px; color: var(--text-muted); }
+
+    .rank-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12px;
+    }
+    .rank-item:last-child { border: none; }
+    .rank-num {
+      width: 20px; height: 20px; border-radius: 50%; background: var(--primary); color: #fff;
+      display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0;
+    }
+    .rank-num.gold   { background: #f59e0b; }
+    .rank-num.silver { background: #94a3b8; }
+    .rank-num.bronze { background: #cd7c49; }
+    .rank-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .rank-val  { font-weight: 700; color: var(--primary); white-space: nowrap; }
+
+    .alert-row {
+      display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr));
+      gap: 12px; margin-bottom: 24px;
+    }
+    .alert-card {
+      border-radius: var(--radius-sm); padding: 14px 16px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .alert-card.red    { background:#fef2f2; border:1px solid #fecaca; }
+    .alert-card.amber  { background:#fffbeb; border:1px solid #fde68a; }
+    .alert-card.green  { background:#f0fdf4; border:1px solid #bbf7d0; }
+    .alert-card.blue   { background:#eff6ff; border:1px solid #bfdbfe; }
+    .alert-icon { font-size: 24px; }
+    .alert-info .av  { font-size: 20px; font-weight: 800; }
+    .alert-info .al  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .alert-card.red  .av { color: #dc2626; }
+    .alert-card.amber .av { color: #d97706; }
+    .alert-card.green .av { color: #16a34a; }
+    .alert-card.blue  .av { color: #2563eb; }
+
+    @media (max-width:900px) {
+      .dash-grid-3, .dash-grid-2, .dash-grid-73 { grid-template-columns: 1fr; }
+    }
+    @media (max-width:600px) {
+      .stats-grid { grid-template-columns: repeat(2,1fr); }
+    }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar" data-page="dashboard"></aside>
+
+  <div class="main-wrap">
+    <header class="topbar">
+      <button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">
+        <i class="fas fa-bars"></i>
+      </button>
+      <div class="topbar-title">통합 대시보드 <span>BONO 운영 현황 한눈에 보기</span></div>
+      <div class="topbar-actions">
+        <span id="today-date" style="font-size:13px;color:var(--text-muted);"></span>
+        <button class="btn btn-primary btn-sm" onclick="location.href='production.html'">
+          <i class="fas fa-plus"></i> 생산계획 등록
+        </button>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <!-- 바로가기 -->
+      <div class="quick-link-row">
+        <a href="outbound.html" class="quick-link">
+          <div class="ql-icon">📊</div>
+          <div class="ql-name">출고 분석</div>
+          <div class="ql-sub">판매 통계</div>
+        </a>
+        <a href="delivery.html" class="quick-link">
+          <div class="ql-icon">🚚</div>
+          <div class="ql-name">배송 관리</div>
+          <div class="ql-sub">출고 내역</div>
+        </a>
+        <a href="inventory.html" class="quick-link">
+          <div class="ql-icon">🏪</div>
+          <div class="ql-name">재고 현황</div>
+          <div class="ql-sub">입고 가능 수량</div>
+        </a>
+        <a href="production.html" class="quick-link">
+          <div class="ql-icon">📋</div>
+          <div class="ql-name">생산 계획</div>
+          <div class="ql-sub">일별 CRUD</div>
+        </a>
+        <a href="molds.html" class="quick-link">
+          <div class="ql-icon">🔩</div>
+          <div class="ql-name">금형 관리</div>
+          <div class="ql-sub">마스터</div>
+        </a>
+        <a href="machines.html" class="quick-link">
+          <div class="ql-icon">⚙️</div>
+          <div class="ql-name">기계 관리</div>
+          <div class="ql-sub">설비</div>
+        </a>
+      </div>
+
+      <!-- ① VF 출고·영업 섹션 -->
+      <div class="section-label">
+        <i class="fas fa-store" style="color:#3b82f6;"></i> 영업·출고 현황 (30일)
+      </div>
+
+      <!-- VF KPI -->
+      <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:20px;">
+        <div class="stat-card">
+          <div class="stat-icon blue"><i class="fas fa-box"></i></div>
+          <div class="stat-info">
+            <div class="stat-label">누적 출고 건수</div>
+            <div class="stat-value" id="vf-count">-</div>
+            <div class="stat-sub">전체 기록</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon green"><i class="fas fa-cubes"></i></div>
+          <div class="stat-info">
+            <div class="stat-label">30일 출고량</div>
+            <div class="stat-value" id="vf-qty30">-</div>
+            <div class="stat-sub">개</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon amber"><i class="fas fa-won-sign"></i></div>
+          <div class="stat-info">
+            <div class="stat-label">30일 매출액</div>
+            <div class="stat-value" id="vf-sales30">-</div>
+            <div class="stat-sub"></div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon teal"><i class="fas fa-calendar-day"></i></div>
+          <div class="stat-info">
+            <div class="stat-label">일 평균 출고</div>
+            <div class="stat-value" id="vf-avg">-</div>
+            <div class="stat-sub">개/일</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon red"><i class="fas fa-exclamation-circle"></i></div>
+          <div class="stat-info">
+            <div class="stat-label">재고 경보</div>
+            <div class="stat-value" id="vf-stock-alert">-</div>
+            <div class="stat-sub">부족·소진 SKU</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 출고 추세 + TOP상품 -->
+      <div class="dash-grid-73">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="fas fa-chart-line"></i> 출고 추세 (최근 30일)</div>
+            <a href="outbound.html" class="btn btn-secondary btn-sm">상세보기</a>
+          </div>
+          <div class="card-body chart-box">
+            <canvas id="vfTrendChart"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="fas fa-trophy"></i> 출고량 TOP 5</div>
+            <a href="outbound.html" class="btn btn-secondary btn-sm">전체</a>
+          </div>
+          <div class="card-body" id="top5-list" style="padding:14px 18px;">
+            <div class="spinner"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ② 재고 현황 -->
+      <div class="section-label">
+        <i class="fas fa-warehouse" style="color:#10b981;"></i> 재고 현황
+      </div>
+      <div class="alert-row" id="stock-alert-row">
+        <div class="alert-card red"><div class="alert-icon">❌</div><div class="alert-info"><div class="av" id="al-out">-</div><div class="al">재고 없음 (SKU)</div></div></div>
+        <div class="alert-card amber"><div class="alert-icon">⚠️</div><div class="alert-info"><div class="av" id="al-low">-</div><div class="al">재고 부족 (SKU)</div></div></div>
+        <div class="alert-card green"><div class="alert-icon">✅</div><div class="alert-info"><div class="av" id="al-normal">-</div><div class="al">정상 재고 (SKU)</div></div></div>
+        <div class="alert-card blue"><div class="alert-icon">📦</div><div class="alert-info"><div class="av" id="al-total-qty">-</div><div class="al">총 재고량 (개)</div></div></div>
+      </div>
+
+      <!-- ③ 생산 관리 -->
+      <div class="section-label">
+        <i class="fas fa-industry" style="color:#f59e0b;"></i> 생산 관리 현황
+      </div>
+      <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:20px;">
+        <div class="stat-card">
+          <div class="stat-icon blue"><i class="fas fa-clipboard-list"></i></div>
+          <div class="stat-info"><div class="stat-label">전체 계획</div><div class="stat-value" id="stat-total">-</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon amber"><i class="fas fa-spinner"></i></div>
+          <div class="stat-info"><div class="stat-label">진행중</div><div class="stat-value" id="stat-inprogress">-</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon green"><i class="fas fa-check-circle"></i></div>
+          <div class="stat-info"><div class="stat-label">완료</div><div class="stat-value" id="stat-completed">-</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon teal"><i class="fas fa-boxes"></i></div>
+          <div class="stat-info"><div class="stat-label">총 생산 수량</div><div class="stat-value" id="stat-qty">-</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon purple"><i class="fas fa-cog"></i></div>
+          <div class="stat-info"><div class="stat-label">등록 금형</div><div class="stat-value" id="stat-molds">-</div></div>
+        </div>
+      </div>
+
+      <!-- 생산 차트 + 최근 계획 + 기계 현황 -->
+      <div class="dash-grid-3">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="fas fa-chart-pie"></i> 상태별 계획</div>
+          </div>
+          <div class="card-body chart-box-sm">
+            <canvas id="statusChart"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="fas fa-chart-bar"></i> 제품별 수량</div>
+          </div>
+          <div class="card-body chart-box-sm">
+            <canvas id="productChart"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="fas fa-industry"></i> 기계 현황</div>
+            <a href="machines.html" class="btn btn-secondary btn-sm">관리</a>
+          </div>
+          <div class="card-body">
+            <div class="machine-grid" id="machine-grid"><div class="spinner"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 최근 생산계획 + 일별 추이 -->
+      <div class="dash-grid-2">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="fas fa-clock"></i> 최근 생산계획</div>
+            <a href="production.html" class="btn btn-secondary btn-sm">전체보기</a>
+          </div>
+          <div class="table-wrap">
+            <table class="recent-table">
+              <thead><tr><th>일자</th><th>기계</th><th>제품명</th><th>수량</th><th>상태</th></tr></thead>
+              <tbody id="recent-tbody">
+                <tr><td colspan="5"><div class="spinner"></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="fas fa-chart-line"></i> 일별 생산 수량 추이</div>
+          </div>
+          <div class="card-body chart-box">
+            <canvas id="dailyChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script>
+function destroyChart(id) { ChartManager.destroy(id); }
+
+// ── VF 데이터 로드 ──
+async function loadVFData() {
+  try {
+    const [statsData, topData, invData] = await Promise.all([
+      VF_API.outboundStats(30, 'day'),
+      VF_API.topProducts(30, 5),
+      VF_API.inventory({ limit: 2000 })
+    ]);
+
+    // KPI
+    const s = statsData.summary || {};
+    const trend = (statsData.dailyTrend || statsData.trend || []).filter(d => {
+      const dt = new Date(d.date || d.outboundDate || '');
+      return !isNaN(dt.getTime()) && dt.getFullYear() > 2000;
+    });
+
+    document.getElementById('vf-count').textContent   = NumUtil.fmt(s.totalCount);
+    // API 필드명 양족 지원
+    const qty30 = trend.reduce((sum,d) => sum + (Number(d.quantity) || 0), 0);
+    const sal30 = trend.reduce((sum,d) => sum + (Number(d.salesAmount ?? d.sales_amount ?? 0)), 0);
+    document.getElementById('vf-qty30').textContent   = NumUtil.fmt(qty30);
+    document.getElementById('vf-sales30').textContent = NumUtil.fmtKRW(sal30);
+    const avg = trend.length ? Math.round(qty30 / trend.length) : 0;
+    document.getElementById('vf-avg').textContent     = NumUtil.fmt(avg);
+
+    // 출고 추세 차트
+    const labels = trend.map(d => {
+      const dt = new Date(d.date || d.outboundDate || '');
+      return `${String(dt.getMonth()+1).padStart(2,'0')}/${String(dt.getDate()).padStart(2,'0')}`;
+    });
+    destroyChart('vfTrend');
+    ChartManager.set('vfTrend', new Chart(document.getElementById('vfTrendChart').getContext('2d'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: '출고 수량', data: trend.map(d => Number(d.quantity) || 0),
+            borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,.1)',
+            borderWidth: 2, pointRadius: 0, fill: true, yAxisID: 'y' },
+          { label: '매출(만원)', data: trend.map(d => Math.round((Number(d.salesAmount ?? d.sales_amount ?? 0)) / 10000)),
+            borderColor: '#f59e0b', backgroundColor: 'transparent',
+            borderWidth: 1.5, pointRadius: 0, borderDash: [4,3], fill: false, yAxisID: 'y2' }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+        scales: {
+          y:  { position: 'left',  title: { display: true, text: '수량' } },
+          y2: { position: 'right', title: { display: true, text: '만원' }, grid: { drawOnChartArea: false } }
+        }
+      }
+    }));
+
+    // TOP 5 상품 (필드명 양족 지원)
+    const topArr = Array.isArray(topData) ? topData : (topData.data || topData.results || []);
+    const maxQ = topArr[0]?.quantity || 1;
+    document.getElementById('top5-list').innerHTML = topArr.map((item, i) => {
+      const name = item.productName || item.name || '-';
+      const pct = Math.round((Number(item.quantity) || 0) / maxQ * 100);
+      const numCls = i===0?'gold':i===1?'silver':i===2?'bronze':'';
+      return `
+        <div class="rank-item">
+          <div class="rank-num ${numCls}">${i+1}</div>
+          <div class="rank-name" title="${name}">${name.length>20?name.slice(0,20)+'…':name}</div>
+          <div style="width:60px;height:5px;background:var(--border);border-radius:3px;margin:0 8px;">
+            <div style="width:${pct}%;height:100%;background:#3b82f6;border-radius:3px;"></div>
+          </div>
+          <div class="rank-val">${NumUtil.fmt(item.quantity)}</div>
+        </div>`;
+    }).join('');
+
+    // 재고 경보 (필드명 양족 지원)
+    const invRows = Array.isArray(invData) ? invData : (invData.data || []);
+    const outCount    = invRows.filter(r => r.stockStatus==='out' || Number(r.currentStock)===0).length;
+    const lowCount    = invRows.filter(r => r.stockStatus==='low').length;
+    const normCount   = invRows.filter(r => r.stockStatus==='normal').length;
+    const totalQtyInv = invRows.reduce((s,r) => s + (Number(r.currentStock) || 0), 0);
+
+    document.getElementById('vf-stock-alert').textContent = NumUtil.fmt(outCount + lowCount);
+    document.getElementById('al-out').textContent        = NumUtil.fmt(outCount);
+    document.getElementById('al-low').textContent        = NumUtil.fmt(lowCount);
+    document.getElementById('al-normal').textContent     = NumUtil.fmt(normCount);
+    document.getElementById('al-total-qty').textContent  = NumUtil.fmt(totalQtyInv);
+
+  } catch (e) {
+    console.warn('VF API 로드 실패:', e.message);
+    // 실패해도 PMS 데이터는 계속 표시
+  }
+}
+
+// ── PMS 생산 데이터 로드 ──
+async function loadPMSData() {
+  try {
+    const [planRes, moldRes, machineRes] = await Promise.all([
+      API.get('production_plans', { limit: 200 }),
+      API.get('molds',    { limit: 200 }),
+      API.get('machines', { limit: 50  })
+    ]);
+
+    const plans    = planRes.data    || [];
+    const molds    = moldRes.data    || [];
+    const machines = machineRes.data || [];
+
+    // KPI
+    const inprog    = plans.filter(p=>p.status==='in_progress').length;
+    const completed = plans.filter(p=>p.status==='completed').length;
+    const planned   = plans.filter(p=>p.status==='planned').length;
+    const totalQty  = plans.reduce((s,p)=>s+(Number(p.planned_qty)||0),0);
+
+    document.getElementById('stat-total').textContent      = NumUtil.fmt(plans.length);
+    document.getElementById('stat-inprogress').textContent = NumUtil.fmt(inprog);
+    document.getElementById('stat-completed').textContent  = NumUtil.fmt(completed);
+    document.getElementById('stat-qty').textContent        = NumUtil.fmt(totalQty);
+    document.getElementById('stat-molds').textContent      = NumUtil.fmt(molds.length);
+
+    // 상태별 도넛
+    destroyChart('status');
+    ChartManager.set('status', new Chart(document.getElementById('statusChart').getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels: ['계획', '진행중', '완료'],
+        datasets: [{ data: [planned, inprog, completed],
+          backgroundColor: ['#3b82f6','#f59e0b','#22c55e'],
+          borderWidth: 2, borderColor: '#fff' }]
+      },
+      options: { responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ position:'bottom', labels:{ font:{size:11}, padding:10 } } },
+        cutout: '60%' }
+    }));
+
+    // 제품별 바차트
+    const prodMap = {};
+    plans.forEach(p => {
+      const nm = p.product_name_kr || p.product_name_en || '기타';
+      prodMap[nm] = (prodMap[nm]||0) + (Number(p.planned_qty)||0);
+    });
+    const prodSorted = Object.entries(prodMap).sort((a,b)=>b[1]-a[1]).slice(0,6);
+    destroyChart('product');
+    ChartManager.set('product', new Chart(document.getElementById('productChart').getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: prodSorted.map(([k])=>k.length>8?k.slice(0,8)+'…':k),
+        datasets: [{ label:'수량', data:prodSorted.map(([,v])=>v),
+          backgroundColor:'rgba(59,130,246,.75)', borderRadius:4 }]
+      },
+      options: { responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false} },
+        scales:{ x:{ ticks:{font:{size:10}} }, y:{ beginAtZero:true } } }
+    }));
+
+    // 일별 추이
+    const dateMap = {};
+    plans.forEach(p => {
+      const d = (p.plan_date||'').substring(0,10);
+      if (d) dateMap[d] = (dateMap[d]||0)+(Number(p.planned_qty)||0);
+    });
+    const dates = Object.keys(dateMap).sort();
+    destroyChart('daily');
+    ChartManager.set('daily', new Chart(document.getElementById('dailyChart').getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: dates.map(d=>DateUtil.fmtShort(d)),
+        datasets: [{ label:'계획 수량', data:dates.map(d=>dateMap[d]),
+          borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,.1)',
+          borderWidth:2, pointRadius:2, fill:true }]
+      },
+      options: { responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false} },
+        scales:{ y:{ beginAtZero:true } } }
+    }));
+
+    // 최근 계획 10건
+    const recent = [...plans].sort((a,b)=>{
+      const da = String(a.created_at||a.plan_date||'');
+      const db = String(b.created_at||b.plan_date||'');
+      return db.localeCompare(da);
+    }).slice(0,10);
+    document.getElementById('recent-tbody').innerHTML = recent.length ? recent.map(p => `
+      <tr>
+        <td>${DateUtil.fmtShort(p.plan_date)}</td>
+        <td>${p.machine_number||'-'}</td>
+        <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${p.product_name_kr||''}">${p.product_name_kr||p.product_name_en||'-'}</td>
+        <td style="text-align:right;font-weight:600;">${NumUtil.fmt(p.planned_qty)}</td>
+        <td><span class="badge badge-${p.status}">${StatusUtil.labels[p.status]||p.status}</span></td>
+      </tr>`).join('') :
+      `<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:20px;">등록된 생산계획이 없습니다</td></tr>`;
+
+    // 기계 현황
+    document.getElementById('machine-grid').innerHTML = machines.length ?
+      machines.map(m => `
+        <div class="machine-tile ${m.status==='active'?'active':'inactive'}">
+          <div class="m-num">${m.machine_number||'-'}</div>
+          <div>${m.tonnage||'?'}T</div>
+          <div class="m-status" style="color:${m.status==='active'?'#16a34a':'#dc2626'}">
+            ${m.status==='active'?'●가동':'○정지'}
+          </div>
+        </div>`).join('') :
+      `<div style="color:#94a3b8;font-size:12px;padding:10px;">기계 정보 없음</div>`;
+
+  } catch (e) {
+    console.warn('PMS 데이터 로드 실패:', e.message);
+  }
+}
+
+// ── 초기화 ──
+document.addEventListener('DOMContentLoaded', () => {
+  loadVFData();
+  loadPMSData();
+});
+</script>
+</body>
+</html>

@@ -22,6 +22,24 @@ Browser → Node.js (5174) → Django API (5176) → SQLite DB
 
 ## 다른 컴퓨터에서 실행 방법
 
+### Windows 사용자 (권장)
+
+> 이 프로젝트는 Ubuntu에서 개발되었으나 Windows 환경도 완전히 지원합니다.
+
+**빠른 시작:**
+
+1. 배치 파일을 사용하여 서버 시작:
+   - `start_all.bat` - 모든 서버 시작 (권장)
+   - `start_backend.bat` - Django 백엔드만 시작
+   - `start_frontend.bat` - 프론트엔드만 시작
+   - `stop_servers.bat` - 모든 서버 중지
+
+2. 자세한 Windows 설정 가이드:
+   - `WINDOWS_SETUP_GUIDE.md` - 전체 설정 가이드
+   - `WINDOWS_QUICK_REFERENCE.md` - 빠른 명령어 참조
+
+**수동 설정:**
+
 ### 1. 프로젝트 클론
 
 ```bash
@@ -89,15 +107,31 @@ python manage.py migrate
 
 ### 5. 서버 실행
 
-**백엔드 (포트 5176):**
+**Windows - 배치 파일 사용 (권장):**
+- 더블 클릭으로 `start_all.bat` 실행
+- 각 서버가 별도 창에서 실행됩니다
+
+**Windows - 수동 실행:**
+```powershell
+# 백엔드 (PowerShell)
+cd backend
+.venv\Scripts\activate
+python manage.py runserver 0.0.0.0:5176
+
+# 프론트엔드 (다른 PowerShell 창)
+cd frontend
+$env:SERVER_HOST="0.0.0.0"
+npx tsx server/index.ts
+```
+
+**Linux/Mac:**
 ```bash
+# 백엔드 (포트 5176)
 cd backend
 source .venv/bin/activate
 python manage.py runserver 0.0.0.0:5176
-```
 
-**프론트엔드 (포트 5174):**
-```bash
+# 프론트엔드 (포트 5174)
 cd frontend
 # 로컬에서만 접속
 npm run dev

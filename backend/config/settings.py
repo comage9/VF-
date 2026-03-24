@@ -32,12 +32,27 @@ def _load_project_env(path: Path):
 
         k, v = s.split('=', 1)
         key = (k or '').strip()
-        if not (key.startswith('ANTHROPIC_') or key.startswith('OLLAMA_') or key in ('AI_BACKEND', 'API_TIMEOUT_MS')):
+        # 허용된 환경변수: AI 설정 + Google Sheets URL
+        allowed_keys = {
+            'AI_BACKEND', 'API_TIMEOUT_MS',
+            'FC_GOOGLE_SHEET_CSV_URL', 'MASTER_DATA_CSV_URL', 'OUTBOUND_GOOGLE_SHEET_URL',
+            'GOOGLE_SHEETS_API_KEY'
+        }
+        allowed_prefixes = ('ANTHROPIC_', 'OLLAMA_')
+        import sys
+        if 'GOOGLE' in key or 'MASTER_DATA' in key or 'OUTBOUND' in key:
+            print(f'[DEBUG] Found {key} in allowed_keys: {key in allowed_keys}', file=sys.stderr)
+        if not (any(key.startswith(p) for p in allowed_prefixes) or key in allowed_keys):
+            print(f'[DEBUG] Skipping key: {key}', file=sys.stderr)
             continue
 
         value = (v or '').strip().strip('"').strip("'")
+        import sys
+        if key in allowed_keys:
+            print(f'[DEBUG] Key {key} in allowed, value={repr(value[:50] if len(value) > 50 else value)}, key in os.environ: {key in os.environ}', file=sys.stderr)
         if key and value and key not in os.environ:
             os.environ[key] = value
+            print(f'[DEBUG] Set {key} = {value[:50]}', file=sys.stderr)
 
 
 _load_project_env(BASE_DIR.parent / '.env')

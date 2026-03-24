@@ -4650,14 +4650,10 @@ def get_fc_inbound_records(request):
         limit = 10000
 
     queryset = FCInboundRecord.objects.all()
-    filters = {}
     if start:
-        filters['inbound_date__gte'] = start
+        queryset = queryset.filter(inbound_date__gte=start)
     if end:
-        filters['inbound_date__lte'] = end
-
-    if filters:
-        queryset = queryset.filter(**filters)
+        queryset = queryset.filter(inbound_date__lte=end)
 
     queryset = queryset.order_by('-inbound_date')[:limit]
 
@@ -4817,14 +4813,10 @@ def get_fc_inbound_top_products(request):
     limit = max(1, min(limit, 500))
 
     queryset = FCInboundRecord.objects.all()
-    filters = {}
     if start:
-        filters['inbound_date__gte'] = start
+        queryset = queryset.filter(inbound_date__gte=start)
     if end:
-        filters['inbound_date__lte'] = end
-
-    if filters:
-        queryset = queryset.filter(**filters)
+        queryset = queryset.filter(inbound_date__lte=end)
 
     if category and category != 'all':
         if category == '__others__':
@@ -4900,14 +4892,10 @@ def get_fc_inbound_pivot(request):
         return Response({'message': 'groupBy must be day, week, or month'}, status=status.HTTP_400_BAD_REQUEST)
 
     queryset = FCInboundRecord.objects.all()
-    filters = {}
     if start:
-        filters['inbound_date__gte'] = start
+        queryset = queryset.filter(inbound_date__gte=start)
     if end:
-        filters['inbound_date__lte'] = end
-
-    if filters:
-        queryset = queryset.filter(**filters)
+        queryset = queryset.filter(inbound_date__lte=end)
 
     if category and category != 'all':
         if category == '__others__':

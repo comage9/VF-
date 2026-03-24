@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PMS - 금형 관리</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+  <style>
+    .filter-bar { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px 20px; margin-bottom:18px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .cat-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px; }
+    .cat-tab { padding:5px 14px; border-radius:20px; border:1px solid var(--border2); background:var(--surface); color:var(--text-muted); cursor:pointer; font-size:12px; font-weight:500; font-family:inherit; transition:all .2s; }
+    .cat-tab:hover { border-color:var(--primary-light); color:var(--primary); }
+    .cat-tab.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+    .mold-weight { font-size:11px; color:var(--text-muted); }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-wrap">
+    <header class="topbar">
+      <button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">
+        <i class="fas fa-bars"></i>
+      </button>
+      <div class="topbar-title">금형 관리 <span>금형 마스터 데이터</span></div>
+      <div class="topbar-actions">
+        <button class="btn btn-primary btn-sm" onclick="openAddModal()">
+          <i class="fas fa-plus"></i> 금형 등록
+        </button>
+      </div>
+    </header>
+
+    <main class="content">
+      <!-- 분류 탭 -->
+      <div class="cat-tabs" id="cat-tabs"></div>
+
+      <!-- 필터 -->
+      <div class="filter-bar">
+        <div class="search-bar">
+          <i class="fas fa-search search-icon"></i>
+          <input type="text" id="m-search" class="form-control" placeholder="금형번호, 제품명 검색..." oninput="applyFilter()">
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="resetFilter()">
+          <i class="fas fa-undo"></i> 초기화
+        </button>
+        <span id="m-count" style="font-size:12px;color:var(--text-muted);margin-left:auto"></span>
+      </div>
+
+      <!-- 테이블 -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><i class="fas fa-tools" style="color:var(--primary)"></i> 금형 목록</div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th onclick="sortBy('mold_number')" style="cursor:pointer">금형번호 ↕</th>
+                <th>제품명(KR)</th>
+                <th>제품명(EN)</th>
+                <th>제품명(태국어)</th>
+                <th class="td-right">중량(g)</th>
+                <th>분류</th>
+                <th>비고</th>
+                <th style="width:80px">작업</th>
+              </tr>
+            </thead>
+            <tbody id="m-tbody">
+              <tr><td colspan="8"><div class="spinner"></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="padding:12px 20px;border-top:1px solid var(--border)">
+          <div class="pagination" id="m-pagination"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- 등록/수정 모달 -->
+<div class="modal-backdrop" id="mold-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="m-modal-title">금형 등록</div>
+      <button class="modal-close" onclick="Modal.close('mold-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="m-edit-id">
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">금형 번호 *</label>
+          <input type="number" id="m-f-num" class="form-control" placeholder="예: 56">
+        </div>
+        <div class="form-group">
+          <label class="form-label">분류</label>
+          <input type="text" id="m-f-cat" class="form-control" placeholder="예: 모던플러스">
+        </div>
+        <div class="form-group">
+          <label class="form-label">제품명(한국어) *</label>
+          <input type="text" id="m-f-kr" class="form-control">
+        </div>
+        <div class="form-group">
+          <label class="form-label">제품명(영문)</label>
+          <input type="text" id="m-f-en" class="form-control">
+        </div>
+        <div class="form-group">
+          <label class="form-label">제품명(태국어)</label>
+          <input type="text" id="m-f-th" class="form-control">
+        </div>
+        <div class="form-group">
+          <label class="form-label">중량(g)</label>
+          <input type="number" id="m-f-weight" class="form-control" placeholder="0">
+        </div>
+      </div>
+      <div class="form-group mt-3">
+        <label class="form-label">비고</label>
+        <input type="text" id="m-f-remark" class="form-control">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="Modal.close('mold-modal')">취소</button>
+      <button class="btn btn-primary" onclick="saveMold()"><i class="fas fa-save"></i> 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 삭제 모달 -->
+<div class="modal-backdrop" id="del-modal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header">
+      <div class="modal-title">삭제 확인</div>
+      <button class="modal-close" onclick="Modal.close('del-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p>이 금형 정보를 삭제하시겠습니까?</p>
+      <input type="hidden" id="del-id">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="Modal.close('del-modal')">취소</button>
+      <button class="btn btn-danger" onclick="confirmDelete()"><i class="fas fa-trash"></i> 삭제</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script>
+document.getElementById('sidebar').innerHTML = renderSidebar('molds');
+
+let allMolds = [], filtered = [];
+let sortKey = 'mold_number', sortDir = 1;
+let currentPage = 1, currentCat = '';
+const PAGE_SIZE = 25;
+
+async function init() {
+  const res = await API.get('molds', { limit: 200 });
+  allMolds = res.data || [];
+  renderCatTabs();
+  applyFilter();
+}
+
+function renderCatTabs() {
+  const cats = ['전체', ...new Set(allMolds.map(m=>m.category||'기타').filter(Boolean))].sort();
+  const tabsEl = document.getElementById('cat-tabs');
+  tabsEl.innerHTML = cats.map(c => `
+    <button class="cat-tab ${c==='전체'&&!currentCat?'active':c===currentCat?'active':''}" onclick="setCat('${c}')">${c}</button>
+  `).join('');
+}
+
+function setCat(cat) {
+  currentCat = cat === '전체' ? '' : cat;
+  document.querySelectorAll('.cat-tab').forEach(t => {
+    t.classList.toggle('active',
+      (cat==='전체' && !currentCat) || t.textContent === cat
+    );
+  });
+  applyFilter();
+}
+
+function applyFilter() {
+  const q = (document.getElementById('m-search').value||'').toLowerCase();
+  filtered = allMolds.filter(m => {
+    if (currentCat && m.category !== currentCat) return false;
+    if (q) {
+      const h = [String(m.mold_number), m.product_name_kr, m.product_name_en, m.product_name_th, m.category].join(' ').toLowerCase();
+      if (!h.includes(q)) return false;
+    }
+    return true;
+  });
+  filtered.sort((a,b) => {
+    let va = a[sortKey]||0, vb = b[sortKey]||0;
+    return va < vb ? -sortDir : va > vb ? sortDir : 0;
+  });
+  document.getElementById('m-count').textContent = `총 ${filtered.length}건`;
+  currentPage = 1;
+  renderTable();
+  renderPagination();
+}
+
+function sortBy(key) {
+  if (sortKey===key) sortDir*=-1;
+  else { sortKey=key; sortDir=1; }
+  applyFilter();
+}
+
+function renderTable() {
+  const start = (currentPage-1)*PAGE_SIZE;
+  const page  = filtered.slice(start, start+PAGE_SIZE);
+  const tbody = document.getElementById('m-tbody');
+  if (page.length===0) {
+    tbody.innerHTML=`<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🔩</div><h3>금형 데이터가 없습니다</h3></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = page.map(m => `
+    <tr>
+      <td style="font-weight:700;font-size:15px;color:var(--primary)">${m.mold_number}</td>
+      <td style="font-weight:600">${m.product_name_kr||'-'}</td>
+      <td style="font-size:12px;color:var(--text-muted)">${m.product_name_en||'-'}</td>
+      <td style="font-size:12px;color:var(--text-muted)">${m.product_name_th||'-'}</td>
+      <td class="td-right"><span class="mold-weight">${m.weight_gram?NumUtil.fmt(m.weight_gram)+'g':'-'}</span></td>
+      <td><span class="badge badge-blue">${m.category||'-'}</span></td>
+      <td style="font-size:12px;color:var(--text-muted)">${m.remark||''}</td>
+      <td>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-secondary btn-icon btn-sm" onclick="openEditModal('${m.id}')"><i class="fas fa-edit" style="font-size:11px"></i></button>
+          <button class="btn btn-danger btn-icon btn-sm" onclick="openDeleteModal('${m.id}')"><i class="fas fa-trash" style="font-size:11px"></i></button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function renderPagination() {
+  const total = Math.ceil(filtered.length/PAGE_SIZE);
+  const pg = document.getElementById('m-pagination');
+  if (total<=1) { pg.innerHTML=''; return; }
+  let html = `<button class="page-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>‹</button>`;
+  for (let i=1;i<=total;i++) {
+    if(i===1||i===total||Math.abs(i-currentPage)<=2)
+      html+=`<button class="page-btn ${i===currentPage?'active':''}" onclick="goPage(${i})">${i}</button>`;
+    else if(Math.abs(i-currentPage)===3) html+=`<span style="padding:0 4px">…</span>`;
+  }
+  html+=`<button class="page-btn" onclick="goPage(${currentPage+1})" ${currentPage===total?'disabled':''}>›</button>`;
+  pg.innerHTML=html;
+}
+
+function goPage(n) {
+  const total = Math.ceil(filtered.length/PAGE_SIZE);
+  if(n<1||n>total) return;
+  currentPage=n; renderTable(); renderPagination();
+}
+
+function resetFilter() {
+  document.getElementById('m-search').value='';
+  currentCat='';
+  renderCatTabs();
+  applyFilter();
+}
+
+function openAddModal() {
+  document.getElementById('m-modal-title').textContent='금형 등록';
+  document.getElementById('m-edit-id').value='';
+  ['m-f-num','m-f-kr','m-f-en','m-f-th','m-f-weight','m-f-cat','m-f-remark'].forEach(id=>document.getElementById(id).value='');
+  Modal.open('mold-modal');
+}
+
+function openEditModal(id) {
+  const m = allMolds.find(x=>x.id===id);
+  if(!m) return;
+  document.getElementById('m-modal-title').textContent='금형 수정';
+  document.getElementById('m-edit-id').value=m.id;
+  document.getElementById('m-f-num').value=m.mold_number||'';
+  document.getElementById('m-f-kr').value=m.product_name_kr||'';
+  document.getElementById('m-f-en').value=m.product_name_en||'';
+  document.getElementById('m-f-th').value=m.product_name_th||'';
+  document.getElementById('m-f-weight').value=m.weight_gram||'';
+  document.getElementById('m-f-cat').value=m.category||'';
+  document.getElementById('m-f-remark').value=m.remark||'';
+  Modal.open('mold-modal');
+}
+
+function openDeleteModal(id) {
+  document.getElementById('del-id').value=id;
+  Modal.open('del-modal');
+}
+
+async function confirmDelete() {
+  const id = document.getElementById('del-id').value;
+  try {
+    await API.delete('molds', id);
+    Toast.success('삭제되었습니다.');
+    Modal.close('del-modal');
+    const res = await API.get('molds', {limit:200});
+    allMolds = res.data||[];
+    renderCatTabs(); applyFilter();
+  } catch(e) { Toast.error('삭제 실패'); }
+}
+
+async function saveMold() {
+  const id = document.getElementById('m-edit-id').value;
+  const data = {
+    mold_number:     Number(document.getElementById('m-f-num').value)||0,
+    product_name_kr: document.getElementById('m-f-kr').value,
+    product_name_en: document.getElementById('m-f-en').value,
+    product_name_th: document.getElementById('m-f-th').value,
+    weight_gram:     Number(document.getElementById('m-f-weight').value)||0,
+    category:        document.getElementById('m-f-cat').value,
+    remark:          document.getElementById('m-f-remark').value,
+  };
+  if (!data.mold_number || !data.product_name_kr) { Toast.warning('금형번호와 제품명(KR)은 필수입니다.'); return; }
+  try {
+    if (id) { await API.put('molds', id, data); Toast.success('수정되었습니다.'); }
+    else     { await API.post('molds', data);   Toast.success('등록되었습니다.'); }
+    Modal.close('mold-modal');
+    const res = await API.get('molds', {limit:200});
+    allMolds = res.data||[];
+    renderCatTabs(); applyFilter();
+  } catch(e) { Toast.error('저장 실패: '+e.message); }
+}
+
+document.querySelectorAll('.modal-backdrop').forEach(el => {
+  el.addEventListener('click', e => { if(e.target===el) el.classList.remove('open'); });
+});
+init();
+</script>
+</body>
+</html>

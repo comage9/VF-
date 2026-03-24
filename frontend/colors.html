@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PMS - 색상/단위 관리</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+  <style>
+    .color-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:12px; }
+    .color-card {
+      background:var(--surface);
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      padding:16px;
+      transition:all .2s;
+      position:relative;
+    }
+    .color-card:hover { box-shadow:var(--shadow); transform:translateY(-2px); }
+    .color-swatch {
+      width:100%; height:48px;
+      border-radius:8px;
+      margin-bottom:10px;
+      border:1px solid rgba(0,0,0,.08);
+    }
+    .color-code { font-size:13px; font-weight:700; }
+    .color-name { font-size:11px; color:var(--text-muted); margin-top:2px; }
+    .color-actions { position:absolute; top:10px; right:10px; display:none; gap:4px; }
+    .color-card:hover .color-actions { display:flex; }
+    .filter-bar { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px 20px; margin-bottom:18px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .tab-buttons { display:flex; gap:8px; margin-bottom:20px; }
+    .tab-btn { padding:8px 20px; border-radius:8px; border:1px solid var(--border2); background:var(--surface); color:var(--text-muted); cursor:pointer; font-size:13px; font-weight:600; font-family:inherit; transition:all .2s; }
+    .tab-btn.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-wrap">
+    <header class="topbar">
+      <button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">
+        <i class="fas fa-bars"></i>
+      </button>
+      <div class="topbar-title">색상/단위 관리 <span>색상 마스터 데이터</span></div>
+      <div class="topbar-actions">
+        <button class="btn btn-primary btn-sm" onclick="openAddModal()">
+          <i class="fas fa-plus"></i> 색상 등록
+        </button>
+      </div>
+    </header>
+
+    <main class="content">
+      <!-- 탭 -->
+      <div class="tab-buttons">
+        <button class="tab-btn active" onclick="showTab('card',this)">🎨 카드 뷰</button>
+        <button class="tab-btn" onclick="showTab('table',this)">📋 목록 뷰</button>
+      </div>
+
+      <!-- 필터 -->
+      <div class="filter-bar">
+        <div class="search-bar">
+          <i class="fas fa-search search-icon"></i>
+          <input type="text" id="c-search" class="form-control" placeholder="색상코드, 색상명 검색..." oninput="applyFilter()">
+        </div>
+        <span id="c-count" style="font-size:12px;color:var(--text-muted);margin-left:auto"></span>
+      </div>
+
+      <!-- 카드 뷰 -->
+      <div id="view-card">
+        <div class="color-grid" id="color-grid">
+          <div class="spinner"></div>
+        </div>
+      </div>
+
+      <!-- 목록 뷰 -->
+      <div id="view-table" style="display:none">
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>색상 코드</th>
+                  <th>색상명(한국어)</th>
+                  <th>색상명(영문)</th>
+                  <th>미리보기</th>
+                  <th style="width:80px">작업</th>
+                </tr>
+              </thead>
+              <tbody id="c-tbody">
+                <tr><td colspan="5"><div class="spinner"></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- 등록/수정 모달 -->
+<div class="modal-backdrop" id="color-modal">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <div class="modal-title" id="c-modal-title">색상 등록</div>
+      <button class="modal-close" onclick="Modal.close('color-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="c-edit-id">
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">색상 코드 *</label>
+          <input type="text" id="c-f-code" class="form-control" placeholder="예: WHITE1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">색상명(한국어)</label>
+          <input type="text" id="c-f-kr" class="form-control" placeholder="예: 흰색">
+        </div>
+        <div class="form-group">
+          <label class="form-label">색상명(영문)</label>
+          <input type="text" id="c-f-en" class="form-control" placeholder="예: White">
+        </div>
+        <div class="form-group">
+          <label class="form-label">색상 미리보기</label>
+          <input type="color" id="c-f-preview" class="form-control" style="height:40px;padding:4px;">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="Modal.close('color-modal')">취소</button>
+      <button class="btn btn-primary" onclick="saveColor()"><i class="fas fa-save"></i> 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 삭제 모달 -->
+<div class="modal-backdrop" id="del-modal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header"><div class="modal-title">삭제 확인</div>
+      <button class="modal-close" onclick="Modal.close('del-modal')">✕</button></div>
+    <div class="modal-body"><p>이 색상 정보를 삭제하시겠습니까?</p><input type="hidden" id="del-id"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="Modal.close('del-modal')">취소</button>
+      <button class="btn btn-danger" onclick="confirmDelete()"><i class="fas fa-trash"></i> 삭제</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script>
+document.getElementById('sidebar').innerHTML = renderSidebar('colors');
+
+let allColors = [], filtered = [];
+let viewMode = 'card';
+
+// 색상코드 → hex 색상 매핑 (근사값)
+const colorMap = {
+  WHITE1:'#f5f5f5', GRAY1:'#9e9e9e', Gray2:'#bdbdbd',
+  Ivory:'#fffff0', BROWN1:'#8d6e63', PINK1:'#f48fb1',
+  BLUE1:'#42a5f5', GREEN1:'#66bb6a', BLACK1:'#212121',
+  BEIGE1:'#d7ccc8', PURPLE1:'#ab47bc', ORANGE1:'#ffa726',
+  YELLOW1:'#ffee58', RED1:'#ef5350', MINT1:'#80cbc4'
+};
+
+function getColorHex(code) {
+  return colorMap[code] || '#e0e0e0';
+}
+
+async function init() {
+  const res = await API.get('colors', { limit: 200 });
+  allColors = res.data || [];
+  applyFilter();
+}
+
+function applyFilter() {
+  const q = (document.getElementById('c-search').value||'').toLowerCase();
+  filtered = allColors.filter(c => {
+    if (!q) return true;
+    const h = [c.color_code, c.color_name_kr, c.color_name_en].join(' ').toLowerCase();
+    return h.includes(q);
+  });
+  document.getElementById('c-count').textContent = `총 ${filtered.length}건`;
+  renderCardView();
+  renderTableView();
+}
+
+function renderCardView() {
+  const grid = document.getElementById('color-grid');
+  if (filtered.length===0) {
+    grid.innerHTML=`<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">🎨</div><h3>색상 데이터가 없습니다</h3></div>`;
+    return;
+  }
+  grid.innerHTML = filtered.map(c => `
+    <div class="color-card">
+      <div class="color-actions">
+        <button class="btn btn-secondary btn-icon btn-sm" onclick="openEditModal('${c.id}')"><i class="fas fa-edit" style="font-size:11px"></i></button>
+        <button class="btn btn-danger btn-icon btn-sm" onclick="openDeleteModal('${c.id}')"><i class="fas fa-trash" style="font-size:11px"></i></button>
+      </div>
+      <div class="color-swatch" style="background:${getColorHex(c.color_code)}"></div>
+      <div class="color-code">${c.color_code}</div>
+      <div class="color-name">${c.color_name_kr||''} ${c.color_name_en?'/ '+c.color_name_en:''}</div>
+    </div>
+  `).join('');
+}
+
+function renderTableView() {
+  const tbody = document.getElementById('c-tbody');
+  if (filtered.length===0) {
+    tbody.innerHTML=`<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">🎨</div><h3>데이터 없음</h3></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = filtered.map(c => `
+    <tr>
+      <td style="font-weight:700">${c.color_code}</td>
+      <td>${c.color_name_kr||'-'}</td>
+      <td style="color:var(--text-muted)">${c.color_name_en||'-'}</td>
+      <td>
+        <div style="width:32px;height:24px;border-radius:4px;background:${getColorHex(c.color_code)};border:1px solid rgba(0,0,0,.1)"></div>
+      </td>
+      <td>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-secondary btn-icon btn-sm" onclick="openEditModal('${c.id}')"><i class="fas fa-edit" style="font-size:11px"></i></button>
+          <button class="btn btn-danger btn-icon btn-sm" onclick="openDeleteModal('${c.id}')"><i class="fas fa-trash" style="font-size:11px"></i></button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function showTab(mode, btn) {
+  viewMode = mode;
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('view-card').style.display = mode==='card'?'block':'none';
+  document.getElementById('view-table').style.display= mode==='table'?'block':'none';
+}
+
+function openAddModal() {
+  document.getElementById('c-modal-title').textContent='색상 등록';
+  document.getElementById('c-edit-id').value='';
+  document.getElementById('c-f-code').value='';
+  document.getElementById('c-f-kr').value='';
+  document.getElementById('c-f-en').value='';
+  document.getElementById('c-f-preview').value='#ffffff';
+  Modal.open('color-modal');
+}
+
+function openEditModal(id) {
+  const c = allColors.find(x=>x.id===id);
+  if(!c) return;
+  document.getElementById('c-modal-title').textContent='색상 수정';
+  document.getElementById('c-edit-id').value=c.id;
+  document.getElementById('c-f-code').value=c.color_code||'';
+  document.getElementById('c-f-kr').value=c.color_name_kr||'';
+  document.getElementById('c-f-en').value=c.color_name_en||'';
+  document.getElementById('c-f-preview').value=getColorHex(c.color_code);
+  Modal.open('color-modal');
+}
+
+function openDeleteModal(id) {
+  document.getElementById('del-id').value=id;
+  Modal.open('del-modal');
+}
+
+async function confirmDelete() {
+  const id = document.getElementById('del-id').value;
+  try {
+    await API.delete('colors', id);
+    Toast.success('삭제되었습니다.');
+    Modal.close('del-modal');
+    const res = await API.get('colors',{limit:200});
+    allColors = res.data||[];
+    applyFilter();
+  } catch(e) { Toast.error('삭제 실패'); }
+}
+
+async function saveColor() {
+  const id = document.getElementById('c-edit-id').value;
+  const data = {
+    color_code:    document.getElementById('c-f-code').value.trim(),
+    color_name_kr: document.getElementById('c-f-kr').value.trim(),
+    color_name_en: document.getElementById('c-f-en').value.trim(),
+  };
+  if (!data.color_code) { Toast.warning('색상 코드는 필수입니다.'); return; }
+  try {
+    if (id) { await API.put('colors', id, data); Toast.success('수정되었습니다.'); }
+    else     { await API.post('colors', data);   Toast.success('등록되었습니다.'); }
+    Modal.close('color-modal');
+    const res = await API.get('colors',{limit:200});
+    allColors = res.data||[];
+    applyFilter();
+  } catch(e) { Toast.error('저장 실패'); }
+}
+
+document.querySelectorAll('.modal-backdrop').forEach(el => {
+  el.addEventListener('click', e => { if(e.target===el) el.classList.remove('open'); });
+});
+init();
+</script>
+</body>
+</html>
