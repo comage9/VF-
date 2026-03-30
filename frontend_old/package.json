@@ -4,11 +4,16 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "NODE_ENV=development tsx server/index.ts",
+    "dev": "set NODE_ENV=development&& set SERVER_HOST=0.0.0.0&& set PORT=5174&& tsx server/index.ts",
     "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "cdp:audit": "npx tsx scripts/cdp-inspector.ts",
+    "cdp:setup": "scripts\\cdp-setup.bat",
+    "cdp:dashboard": "npx tsx scripts/cdp-dashboard.ts",
+    "test:cdp": "npx playwright test tests/cdp-audit.spec.ts",
+    "chrome:debug": "start chrome.exe --remote-debugging-port=9222 http://localhost:5174"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
