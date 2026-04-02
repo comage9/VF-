@@ -4275,25 +4275,29 @@ def delivery_daily_prediction(request):
         if len(matching_records) < 3:
             matching_records = [r.total for r in records if r.date.weekday() == target_dow and r.total and r.total > 0]
 
-        # 예측값 계산 - 보수적 접근 (중앙값 사용, 최근 가중도 낮게)
+        # 예측값 계산 - 중간 수준 접근 (중앙값 + 최근 가중)
         if matching_records:
+            # 이상치 제거 (상위 10% 초과값 제외)
+            if len(matching_records) > 5:
+                trim = len(matching_records) // 10
+                matching_records = matching_records[trim:-trim]
+
             matching_records.sort()
             base_prediction = matching_records[len(matching_records)//2]  # 중앙값
 
-            # 최근 데이터 가중 (너무 높게 평가되지 않도록 가중도 축소)
+            # 최근 데이터 가중 (적정 수준)
             if len(matching_records) >= 3:
-                recent_weight = 0.3  # 0.6에서 0.3으로 감소
+                recent_weight = 0.4  # 0.3에서 0.4로 증가
                 base_prediction = int(base_prediction * (1 - recent_weight) + matching_records[-1] * recent_weight)
         else:
             base_prediction = int(np.mean(y))
 
-        # Conservative adjustment - 90%로 축소 (과대 예측 방지)
-        # 또한 최근 4주 평균을 기준으로 상한 설정
-        predicted_total = int(base_prediction * 0.90)
-        # 상한: 최근 평균의 120%까지만
-        predicted_total = min(predicted_total, int(recent_4week_avg * 1.2))
-        # 하한: 최근 평균의 70% 이상
-        predicted_total = max(predicted_total, int(recent_4week_avg * 0.7))
+        # Conservative adjustment - 95%로 설정 (덜 보수적으로)
+        predicted_total = int(base_prediction * 0.95)
+        # 상한: 최근 평균의 130%까지만
+        predicted_total = min(predicted_total, int(recent_4week_avg * 1.3))
+        # 하한: 최근 평균의 80% 이상 (너무 낮게 설정되지 않도록)
+        predicted_total = max(predicted_total, int(recent_4week_avg * 0.8))
 
         # Stage 2: 시간대별 비율로 분포 예측
         weekday_ratios = _get_weekday_hourly_ratios(target_dow, records)
