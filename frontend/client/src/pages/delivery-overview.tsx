@@ -794,6 +794,21 @@ function DeliveryOverview() {
                 <div id="backtest-summary-content"></div>
               </div>
             </div>
+
+            {/* 내일 예측 패널 */}
+            <div className="bg-card border border-border rounded-lg p-4 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-base font-semibold text-foreground">📅 내일 예측</h2>
+                <button id="refresh-daily-prediction" className="btn btn-xs btn-ghost">
+                  새로고침
+                </button>
+              </div>
+              <div id="daily-prediction-content" className="text-sm">
+                <div className="text-center text-muted-foreground py-4">
+                  예측 데이터 로딩중...
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </main>

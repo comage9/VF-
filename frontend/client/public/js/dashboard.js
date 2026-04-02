@@ -564,6 +564,74 @@ class Dashboard {
             });
         }
 
+        // 📅 내일 예측 패널 로드
+        this.loadDailyPrediction = async () => {
+            const contentDiv = document.getElementById('daily-prediction-content');
+            if (!contentDiv) return;
+
+            try {
+                contentDiv.innerHTML = '<div class="text-center text-muted-foreground py-4">예측 데이터 로딩중...</div>';
+
+                const response = await fetch(`${this.apiBase}/api/delivery/daily-prediction`);
+                const result = await response.json();
+
+                if (!result.success) {
+                    contentDiv.innerHTML = `<div class="text-error text-sm">${result.message || '예측 실패'}</div>`;
+                    return;
+                }
+
+                const { daily_prediction, hourly_prediction, features } = result;
+                const total = daily_prediction.predicted_total;
+                const confidence = daily_prediction.confidence;
+
+                let html = '';
+                html += '<div class="flex justify-between items-center mb-3">';
+                html += `<div class="text-lg font-bold text-primary">${total.toLocaleString()}</div>`;
+                html += `<div class="badge badge-sm ${confidence === 'medium' ? 'badge-success' : 'badge-warning'}">${confidence}</div>`;
+                html += '</div>';
+
+                html += '<div class="text-xs text-muted-foreground mb-3">';
+                html += `<div>예측일: ${daily_prediction.date} (${features.day_of_week})</div>`;
+                html += `<div>기간: ${features.period === 'month_start' ? '월초' : features.period === 'month_mid' ? '월중' : '월말'}</div>`;
+                html += `<div>학습데이터: ${features.training_samples}일</div>`;
+                html += '</div>';
+
+                // 시간대별 예측 (상위 5개만 표시)
+                html += '<div class="text-xs">';
+                html += '<div class="font-medium text-foreground mb-1">시간대별 예측 (상위):</div>';
+                const sortedHours = Object.entries(hourly_prediction)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 5);
+                for (const [hour, value] of sortedHours) {
+                    const h = hour.replace('hour_', '');
+                    html += `<div class="flex justify-between"><span>${h}:00</span><span>${value}</span></div>`;
+                }
+                html += '</div>';
+
+                contentDiv.innerHTML = html;
+
+                // 저장 (선택적으로 AI 예측과 비교용)
+                this.tomorrowPrediction = daily_prediction.predicted_total;
+                this.tomorrowHourlyPrediction = hourly_prediction;
+
+            } catch (e) {
+                console.error('내일 예측 로드 실패:', e);
+                contentDiv.innerHTML = `<div class="text-error text-sm">로드 실패: ${e.message}</div>`;
+            }
+        };
+
+        // 초기 로드 및 새로고침 버튼
+        if (document.getElementById('daily-prediction-content')) {
+            this.loadDailyPrediction();
+        }
+
+        const refreshDailyBtn = document.getElementById('refresh-daily-prediction');
+        if (refreshDailyBtn) {
+            refreshDailyBtn.addEventListener('click', () => {
+                this.loadDailyPrediction();
+            });
+        }
+
         // 동적 폼 제출을 위한 이벤트 위임 사용
         const container = document.getElementById('dynamic-data-entry-container');
         if (container) {
