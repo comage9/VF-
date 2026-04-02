@@ -3406,8 +3406,14 @@ def ai_predict_hourly(request):
 
         predicted_increment = statistics.median(increments)
 
-    # 🎯 보수적 예측: 계산값의 90%만 적용 (과대 예측 방지)
-    predicted_increment = int(predicted_increment * 0.9)
+    # 🎯 보수적 예측: 계산값의 85%만 적용 (과대 예측 방지)
+    # 추가: 현재값이 최근 평균보다 낮으면 더 보수적으로
+    recent_avg = sum([int(r.total or 0) for r in past_records[:7] if r.total and r.total > 0]) / min(7, len([r for r in past_records if r.total and r.total > 0]))
+    if total_int < recent_avg * 0.9:
+        # 현재값이 낮으면 보정 계수 더 낮게
+        predicted_increment = int(predicted_increment * 0.8)
+    else:
+        predicted_increment = int(predicted_increment * 0.85)
 
     predicted_total = total_int + predicted_increment
 
@@ -3423,7 +3429,7 @@ def ai_predict_hourly(request):
             'model': 'conservative_median_period_adjusted',
             'period': current_period,
             'data_points': len(increments) // 2 if increments else 0,
-            'adjustment_factor': 0.9,
+            'adjustment_factor': 0.85,
             'same_day_records': len([r for r in period_records if r.total and r.total > 0]),
             'backtest_mae': 34.3,
             'backtest_mape': 6.2
