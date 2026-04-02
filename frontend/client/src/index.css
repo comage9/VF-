@@ -1,0 +1,287 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* 배경에 미묘한 그라디언트 추가 */
+  --background: linear-gradient(135deg, hsl(210, 45%, 98%) 0%, hsl(220, 40%, 97%) 100%);
+  --background-solid: hsl(210, 40%, 98%);
+  --foreground: hsl(222.2, 84%, 4.9%);
+  
+  /* 카드에 부드러운 색감 */
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(222.2, 84%, 4.9%);
+  --card-hover: hsl(210, 45%, 99%);
+  
+  --popover: hsl(0, 0%, 100%);
+  --popover-foreground: hsl(222.2, 84%, 4.9%);
+  
+  /* Primary 색상을 더 생동감 있게 (파란색 계열 강화) */
+  --primary: hsl(217, 91%, 60%);
+  --primary-light: hsl(217, 91%, 70%);
+  --primary-dark: hsl(217, 91%, 50%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  
+  /* Secondary를 약간 청록색 계열로 */
+  --secondary: hsl(200, 50%, 94%);
+  --secondary-foreground: hsl(222.2, 47.4%, 11.2%);
+  --secondary-hover: hsl(200, 50%, 90%);
+  
+  /* Muted도 더 명확하게 */
+  --muted: hsl(210, 35%, 93%);
+  --muted-foreground: hsl(215.4, 16.3%, 46.9%);
+  
+  /* Accent를 연한 보라색 계열로 */
+  --accent: hsl(250, 60%, 96%);
+  --accent-foreground: hsl(250, 70%, 30%);
+  --accent-hover: hsl(250, 60%, 92%);
+  
+  /* Success, Warning, Danger 색상 추가 */
+  --success: hsl(142, 71%, 45%);
+  --success-foreground: hsl(0, 0%, 100%);
+  --warning: hsl(38, 92%, 50%);
+  --warning-foreground: hsl(0, 0%, 100%);
+  --destructive: hsl(0, 84%, 60%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+  
+  --border: hsl(214.3, 31.8%, 91.4%);
+  --input: hsl(214.3, 31.8%, 91.4%);
+  --ring: hsl(217, 91%, 60%);
+  
+  /* 차트 색상을 더 생동감 있고 구분 명확하게 */
+  --chart-1: hsl(217, 91%, 60%);        /* 밝은 파란색 */
+  --chart-2: hsl(142, 71%, 45%);        /* 녹색 */
+  --chart-3: hsl(38, 92%, 55%);         /* 주황색 */
+  --chart-4: hsl(271, 81%, 56%);        /* 보라색 */
+  --chart-5: hsl(341, 75%, 55%);        /* 분홍색 */
+  --chart-6: hsl(173, 58%, 39%);        /* 청록색 */
+  
+  /* Sidebar를 더 세련되게 */
+  --sidebar: linear-gradient(180deg, hsl(220, 30%, 99%) 0%, hsl(220, 30%, 98%) 100%);
+  --sidebar-solid: hsl(220, 30%, 99%);
+  --sidebar-foreground: hsl(222.2, 84%, 4.9%);
+  --sidebar-primary: hsl(217, 91%, 60%);
+  --sidebar-primary-foreground: hsl(0, 0%, 100%);
+  --sidebar-accent: hsl(210, 40%, 96%);
+  --sidebar-accent-foreground: hsl(222.2, 47.4%, 11.2%);
+  --sidebar-border: hsl(214.3, 31.8%, 91.4%);
+  --sidebar-ring: hsl(217, 91%, 60%);
+  
+  --font-sans: Inter, system-ui, -apple-system, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: Menlo, monospace;
+  --radius: 0.75rem;
+  
+  /* 그림자를 더 뚜렷하게 */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  
+  --tracking-normal: 0em;
+  --spacing: 0.25rem;
+}
+
+.dark {
+  --background: hsl(222.2, 84%, 4.9%);
+  --foreground: hsl(210, 40%, 98%);
+  --card: hsl(222.2, 84%, 4.9%);
+  --card-foreground: hsl(210, 40%, 98%);
+  --popover: hsl(222.2, 84%, 4.9%);
+  --popover-foreground: hsl(210, 40%, 98%);
+  --primary: hsl(217.2, 91.2%, 59.8%);
+  --primary-foreground: hsl(222.2, 84%, 4.9%);
+  --secondary: hsl(217.2, 32.6%, 17.5%);
+  --secondary-foreground: hsl(210, 40%, 98%);
+  --muted: hsl(217.2, 32.6%, 17.5%);
+  --muted-foreground: hsl(215, 20.2%, 65.1%);
+  --accent: hsl(217.2, 32.6%, 17.5%);
+  --accent-foreground: hsl(210, 40%, 98%);
+  --destructive: hsl(0, 62.8%, 30.6%);
+  --destructive-foreground: hsl(210, 40%, 98%);
+  --border: hsl(217.2, 32.6%, 17.5%);
+  --input: hsl(217.2, 32.6%, 17.5%);
+  --ring: hsl(224.3, 76.3%, 94.1%);
+  --chart-1: hsl(220, 70%, 50%);
+  --chart-2: hsl(160, 60%, 45%);
+  --chart-3: hsl(30, 80%, 55%);
+  --chart-4: hsl(280, 65%, 60%);
+  --chart-5: hsl(340, 75%, 55%);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    @apply font-sans antialiased;
+    font-family: var(--font-sans);
+    background: var(--background);
+    color: var(--foreground);
+  }
+  
+  /* 카드 hover 효과 */
+  .card-hover {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+/* Custom scrollbar styles */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Loading animation */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Table hover effects */
+table tr {
+  transition: background-color 0.2s ease;
+}
+
+table tr:hover {
+  background-color: hsl(var(--muted) / 0.5);
+}
+
+/* Button focus and hover styles */
+button {
+  transition: all 0.2s ease;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+button:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* File upload area styles */
+.drag-over {
+  border-color: hsl(var(--primary));
+  background-color: hsl(var(--primary) / 0.05);
+}
+
+/* Gradient backgrounds */
+.gradient-bg-primary {
+  background: linear-gradient(135deg, hsl(217, 91%, 60%) 0%, hsl(217, 91%, 70%) 100%);
+}
+
+.gradient-bg-success {
+  background: linear-gradient(135deg, hsl(142, 71%, 45%) 0%, hsl(142, 71%, 55%) 100%);
+}
+
+.gradient-bg-warning {
+  background: linear-gradient(135deg, hsl(38, 92%, 50%) 0%, hsl(38, 92%, 60%) 100%);
+}
+
+.gradient-bg-danger {
+  background: linear-gradient(135deg, hsl(0, 84%, 60%) 0%, hsl(0, 84%, 70%) 100%);
+}
+
+/* 차트 애니메이션 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chart-container {
+  animation: fadeIn 0.5s ease-out;
+}
+
+/* 사이드바 아이템 애니메이션 */
+.nav-tab {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.nav-tab::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 4px;
+  background: hsl(var(--primary));
+  transform: scaleY(0);
+  transition: transform 0.3s ease;
+}
+
+.nav-tab:hover::before {
+  transform: scaleY(1);
+}
+
+/* 카드 그림자 효과 개선 */
+.card-shadow {
+  box-shadow: var(--shadow-md);
+  transition: box-shadow 0.3s ease;
+}
+
+.card-shadow:hover {
+  box-shadow: var(--shadow-xl);
+}
+
+/* 상태별 색상 */
+.status-success {
+  background: linear-gradient(135deg, hsl(142, 71%, 95%) 0%, hsl(142, 71%, 90%) 100%);
+  border-left: 4px solid hsl(142, 71%, 45%);
+}
+
+.status-warning {
+  background: linear-gradient(135deg, hsl(38, 92%, 95%) 0%, hsl(38, 92%, 90%) 100%);
+  border-left: 4px solid hsl(38, 92%, 50%);
+}
+
+.status-danger {
+  background: linear-gradient(135deg, hsl(0, 84%, 95%) 0%, hsl(0, 84%, 90%) 100%);
+  border-left: 4px solid hsl(0, 84%, 60%);
+}
+
+.status-info {
+  background: linear-gradient(135deg, hsl(217, 91%, 95%) 0%, hsl(217, 91%, 90%) 100%);
+  border-left: 4px solid hsl(217, 91%, 60%);
+}

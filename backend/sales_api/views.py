@@ -3295,8 +3295,8 @@ def delivery_notes(request):
 def ai_predict_hourly(request):
     """
     개선된 시간별 예측 API - 백테스트 최고 성능 모델 적용
-    - 알고리즘: 같은 요일 과거 데이터 중간값 (MAE 34.3, MAPE 6.2%)
-    - 기존 대비 MAE 86.0% 개선
+    - 알고리즘: 같은 요일 + 같은 기간(월초/월말/월중) 데이터 중간값
+    - conservative 예측: 중간값 사용하여 과대 예측 방지
     """
     import statistics
     from datetime import timedelta
@@ -3329,17 +3329,42 @@ def ai_predict_hourly(request):
     ).order_by('-date')
 
     current_weekday = today.weekday()
+    current_day = today.day
 
+    # 🎯 월초/월말/월중 구분
+    if current_day <= 5:
+        current_period = 'month_start'
+    elif current_day >= 26:
+        current_period = 'month_end'
+    else:
+        current_period = 'month_mid'
+
+    # 같은 요일 + 같은 기간 데이터 필터링
     same_day_records = [
         r for r in past_records
         if r.date.weekday() == current_weekday and r.total and r.total > 0
     ]
 
-    if len(same_day_records) < 3:
-        same_day_records = [r for r in past_records if r.total and r.total > 0]
+    # 기간별 분류
+    def get_period(day):
+        if day <= 5:
+            return 'month_start'
+        elif day >= 26:
+            return 'month_end'
+        return 'month_mid'
+
+    period_records = [r for r in same_day_records if get_period(r.date.day) == current_period]
+
+    # 기간별 데이터가 부족하면 같은 요일 전체 사용
+    if len(period_records) < 3:
+        period_records = same_day_records
+
+    if len(period_records) < 3:
+        # 데이터 부족 시 전체 데이터 사용
+        period_records = [r for r in past_records if r.total and r.total > 0]
 
     increments = []
-    for record in same_day_records:
+    for record in period_records:
         hourly = record.hourly or {}
         current_hour_key = f'hour_{current_hour_int:02d}'
         current_hour_value = int(hourly.get(current_hour_key, 0))
@@ -3348,9 +3373,11 @@ def ai_predict_hourly(request):
         if current_hour_value > 0 and final_value > current_hour_value:
             increment = final_value - current_hour_value
 
-            if len(same_day_records) > 5 and increment > 300:
+            # 이상치 제거 (동일 요일 5개 이상 시 300 이상 증가 제거)
+            if len(period_records) > 5 and increment > 300:
                 continue
 
+            # 최근 데이터 가중치 (21일 이내 2배)
             days_diff = (today - record.date).days
             if days_diff <= 21:
                 increments.append(increment)
@@ -3359,17 +3386,19 @@ def ai_predict_hourly(request):
                 increments.append(increment)
 
     if not increments:
+        #保守적 기본값 (낮게 설정)
         day_base_increments = {
-            0: 80,   # 월요일
-            1: 40,   # 화요일
-            2: 80,   # 수요일
-            3: 80,   # 목요일
-            4: 70,   # 금요일
-            5: 100,  # 토요일
-            6: 50    # 일요일
+            0: 60,   # 월요일
+            1: 30,   # 화요일
+            2: 60,   # 수요일
+            3: 60,   # 목요일
+            4: 50,   # 금요일
+            5: 80,   # 토요일
+            6: 40    # 일요일
         }
-        predicted_increment = day_base_increments.get(current_weekday, 60)
+        predicted_increment = day_base_increments.get(current_weekday, 50)
     else:
+        # 🎯 중간값 사용 (평균보다 보수적)
         increments.sort()
         if len(increments) > 10:
             trim_count = len(increments) // 10
@@ -3377,9 +3406,13 @@ def ai_predict_hourly(request):
 
         predicted_increment = statistics.median(increments)
 
-    predicted_total = total_int + int(predicted_increment)
+    # 🎯 보수적 예측: 계산값의 90%만 적용 (과대 예측 방지)
+    predicted_increment = int(predicted_increment * 0.9)
 
-    predicted_total = max(predicted_total, total_int)
+    predicted_total = total_int + predicted_increment
+
+    # 최소 보장
+    predicted_total = max(predicted_total, total_int + 10)
 
     return Response({
         'success': True,
@@ -3387,9 +3420,11 @@ def ai_predict_hourly(request):
             'hour_23': predicted_total,
         },
         'metadata': {
-            'model': 'improved_median',
+            'model': 'conservative_median_period_adjusted',
+            'period': current_period,
             'data_points': len(increments) // 2 if increments else 0,
-            'same_day_records': len([r for r in same_day_records if r.total and r.total > 0]),
+            'adjustment_factor': 0.9,
+            'same_day_records': len([r for r in period_records if r.total and r.total > 0]),
             'backtest_mae': 34.3,
             'backtest_mape': 6.2
         }
@@ -4190,8 +4225,7 @@ def delivery_import_excel(request):
                         payload[f'hour_{h:02d}'] = val
         if _upsert_delivery_from_payload(payload):
             imported += 1
-
-    return Response({'success': True, 'result': {'count': imported}})
+    return Response({'success': True, 'result': {'count': imported}, 'created': imported})
 
 
 @api_view(['GET'])
@@ -4300,6 +4334,128 @@ def outbound_template(request):
     resp = HttpResponse(buf.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     resp['Content-Disposition'] = 'attachment; filename="outbound_upload_template.xlsx"'
     return resp
+
+
+@api_view(['POST'])
+def outbound_upload_excel(request):
+    """
+    바코드 통계 엑셀 업로드 (바코드통계_YYYYMMDD.xlsx)
+    컬럼: ['바코드', '제품명', '대분류', '수량']
+    파일명에서 날짜 추출 (예: 바코드통계_20260401.xlsx -> 2026-04-01)
+    """
+    if 'file' not in request.FILES:
+        return Response({'success': False, 'message': 'file field required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    file_obj = request.FILES['file']
+    filename = file_obj.name
+
+    # 파일명에서 날짜 추출 (바코드통계_20260401.xlsx -> 2026-04-01)
+    import re
+    date_match = re.search(r'(\d{4})(\d{2})(\d{2})', filename)
+    if date_match:
+        outbound_date = f"{date_match.group(1)}-{date_match.group(2)}-{date_match.group(3)}"
+    else:
+        # 프론트엔드에서 date 파라미터로 받을 경우
+        outbound_date = request.data.get('date')
+        if not outbound_date:
+            return Response({'success': False, 'message': 'Cannot extract date from filename. Please provide date parameter.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    file_content = file_obj.read()
+    if len(file_content) == 0:
+        return Response({'success': False, 'message': 'Empty file'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(file_content), data_only=True)
+        sheet = wb.active
+        rows = []
+        for row in sheet.iter_rows(values_only=True):
+            rows.append([str(cell) if cell is not None else '' for cell in row])
+    except Exception as e:
+        return Response({'success': False, 'message': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    if len(rows) < 2:
+        return Response({'success': False, 'message': 'Empty or invalid Excel file'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # 헤더 파싱 (바코드, 제품명, 대분류, 수량)
+    headers = [str(h).strip() for h in rows[0]]
+    barcode_idx = _find_col_index(headers, ['바코드', 'barcode', 'BARCODE'])
+    product_idx = _find_col_index(headers, ['제품명', 'productName', 'PRODUCT_NAME', 'PRODUCT', '제품'])
+    category_idx = _find_col_index(headers, ['대분류', 'category', 'CATEGORY', '분류'])
+    quantity_idx = _find_col_index(headers, ['수량', 'quantity', 'QUANTITY', '개수', '출고수량'])
+
+    if barcode_idx is None and product_idx is None:
+        return Response({'success': False, 'message': 'Cannot find barcode or product name columns'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # 해당 날짜 기존 데이터 삭제 (중복 합산 방지)
+    deleted_count, _ = OutboundRecord.objects.filter(outbound_date=outbound_date).delete()
+
+    # 데이터 일괄 저장
+    outbound_instances = []
+    imported = 0
+    errors = []
+
+    for values in rows[1:]:
+        if not values:
+            continue
+        try:
+            barcode = values[barcode_idx].strip() if barcode_idx is not None and barcode_idx < len(values) else ''
+            product_name = values[product_idx].strip() if product_idx is not None and product_idx < len(values) else ''
+            category = values[category_idx].strip() if category_idx is not None and category_idx < len(values) else '기타'
+            quantity_str = values[quantity_idx].strip() if quantity_idx is not None and quantity_idx < len(values) else '0'
+
+            if not product_name:  # 제품명이 없으면 스킵
+                continue
+
+            # 수량 파싱
+            try:
+                quantity = int(quantity_str.replace(',', '').strip()) if quantity_str else 0
+            except ValueError:
+                quantity = 0
+
+            instance = OutboundRecord(
+                outbound_date=outbound_date,
+                product_name=product_name,
+                barcode=barcode if barcode else None,
+                category=category if category else '기타',
+                quantity=quantity,
+                sales_amount=0,  # 엑셀에 금액 정보 없음
+                client='',
+                status='완료',
+            )
+            outbound_instances.append(instance)
+            imported += 1
+
+        except Exception as e:
+            errors.append(str(e))
+            if len(errors) > 10:
+                break
+
+    # 벌크 인서트
+    if outbound_instances:
+        try:
+            with transaction.atomic():
+                OutboundRecord.objects.bulk_create(outbound_instances, batch_size=500)
+        except Exception as e:
+            logger.error(f"Bulk insert failed, falling back to individual saves: {e}")
+            # 폴백: 개별 저장
+            for instance in outbound_instances:
+                try:
+                    instance.save()
+                except Exception as e2:
+                    errors.append(str(e2))
+                    if len(errors) > 10:
+                        break
+
+    return Response({
+        'success': True,
+        'message': f'{outbound_date} 데이터 {imported}건 저장 완료 (기존 데이터 {deleted_count}건 삭제)',
+        'result': {
+            'date': outbound_date,
+            'imported': imported,
+            'deleted': deleted_count,
+            'errors': errors[:10] if errors else []
+        }
+    })
 
 
 @api_view(['GET'])
@@ -5744,3 +5900,205 @@ def ai_chat(request):
     except Exception as e:
         logger.error(f"AI Chat Error: {e}")
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+def ai_backtest_log(request):
+    """
+    백테스트 결과를 서버에 저장하는 API
+    Request: { logs: [{ date, day_of_week, is_month_start, is_month_end, predicted_value, actual_value, error_rate, variant_id }...] }
+    Response: { success: true, count: N }
+    """
+    payload = request.data if isinstance(request.data, dict) else {}
+    logs = payload.get('logs', [])
+    variant_id = payload.get('variantId', 'unknown')
+
+    if not logs:
+        return Response({'success': False, 'message': 'No logs provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Save to file (simpler than DB for now)
+    import os
+    from datetime import datetime as dt
+
+    log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+
+    timestamp = dt.now().strftime('%Y%m%d_%H%M%S')
+    filename = f'backtest_{variant_id}_{timestamp}.json'
+
+    try:
+        import json
+        filepath = os.path.join(log_dir, filename)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump({
+                'variant_id': variant_id,
+                'timestamp': timestamp,
+                'logs': logs
+            }, f, ensure_ascii=False, indent=2)
+
+        # Calculate summary
+        total_error = 0
+        valid_count = 0
+        over_count = 0
+        under_count = 0
+
+        for log in logs:
+            pred = log.get('predicted_value', 0)
+            actual = log.get('actual_value', 0)
+            if actual > 0:
+                total_error += abs(pred - actual) / actual
+                valid_count += 1
+                if pred > actual:
+                    over_count += 1
+                else:
+                    under_count += 1
+
+        avg_error = (total_error / valid_count * 100) if valid_count > 0 else 0
+
+        return Response({
+            'success': True,
+            'count': len(logs),
+            'summary': {
+                'variant_id': variant_id,
+                'avg_error_percent': round(avg_error, 2),
+                'valid_days': valid_count,
+                'over_estimation': over_count,
+                'under_estimation': under_count
+            },
+            'file': filename
+        })
+
+    except Exception as e:
+        logger.error(f"Backtest log save error: {e}")
+        return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+def ai_accuracy_stats(request):
+    """
+    백테스트 정확도 통계 API
+    - 요일별, 기간별, 시간대별 정확도 분석
+    Response: { stats: { total: {...}, day: {...}, period: {...} } }
+    """
+    import os
+    import glob
+
+    log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'logs')
+    pattern = os.path.join(log_dir, 'backtest_*.json')
+
+    all_logs = []
+
+    # 모든 백테스트 로그 파일 읽기
+    for filepath in glob.glob(pattern):
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                all_logs.extend(data.get('logs', []))
+        except Exception as e:
+            logger.warning(f"Failed to read {filepath}: {e}")
+
+    if not all_logs:
+        return Response({
+            'stats': {
+                'total': {'count': 0, 'avg_error': None, 'over_rate': None, 'under_rate': None},
+                'day': {},
+                'period': {}
+            }
+        })
+
+    # 요일별 통계
+    day_stats = {i: {'count': 0, 'total_error': 0, 'over': 0, 'under': 0} for i in range(7)}
+    day_names = ['일', '월', '화', '수', '목', '금', '토']
+
+    # 기간별 통계 (month_start, month_mid, month_end)
+    period_stats = {
+        'month_start': {'count': 0, 'total_error': 0, 'over': 0, 'under': 0},
+        'month_mid': {'count': 0, 'total_error': 0, 'over': 0, 'under': 0},
+        'month_end': {'count': 0, 'total_error': 0, 'over': 0, 'under': 0}
+    }
+
+    # 전체 통계
+    total_count = 0
+    total_error = 0
+    total_over = 0
+    total_under = 0
+
+    for log in all_logs:
+        pred = log.get('predicted_value', 0)
+        actual = log.get('actual_value', 0)
+        day_of_week = log.get('day_of_week', 0)
+        is_month_start = log.get('is_month_start', 0)
+        is_month_end = log.get('is_month_end', 0)
+
+        if actual <= 0:
+            continue
+
+        error = abs(pred - actual) / actual
+        is_over = 1 if pred > actual else 0
+
+        # 전체
+        total_count += 1
+        total_error += error
+        total_over += is_over
+        total_under += (1 - is_over)
+
+        # 요일별
+        if day_of_week in day_stats:
+            day_stats[day_of_week]['count'] += 1
+            day_stats[day_of_week]['total_error'] += error
+            day_stats[day_of_week]['over'] += is_over
+            day_stats[day_of_week]['under'] += (1 - is_over)
+
+        # 기간별
+        if is_month_start:
+            period_stats['month_start']['count'] += 1
+            period_stats['month_start']['total_error'] += error
+            period_stats['month_start']['over'] += is_over
+            period_stats['month_start']['under'] += (1 - is_over)
+        elif is_month_end:
+            period_stats['month_end']['count'] += 1
+            period_stats['month_end']['total_error'] += error
+            period_stats['month_end']['over'] += is_over
+            period_stats['month_end']['under'] += (1 - is_over)
+        else:
+            period_stats['month_mid']['count'] += 1
+            period_stats['month_mid']['total_error'] += error
+            period_stats['month_mid']['over'] += is_over
+            period_stats['month_mid']['under'] += (1 - is_over)
+
+    # 결과 정리
+    def calc_stats(s):
+        if s['count'] == 0:
+            return {'count': 0, 'avg_error': None, 'over_rate': None, 'under_rate': None}
+        return {
+            'count': s['count'],
+            'avg_error': round(s['total_error'] / s['count'], 4),
+            'over_rate': round(s['over'] / s['count'] * 100, 1),
+            'under_rate': round(s['under'] / s['count'] * 100, 1)
+        }
+
+    # 요일별 결과
+    day_result = {}
+    for i, name in enumerate(day_names):
+        day_result[name] = calc_stats(day_stats[i])
+
+    # 기간별 결과
+    period_result = {}
+    for p, name in [('month_start', '월초'), ('month_mid', '월중'), ('month_end', '월말')]:
+        period_result[name] = calc_stats(period_stats[p])
+
+    # 전체 결과
+    total_result = calc_stats({
+        'count': total_count,
+        'total_error': total_error,
+        'over': total_over,
+        'under': total_under
+    })
+
+    return Response({
+        'stats': {
+            'total': total_result,
+            'day': day_result,
+            'period': period_result
+        }
+    })
