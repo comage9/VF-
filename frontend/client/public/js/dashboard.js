@@ -474,6 +474,56 @@ class Dashboard {
             });
         }
 
+        // 🧪 백테스트 통계 버튼
+        const showStatsBtn = document.getElementById('show-stats-btn');
+        if (showStatsBtn) {
+            showStatsBtn.addEventListener('click', async () => {
+                showStatsBtn.disabled = true;
+                showStatsBtn.textContent = '로딩중...';
+                try {
+                    const response = await fetch(`${this.apiBase}/api/ai/accuracy-stats`);
+                    const result = await response.json();
+
+                    if (result.stats) {
+                        const { total, day, period } = result.stats;
+                        let msg = '📊 백테스트 정확도 통계\n\n';
+                        msg += '**전체**\n';
+                        msg += `- 테스트 횟수: ${total?.count || 0}\n`;
+                        msg += `- 평균 오차율: ${total?.avg_error ? (total.avg_error * 100).toFixed(1) + '%' : 'N/A'}\n`;
+                        msg += `- 과대 비율: ${total?.over_rate ? (total.over_rate * 100).toFixed(1) + '%' : 'N/A'}\n`;
+                        msg += `- 과소 비율: ${total?.under_rate ? (total.under_rate * 100).toFixed(1) + '%' : 'N/A'}\n\n`;
+                        msg += '**요일별**\n';
+                        const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+                        for (let i = 0; i < 7; i++) {
+                            const d = day?.[i];
+                            if (d && d.count > 0) {
+                                msg += `- ${dayNames[i]}: 오차 ${(d.avg_error * 100).toFixed(1)}%, 과대 ${(d.over_rate * 100).toFixed(0)}%, 과소 ${(d.under_rate * 100).toFixed(0)}% (${d.count}회)\n`;
+                            }
+                        }
+                        msg += '\n**기간별**\n';
+                        if (period?.month_start?.count > 0) {
+                            msg += `- 월초: 오차 ${(period.month_start.avg_error * 100).toFixed(1)}%, ${period.month_start.count}회\n`;
+                        }
+                        if (period?.month_mid?.count > 0) {
+                            msg += `- 월중: 오차 ${(period.month_mid.avg_error * 100).toFixed(1)}%, ${period.month_mid.count}회\n`;
+                        }
+                        if (period?.month_end?.count > 0) {
+                            msg += `- 월말: 오차 ${(period.month_end.avg_error * 100).toFixed(1)}%, ${period.month_end.count}회\n`;
+                        }
+                        alert(msg);
+                    } else {
+                        alert('백테스트 데이터가 없습니다.\n백테스트를 먼저 실행해주세요.');
+                    }
+                } catch (e) {
+                    console.error('백테스트 통계 로드 실패:', e);
+                    alert('통계 로드 실패: ' + e.message);
+                } finally {
+                    showStatsBtn.disabled = false;
+                    showStatsBtn.textContent = '백테스트 통계';
+                }
+            });
+        }
+
         // 동적 폼 제출을 위한 이벤트 위임 사용
         const container = document.getElementById('dynamic-data-entry-container');
         if (container) {

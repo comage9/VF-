@@ -145,9 +145,39 @@ function BarcodeStatsPanel() {
   };
 
   useEffect(() => {
+    let lastFetchTime = 0;
+    const MIN_INTERVAL = 5 * 60 * 1000; // 5분
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const now = Date.now();
+        // 탭 활성화되었고 최소 간경 지난 경우에만 요청
+        if (now - lastFetchTime >= MIN_INTERVAL) {
+          fetchStats();
+          lastFetchTime = now;
+        }
+      }
+    };
+
+    const pollInterval = setInterval(() => {
+      const now = Date.now();
+      if (document.visibilityState === 'visible' && now - lastFetchTime >= MIN_INTERVAL) {
+        fetchStats();
+        lastFetchTime = now;
+      }
+    }, 60000); // 1분마다 체크 (조건 충족 시만 요청)
+
+    // 초기 로드
     fetchStats();
-    const interval = setInterval(fetchStats, 5000); // Poll every 5s
-    return () => clearInterval(interval);
+    lastFetchTime = Date.now();
+
+    // 탭 가시성 변화 감지
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(pollInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   const categories = Array.from(new Set(stats.map(s => s.category || '-'))).sort();
@@ -554,6 +584,12 @@ function DeliveryOverview() {
                 <div className="flex items-center gap-2">
                   <button id="export-excel-btn" className="btn btn-sm">
                     엑셀 내보내기
+                  </button>
+                  <button id="run-backtest-btn" className="btn btn-sm btn-outline">
+                    전체 알고리즘 백테스트
+                  </button>
+                  <button id="show-stats-btn" className="btn btn-sm btn-outline">
+                    백테스트 통계
                   </button>
                   <button
                     id="upload-btn"
