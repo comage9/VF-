@@ -3963,6 +3963,9 @@ class Dashboard {
 
         // 🎯 AI 분석 결과 캐시 확인 (새로고침 시 캐시된 분석 결과 사용)
         // 단, 캐시의 시간과 현재 데이터 시간이 다르면 다시 분석
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
         if (this.aiInsightCache) {
             const cachedDate = this.lastAIAnalysisDate;
             const cachedHour = this.lastAIAnalysisHour;
@@ -3987,8 +3990,6 @@ class Dashboard {
             return;
         }
 
-        const now = new Date();
-        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const lastNonZeroHour = this.getLastNonZeroHour(currentData);
         const currentHourKey = `hour_${String(lastNonZeroHour).padStart(2, '0')}`;
         const lastNonZeroValue = parseInt(currentData[currentHourKey]) || 0;
@@ -4557,6 +4558,16 @@ class Dashboard {
                     }
 
                     // 🎯 단순 선형 예측 적용 (마지막 실제 데이터 이후부터)
+
+                    // 🎯 최종 상한 재확인 (어떤 조정过后에도 상한 적용)
+                    if (recent7DayAvg && recent7DayAvg > 0) {
+                        const maxPrediction = Math.round(recent7DayAvg * 1.15);
+                        if (improvedFinalValue > maxPrediction) {
+                            console.log(`⚠️ 최종 상한 적용: ${improvedFinalValue} → ${maxPrediction}`);
+                            improvedFinalValue = maxPrediction;
+                        }
+                    }
+
                     const trajectoryPredictions = this.calculateSimplePrediction(
                         lastActualHour,     // 실제 데이터의 마지막 시간
                         lastActualValue,    // 실제 데이터의 마지막 값
