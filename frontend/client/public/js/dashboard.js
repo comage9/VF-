@@ -572,7 +572,8 @@ class Dashboard {
             try {
                 contentDiv.innerHTML = '<div class="text-center text-muted-foreground py-4">예측 데이터 로딩중...</div>';
 
-                const response = await fetch(`${this.apiBase}/api/delivery/daily-prediction`);
+                // 3일 예측 (오늘+내일+모레)
+                const response = await fetch(`${this.apiBase}/api/delivery/daily-prediction?num_days=3`);
                 const result = await response.json();
 
                 if (!result.success) {
@@ -580,44 +581,50 @@ class Dashboard {
                     return;
                 }
 
-                const { daily_prediction, hourly_prediction, features } = result;
-                const total = daily_prediction.predicted_total;
-                const confidence = daily_prediction.confidence;
+                const { predictions, hourly_predictions, meta } = result;
 
                 let html = '';
-                html += '<div class="flex justify-between items-center mb-3">';
-                html += `<div class="text-lg font-bold text-primary">${total.toLocaleString()}</div>`;
-                html += `<div class="badge badge-sm ${confidence === 'medium' ? 'badge-success' : 'badge-warning'}">${confidence}</div>`;
-                html += '</div>';
-
-                html += '<div class="text-xs text-muted-foreground mb-3">';
-                html += `<div>예측일: ${daily_prediction.date} (${features.day_of_week})</div>`;
-                html += `<div>기간: ${features.period === 'month_start' ? '월초' : features.period === 'month_mid' ? '월중' : '월말'}</div>`;
-                html += `<div>학습데이터: ${features.training_samples}일</div>`;
-                html += '</div>';
-
-                // 시간대별 예측 (상위 5개만 표시)
-                html += '<div class="text-xs">';
-                html += '<div class="font-medium text-foreground mb-1">시간대별 예측 (상위):</div>';
-                const sortedHours = Object.entries(hourly_prediction)
-                    .sort((a, b) => b[1] - a[1])
-                    .slice(0, 5);
-                for (const [hour, value] of sortedHours) {
-                    const h = hour.replace('hour_', '');
-                    html += `<div class="flex justify-between"><span>${h}:00</span><span>${value}</span></div>`;
+                // 3일 예측 표시
+                for (const pred of predictions) {
+                    const dayLabel = pred.date === meta.start_date ? '(오늘)' :
+                                     pred.date === this.getTomorrowDate() ? '(내일)' : '';
+                    html += '<div class="flex justify-between items-center py-2 border-b border-border last:border-0">';
+                    html += `<div class="text-sm">`;
+                    html += `<div class="font-medium">${pred.date} (${pred.day_of_week}) ${dayLabel}</div>`;
+                    html += `<div class="text-xs text-muted-foreground">${pred.period === 'month_start' ? '월초' : pred.period === 'month_mid' ? '월중' : '월말'}</div>`;
+                    html += `</div>`;
+                    html += `<div class="text-right">`;
+                    html += `<div class="text-lg font-bold ${pred.date === meta.start_date ? 'text-primary' : 'text-foreground'}">${pred.predicted_total.toLocaleString()}</div>`;
+                    html += `<div class="badge badge-xs ${pred.confidence === 'medium' ? 'badge-success' : 'badge-warning'}">${pred.confidence}</div>`;
+                    html += `</div>`;
+                    html += '</div>';
                 }
+
+                // 기준선 정보
+                html += '<div class="mt-3 pt-2 border-t border-border text-xs text-muted-foreground">';
+                html += `<div>최근 4주 평균: ${meta.recent_4week_avg?.toLocaleString() || '-'}</div>`;
+                html += `<div>학습데이터: ${meta.training_samples}일</div>`;
                 html += '</div>';
 
                 contentDiv.innerHTML = html;
 
-                // 저장 (선택적으로 AI 예측과 비교용)
-                this.tomorrowPrediction = daily_prediction.predicted_total;
-                this.tomorrowHourlyPrediction = hourly_prediction;
+                // 저장
+                if (predictions.length > 0) {
+                    this.tomorrowPrediction = predictions[0].predicted_total;
+                    this.tomorrowHourlyPrediction = hourly_predictions[predictions[0].date];
+                }
 
             } catch (e) {
                 console.error('내일 예측 로드 실패:', e);
                 contentDiv.innerHTML = `<div class="text-error text-sm">로드 실패: ${e.message}</div>`;
             }
+        };
+
+        // 내일 날짜 계산 헬퍼
+        this.getTomorrowDate = () => {
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            return tomorrow.toISOString().split('T')[0];
         };
 
         // 초기 로드 및 새로고침 버튼

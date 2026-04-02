@@ -4129,39 +4129,50 @@ def delivery_weekday_hourly_ratio(request):
 def delivery_daily_prediction(request):
     """
     2-stage 일별 예측 API
-    - Stage 1: RandomForest로 일별 총량 예측
+    - Stage 1: 가중 중앙값으로 일별 총량 예측
     - Stage 2: 시간대별 비율로 시간별 분포 예측
 
     Query params:
     - days: 학습 데이터 일수 (default: 90)
-    - target_date: 예측 대상 날짜 (default: tomorrow)
+    - start_date: 예측 시작 날짜 (default: tomorrow)
+    - num_days: 예측할 일수 (default: 1, 최대 7)
 
     Response: {
-      daily_prediction: { date, predicted_total, confidence },
-      hourly_prediction: { hour_00, hour_01, ... hour_23 },
-      features: { day_of_week, is_weekend, is_month_start/end, recent_avg, trend },
-      model_info: { algorithm, training_samples, accuracy }
+      predictions: [
+        { date, predicted_total, confidence, day_of_week },
+        ...
+      ],
+      hourly_predictions: {
+        'YYYY-MM-DD': { hour_00, hour_01, ... },
+        ...
+      }
     }
     """
     from datetime import timedelta
     import numpy as np
 
     days = request.query_params.get('days', '90')
-    target_date_str = request.query_params.get('target_date')
+    start_date_str = request.query_params.get('start_date')
+    num_days_str = request.query_params.get('num_days', '1')
 
     try:
         days_int = int(days)
     except:
         days_int = 90
 
-    # 대상 날짜 결정 (기본: 내일)
-    if target_date_str:
+    try:
+        num_days = min(int(num_days_str), 7)  # 최대 7일
+    except:
+        num_days = 1
+
+    # 시작 날짜 결정 (기본: 내일)
+    if start_date_str:
         try:
-            target_date = datetime.strptime(target_date_str, '%Y-%m-%d').date()
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
         except:
-            target_date = timezone.localdate() + timedelta(days=1)
+            start_date = timezone.localdate() + timedelta(days=1)
     else:
-        target_date = timezone.localdate() + timedelta(days=1)
+        start_date = timezone.localdate() + timedelta(days=1)
 
     # 학습 데이터 조회
     cutoff = timezone.localdate() - timedelta(days=days_int)
@@ -4223,94 +4234,101 @@ def delivery_daily_prediction(request):
             'message': '유효한 학습 데이터가 부족합니다'
         }, status=status.HTTP_400_BAD_REQUEST)
 
-    # RandomForest 대신 간단한 가중 평균 알고리즘 (scikit-learn 미설치로)
-    # 실제 환경에서는 sklearn RandomForest 사용 권장
+    # 최근 4주 전체 평균 (기준선)
+    recent_4week_avg = np.mean(y[-28:]) if len(y) >= 28 else np.mean(y)
 
-    # 가중 평균 기반 예측 (과거 데이터에서 같은 요일 + 같은 기간 조합 찾기)
-    target_dow = target_date.weekday()
-    target_day = target_date.day
+    day_names = ['일', '월', '화', '수', '목', '금', '토']
 
-    if target_day <= 5:
-        target_period = 'month_start'
-    elif target_day >= 26:
-        target_period = 'month_end'
-    else:
-        target_period = 'month_mid'
+    # 각 예측 날짜마다 예측 수행
+    predictions = []
+    hourly_predictions = {}
 
-    # 같은 요일 + 같은 기간 데이터 필터링
-    matching_records = []
-    for record in records:
-        if not record.total or record.total <= 0:
-            continue
-        rec_day = record.date.day
-        if rec_day <= 5:
-            rec_period = 'month_start'
-        elif rec_day >= 26:
-            rec_period = 'month_end'
+    for day_offset in range(num_days):
+        target_date = start_date + timedelta(days=day_offset)
+        target_dow = target_date.weekday()
+        target_day = target_date.day
+
+        if target_day <= 5:
+            target_period = 'month_start'
+        elif target_day >= 26:
+            target_period = 'month_end'
         else:
-            rec_period = 'month_mid'
+            target_period = 'month_mid'
 
-        if record.date.weekday() == target_dow and rec_period == target_period:
-            matching_records.append(record.total)
+        # 같은 요일 + 같은 기간 데이터 필터링
+        matching_records = []
+        for record in records:
+            if not record.total or record.total <= 0:
+                continue
+            rec_day = record.date.day
+            if rec_day <= 5:
+                rec_period = 'month_start'
+            elif rec_day >= 26:
+                rec_period = 'month_end'
+            else:
+                rec_period = 'month_mid'
 
-    # 없다면 같은 요일만
-    if len(matching_records) < 3:
-        matching_records = [r.total for r in records if r.date.weekday() == target_dow and r.total and r.total > 0]
+            if record.date.weekday() == target_dow and rec_period == target_period:
+                matching_records.append(record.total)
 
-    # 예측값 계산 (중앙값 + 최근 가중치)
-    if matching_records:
-        matching_records.sort()
-        base_prediction = matching_records[len(matching_records)//2]  # 중앙값
-        # 최근 데이터 가중
-        if len(matching_records) >= 3:
-            recent_weight = 0.6
-            base_prediction = int(base_prediction * (1 - recent_weight) + matching_records[-1] * recent_weight)
-    else:
-        base_prediction = int(np.mean(y))
+        # 없다면 같은 요일만
+        if len(matching_records) < 3:
+            matching_records = [r.total for r in records if r.date.weekday() == target_dow and r.total and r.total > 0]
 
-    # Conservative adjustment (과대 예측 방지)
-    predicted_total = int(base_prediction * 0.95)
+        # 예측값 계산 - 보수적 접근 (중앙값 사용, 최근 가중도 낮게)
+        if matching_records:
+            matching_records.sort()
+            base_prediction = matching_records[len(matching_records)//2]  # 중앙값
 
-    # Stage 2: 시간대별 비율로 분포 예측
-    # 요일별 시간대 비율 조회
-    weekday_ratios = _get_weekday_hourly_ratios(target_dow, records)
+            # 최근 데이터 가중 (너무 높게 평가되지 않도록 가중도 축소)
+            if len(matching_records) >= 3:
+                recent_weight = 0.3  # 0.6에서 0.3으로 감소
+                base_prediction = int(base_prediction * (1 - recent_weight) + matching_records[-1] * recent_weight)
+        else:
+            base_prediction = int(np.mean(y))
 
-    hourly_prediction = {}
-    for h in range(24):
-        ratio = weekday_ratios.get(f'hour_{h:02d}', 0.01)
-        hourly_prediction[f'hour_{h:02d}'] = int(predicted_total * ratio)
+        # Conservative adjustment - 90%로 축소 (과대 예측 방지)
+        # 또한 최근 4주 평균을 기준으로 상한 설정
+        predicted_total = int(base_prediction * 0.90)
+        # 상한: 최근 평균의 120%까지만
+        predicted_total = min(predicted_total, int(recent_4week_avg * 1.2))
+        # 하한: 최근 평균의 70% 이상
+        predicted_total = max(predicted_total, int(recent_4week_avg * 0.7))
 
-    # 23시 누적값이 예측 총량과 일치하도록 보정
-    predicted_23 = sum(hourly_prediction.values())
-    if predicted_23 > 0:
-        ratio = predicted_total / predicted_23
+        # Stage 2: 시간대별 비율로 분포 예측
+        weekday_ratios = _get_weekday_hourly_ratios(target_dow, records)
+
+        hourly_prediction = {}
         for h in range(24):
-            hourly_prediction[f'hour_{h:02d}'] = int(hourly_prediction[f'hour_{h:02d}'] * ratio)
+            ratio = weekday_ratios.get(f'hour_{h:02d}', 0.01)
+            hourly_prediction[f'hour_{h:02d}'] = int(predicted_total * ratio)
 
-    # Feature 정보
-    features = {
-        'day_of_week': ['일', '월', '화', '수', '목', '금', '토'][target_dow],
-        'is_weekend': target_dow >= 5,
-        'is_month_start': target_day <= 5,
-        'is_month_end': target_day >= 26,
-        'period': target_period,
-        'training_samples': len(X),
-        'matching_records': len(matching_records) if 'matching_records' in dir() else 0
-    }
+        # 23시 누적값이 예측 총량과 일치하도록 보정
+        predicted_23 = sum(hourly_prediction.values())
+        if predicted_23 > 0:
+            ratio = predicted_total / predicted_23
+            for h in range(24):
+                hourly_prediction[f'hour_{h:02d}'] = int(hourly_prediction[f'hour_{h:02d}'] * ratio)
+
+        predictions.append({
+            'date': target_date.isoformat(),
+            'predicted_total': predicted_total,
+            'day_of_week': day_names[target_dow],
+            'confidence': 'medium' if len(matching_records) >= 5 else 'low',
+            'period': target_period
+        })
+
+        hourly_predictions[target_date.isoformat()] = hourly_prediction
 
     return Response({
         'success': True,
-        'daily_prediction': {
-            'date': target_date.isoformat(),
-            'predicted_total': predicted_total,
-            'confidence': 'medium' if len(matching_records) >= 5 else 'low'
-        },
-        'hourly_prediction': hourly_prediction,
-        'features': features,
-        'model_info': {
-            'algorithm': 'weighted_median_period_adjusted',
+        'predictions': predictions,
+        'hourly_predictions': hourly_predictions,
+        'meta': {
+            'start_date': start_date.isoformat(),
+            'num_days': num_days,
             'training_samples': len(X),
-            'accuracy_estimate': 'based on historical backtest'
+            'recent_4week_avg': int(recent_4week_avg)
         }
     })
 
