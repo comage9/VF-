@@ -585,12 +585,6 @@ function DeliveryOverview() {
                   <button id="export-excel-btn" className="btn btn-sm">
                     엑셀 내보내기
                   </button>
-                  <button id="run-backtest-btn" className="btn btn-sm btn-outline">
-                    전체 알고리즘 백테스트
-                  </button>
-                  <button id="show-stats-btn" className="btn btn-sm btn-outline">
-                    백테스트 통계
-                  </button>
                   <button
                     id="upload-btn"
                     className="btn btn-sm btn-primary"
@@ -779,6 +773,25 @@ function DeliveryOverview() {
               <div className="mt-3">
                 <div className="text-xs text-muted-foreground mb-2">오늘 등록된 특이사항</div>
                 <div id="special-notes-list" className="space-y-2 text-sm text-muted-foreground"></div>
+              </div>
+            </div>
+
+            {/* 백테스트 결과 패널 */}
+            <div className="bg-card border border-border rounded-lg p-4 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-base font-semibold text-foreground">예측 정확도</h2>
+              </div>
+              <div className="space-y-3">
+                <button id="show-stats-btn" className="btn btn-sm btn-outline w-full">
+                  백테스트 통계
+                </button>
+                <button id="run-backtest-btn" className="btn btn-sm btn-outline w-full">
+                  전체 알고리즘 백테스트
+                </button>
+              </div>
+              <div id="backtest-summary" className="mt-3 text-xs text-muted-foreground hidden">
+                <div className="font-medium text-foreground mb-1">최근 결과:</div>
+                <div id="backtest-summary-content"></div>
               </div>
             </div>
           </div>

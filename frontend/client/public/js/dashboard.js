@@ -446,27 +446,44 @@ class Dashboard {
         if (backtestBtn) {
             backtestBtn.addEventListener('click', async () => {
                 backtestBtn.disabled = true;
-                backtestBtn.textContent = '백테스트 실행중...';
+                backtestBtn.textContent = '실행중...';
                 try {
                     const result = await this.runAllVariantsBacktest(90);
-                    // 결과를 Modal 또는 알림으로 표시
-                    let msg = '🧪 백테스트 결과 (오차율 순위)\n\n';
-                    msg += '| Variant | 알고리즘 | 오차율 | 과대비율 | 과소비율 |\n';
-                    msg += '|---------|----------|--------|----------|----------|\n';
-                    for (const [id, data] of Object.entries(result.results).sort((a, b) =>
-                        parseFloat(a[1].avgError) - parseFloat(b[1].avgError))) {
-                        msg += `| ${id} | ${data.name} | ${data.avgError} | ${data.overRate} | ${data.underRate} |\n`;
-                    }
-                    msg += `\n🏆 최적 알고리즘: ${result.bestVariant} (${result.results[result.bestVariant].name})`;
-                    alert(msg);
+                    // 결과를 사이드패널에 표시
+                    const summaryDiv = document.getElementById('backtest-summary');
+                    const summaryContent = document.getElementById('backtest-summary-content');
 
-                    // 콘솔에도 상세 출력
+                    let html = '<div class="font-medium text-foreground mb-2">전체 알고리즘 비교</div>';
+                    html += '<div class="space-y-1 text-xs">';
+
+                    // 정렬하여 표시
+                    const sorted = Object.entries(result.results).sort((a, b) =>
+                        parseFloat(a[1].avgError) - parseFloat(b[1].avgError));
+
+                    for (const [id, data] of sorted) {
+                        const isBest = id === result.bestVariant;
+                        html += `<div class="flex justify-between ${isBest ? 'text-primary font-bold' : ''}">`;
+                        html += `<span>${id}: ${data.name}</span>`;
+                        html += `<span>${data.avgError}</span>`;
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                    html += `<div class="mt-2 text-xs text-primary font-medium">🏆 최적: ${result.bestVariant}</div>`;
+
+                    summaryContent.innerHTML = html;
+                    summaryDiv.classList.remove('hidden');
+
                     console.log('========== 백테스트 최종 결과 ==========');
                     console.log(JSON.stringify(result.results, null, 2));
                     console.log('=========================================');
                 } catch (e) {
                     console.error('백테스트 오류:', e);
-                    alert('백테스트 실패: ' + e.message);
+                    const summaryContent = document.getElementById('backtest-summary-content');
+                    const summaryDiv = document.getElementById('backtest-summary');
+                    if (summaryContent && summaryDiv) {
+                        summaryContent.innerHTML = '백테스트 실패: ' + e.message;
+                        summaryDiv.classList.remove('hidden');
+                    }
                 } finally {
                     backtestBtn.disabled = false;
                     backtestBtn.textContent = '전체 알고리즘 백테스트';
@@ -484,39 +501,62 @@ class Dashboard {
                     const response = await fetch(`${this.apiBase}/api/ai/accuracy-stats`);
                     const result = await response.json();
 
+                    const summaryDiv = document.getElementById('backtest-summary');
+                    const summaryContent = document.getElementById('backtest-summary-content');
+
                     if (result.stats) {
                         const { total, day, period } = result.stats;
-                        let msg = '📊 백테스트 정확도 통계\n\n';
-                        msg += '**전체**\n';
-                        msg += `- 테스트 횟수: ${total?.count || 0}\n`;
-                        msg += `- 평균 오차율: ${total?.avg_error ? (total.avg_error * 100).toFixed(1) + '%' : 'N/A'}\n`;
-                        msg += `- 과대 비율: ${total?.over_rate ? (total.over_rate * 100).toFixed(1) + '%' : 'N/A'}\n`;
-                        msg += `- 과소 비율: ${total?.under_rate ? (total.under_rate * 100).toFixed(1) + '%' : 'N/A'}\n\n`;
-                        msg += '**요일별**\n';
+                        let html = '';
+
+                        // 전체 통계
+                        html += '<div class="border-b border-border pb-2 mb-2">';
+                        html += '<div class="font-medium text-foreground">전체</div>';
+                        html += `<div>오차율: ${total?.avg_error ? (total.avg_error * 100).toFixed(1) + '%' : 'N/A'}</div>`;
+                        html += `<div>과대: ${total?.over_rate ? (total.over_rate * 100).toFixed(1) + '%' : 'N/A'}, 과소: ${total?.under_rate ? (total.under_rate * 100).toFixed(1) + '%' : 'N/A'}</div>`;
+                        html += `<div class="text-xs">${total?.count || 0}회 테스트</div>`;
+                        html += '</div>';
+
+                        // 요일별 통계
+                        html += '<div class="border-b border-border pb-2 mb-2">';
+                        html += '<div class="font-medium text-foreground">요일별</div>';
                         const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+                        const dayKeys = ['일', '월', '화', '수', '목', '금', '토'];
                         for (let i = 0; i < 7; i++) {
-                            const d = day?.[i];
+                            const d = day?.[dayKeys[i]];
                             if (d && d.count > 0) {
-                                msg += `- ${dayNames[i]}: 오차 ${(d.avg_error * 100).toFixed(1)}%, 과대 ${(d.over_rate * 100).toFixed(0)}%, 과소 ${(d.under_rate * 100).toFixed(0)}% (${d.count}회)\n`;
+                                html += `<div class="flex justify-between text-xs"><span>${dayNames[i]}</span><span>${(d.avg_error * 100).toFixed(1)}%</span></div>`;
                             }
                         }
-                        msg += '\n**기간별**\n';
-                        if (period?.month_start?.count > 0) {
-                            msg += `- 월초: 오차 ${(period.month_start.avg_error * 100).toFixed(1)}%, ${period.month_start.count}회\n`;
+                        html += '</div>';
+
+                        // 기간별 통계
+                        html += '<div>';
+                        html += '<div class="font-medium text-foreground">기간별</div>';
+                        if (period?.['월초']?.count > 0) {
+                            html += `<div class="flex justify-between text-xs"><span>월초</span><span>${(period['월초'].avg_error * 100).toFixed(1)}%</span></div>`;
                         }
-                        if (period?.month_mid?.count > 0) {
-                            msg += `- 월중: 오차 ${(period.month_mid.avg_error * 100).toFixed(1)}%, ${period.month_mid.count}회\n`;
+                        if (period?.['월중']?.count > 0) {
+                            html += `<div class="flex justify-between text-xs"><span>월중</span><span>${(period['월중'].avg_error * 100).toFixed(1)}%</span></div>`;
                         }
-                        if (period?.month_end?.count > 0) {
-                            msg += `- 월말: 오차 ${(period.month_end.avg_error * 100).toFixed(1)}%, ${period.month_end.count}회\n`;
+                        if (period?.['월말']?.count > 0) {
+                            html += `<div class="flex justify-between text-xs"><span>월말</span><span>${(period['월말'].avg_error * 100).toFixed(1)}%</span></div>`;
                         }
-                        alert(msg);
+                        html += '</div>';
+
+                        summaryContent.innerHTML = html;
+                        summaryDiv.classList.remove('hidden');
                     } else {
-                        alert('백테스트 데이터가 없습니다.\n백테스트를 먼저 실행해주세요.');
+                        summaryContent.innerHTML = '백테스트 데이터가 없습니다.';
+                        summaryDiv.classList.remove('hidden');
                     }
                 } catch (e) {
                     console.error('백테스트 통계 로드 실패:', e);
-                    alert('통계 로드 실패: ' + e.message);
+                    const summaryContent = document.getElementById('backtest-summary-content');
+                    const summaryDiv = document.getElementById('backtest-summary');
+                    if (summaryContent && summaryDiv) {
+                        summaryContent.innerHTML = '로드 실패: ' + e.message;
+                        summaryDiv.classList.remove('hidden');
+                    }
                 } finally {
                     showStatsBtn.disabled = false;
                     showStatsBtn.textContent = '백테스트 통계';
