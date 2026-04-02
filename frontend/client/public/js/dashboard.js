@@ -4441,6 +4441,15 @@ class Dashboard {
                         console.log(`⚠️ 7일 평균 계산 실패, AI 값 사용: ${aiFinalValue}`);
                     }
 
+                    // 🎯 최종 예측값 상한 설정 (7일 평균의 115%까지만)
+                    if (recent7DayAvg && recent7DayAvg > 0) {
+                        const maxPrediction = Math.round(recent7DayAvg * 1.15);
+                        if (improvedFinalValue > maxPrediction) {
+                            console.log(`⚠️ 예측값 상한 초과: ${improvedFinalValue} → ${maxPrediction}`);
+                            improvedFinalValue = maxPrediction;
+                        }
+                    }
+
                     // 🎯 현재값 정확히 파악
                     const currentValue = this.getCurrentActualValue();
 
