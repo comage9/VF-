@@ -4049,6 +4049,82 @@ def delivery_range(request):
     })
 
 
+@api_view(['GET'])
+def delivery_weekday_hourly_ratio(request):
+    """
+    요일별 시간대별 비율 API
+    - 최근 4주 데이터에서 각 요일의 시간대별 비율 계산
+    - 예측 시 시간대별 패턴 파악용
+    Response: {
+      weekday: {  # 0=일, 1=월, ..., 6=토
+        hour_00: ratio,
+        hour_01: ratio,
+        ...
+      }
+    }
+    """
+    from datetime import timedelta
+
+    today = timezone.localdate()
+    four_weeks_ago = today - timedelta(days=28)
+
+    records = DeliveryDailyRecord.objects.filter(
+        date__gte=four_weeks_ago,
+        date__lt=today,
+        total__gt=0
+    )
+
+    # 요일별 합계 (각 시간대별)
+    weekday_hourly_sums = {i: [0] * 24 for i in range(7)}
+    weekday_totals = {i: 0 for i in range(7)}
+
+    for record in records:
+        if not record.hourly:
+            continue
+        day = record.date.weekday()
+        day_total = int(record.total or 0)
+        if day_total <= 0:
+            continue
+
+        weekday_totals[day] += day_total
+        hourly = record.hourly or {}
+        for h in range(24):
+            key = f'hour_{h:02d}'
+            val = int(hourly.get(key, 0))
+            weekday_hourly_sums[day][h] += val
+
+    # 비율 계산
+    result = {}
+    day_names = ['일', '월', '화', '수', '목', '금', '토']
+
+    for day in range(7):
+        if weekday_totals[day] <= 0:
+            # 기본 비율 (보통 낮 12-14시, 저녁 17-20시巅峰)
+            result[day_names[day]] = {
+                'hour_00': 0.01, 'hour_01': 0.01, 'hour_02': 0.01, 'hour_03': 0.01,
+                'hour_04': 0.01, 'hour_05': 0.01, 'hour_06': 0.02, 'hour_07': 0.03,
+                'hour_08': 0.04, 'hour_09': 0.05, 'hour_10': 0.06, 'hour_11': 0.07,
+                'hour_12': 0.08, 'hour_13': 0.07, 'hour_14': 0.06, 'hour_15': 0.05,
+                'hour_16': 0.06, 'hour_17': 0.08, 'hour_18': 0.07, 'hour_19': 0.05,
+                'hour_20': 0.04, 'hour_21': 0.03, 'hour_22': 0.02, 'hour_23': 0.02
+            }
+            continue
+
+        result[day_names[day]] = {}
+        for h in range(24):
+            ratio = weekday_hourly_sums[day][h] / weekday_totals[day]
+            result[day_names[day]][f'hour_{h:02d}'] = round(ratio, 4)
+
+    return Response({
+        'success': True,
+        'data': result,
+        'meta': {
+            'days': 28,
+            'min_records': min(weekday_totals.values()) if weekday_totals else 0
+        }
+    })
+
+
 def _upsert_delivery_from_payload(payload: dict):
     date_str = (payload.get('date') or '').strip()
     if not date_str:

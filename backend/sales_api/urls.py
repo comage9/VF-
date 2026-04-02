@@ -49,6 +49,7 @@ urlpatterns = [
     path('parse-excel-delivery', views.parse_excel_delivery, name='parse-excel-delivery'),
     path('delivery/hourly', views.delivery_hourly, name='delivery-hourly'),
     path('delivery/range', views.delivery_range, name='delivery-range'),
+    path('delivery/weekday-ratio', views.delivery_weekday_hourly_ratio, name='delivery-weekday-ratio'),
     path('delivery/notes', views.delivery_notes, name='delivery-notes'),
     path('delivery/import', views.delivery_import, name='delivery-import'),
     path('delivery/import-excel', views.delivery_import_excel, name='delivery-import-excel'),
