@@ -66,6 +66,16 @@ urlpatterns = [
     path('production-log/<str:date>', views.production_log_by_date, name='production-log-by-date'),
     path('upload-production-file', views.upload_production_file, name='upload-production-file'),
 
+    # Machine User & Plan APIs (모바일 웹앱)
+    path('machine/login', views.machine_login, name='machine-login'),
+    path('machine/logout', views.machine_logout, name='machine-logout'),
+    path('machine/users', views.machine_user_list, name='machine-users'),
+    path('machine/users/create', views.machine_user_create, name='machine-user-create'),
+    path('machine/plans', views.machine_plan_list, name='machine-plans'),
+    path('machine/plans/<int:plan_id>', views.machine_plan_detail, name='machine-plan-detail'),
+    path('machine/plans/<int:plan_id>/apply', views.machine_plan_apply, name='machine-plan-apply'),
+    path('ai/production-recommend', views.ai_production_recommend, name='ai-production-recommend'),
+
     path('master/specs', views.master_specs, name='master-specs'),
     path('master/specs/<int:id>', views.master_specs_detail, name='master-specs-detail'),
     path('master/extract', views.master_extract, name='master-extract'),

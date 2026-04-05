@@ -273,6 +273,66 @@ class ProductionLog(models.Model):
         return f"{self.date} {self.machine_number} {self.product_name}"
 
 
+class MachineUser(models.Model):
+    """기계별 사용자 (PIN 인증)"""
+    machine_number = models.CharField(max_length=20, db_index=True)
+    user_pin = models.CharField(max_length=64)  # SHA-256 해시 저장
+    user_name = models.CharField(max_length=50)
+    is_active = models.BooleanField(default=True)
+    failed_attempts = models.IntegerField(default=0)
+    locked_until = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'machine_users'
+        unique_together = [['machine_number', 'user_name']]
+        indexes = [
+            models.Index(fields=['machine_number']),
+        ]
+
+    def __str__(self):
+        return f"{self.machine_number} - {self.user_name}"
+
+
+class MachinePlan(models.Model):
+    """AI 추천 계획 (Draft 상태 관리)"""
+    STATUS_CHOICES = [
+        ('draft', '임시저장'),
+        ('recommended', '추천'),
+        ('applied', '적용됨'),
+        ('cancelled', '취소됨'),
+    ]
+
+    date = models.DateField(db_index=True)
+    machine_number = models.CharField(max_length=20, db_index=True)
+    user = models.ForeignKey(MachineUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='plans')
+    product_name = models.CharField(max_length=255)
+    product_name_eng = models.TextField(blank=True, default='')
+    mold_number = models.CharField(max_length=255, blank=True, default='')
+    color1 = models.CharField(max_length=100)
+    color2 = models.CharField(max_length=100, blank=True, default='')
+    unit = models.CharField(max_length=20, default='BOX')
+    quantity = models.IntegerField(default=0)
+    unit_quantity = models.IntegerField(default=0)
+    total = models.IntegerField(default=0)
+    status = models.CharField(max_length=20, default='recommended', choices=STATUS_CHOICES, db_index=True)
+    ai_reason = models.TextField(blank=True, default='')
+    outbound_data = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'machine_plans'
+        indexes = [
+            models.Index(fields=['date', 'machine_number']),
+            models.Index(fields=['machine_number', 'status']),
+        ]
+
+    def __str__(self):
+        return f"{self.date} {self.machine_number} {self.product_name} ({self.status})"
+
+
 class InboundOrderUpload(models.Model):
     """입고 발주서 업로드 기록"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

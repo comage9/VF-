@@ -23,6 +23,8 @@ from .models import (
     InventoryReceiptItem,
     MasterSpec,
     ProductionLog,
+    MachineUser,
+    MachinePlan,
     InboundOrderUpload,
     InboundOrderLine,
     InboundPolicy,
@@ -48,6 +50,8 @@ import csv
 import io
 import urllib.request
 import urllib.error
+import re
+
 
 logger = logging.getLogger('sales_api.inventory')
 
@@ -1755,6 +1759,390 @@ def upload_production_file(request):
         })
     except Exception as e:
         return Response({'message': '생산 계획 파일 처리 중 오류가 발생했습니다.', 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+# =====================================================
+# Machine User & Plan APIs (PIN 인증 + AI 추천)
+# =====================================================
+
+def _hash_pin(pin: str) -> str:
+    """PIN을 SHA-256으로 해시화"""
+    return hashlib.sha256(pin.encode()).hexdigest()
+
+
+@api_view(['POST'])
+def machine_login(request):
+    """기계별 PIN 로그인"""
+    machine_number = request.data.get('machine_number', '').strip()
+    pin = request.data.get('pin', '').strip()
+
+    if not machine_number or not pin:
+        return Response({'success': False, 'message': '기계번호와 PIN을 입력하세요.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    user = MachineUser.objects.filter(machine_number=machine_number, is_active=True).first()
+    if not user:
+        return Response({'success': False, 'message': '등록된 사용자가 없습니다.'}, status=status.HTTP_401_BAD_REQUEST)
+
+    # 잠금 체크
+    if user.locked_until and user.locked_until > timezone.now():
+        remaining = (user.locked_until - timezone.now()).seconds // 60
+        return Response({'success': False, 'message': f'잠겼습니다. {remaining}분 후 재시도하세요.'}, status=status.HTTP_401_BAD_REQUEST)
+
+    # PIN 검증
+    if user.user_pin != _hash_pin(pin):
+        user.failed_attempts += 1
+        if user.failed_attempts >= 5:
+            user.locked_until = timezone.now() + timedelta(minutes=5)
+            user.save()
+            return Response({'success': False, 'message': '5회 실패로 5분간 잠겼습니다.'}, status=status.HTTP_401_BAD_REQUEST)
+        user.save()
+        return Response({'success': False, 'message': f'PIN이 올바르지 않습니다. (시도 {user.failed_attempts}/5)'}, status=status.HTTP_401_BAD_REQUEST)
+
+    # 성공: 실패 횟수 초기화
+    user.failed_attempts = 0
+    user.locked_until = None
+    user.save()
+
+    # 간단한 토큰 생성 (실제론 JWT 등 사용 권장)
+    token = f"{machine_number}:{user.id}:{timezone.now().timestamp()}"
+    return Response({
+        'success': True,
+        'token': token,
+        'user_name': user.user_name,
+        'machine_number': user.machine_number
+    })
+
+
+@api_view(['POST'])
+def machine_logout(request):
+    """로그아웃"""
+    return Response({'success': True, 'message': '로그아웃되었습니다.'})
+
+
+@api_view(['GET'])
+def machine_plan_list(request):
+    """기계별 생산 계획 조회"""
+    date = request.query_params.get('date')
+    machine_number = request.query_params.get('machine_number')
+
+    if not date:
+        # 기본: 내일
+        tomorrow = (datetime.now() + timedelta(days=1)).date()
+        date = tomorrow.isoformat()
+
+    queryset = MachinePlan.objects.filter(date=date)
+    if machine_number:
+        queryset = queryset.filter(machine_number=machine_number)
+
+    plans = []
+    for plan in queryset:
+        plans.append({
+            'id': plan.id,
+            'date': plan.date.isoformat(),
+            'machine_number': plan.machine_number,
+            'user_name': plan.user.user_name if plan.user else None,
+            'product_name': plan.product_name,
+            'product_name_eng': plan.product_name_eng,
+            'mold_number': plan.mold_number,
+            'color1': plan.color1,
+            'color2': plan.color2,
+            'unit': plan.unit,
+            'quantity': plan.quantity,
+            'unit_quantity': plan.unit_quantity,
+            'total': plan.total,
+            'status': plan.status,
+            'ai_reason': plan.ai_reason,
+            'outbound_data': plan.outbound_data,
+            'created_at': plan.created_at.isoformat() if plan.created_at else None,
+        })
+
+    return Response({'success': True, 'plans': plans, 'date': date})
+
+
+@api_view(['POST'])
+def machine_plan_create(request):
+    """생산 계획 생성 (수동 또는 AI 추천 저장)"""
+    data = request.data
+    date_str = data.get('date')
+    machine_number = data.get('machine_number', '').strip()
+    product_name = data.get('product_name', '').strip()
+
+    if not date_str or not machine_number or not product_name:
+        return Response({'success': False, 'message': 'date, machine_number, product_name은 필수입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        date_obj = datetime.fromisoformat(date_str).date()
+    except Exception:
+        return Response({'success': False, 'message': '유효하지 않은 날짜입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # 중복 체크 (같은 날, 기계, 제품)
+    existing = MachinePlan.objects.filter(
+        date=date_obj,
+        machine_number=machine_number,
+        product_name=product_name,
+        color1=data.get('color1', ''),
+    ).first()
+
+    if existing:
+        # 기존 것 업데이트
+        existing.product_name_eng = data.get('product_name_eng', '')
+        existing.mold_number = data.get('mold_number', '')
+        existing.color2 = data.get('color2', '')
+        existing.unit = data.get('unit', 'BOX')
+        existing.quantity = data.get('quantity', 0)
+        existing.unit_quantity = data.get('unit_quantity', 0)
+        existing.total = data.get('total', 0)
+        existing.status = data.get('status', 'draft')
+        existing.ai_reason = data.get('ai_reason', '')
+        existing.outbound_data = data.get('outbound_data')
+        existing.save()
+        return Response({'success': True, 'plan': {'id': existing.id}, 'message': '계획이 업데이트되었습니다.'})
+
+    # 생성
+    plan = MachinePlan.objects.create(
+        date=date_obj,
+        machine_number=machine_number,
+        product_name=product_name,
+        product_name_eng=data.get('product_name_eng', ''),
+        mold_number=data.get('mold_number', ''),
+        color1=data.get('color1', ''),
+        color2=data.get('color2', ''),
+        unit=data.get('unit', 'BOX'),
+        quantity=data.get('quantity', 0),
+        unit_quantity=data.get('unit_quantity', 0),
+        total=data.get('total', 0),
+        status=data.get('status', 'draft'),
+        ai_reason=data.get('ai_reason', ''),
+        outbound_data=data.get('outbound_data'),
+    )
+    return Response({'success': True, 'plan': {'id': plan.id}, 'message': '계획이 생성되었습니다.'})
+
+
+@api_view(['PUT', 'DELETE'])
+def machine_plan_detail(request, plan_id: int):
+    """계획 수정/삭제"""
+    plan = MachinePlan.objects.filter(id=plan_id).first()
+    if not plan:
+        return Response({'success': False, 'message': '계획을 찾을 수 없습니다.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'DELETE':
+        plan.delete()
+        return Response({'success': True, 'message': '삭제되었습니다.'})
+
+    # PUT
+    data = request.data
+    for field in ['product_name', 'product_name_eng', 'mold_number', 'color1', 'color2', 'unit', 'quantity', 'unit_quantity', 'total', 'status', 'ai_reason']:
+        if field in data:
+            setattr(plan, field, data[field])
+
+    # total 자동 계산
+    plan.total = (plan.unit_quantity or 0) * (plan.quantity or 0)
+    plan.save()
+
+    return Response({'success': True, 'plan': {'id': plan.id}})
+
+
+@api_view(['POST'])
+def machine_plan_apply(request, plan_id: int):
+    """AI 추천 계획 적용 → ProductionLog에 저장"""
+    plan = MachinePlan.objects.filter(id=plan_id).first()
+    if not plan:
+        return Response({'success': False, 'message': '계획을 찾을 수 없습니다.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if plan.status == 'applied':
+        return Response({'success': False, 'message': '이미 적용된 계획입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # ProductionLog에 저장
+    prod_log, created = ProductionLog.objects.update_or_create(
+        date=plan.date,
+        machine_number=plan.machine_number,
+        mold_number=plan.mold_number,
+        product_name=plan.product_name,
+        color1=plan.color1,
+        color2=plan.color2,
+        defaults={
+            'product_name_eng': plan.product_name_eng,
+            'unit': plan.unit,
+            'quantity': plan.quantity,
+            'unit_quantity': plan.unit_quantity,
+            'total': plan.total,
+            'status': 'pending',
+        }
+    )
+
+    # MachinePlan 상태 업데이트
+    plan.status = 'applied'
+    plan.save()
+
+    return Response({
+        'success': True,
+        'message': '생산 계획에 적용되었습니다.',
+        'production_log_id': prod_log.id
+    })
+
+
+@api_view(['POST'])
+def ai_production_recommend(request):
+    """AI 생산 계획 추천 (출고량 분석 포함)"""
+    machine_number = request.data.get('machine_number', '').strip()
+    product_name = request.data.get('product_name', '').strip()
+    target_date = request.data.get('date')
+
+    if not machine_number or not product_name:
+        return Response({'success': False, 'message': 'machine_number와 product_name은 필수입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not target_date:
+        target_date = (datetime.now() + timedelta(days=1)).date().isoformat()
+
+    try:
+        target_dt = datetime.fromisoformat(target_date)
+    except Exception:
+        target_dt = datetime.now() + timedelta(days=1)
+
+    # 1. MasterSpec에서 제품 스펙 조회
+    spec = MasterSpec.objects.filter(product_name=product_name).first()
+
+    # 2. 해당 제품의 최근 7일 출고량 조회
+    start_date = target_dt - timedelta(days=7)
+    outbound_qty = OutboundRecord.objects.filter(
+        product_name=product_name,
+        outbound_date__gte=start_date.date()
+    ).aggregate(total=Coalesce(Sum('box_quantity'), 0))['total'] or 0
+
+    daily_outbound = outbound_qty / 7 if outbound_qty > 0 else 0
+
+    # 3. 출고 추세 분석 (최근 7일 vs 이전 7일)
+    prev_start = start_date - timedelta(days=7)
+    prev_outbound = OutboundRecord.objects.filter(
+        product_name=product_name,
+        outbound_date__gte=prev_start.date(),
+        outbound_date__lt=start_date.date()
+    ).aggregate(total=Coalesce(Sum('box_quantity'), 0))['total'] or 0
+
+    trend_percent = 0
+    trend_direction = 'stable'
+    if prev_outbound > 0:
+        trend_percent = ((outbound_qty - prev_outbound) / prev_outbound) * 100
+        if trend_percent > 5:
+            trend_direction = 'increasing'
+        elif trend_percent < -5:
+            trend_direction = 'decreasing'
+
+    # 4. 해당 기계의 해당 제품 생산 이력
+    prod_history = ProductionLog.objects.filter(
+        machine_number=machine_number,
+        product_name=product_name
+    ).order_by('-date')[:10]
+
+    recent_qty_list = [p.quantity for p in prod_history if p.quantity]
+    avg_production = sum(recent_qty_list) / len(recent_qty_list) if recent_qty_list else 0
+
+    # 5. 권장 생산량 계산
+    # 출고 추세 반영: 증가하면 생산량 증가, 감소하면 감소
+    if trend_direction == 'increasing':
+        recommended_qty = int(avg_production * 1.1)  # 10% 증가
+    elif trend_direction == 'decreasing':
+        recommended_qty = int(avg_production * 0.9)  # 10% 감소
+    else:
+        recommended_qty = int(avg_production)
+
+    # 최소값 보장
+    recommended_qty = max(recommended_qty, 1)
+
+    # 단위수량은 MasterSpec 또는 기본값
+    unit_quantity = spec.default_quantity if spec and spec.default_quantity > 0 else 10
+
+    total = unit_quantity * recommended_qty
+
+    # AI 추천 이유 생성
+    reason = f"최근 7일 평균 출고 {daily_outbound:.0f}개/일"
+    if trend_direction == 'increasing':
+        reason += f", 증가 추세 ({trend_percent:.1f}%↑)"
+    elif trend_direction == 'decreasing':
+        reason += f", 감소 추세 ({trend_percent:.1f}%↓)"
+    reason += f". 평균 생산량 {avg_production:.0f}개 기준 권장 {recommended_qty}박스."
+
+    # 6. MachinePlan에 저장 (recommended 상태)
+    tomorrow = (datetime.now() + timedelta(days=1)).date()
+    plan = MachinePlan.objects.create(
+        date=tomorrow,
+        machine_number=machine_number,
+        product_name=product_name,
+        product_name_eng=spec.product_name_eng if spec else '',
+        mold_number=spec.mold_number if spec else '',
+        color1=spec.color1 if spec else '',
+        color2=spec.color2 if spec else '',
+        unit='BOX',
+        quantity=recommended_qty,
+        unit_quantity=unit_quantity,
+        total=total,
+        status='recommended',
+        ai_reason=reason,
+        outbound_data={
+            'daily_outbound': round(daily_outbound, 1),
+            'trend_percent': round(trend_percent, 1),
+            'trend_direction': trend_direction,
+            'avg_production': round(avg_production, 1),
+            'recent_qty_list': recent_qty_list[:5],
+        }
+    )
+
+    return Response({
+        'success': True,
+        'recommendation': {
+            'plan_id': plan.id,
+            'product_name': product_name,
+            'color1': plan.color1,
+            'unit_quantity': unit_quantity,
+            'quantity': recommended_qty,
+            'total': total,
+            'reason': reason,
+            'outbound_data': plan.outbound_data,
+        }
+    })
+
+
+@api_view(['GET'])
+def machine_user_list(request):
+    """기계별 사용자 목록 조회"""
+    machine_number = request.query_params.get('machine_number')
+
+    users = MachineUser.objects.filter(is_active=True)
+    if machine_number:
+        users = users.filter(machine_number=machine_number)
+
+    return Response({
+        'success': True,
+        'users': [{'id': u.id, 'machine_number': u.machine_number, 'user_name': u.user_name} for u in users]
+    })
+
+
+@api_view(['POST'])
+def machine_user_create(request):
+    """기계 사용자 추가 (관리자용)"""
+    machine_number = request.data.get('machine_number', '').strip()
+    user_name = request.data.get('user_name', '').strip()
+    pin = request.data.get('pin', '').strip()
+
+    if not machine_number or not user_name or not pin:
+        return Response({'success': False, 'message': 'machine_number, user_name, pin은 필수입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if len(pin) < 4 or len(pin) > 6:
+        return Response({'success': False, 'message': 'PIN은 4~6자리입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # 중복 체크
+    existing = MachineUser.objects.filter(machine_number=machine_number, user_name=user_name).first()
+    if existing:
+        return Response({'success': False, 'message': '이미 존재하는 사용자입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    user = MachineUser.objects.create(
+        machine_number=machine_number,
+        user_name=user_name,
+        user_pin=_hash_pin(pin),
+        is_active=True
+    )
+
+    return Response({'success': True, 'user': {'id': user.id, 'machine_number': user.machine_number, 'user_name': user.user_name}})
 
 @api_view(['POST'])
 def bulk_create_inventory(request):
@@ -4134,9 +4522,14 @@ def delivery_weekday_hourly_ratio(request):
 @api_view(['GET'])
 def delivery_daily_prediction(request):
     """
-    2-stage 일별 예측 API
-    - Stage 1: 가중 중앙값으로 일별 총량 예측
+    2-stage 일별 예측 API (고도화 버전)
+    - Stage 1: 이동 평균 + 절사 평균으로 일별 총량 예측
     - Stage 2: 시간대별 비율로 시간별 분포 예측
+
+    개선 사항:
+    - 데이터 개수에 따른 절사 평균 분기 처리
+    - 상하위 이상치 동시 처리 (상한 200%, 하한 30%)
+    - 동적 월초말계수 (과거 데이터에서 자동 계산)
 
     Query params:
     - days: 학습 데이터 일수 (default: 90)
@@ -4145,7 +4538,7 @@ def delivery_daily_prediction(request):
 
     Response: {
       predictions: [
-        { date, predicted_total, confidence, day_of_week },
+        { date, predicted_total, confidence, day_of_week, product_predictions: [...] },
         ...
       ],
       hourly_predictions: {
@@ -4194,56 +4587,126 @@ def delivery_daily_prediction(request):
             'message': '학습 데이터가 부족합니다 (최소 7일 필요)'
         }, status=status.HTTP_400_BAD_REQUEST)
 
-    # Feature 추출 및 라벨 수집
-    X = []  # features
-    y = []  # daily totals
-
-    record_dict = {r.date: r for r in records}
-    dates_list = sorted(record_dict.keys())
-
-    for i, date in enumerate(dates_list):
-        record = record_dict[date]
-        if not record.total or record.total <= 0:
-            continue
-
-        # Features
-        dow = date.weekday()
-        is_weekend = 1 if dow >= 5 else 0
-        day = date.day
-        is_month_start = 1 if day <= 5 else 0
-        is_month_end = 1 if day >= 26 else 0
-
-        # 최근 7일 평균
-        if i >= 7:
-            recent_totals = [record_dict[dates_list[j]].total for j in range(i-7, i) if dates_list[j] in record_dict]
-            recent_avg = np.mean(recent_totals) if recent_totals else record.total
-        else:
-            recent_avg = record.total
-
-        # 전주 같은 요일 대비
-        if i >= 7:
-            prev_week_dow = dates_list[i-7].weekday() if i-7 >= 0 else dow
-            if prev_week_dow == dow and dates_list[i-7] in record_dict:
-                prev_week_total = record_dict[dates_list[i-7]].total
-                week_trend = (record.total - prev_week_total) / max(prev_week_total, 1)
+    def calculate_dynamic_factors(records):
+        """최근 데이터를 분석하여 요일 및 월초말 가중치를 동적으로 계산"""
+        all_totals = [r.total for r in records if r.total and r.total > 0]
+        if not all_totals:
+            return {'month': {}, 'dow': {}}
+        
+        overall_avg = np.mean(all_totals)
+        
+        # 1. 월초말계수 계산
+        month_start = [r.total for r in records if r.date.day <= 7 and r.total > 0]
+        month_mid = [r.total for r in records if 7 < r.date.day < 22 and r.total > 0]
+        month_end = [r.total for r in records if r.date.day >= 22 and r.total > 0]
+        
+        month_factors = {
+            'month_start': round(np.mean(month_start) / overall_avg, 3) if month_start else 1.0,
+            'month_mid': round(np.mean(month_mid) / overall_avg, 3) if month_mid else 1.0,
+            'month_end': round(np.mean(month_end) / overall_avg, 3) if month_end else 1.0
+        }
+        
+        # 2. 요일계수 계산 (0:월, 1:화, ..., 6:일)
+        dow_totals = {i: [] for i in range(7)}
+        for r in records:
+            if r.total > 0:
+                dow_totals[r.date.weekday()].append(r.total)
+        
+        dow_factors = {}
+        for i in range(7):
+            if dow_totals[i]:
+                dow_factors[i] = round(np.mean(dow_totals[i]) / overall_avg, 3)
             else:
-                week_trend = 0
+                # 데이터가 없는 요일은 기본값 사용
+                default_factors = {0:1.05, 1:1.10, 2:1.15, 3:1.10, 4:1.0, 5:0.6, 6:0.5}
+                dow_factors[i] = default_factors.get(i, 1.0)
+                
+        return {'month': month_factors, 'dow': dow_factors, 'overall_avg': overall_avg}
+
+    factors_data = calculate_dynamic_factors(records)
+    month_period_factors = factors_data['month']
+    dynamic_dow_factors = factors_data['dow']
+    base_average = factors_data['overall_avg']
+
+    # ====== [개선 2] 이동 평균 + 절사 평균 계산 ======
+    def calculate_base_average(daily_totals):
+        """데이터 개수에 따른 분기 처리된 기본 평균 계산"""
+        n = len(daily_totals)
+        if n == 0:
+            return 0
+
+        # 이상치 탐지 (상한: 평균의 200%, 하한: 평균의 30%)
+        avg = np.mean(daily_totals)
+        upper_threshold = avg * 2.0
+        lower_threshold = avg * 0.3
+
+        filtered = [v for v in daily_totals if v <= upper_threshold and v >= lower_threshold]
+
+        # 필터링 후 데이터가 부족하면 원본 사용
+        if len(filtered) < 3:
+            filtered = daily_totals
+
+        # 이동 평균 (EWMA - 지수적 가중)
+        ewma = np.average(filtered, weights=np.exp(np.linspace(-1, 0, len(filtered))))
+
+        # 절사 평균 - 데이터 개수에 따라 분기
+        if n >= 30:
+            # 30개 이상: 상하위 10% 절사
+            trim_count = len(filtered) // 10
+            if trim_count > 0 and len(filtered) > trim_count * 2:
+                trimmed = sorted(filtered)[trim_count:-trim_count]
+                trimmed_mean = np.mean(trimmed) if trimmed else ewma
+            else:
+                trimmed_mean = ewma
+            weight_ewma = 0.5
+            weight_trimmed = 0.5
+        elif n >= 14:
+            # 14~29개: 상하위 1개만 절사
+            if len(filtered) > 2:
+                trimmed = sorted(filtered)[1:-1]
+                trimmed_mean = np.mean(trimmed) if trimmed else ewma
+            else:
+                trimmed_mean = ewma
+            weight_ewma = 0.6
+            weight_trimmed = 0.4
         else:
-            week_trend = 0
+            # 14개 미만: 이동 평균만 사용
+            return int(ewma)
 
-        X.append([dow, is_weekend, is_month_start, is_month_end, recent_avg / 1000, week_trend])
-        y.append(record.total)
+        return int(weight_ewma * ewma + weight_trimmed * trimmed_mean)
 
-    if len(X) < 7:
-        return Response({
-            'success': False,
-            'message': '유효한 학습 데이터가 부족합니다'
-        }, status=status.HTTP_400_BAD_REQUEST)
+    # ====== [개선 3] 요일계수 (동적 가중치 사용) ======
+    DAY_OF_WEEK_FACTORS = dynamic_dow_factors
 
-    # 최근 4주 전체 평균 (기준선)
-    recent_4week_avg = np.mean(y[-28:]) if len(y) >= 28 else np.mean(y)
+    # ====== [개선 4] 휴일계수 ======
+    HOLIDAYS = ['01-01', '03-01', '05-05', '06-06', '08-15', '10-03', '10-09', '12-25']
 
-    day_names = ['일', '월', '화', '수', '목', '금', '토']
+    def get_holiday_factor(date):
+        """휴일 및 전후 기간 계수"""
+        date_str = f"{date.month:02d}-{date.day:02d}"
+        if date_str in HOLIDAYS:
+            return 0.50  # 휴일当天
+        #前一天
+        prev_date = date - timedelta(days=1)
+        prev_str = f"{prev_date.month:02d}-{prev_date.day:02d}"
+        if prev_str in HOLIDAYS:
+            return 0.75
+        #다음날
+        next_date = date + timedelta(days=1)
+        next_str = f"{next_date.month:02d}-{next_date.day:02d}"
+        if next_str in HOLIDAYS:
+            return 0.85
+        return 1.00
+
+    # ====== Stage 1: 총량 예측 ======
+    # 모든 유효 데이터의 총량 추출 (사용자 제안: 최근 3개월(90일) 단순 평균 사용)
+    # base_average는 위 calculate_dynamic_factors에서 이미 overall_avg로 산출됨
+    
+    # 최근 4주 평균 (기준선 유지는 하되 예측 공식에는 base_average 사용)
+    all_totals = [r.total for r in records if r.total and r.total > 0]
+    recent_4week_avg = np.mean(all_totals[-28:]) if len(all_totals) >= 28 else np.mean(all_totals)
+
+    day_names = ['월', '화', '수', '목', '금', '토', '일']
 
     # 각 예측 날짜마다 예측 수행
     predictions = []
@@ -4254,56 +4717,32 @@ def delivery_daily_prediction(request):
         target_dow = target_date.weekday()
         target_day = target_date.day
 
-        if target_day <= 5:
+        # 월초말 계수 (동적)
+        if target_day <= 7:
+            period_factor = month_period_factors['month_start']
             target_period = 'month_start'
-        elif target_day >= 26:
+        elif target_day >= 22:
+            period_factor = month_period_factors['month_end']
             target_period = 'month_end'
         else:
+            period_factor = month_period_factors['month_mid']
             target_period = 'month_mid'
 
-        # 같은 요일 + 같은 기간 데이터 필터링
-        matching_records = []
-        for record in records:
-            if not record.total or record.total <= 0:
-                continue
-            rec_day = record.date.day
-            if rec_day <= 5:
-                rec_period = 'month_start'
-            elif rec_day >= 26:
-                rec_period = 'month_end'
-            else:
-                rec_period = 'month_mid'
+        # 요일계수
+        dow_factor = DAY_OF_WEEK_FACTORS.get(target_dow, 1.0)
 
-            if record.date.weekday() == target_dow and rec_period == target_period:
-                matching_records.append(record.total)
+        # 휴일계수
+        holiday_factor = get_holiday_factor(target_date)
 
-        # 없다면 같은 요일만
-        if len(matching_records) < 3:
-            matching_records = [r.total for r in records if r.date.weekday() == target_dow and r.total and r.total > 0]
+        # ====== 예측 공식 (v2.1 가중치 적용) ======
+        # 예측_총량 = 3개월전체평균 × 요일계수 × 월초말계수 × 휴일계수
+        predicted_total = base_average * dow_factor * period_factor * holiday_factor
 
-        # 예측값 계산 - 중간 수준 접근 (중앙값 + 최근 가중)
-        if matching_records:
-            # 이상치 제거 (상위 10% 초과값 제외)
-            if len(matching_records) > 5:
-                trim = len(matching_records) // 10
-                matching_records = matching_records[trim:-trim]
-
-            matching_records.sort()
-            base_prediction = matching_records[len(matching_records)//2]  # 중앙값
-
-            # 최근 데이터 가중 (적정 수준)
-            if len(matching_records) >= 3:
-                recent_weight = 0.4  # 0.3에서 0.4로 증가
-                base_prediction = int(base_prediction * (1 - recent_weight) + matching_records[-1] * recent_weight)
-        else:
-            base_prediction = int(np.mean(y))
-
-        # Conservative adjustment - 95%로 설정 (덜 보수적으로)
-        predicted_total = int(base_prediction * 0.95)
-        # 상한: 최근 평균의 130%까지만
-        predicted_total = min(predicted_total, int(recent_4week_avg * 1.3))
-        # 하한: 최근 평균의 80% 이상 (너무 낮게 설정되지 않도록)
-        predicted_total = max(predicted_total, int(recent_4week_avg * 0.8))
+        # [변경] 보수적 보정(0.85) 제거 및 클리핑 완화
+        # 상한: 3개월 평균의 160%까지 (유연성 확보)
+        predicted_total = min(predicted_total, int(base_average * 1.6))
+        # 하충: 3개월 평균의 40% 이상 (533 고정 문제 해결)
+        predicted_total = int(max(predicted_total, int(base_average * 0.4)))
 
         # Stage 2: 시간대별 비율로 분포 예측
         weekday_ratios = _get_weekday_hourly_ratios(target_dow, records)
@@ -4320,12 +4759,35 @@ def delivery_daily_prediction(request):
             for h in range(24):
                 hourly_prediction[f'hour_{h:02d}'] = int(hourly_prediction[f'hour_{h:02d}'] * ratio)
 
+        # ====== [신규] Stage 2: 품목별 배분 ======
+        product_ratios = _get_product_ratios()
+        product_prediction_list = []
+        for p in product_ratios:
+            qty = int(predicted_total * p['ratio'])
+            if qty > 0:
+                product_prediction_list.append({
+                    'barcode': p['barcode'],
+                    'product_name': p['product_name'],
+                    'category': p['category'],
+                    'predicted_quantity': qty
+                })
+        
+        # 상위 10개 품목만 포함 (데이터량 최적화)
+        product_prediction_list = sorted(product_prediction_list, key=lambda x: x['predicted_quantity'], reverse=True)[:10]
+
         predictions.append({
             'date': target_date.isoformat(),
-            'predicted_total': predicted_total,
+            'predicted_total': int(predicted_total),
             'day_of_week': day_names[target_dow],
-            'confidence': 'medium' if len(matching_records) >= 5 else 'low',
-            'period': target_period
+            'confidence': 'high' if len(all_totals) >= 30 else 'medium' if len(all_totals) >= 14 else 'low',
+            'period': target_period,
+            'factors': {
+                'base_average': int(base_average),
+                'dow_factor': round(float(dow_factor), 2),
+                'period_factor': round(float(period_factor), 2),
+                'holiday_factor': round(float(holiday_factor), 2)
+            },
+            'product_predictions': product_prediction_list
         })
 
         hourly_predictions[target_date.isoformat()] = hourly_prediction
@@ -4337,7 +4799,9 @@ def delivery_daily_prediction(request):
         'meta': {
             'start_date': start_date.isoformat(),
             'num_days': num_days,
-            'training_samples': len(X),
+            'training_samples': len(all_totals),
+            'base_average': int(base_average),
+            'month_period_factors': month_period_factors,
             'recent_4week_avg': int(recent_4week_avg)
         }
     })
@@ -4345,7 +4809,8 @@ def delivery_daily_prediction(request):
 
 def _get_weekday_hourly_ratios(target_dow: int, records) -> dict:
     """요일별 시간대별 비율 계산"""
-    day_names = ['일', '월', '화', '수', '목', '금', '토']
+    # 0=월, 6=일 기준 정정
+    day_names = ['월', '화', '수', '목', '금', '토', '일']
     target_day_name = day_names[target_dow]
 
     # 최근 4주 데이터에서 해당 요일 집계
@@ -4383,6 +4848,44 @@ def _get_weekday_hourly_ratios(target_dow: int, records) -> dict:
     for h in range(24):
         ratios[f'hour_{h:02d}'] = round(weekday_hourly_sums[h] / weekday_total, 4)
 
+    return ratios
+
+
+def _get_product_ratios() -> list:
+    """최근 30일 출고 데이터를 바탕으로 품목별 비중 계산"""
+    from datetime import timedelta
+    from django.db.models import Sum
+    from .models import OutboundRecord
+    
+    today = timezone.localdate()
+    thirty_days_ago = today - timedelta(days=30)
+    
+    # 최근 30일 총 출고량
+    total_qty = OutboundRecord.objects.filter(
+        outbound_date__gte=thirty_days_ago,
+        outbound_date__lt=today
+    ).aggregate(total=Sum('quantity'))['total'] or 0
+    
+    if total_qty <= 0:
+        return []
+    
+    # 품목별 집계
+    product_stats = OutboundRecord.objects.filter(
+        outbound_date__gte=thirty_days_ago,
+        outbound_date__lt=today
+    ).values('barcode', 'product_name', 'category').annotate(
+        sum_qty=Sum('quantity')
+    ).order_by('-sum_qty')
+    
+    ratios = []
+    for p in product_stats:
+        ratios.append({
+            'barcode': p['barcode'],
+            'product_name': (p['product_name'] or 'Unknown'),
+            'category': (p['category'] or '기타'),
+            'ratio': p['sum_qty'] / total_qty
+        })
+        
     return ratios
 
 
@@ -6439,3 +6942,91 @@ def ai_accuracy_stats(request):
             'period': period_result
         }
     })
+
+@api_view(['POST'])
+def outbound_upload_excel(request):
+    """
+    바코드 통계 엑셀 파일 상의 [바코드, 제품명, 대분류, 수량] 데이터를 OutboundRecord 로 저장
+    파일명(예: 바코드통계_20260401.xlsx)에서 날짜를 추출하여 처리
+    """
+    file_obj = request.FILES.get('file')
+    if not file_obj:
+        return Response({'success': False, 'message': '파일이 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    filename = file_obj.name
+    target_date_str = None
+    
+    # 1. 파일명에서 날짜 추출 (YYYYMMDD 형식)
+    match = re.search(r'(\d{8})', filename)
+    if match:
+        raw_date = match.group(1)
+        try:
+            # 유효성 확인을 겸한 변환
+            dt = datetime.strptime(raw_date, '%Y%m%d')
+            target_date_str = dt.strftime('%Y-%m-%d')
+        except:
+            pass
+            
+    # 2. 파일명에서 추출 실패 시 프론트엔드 전송 값 사용
+    if not target_date_str:
+        target_date_str = request.data.get('date')
+        
+    if not target_date_str:
+        # 최후의 보루: 어제 날짜
+        target_date_str = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        
+    try:
+        df = pd.read_excel(file_obj)
+        df = df.fillna('')
+        
+        # 컬럼 인덱스 찾기
+        cols = _normalize_cols(df.columns)
+        bc_idx = _find_col_index(cols, ['바코드', 'barcode', '상품바코드'])
+        name_idx = _find_col_index(cols, ['제품명', '상품명', 'product'])
+        cat_idx = _find_col_index(cols, ['대분류', '분류', 'category'])
+        qty_idx = _find_col_index(cols, ['수량', 'quantity', 'qty'])
+        
+        if bc_idx is None or qty_idx is None:
+            return Response({
+                'success': False, 
+                'message': '엑셀 파일에 필수 열(바코드, 수량)이 없습니다.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 기존 해당 날짜 데이터 삭제
+        with transaction.atomic():
+            OutboundRecord.objects.filter(outbound_date=target_date_str).delete()
+            
+            records = []
+            for _, row in df.iterrows():
+                bc = str(row.iloc[bc_idx]).strip()
+                qty = _parse_int(row.iloc[qty_idx])
+                if not bc or qty <= 0:
+                    continue
+                    
+                records.append(OutboundRecord(
+                    outbound_date=target_date_str,
+                    barcode=bc,
+                    product_name=(str(row.iloc[name_idx]).strip() if name_idx is not None else '')[:255],
+                    category=(str(row.iloc[cat_idx]).strip() if cat_idx is not None else '기타')[:100],
+                    quantity=qty,
+                    sales_amount=0 # 파일엔 금액 정보 없음
+                ))
+            
+            if records:
+                OutboundRecord.objects.bulk_create(records, batch_size=2000)
+                
+        logger.info(f"Outbound Excel Upload Success: {target_date_str}, {len(records)} rows")
+        
+        return Response({
+            'success': True, 
+            'created': len(records),
+            'date': target_date_str,
+            'message': f'{target_date_str} 데이터 {len(records)}건 업로드 완료'
+        })
+        
+    except Exception as e:
+        logger.error(f"Outbound Excel Upload Error: {str(e)}\n{traceback.format_exc()}")
+        return Response({
+            'success': False, 
+            'message': f'데이터 처리 중 오류 발생: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
