@@ -6,6 +6,7 @@ import OutboundTabs from "@/components/outbound-tabs";
 import InventoryTab, { type InventoryTabKey } from "@/components/inventory-tab";
 import DeliveryOverview from "@/pages/delivery-overview";
 import ProductionPlan from "@/pages/production-plan";
+import ProductionApp from "@/pages/production-app";
 import ProductMaster from "@/pages/product-master";
 import NotFound from "@/pages/not-found";
 import { AIChatWidget } from "@/components/ai-chatbot";
@@ -45,6 +46,13 @@ const NAV_ITEMS: SidebarItem[] = [
     label: "생산 계획",
     icon: "fa-industry",
     description: "생산 계획 테이블과 라인별 진행 상황을 실시간으로 모니터링합니다.",
+  },
+  {
+    key: "production-app",
+    path: "/production-app",
+    label: "모바일 생산",
+    icon: "fa-mobile-alt",
+    description: "스마트폰용 생산 계획 앱 (PIN 인증)",
   },
   {
     key: "master",
@@ -111,6 +119,8 @@ function resolveActiveKey(pathname: string): string {
       return "inventory";
     case "/production":
       return "production";
+    case "/production-app":
+      return "production-app";
     case "/master":
       return "master";
     default:
@@ -173,6 +183,8 @@ export default function Dashboard() {
         );
       case "/production":
         return <ProductionPlan />;
+      case "/production-app":
+        return <ProductionApp />;
       case "/master":
         return <ProductMaster />;
       default:
