@@ -1772,14 +1772,15 @@ def _hash_pin(pin: str) -> str:
 
 @api_view(['POST'])
 def machine_login(request):
-    """기계별 PIN 로그인"""
-    machine_number = request.data.get('machine_number', '').strip()
+    """사원번호 + PIN 로그인"""
+    employee_number = request.data.get('employee_number', '').strip()
     pin = request.data.get('pin', '').strip()
 
-    if not machine_number or not pin:
-        return Response({'success': False, 'message': '기계번호와 PIN을 입력하세요.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not employee_number or not pin:
+        return Response({'success': False, 'message': '사원번호와 PIN을 입력하세요.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    user = MachineUser.objects.filter(machine_number=machine_number, is_active=True).first()
+    # 사원번호로 사용자 조회
+    user = MachineUser.objects.filter(employee_number=employee_number, is_active=True).first()
     if not user:
         return Response({'success': False, 'message': '등록된 사용자가 없습니다.'}, status=status.HTTP_401_BAD_REQUEST)
 
@@ -1803,13 +1804,16 @@ def machine_login(request):
     user.locked_until = None
     user.save()
 
-    # 간단한 토큰 생성 (실제론 JWT 등 사용 권장)
-    token = f"{machine_number}:{user.id}:{timezone.now().timestamp()}"
+    # 사용자 정보 + 등록된 기계 목록 반환
+    user_machines = MachineUser.objects.filter(employee_number=employee_number, is_active=True).values_list('machine_number', flat=True)
+
+    token = f"{employee_number}:{user.id}:{timezone.now().timestamp()}"
     return Response({
         'success': True,
         'token': token,
         'user_name': user.user_name,
-        'machine_number': user.machine_number
+        'employee_number': user.employee_number,
+        'machines': list(user_machines)  # 사용자가 등록된 기계 목록
     })
 
 
@@ -2119,30 +2123,48 @@ def machine_user_list(request):
 
 @api_view(['POST'])
 def machine_user_create(request):
-    """기계 사용자 추가 (관리자용)"""
+    """기계 사용자 추가 (관리자용) - 사원번호 기반"""
+    employee_number = request.data.get('employee_number', '').strip()
     machine_number = request.data.get('machine_number', '').strip()
     user_name = request.data.get('user_name', '').strip()
     pin = request.data.get('pin', '').strip()
 
-    if not machine_number or not user_name or not pin:
-        return Response({'success': False, 'message': 'machine_number, user_name, pin은 필수입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not employee_number or not machine_number or not user_name or not pin:
+        return Response({'success': False, 'message': 'employee_number, machine_number, user_name, pin은 필수입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
     if len(pin) < 4 or len(pin) > 6:
         return Response({'success': False, 'message': 'PIN은 4~6자리입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    # 중복 체크
-    existing = MachineUser.objects.filter(machine_number=machine_number, user_name=user_name).first()
-    if existing:
-        return Response({'success': False, 'message': '이미 존재하는 사용자입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+    # 사원번호로 기존 사용자 조회 (같은 사람일 경우)
+    existing_user = MachineUser.objects.filter(employee_number=employee_number).first()
+    if existing_user:
+        # 같은 사원번호면 기계만 추가 (복수 기계 가능)
+        if MachineUser.objects.filter(employee_number=employee_number, machine_number=machine_number).exists():
+            return Response({'success': False, 'message': '이미 해당 기계에 등록된 사용자입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    user = MachineUser.objects.create(
-        machine_number=machine_number,
-        user_name=user_name,
-        user_pin=_hash_pin(pin),
-        is_active=True
-    )
+        user = MachineUser.objects.create(
+            employee_number=employee_number,
+            machine_number=machine_number,
+            user_name=user_name,
+            user_pin=_hash_pin(pin),
+            is_active=True
+        )
+    else:
+        # 새 사용자 생성
+        user = MachineUser.objects.create(
+            employee_number=employee_number,
+            machine_number=machine_number,
+            user_name=user_name,
+            user_pin=_hash_pin(pin),
+            is_active=True
+        )
 
-    return Response({'success': True, 'user': {'id': user.id, 'machine_number': user.machine_number, 'user_name': user.user_name}})
+    return Response({'success': True, 'user': {
+        'id': user.id,
+        'employee_number': user.employee_number,
+        'machine_number': user.machine_number,
+        'user_name': user.user_name
+    }})
 
 @api_view(['POST'])
 def bulk_create_inventory(request):

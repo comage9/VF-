@@ -274,8 +274,9 @@ class ProductionLog(models.Model):
 
 
 class MachineUser(models.Model):
-    """기계별 사용자 (PIN 인증)"""
+    """기계별 사용자 (사원번호 + PIN 인증)"""
     machine_number = models.CharField(max_length=20, db_index=True)
+    employee_number = models.CharField(max_length=20, db_index=True, null=True, blank=True)  # 사원번호 (1, 2, 3, 8, 12 등)
     user_pin = models.CharField(max_length=64)  # SHA-256 해시 저장
     user_name = models.CharField(max_length=50)
     is_active = models.BooleanField(default=True)
@@ -289,10 +290,11 @@ class MachineUser(models.Model):
         unique_together = [['machine_number', 'user_name']]
         indexes = [
             models.Index(fields=['machine_number']),
+            models.Index(fields=['employee_number']),
         ]
 
     def __str__(self):
-        return f"{self.machine_number} - {self.user_name}"
+        return f"{self.employee_number or 'N/A'} - {self.machine_number} - {self.user_name}"
 
 
 class MachinePlan(models.Model):

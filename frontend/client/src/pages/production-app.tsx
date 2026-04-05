@@ -39,7 +39,8 @@ interface LoginResponse {
   success: boolean;
   token?: string;
   user_name?: string;
-  machine_number?: string;
+  employee_number?: string;
+  machines?: string[];
   message?: string;
 }
 
@@ -73,25 +74,23 @@ function PinInput({ value, onChange, length = 4 }: { value: string; onChange: (v
   );
 }
 
-// 기계 선택 화면
-function MachineLogin({
+// 사원번호 + PIN 입력 화면
+function EmployeeLogin({
   onLogin,
   isLoading,
   error,
 }: {
-  onLogin: (machine: string, pin: string) => void;
+  onLogin: (employeeNumber: string, pin: string) => void;
   isLoading: boolean;
   error: string;
 }) {
-  const [selectedMachine, setSelectedMachine] = useState("");
+  const [employeeNumber, setEmployeeNumber] = useState("");
   const [pin, setPin] = useState("");
-
-  const machines = ["M001", "M002", "M003", "M004"];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedMachine && pin.length >= 4) {
-      onLogin(selectedMachine, pin);
+    if (employeeNumber && pin.length >= 4) {
+      onLogin(employeeNumber, pin);
     }
   };
 
@@ -103,27 +102,19 @@ function MachineLogin({
             <span className="text-4xl">🏭</span>
           </div>
           <h1 className="text-2xl font-bold text-gray-900">생산 계획</h1>
-          <p className="text-gray-500 mt-1">기계를 선택하고 PIN을 입력하세요</p>
+          <p className="text-gray-500 mt-1">사원번호와 PIN을 입력하세요</p>
         </div>
 
         <Card className="mb-4">
           <CardContent className="p-4">
-            <Label className="text-sm font-medium mb-3 block">기계 선택</Label>
-            <div className="grid grid-cols-2 gap-3">
-              {machines.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setSelectedMachine(m)}
-                  className={`p-3 rounded-lg border-2 text-center transition-all
-                    ${selectedMachine === m
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 hover:border-gray-300'}`}
-                >
-                  <span className="text-lg font-bold">{m}</span>
-                </button>
-              ))}
-            </div>
+            <Label className="text-sm font-medium mb-3 block">사원번호</Label>
+            <Input
+              type="text"
+              value={employeeNumber}
+              onChange={(e) => setEmployeeNumber(e.target.value)}
+              placeholder="예: 1, 2, 3, 8, 12..."
+              className="text-center text-lg font-bold"
+            />
           </CardContent>
         </Card>
 
@@ -142,7 +133,7 @@ function MachineLogin({
 
         <Button
           onClick={handleSubmit}
-          disabled={!selectedMachine || pin.length < 4 || isLoading}
+          disabled={!employeeNumber || pin.length < 4 || isLoading}
           className="w-full py-6 text-lg"
         >
           {isLoading ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : null}
@@ -213,7 +204,7 @@ function MachineDashboard({
 
   // 계획 생성 mutation
   const createMutation = useMutation({
-    mutationFn: async (plan: any) => {
+    mutationFn: async (plan: Record<string, unknown>) => {
       const res = await fetch("/api/machine/plans", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -221,7 +212,7 @@ function MachineDashboard({
           ...plan,
           machine_number: machineNumber,
           date: defaultDate,
-          total: (plan.unit_quantity || 0) * (plan.quantity || 0),
+          total: ((plan.unit_quantity as number) || 0) * ((plan.quantity as number) || 0),
           status: "draft",
         }),
       });
@@ -300,7 +291,7 @@ function MachineDashboard({
           </div>
         ) : plans.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
-            <p>오늘的计划이 없습니다.</p>
+            <p>오늘의 계획이 없습니다.</p>
             <p className="text-sm mt-1">AI 추천이나 새 계획을 추가하세요.</p>
           </div>
         ) : (
@@ -499,8 +490,11 @@ function MachineDashboard({
 
 // 메인 컴포넌트
 export default function ProductionApp() {
-  const [machineNumber, setMachineNumber] = useState("");
+  const [employeeNumber, setEmployeeNumber] = useState("");
   const [userName, setUserName] = useState("");
+  const [machines, setMachines] = useState<string[]>([]);
+  const [selectedMachine, setSelectedMachine] = useState("");
+  const [showMachineSelect, setShowMachineSelect] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -510,9 +504,10 @@ export default function ProductionApp() {
     if (saved) {
       try {
         const session = JSON.parse(saved);
-        if (session.machineNumber && session.userName) {
-          setMachineNumber(session.machineNumber);
+        if (session.employeeNumber && session.machineNumber) {
+          setEmployeeNumber(session.employeeNumber);
           setUserName(session.userName);
+          setSelectedMachine(session.machineNumber);
         }
       } catch (e) {
         // invalid JSON
@@ -520,7 +515,7 @@ export default function ProductionApp() {
     }
   }, []);
 
-  const handleLogin = async (machine: string, pin: string) => {
+  const handleLogin = async (empNo: string, pin: string) => {
     setIsLoading(true);
     setError("");
 
@@ -528,17 +523,29 @@ export default function ProductionApp() {
       const res = await fetch("/api/machine/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ machine_number: machine, pin }),
+        body: JSON.stringify({ employee_number: empNo, pin }),
       });
       const data: LoginResponse = await res.json();
 
       if (data.success) {
-        setMachineNumber(data.machine_number || machine);
+        setEmployeeNumber(data.employee_number || empNo);
         setUserName(data.user_name || "");
-        localStorage.setItem(
-          "vf_machine_session",
-          JSON.stringify({ machineNumber: data.machine_number, userName: data.user_name })
-        );
+        setMachines(data.machines || []);
+
+        // 복수 기계면 선택 화면으로, 단일 기계면 바로 진행
+        if (data.machines && data.machines.length > 1) {
+          setShowMachineSelect(true);
+        } else if (data.machines && data.machines.length === 1) {
+          setSelectedMachine(data.machines[0]);
+          localStorage.setItem(
+            "vf_machine_session",
+            JSON.stringify({
+              employeeNumber: data.employee_number,
+              machineNumber: data.machines[0],
+              userName: data.user_name
+            })
+          );
+        }
       } else {
         setError(data.message || "로그인 실패");
       }
@@ -549,15 +556,66 @@ export default function ProductionApp() {
     }
   };
 
+  const handleMachineSelect = (machine: string) => {
+    setSelectedMachine(machine);
+    localStorage.setItem(
+      "vf_machine_session",
+      JSON.stringify({
+        employeeNumber,
+        machineNumber: machine,
+        userName
+      })
+    );
+    setShowMachineSelect(false);
+  };
+
   const handleLogout = () => {
-    setMachineNumber("");
+    setEmployeeNumber("");
     setUserName("");
+    setMachines([]);
+    setSelectedMachine("");
+    setShowMachineSelect(false);
     localStorage.removeItem("vf_machine_session");
   };
 
-  if (!machineNumber) {
-    return <MachineLogin onLogin={handleLogin} isLoading={isLoading} error={error} />;
+  // 기계 선택 화면 (복수 기계 보유 시)
+  if (showMachineSelect && machines.length > 0) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white p-4">
+        <div className="max-w-sm mx-auto">
+          <div className="text-center mb-8 pt-8">
+            <h1 className="text-2xl font-bold text-gray-900">기계 선택</h1>
+            <p className="text-gray-500 mt-1">{userName}님, 사용할 기계를 선택하세요</p>
+          </div>
+
+          <Card>
+            <CardContent className="p-4">
+              <div className="grid grid-cols-2 gap-3">
+                {machines.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => handleMachineSelect(m)}
+                    className="p-4 rounded-lg border-2 text-center hover:border-blue-500 hover:bg-blue-50 transition-all"
+                  >
+                    <span className="text-xl font-bold">{m}</span>
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Button variant="outline" className="w-full mt-4" onClick={handleLogout}>
+            로그아웃
+          </Button>
+        </div>
+      </div>
+    );
   }
 
-  return <MachineDashboard machineNumber={machineNumber} userName={userName} onLogout={handleLogout} />;
+  if (!selectedMachine) {
+    return <EmployeeLogin onLogin={handleLogin} isLoading={isLoading} error={error} />;
+  }
+
+  return <MachineDashboard machineNumber={selectedMachine} userName={userName} onLogout={handleLogout} />;
 }
