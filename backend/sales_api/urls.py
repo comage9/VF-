@@ -75,6 +75,7 @@ urlpatterns = [
     path('machine/plans/<int:plan_id>', views.machine_plan_detail, name='machine-plan-detail'),
     path('machine/plans/<int:plan_id>/apply', views.machine_plan_apply, name='machine-plan-apply'),
     path('ai/production-recommend', views.ai_production_recommend, name='ai-production-recommend'),
+    path('ai/production-chat', views.ai_production_chat, name='ai-production-chat'),
 
     path('master/specs', views.master_specs, name='master-specs'),
     path('master/specs/<int:id>', views.master_specs_detail, name='master-specs-detail'),

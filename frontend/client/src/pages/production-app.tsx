@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, CheckCircle, Plus, Sparkles, LogOut, Trash2 } from "lucide-react";
+import { Loader2, CheckCircle, Plus, Sparkles, LogOut, Trash2, Send } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 // Types
@@ -156,8 +156,10 @@ function MachineDashboard({
 }) {
   const queryClient = useQueryClient();
   const [showNewPlan, setShowNewPlan] = useState(false);
-  const [showAI, setShowAI] = useState(false);
-  const [aiProduct, setAiProduct] = useState("");
+  const [showAIChat, setShowAIChat] = useState(false);
+  const [chatMessages, setChatMessages] = useState<{role: string; content: string}[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [isChatLoading, setIsChatLoading] = useState(false);
   const [newPlan, setNewPlan] = useState({
     product_name: "",
     color1: "",
@@ -179,27 +181,6 @@ function MachineDashboard({
       return res.json();
     },
     refetchInterval: 30000,
-  });
-
-  // AI 추천 mutation
-  const aiMutation = useMutation({
-    mutationFn: async (productName: string) => {
-      const res = await fetch("/api/ai/production-recommend", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          machine_number: machineNumber,
-          product_name: productName,
-          date: defaultDate,
-        }),
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/machine/plans"] });
-      setShowAI(false);
-      setAiProduct("");
-    },
   });
 
   // 계획 생성 mutation
@@ -249,6 +230,50 @@ function MachineDashboard({
       queryClient.invalidateQueries({ queryKey: ["/api/machine/plans"] });
     },
   });
+
+  // AI 챗 제출
+  const handleChatSubmit = async () => {
+    if (!chatInput.trim() || isChatLoading) return;
+
+    const userMessage = chatInput.trim();
+    setChatInput("");
+    setChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+    setIsChatLoading(true);
+
+    try {
+      const response = await fetch("/api/ai/production-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: userMessage,
+          machine_number: machineNumber,
+          date: defaultDate,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.action === 'created') {
+        // 계획이 생성됨
+        setChatMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `✅ "${data.plan.product_name}" 계획을 추가했습니다!\n\n` +
+            `- 수량: ${data.plan.quantity}박스 × ${data.plan.unit_quantity}개 = ${data.plan.total}개\n` +
+            `- 색상: ${data.plan.color1} ${data.plan.color2 ? '/ ' + data.plan.color2 : ''}\n\n` +
+            `"적용" 버튼을 누르면 생산 계획에 등록됩니다.`
+        }]);
+        queryClient.invalidateQueries({ queryKey: ["/api/machine/plans"] });
+      } else if (data.success && data.action === 'info') {
+        setChatMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
+      } else {
+        setChatMessages(prev => [...prev, { role: 'assistant', content: data.message || '알 수 없는 응답입니다.' }]);
+      }
+    } catch (e) {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: '서버 연결 실패. 다시 시도해주세요.' }]);
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
 
   const plans = plansData?.plans || [];
 
@@ -375,7 +400,7 @@ function MachineDashboard({
           <Button
             variant="outline"
             className="flex-1"
-            onClick={() => setShowAI(true)}
+            onClick={() => setShowAIChat(true)}
           >
             <Sparkles className="w-4 h-4 mr-1" />
             AI 추천
@@ -446,40 +471,51 @@ function MachineDashboard({
         </DialogContent>
       </Dialog>
 
-      {/* AI 추천 Dialog */}
-      <Dialog open={showAI} onOpenChange={setShowAI}>
-        <DialogContent>
+      {/* AI 챗bots Dialog */}
+      <Dialog open={showAIChat} onOpenChange={setShowAIChat}>
+        <DialogContent className="h-[80vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>🤖 AI 생산 계획 추천</DialogTitle>
+            <DialogTitle>🤖 AI 생산 계획 도우미</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <p className="text-sm text-gray-600">
-              제품을 입력하면 AI가 출고 데이터를 분석하여 적절한 생산량을 추천합니다.
-            </p>
-            <div>
-              <Label>제품명</Label>
-              <Input
-                value={aiProduct}
-                onChange={(e) => setAiProduct(e.target.value)}
-                placeholder="예: 토이 아이보리"
-              />
-            </div>
-            <Button
-              className="w-full"
-              onClick={() => aiMutation.mutate(aiProduct)}
-              disabled={!aiProduct || aiMutation.isPending}
-            >
-              {aiMutation.isPending ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                  분석 중...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  추천 받기
-                </>
-              )}
+
+          {/* 챗 메시지 */}
+          <div className="flex-1 overflow-y-auto space-y-3 p-3">
+            {chatMessages.length === 0 && (
+              <div className="text-center text-gray-500 py-8">
+                <p>무엇을 도와드릴까요?</p>
+                <p className="text-sm mt-1">예: "4번 기계에 토이 아이보리 추가해줘"</p>
+              </div>
+            )}
+            {chatMessages.map((msg, i) => (
+              <div
+                key={i}
+                className={`p-3 rounded-lg ${msg.role === 'user' ? 'bg-blue-100 text-right' : 'bg-gray-100'}`}
+              >
+                {msg.content}
+              </div>
+            ))}
+            {isChatLoading && (
+              <div className="flex items-center gap-2 text-gray-500">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                분석 중...
+              </div>
+            )}
+          </div>
+
+          {/* 챗 입력 */}
+          <div className="flex gap-2 p-3 border-t">
+            <Input
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder="예: 4번 기계에 토이 아이보리 추가해줘"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !isChatLoading && chatInput.trim()) {
+                  handleChatSubmit();
+                }
+              }}
+            />
+            <Button onClick={handleChatSubmit} disabled={isChatLoading || !chatInput.trim()}>
+              <Send className="w-4 h-4" />
             </Button>
           </div>
         </DialogContent>

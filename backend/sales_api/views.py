@@ -2106,6 +2106,134 @@ def ai_production_recommend(request):
     })
 
 
+@api_view(['POST'])
+def ai_production_chat(request):
+    """AI 생산 계획 챗 - 자연어로 계획 생성/조회"""
+    message = (request.data.get('message') or '').strip()
+    machine_number = request.data.get('machine_number', '').strip()
+    target_date = request.data.get('date')
+
+    if not message:
+        return Response({'success': False, 'message': '메시지를 입력하세요.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not machine_number:
+        return Response({'success': False, 'message': '기계번호가 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # 기본 날짜: 내일
+    if not target_date:
+        target_date = (datetime.now() + timedelta(days=1)).date().isoformat()
+
+    # 메시지 파싱 (간단한 패턴 매칭)
+    import re
+
+    # 패턴: "4번 기계에 토이 아이보리 추가해줘" / "M004에 헬로키티 生产해줘"
+    machine_pattern = r'(?:(\d+)번|M0*(\d+))'
+    product_pattern = r'([가-힣\w]+)\s*(?:추가|생산|등록|넣어)'
+    qty_pattern = r'(\d+)\s*(?:개|박스|EA)?'
+
+    # 기계번호 추출
+    machine_match = re.search(machine_pattern, message)
+    if machine_match:
+        extracted_machine = machine_match.group(1) or machine_match.group(2)
+        if extracted_machine:
+            machine_number = f"M{extracted_machine.zfill(3)}"
+
+    # 제품명 추출
+    product_match = re.search(product_pattern, message)
+    product_name = product_match.group(1) if product_match else None
+
+    # 수량 추출
+    qty_match = re.search(qty_pattern, message)
+    quantity = int(qty_match.group(1)) if qty_match else 10
+
+    if product_name:
+        # 제품명이 있으면 계획 생성 시도
+        # MasterSpec에서 제품 조회
+        spec = MasterSpec.objects.filter(product_name__icontains=product_name).first()
+
+        if not spec:
+            #模糊 매칭
+            specs = MasterSpec.objects.filter(product_name__icontains=product_name)
+            if specs.exists():
+                spec = specs.first()
+
+        if spec:
+            unit_quantity = spec.default_quantity if spec.default_quantity > 0 else 10
+            color1 = spec.color1 or ''
+            color2 = spec.color2 or ''
+            mold_number = spec.mold_number or ''
+        else:
+            unit_quantity = 10
+            color1 = ''
+            color2 = ''
+            mold_number = ''
+
+        # 출고량 분석
+        outbound_qty = OutboundRecord.objects.filter(
+            product_name__icontains=product_name,
+            outbound_date__gte=datetime.now().date() - timedelta(days=7)
+        ).aggregate(total=Coalesce(Sum('box_quantity'), 0))['total'] or 0
+
+        daily_outbound = outbound_qty / 7
+
+        # 권장 수량 (출고량 기반)
+        recommended_qty = max(int(daily_outbound * 1.1), quantity)
+        total = recommended_qty * unit_quantity
+
+        # 계획 생성
+        plan = MachinePlan.objects.create(
+            date=datetime.fromisoformat(target_date).date(),
+            machine_number=machine_number,
+            product_name=spec.product_name if spec else product_name,
+            product_name_eng=spec.product_name_eng if spec else '',
+            mold_number=mold_number,
+            color1=color1,
+            color2=color2,
+            unit='BOX',
+            quantity=recommended_qty,
+            unit_quantity=unit_quantity,
+            total=total,
+            status='recommended',
+            ai_reason=f'AI 챗 생성: 최근 7일 평균 출고 {daily_outbound:.0f}개/일',
+            outbound_data={'daily_outbound': round(daily_outbound, 1), 'source': 'chat'}
+        )
+
+        return Response({
+            'success': True,
+            'action': 'created',
+            'message': f'"{plan.product_name}" 계획을 생성했습니다.',
+            'plan': {
+                'id': plan.id,
+                'product_name': plan.product_name,
+                'quantity': plan.quantity,
+                'unit_quantity': plan.unit_quantity,
+                'total': plan.total,
+                'color1': plan.color1,
+                'color2': plan.color2,
+            }
+        })
+    else:
+        # 제품명이 없으면 현재 계획 조회
+        plans = MachinePlan.objects.filter(
+            machine_number=machine_number,
+            date=target_date
+        )[:5]
+
+        if plans:
+            plan_list = '\n'.join([f"- {p.product_name}: {p.quantity}박스 × {p.unit_quantity}개 = {p.total}개 ({p.status})" for p in plans])
+            return Response({
+                'success': True,
+                'action': 'info',
+                'response': f'[{machine_number}] {target_date} 일정:\n{plan_list}'
+            })
+        else:
+            return Response({
+                'success': True,
+                'action': 'info',
+                'response': f'[{machine_number}] {target_date} 일정이 비어있습니다.\n"~에 ~추가해줘"라고 말씀하시면 계획을 추가합니다.'
+            })
+
+
 @api_view(['GET'])
 def machine_user_list(request):
     """기계별 사용자 목록 조회"""
