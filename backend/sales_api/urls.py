@@ -61,6 +61,7 @@ urlpatterns = [
     path('production', views.production_list, name='production-list'),
     path('production/bulk-status', views.production_bulk_status, name='production-bulk-status'),
     path('production/template', views.production_template, name='production-template'),
+    path('production-log/bulk-reorder', views.production_log_bulk_reorder, name='production-log-bulk-reorder'),
     path('production-log', views.production_log, name='production-log'),
     path('production-log/<int:id>', views.production_log_detail, name='production-log-detail'),
     path('production-log/<str:date>', views.production_log_by_date, name='production-log-by-date'),

@@ -153,6 +153,7 @@ def _production_model_to_dict(obj: ProductionLog):
         'status': obj.status or 'pending',
         'startTime': obj.start_time.isoformat() if obj.start_time else None,
         'endTime': obj.end_time.isoformat() if obj.end_time else None,
+        'sortOrder': obj.sort_order or 0,
     }
 
 
@@ -1594,6 +1595,19 @@ def production_log_detail(request, id: int):
     item.total = _production_calc_total(item.quantity, item.unit_quantity, item.total)
     item.save()
     return Response({'success': True, 'record': _production_model_to_dict(item)})
+
+
+@api_view(['POST'])
+def production_log_bulk_reorder(request):
+    """벌크 정렬 순서 업데이트"""
+    orders = request.data.get('orders', [])
+    if not orders:
+        return Response({'success': False, 'error': 'orders required'}, status=400)
+    for item in orders:
+        pid = item.get('id')
+        sort_order = item.get('sort_order', 0)
+        ProductionLog.objects.filter(id=pid).update(sort_order=sort_order)
+    return Response({'success': True, 'updated': len(orders)})
 
 
 @api_view(['DELETE'])
