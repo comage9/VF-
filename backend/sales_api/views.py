@@ -1524,6 +1524,7 @@ def production_log(request):
             product_name=pname,
             color1=c1,
             color2=c2,
+            unit=str(record.get('unit') or '').strip(),
             defaults=defaults,
         )
         _production_apply_status_model(obj, status_value)

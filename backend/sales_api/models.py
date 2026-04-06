@@ -264,7 +264,7 @@ class ProductionLog(models.Model):
         ]
         constraints = [
             models.UniqueConstraint(
-                fields=['date', 'machine_number', 'mold_number', 'product_name', 'color1', 'color2'],
+                fields=['date', 'machine_number', 'mold_number', 'product_name', 'color1', 'color2', 'unit'],
                 name='uniq_productionlog_key',
             )
         ]
