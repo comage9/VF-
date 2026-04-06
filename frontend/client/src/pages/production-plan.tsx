@@ -1,7 +1,24 @@
 import { useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { FileText, Plus, Trash2, Upload, Loader2, Edit, Play, CheckCircle, Clock, RotateCcw, Package, TrendingUp, BarChart3 } from "lucide-react";
+import { FileText, Plus, Trash2, Upload, Loader2, Edit, Play, CheckCircle, Clock, RotateCcw, Package, TrendingUp, BarChart3, GripVertical } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -42,6 +59,7 @@ interface ProductionItem {
   status?: 'pending' | 'started' | 'ended' | 'stopped';
   startTime?: string;
   endTime?: string;
+  sortOrder?: number;
 }
 
 interface ProductionDraft {
@@ -88,6 +106,7 @@ function normalizeProductionRow(row: any): ProductionItem {
   const quantity = toNumber(row.quantity);
   const unitQuantity = toNumber(row.unitQuantity);
   const total = toNumber(row.total);
+  const sortOrder = toNumber(row.sort_order);
   const computedTotal = (Number.isFinite(quantity) ? quantity : 0) * (Number.isFinite(unitQuantity) ? unitQuantity : 0);
 
   return {
@@ -106,6 +125,7 @@ function normalizeProductionRow(row: any): ProductionItem {
     status: (row.status as any) || 'pending',
     startTime: row.startTime,
     endTime: row.endTime,
+    sortOrder: Number.isFinite(sortOrder) && sortOrder > 0 ? sortOrder : undefined,
   };
 }
 
@@ -133,6 +153,116 @@ const STATUS_OPTIONS: Array<{ value: ProductionStatus; label: string }> = [
   { value: 'ended', label: '종료' },
   { value: 'stopped', label: '중지' },
 ];
+
+// SortableRow component for drag and drop
+interface SortableRowProps {
+  row: ProductionItem;
+  isSelected: boolean;
+  onToggleSelect: (id: number, checked: boolean) => void;
+  onStatusChange: (item: ProductionItem, newStatus: ProductionItem['status']) => void;
+  onStatusReset: (item: ProductionItem) => void;
+  onEdit: (item: ProductionItem) => void;
+  onDelete: (id: number) => void;
+  getStatusBadge: (status: string | undefined) => JSX.Element;
+  getMachineAccent: (machineNumber: string | undefined) => { border: string; headerBg: string; rowBg: string };
+}
+
+function SortableRow({
+  row,
+  isSelected,
+  onToggleSelect,
+  onStatusChange,
+  onStatusReset,
+  onEdit,
+  onDelete,
+  getStatusBadge,
+  getMachineAccent,
+}: SortableRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: row.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <tr
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "border-t border-border/60 hover:bg-muted/40",
+        getMachineAccent(row.machineNumber).rowBg,
+      )}
+    >
+      <td className="py-3 px-4">
+        <div className="flex items-center gap-2">
+          <button
+            {...attributes}
+            {...listeners}
+            className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
+            title="드래그하여 순서 변경"
+          >
+            <GripVertical className="w-4 h-4" />
+          </button>
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={(checked) => onToggleSelect(row.id, checked as boolean)}
+          />
+        </div>
+      </td>
+      <td className="py-3 px-4">{getStatusBadge(row.status)}</td>
+      <td className="py-3 px-4">{row.date}</td>
+      <td className="py-3 px-4">{row.machineNumber}</td>
+      <td className="py-3 px-4">{row.moldNumber}</td>
+      <td className="py-3 px-4">
+        <div className="font-medium">{row.productName}</div>
+        <div className="text-xs text-muted-foreground">{row.productNameEng}</div>
+      </td>
+      <td className="py-3 px-4">{row.color1} {row.color2 && `/ ${row.color2}`}</td>
+      <td className="py-3 px-4 text-right">{NUMBER_FORMATTER.format(row.unitQuantity || 0)}</td>
+      <td className="py-3 px-4 text-right">{NUMBER_FORMATTER.format(row.quantity || 0)}</td>
+      <td className="py-3 px-4 text-right font-medium">{NUMBER_FORMATTER.format((row.unitQuantity || 0) * (row.quantity || 0))}</td>
+      <td className="py-3 px-4">
+        <div className="flex items-center justify-center gap-2">
+          {row.status === 'pending' && (
+            <Button size="icon" variant="ghost" className="h-8 w-8 text-blue-600" onClick={() => onStatusChange(row, 'started')} title="작업 시작">
+              <Play className="w-4 h-4" />
+            </Button>
+          )}
+          {row.status === 'started' && (
+            <Button size="icon" variant="ghost" className="h-8 w-8 text-green-600" onClick={() => onStatusChange(row, 'ended')} title="작업 완료">
+              <CheckCircle className="w-4 h-4" />
+            </Button>
+          )}
+          {row.status === 'started' && (
+            <Button size="icon" variant="ghost" className="h-8 w-8 text-red-600" onClick={() => onStatusChange(row, 'stopped')} title="중지">
+              <Clock className="w-4 h-4" />
+            </Button>
+          )}
+          {(row.status === 'ended' || row.status === 'started' || row.status === 'stopped') && (
+            <Button size="icon" variant="ghost" className="h-8 w-8 text-orange-500" onClick={() => onStatusReset(row)} title="상태 초기화">
+              <RotateCcw className="w-4 h-4" />
+            </Button>
+          )}
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => onEdit(row)} title="수정">
+            <Edit className="w-4 h-4" />
+          </Button>
+          <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => onDelete(row.id)} title="삭제">
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </div>
+      </td>
+    </tr>
+  );
+}
 
 function useProductionLog() {
   return useQuery<ProductionResponse>({
@@ -167,6 +297,18 @@ export default function ProductionPlan() {
   const [isDeletingDate, setIsDeletingDate] = useState(false);
   const [bulkStatus, setBulkStatus] = useState<ProductionStatus>('pending');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   // Fetch specs for autocomplete
   const { data: specs = [] } = useQuery<any[]>({
@@ -291,6 +433,7 @@ export default function ProductionPlan() {
     };
 
     // Sort by date desc (latest first), then machineNumber asc (numeric-aware)
+    // Within same date and machineNumber: sort_order asc (ignore if 0), then moldNumber for same products, then id asc
     rows.sort((a, b) => {
       const da = a.date || '';
       const db = b.date || '';
@@ -306,7 +449,23 @@ export default function ProductionPlan() {
       const sb = String(b.machineNumber ?? '');
       if (sa !== sb) return sa.localeCompare(sb);
 
-      return (b.id || 0) - (a.id || 0);
+      // Within same date and machineNumber
+      const soa = a.sortOrder ?? 0;
+      const sob = b.sortOrder ?? 0;
+      // If both have sort_order, use it (ignore 0)
+      if (soa > 0 && sob > 0 && soa !== sob) return soa - sob;
+      if (soa > 0 && sob === 0) return -1;
+      if (soa === 0 && sob > 0) return 1;
+
+      // Same product - group by moldNumber
+      if (a.productName === b.productName) {
+        const moldA = a.moldNumber || '';
+        const moldB = b.moldNumber || '';
+        if (moldA !== moldB) return moldA.localeCompare(moldB);
+      }
+
+      // ID asc (upload order)
+      return (a.id || 0) - (b.id || 0);
     });
     return rows;
   }, [normalizedRows, search, machineFilter, selectedDate, latestDate]);
@@ -480,6 +639,24 @@ export default function ProductionPlan() {
     }
   });
 
+  const bulkReorderMutation = useMutation({
+    mutationFn: async (orders: { id: number; sort_order: number }[]) => {
+      const response = await fetch('/api/production-log/bulk-reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orders }),
+      });
+      if (!response.ok) throw new Error('순서 변경 실패');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/production"] });
+    },
+    onError: (error) => {
+      alert(`순서 변경 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+    }
+  });
+
   const handleSubmit = async () => {
     if (!newRecord.date || !newRecord.machineNumber || !newRecord.moldNumber || !newRecord.productName) {
       alert('일자, 기계번호, 금형번호, 제품명은 필수입니다.');
@@ -535,6 +712,33 @@ export default function ProductionPlan() {
   const handleDeleteClick = (id: number) => {
     if (!confirm('정말 삭제하시겠습니까?')) return;
     deleteSelectedMutation.mutate([id]);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const activeRow = filteredRows.find(r => r.id === active.id);
+      const overRow = filteredRows.find(r => r.id === over.id);
+
+      // Only allow dragging within the same machine number group
+      if (activeRow && overRow && activeRow.machineNumber === overRow.machineNumber) {
+        const oldIndex = filteredRows.findIndex(r => r.id === active.id);
+        const newIndex = filteredRows.findIndex(r => r.id === over.id);
+
+        // Get all rows for this machine number in the current date
+        const machineRows = filteredRows.filter(r => r.machineNumber === activeRow.machineNumber && r.date === activeRow.date);
+        const machineIds = machineRows.map(r => r.id);
+
+        // Reorder within the machine group
+        const newOrder = arrayMove(machineIds, machineIds.indexOf(active.id as number), machineIds.indexOf(over.id as number));
+
+        // Build orders array for API
+        const orders = newOrder.map((id, index) => ({ id, sort_order: index + 1 }));
+
+        bulkReorderMutation.mutate(orders);
+      }
+    }
   };
 
   const getMachineAccent = (machineNumber: string | undefined) => {
@@ -1340,109 +1544,69 @@ export default function ProductionPlan() {
 
       {/* 데스크탑 뷰 (테이블) */}
       <div className="hidden md:block bg-card border border-border rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="bg-muted/40">
-              <tr className="text-left text-muted-foreground">
-                <th className="py-3 px-4 w-10">
-                  <Checkbox
-                    checked={selectedIds.length === filteredRows.length && filteredRows.length > 0}
-                    onCheckedChange={(checked) => {
-                      if (checked) {
-                        setSelectedIds(filteredRows.map(row => row.id));
-                      } else {
-                        setSelectedIds([]);
-                      }
-                    }}
-                  />
-                </th>
-                <th className="py-3 px-4">상태</th>
-                <th className="py-3 px-4">일자</th>
-                <th className="py-3 px-4">기계</th>
-                <th className="py-3 px-4">금형</th>
-                <th className="py-3 px-4">제품명</th>
-                <th className="py-3 px-4">색상</th>
-                <th className="py-3 px-4 text-right">단위</th>
-                <th className="py-3 px-4 text-right">생산수량</th>
-                <th className="py-3 px-4 text-right">총계</th>
-                <th className="py-3 px-4 text-center">작업</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRows.map((row) => (
-                <tr
-                  key={row.id}
-                  className={cn(
-                    "border-t border-border/60 hover:bg-muted/40",
-                    getMachineAccent(row.machineNumber).rowBg,
-                  )}
-                >
-                  <td className="py-3 px-4">
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-muted/40">
+                <tr className="text-left text-muted-foreground">
+                  <th className="py-3 px-4 w-10">
                     <Checkbox
-                      checked={selectedIds.includes(row.id)}
+                      checked={selectedIds.length === filteredRows.length && filteredRows.length > 0}
                       onCheckedChange={(checked) => {
                         if (checked) {
-                          setSelectedIds([...selectedIds, row.id]);
+                          setSelectedIds(filteredRows.map(row => row.id));
                         } else {
-                          setSelectedIds(selectedIds.filter(id => id !== row.id));
+                          setSelectedIds([]);
                         }
                       }}
                     />
-                  </td>
-                  <td className="py-3 px-4">{getStatusBadge(row.status)}</td>
-                  <td className="py-3 px-4">{row.date}</td>
-                  <td className="py-3 px-4">{row.machineNumber}</td>
-                  <td className="py-3 px-4">{row.moldNumber}</td>
-                  <td className="py-3 px-4">
-                    <div className="font-medium">{row.productName}</div>
-                    <div className="text-xs text-muted-foreground">{row.productNameEng}</div>
-                  </td>
-                  <td className="py-3 px-4">{row.color1} {row.color2 && `/ ${row.color2}`}</td>
-                  <td className="py-3 px-4 text-right">{NUMBER_FORMATTER.format(row.unitQuantity || 0)}</td>
-                  <td className="py-3 px-4 text-right">{NUMBER_FORMATTER.format(row.quantity || 0)}</td>
-                  <td className="py-3 px-4 text-right font-medium">{NUMBER_FORMATTER.format((row.unitQuantity || 0) * (row.quantity || 0))}</td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center justify-center gap-2">
-                      {row.status === 'pending' && (
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-blue-600" onClick={() => handleStatusChange(row, 'started')} title="작업 시작">
-                          <Play className="w-4 h-4" />
-                        </Button>
-                      )}
-                      {row.status === 'started' && (
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-green-600" onClick={() => handleStatusChange(row, 'ended')} title="작업 완료">
-                          <CheckCircle className="w-4 h-4" />
-                        </Button>
-                      )}
-                      {row.status === 'started' && (
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-red-600" onClick={() => handleStatusChange(row, 'stopped')} title="중지">
-                          <Clock className="w-4 h-4" />
-                        </Button>
-                      )}
-                      {(row.status === 'ended' || row.status === 'started' || row.status === 'stopped') && (
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-orange-500" onClick={() => handleStatusReset(row)} title="상태 초기화">
-                          <RotateCcw className="w-4 h-4" />
-                        </Button>
-                      )}
-                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleEditClick(row)} title="수정">
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => handleDeleteClick(row.id)} title="삭제">
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </td>
+                  </th>
+                  <th className="py-3 px-4">상태</th>
+                  <th className="py-3 px-4">일자</th>
+                  <th className="py-3 px-4">기계</th>
+                  <th className="py-3 px-4">금형</th>
+                  <th className="py-3 px-4">제품명</th>
+                  <th className="py-3 px-4">색상</th>
+                  <th className="py-3 px-4 text-right">단위</th>
+                  <th className="py-3 px-4 text-right">생산수량</th>
+                  <th className="py-3 px-4 text-right">총계</th>
+                  <th className="py-3 px-4 text-center">작업</th>
                 </tr>
-              ))}
-              {filteredRows.length === 0 && (
-                <tr>
-                  <td colSpan={11} className="text-center py-10 text-muted-foreground">
-                    데이터가 없습니다.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <SortableContext items={filteredRows.map(r => r.id)} strategy={verticalListSortingStrategy}>
+                <tbody>
+                  {filteredRows.map((row) => (
+                    <SortableRow
+                      key={row.id}
+                      row={row}
+                      isSelected={selectedIds.includes(row.id)}
+                      onToggleSelect={(id, checked) => {
+                        if (checked) {
+                          setSelectedIds([...selectedIds, id]);
+                        } else {
+                          setSelectedIds(selectedIds.filter(selectedId => selectedId !== id));
+                        }
+                      }}
+                      onStatusChange={handleStatusChange}
+                      onStatusReset={handleStatusReset}
+                      onEdit={handleEditClick}
+                      onDelete={handleDeleteClick}
+                      getStatusBadge={getStatusBadge}
+                      getMachineAccent={getMachineAccent}
+                    />
+                  ))}
+                  {filteredRows.length === 0 && (
+                    <tr>
+                      <td colSpan={11} className="text-center py-10 text-muted-foreground">
+                        데이터가 없습니다.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </SortableContext>
+            </table>
+          </div>
+        </DndContext>
       </div>
     </div>
   );
