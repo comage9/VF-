@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { FileText, Plus, Trash2, Upload, Loader2, Edit, Play, CheckCircle, Clock, RotateCcw, Package, TrendingUp, BarChart3, GripVertical } from "lucide-react";
@@ -1573,37 +1573,59 @@ export default function ProductionPlan() {
                   <th className="py-3 px-4 text-center">작업</th>
                 </tr>
               </thead>
-              <SortableContext items={filteredRows.map(r => r.id)} strategy={verticalListSortingStrategy}>
-                <tbody>
-                  {filteredRows.map((row) => (
-                    <SortableRow
-                      key={row.id}
-                      row={row}
-                      isSelected={selectedIds.includes(row.id)}
-                      onToggleSelect={(id, checked) => {
-                        if (checked) {
-                          setSelectedIds([...selectedIds, id]);
-                        } else {
-                          setSelectedIds(selectedIds.filter(selectedId => selectedId !== id));
-                        }
-                      }}
-                      onStatusChange={handleStatusChange}
-                      onStatusReset={handleStatusReset}
-                      onEdit={handleEditClick}
-                      onDelete={handleDeleteClick}
-                      getStatusBadge={getStatusBadge}
-                      getMachineAccent={getMachineAccent}
-                    />
-                  ))}
-                  {filteredRows.length === 0 && (
-                    <tr>
-                      <td colSpan={11} className="text-center py-10 text-muted-foreground">
-                        데이터가 없습니다.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </SortableContext>
+              <tbody>
+                {filteredRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="text-center py-10 text-muted-foreground">
+                      데이터가 없습니다.
+                    </td>
+                  </tr>
+                ) : (
+                  // Group by machine number
+                  (() => {
+                    const machineGroups = new Map<string, ProductionItem[]>();
+                    filteredRows.forEach(row => {
+                      const machine = row.machineNumber || '미분류';
+                      if (!machineGroups.has(machine)) {
+                        machineGroups.set(machine, []);
+                      }
+                      machineGroups.get(machine)!.push(row);
+                    });
+
+                    return Array.from(machineGroups.entries()).map(([machineNumber, rows]) => (
+                      <React.Fragment key={machineNumber}>
+                        <tr className={cn("border-t-2 border-border/80", getMachineAccent(machineNumber).headerBg)}>
+                          <td colSpan={11} className="py-2 px-4 font-semibold text-sm">
+                            기계번호: {machineNumber} ({rows.length}건)
+                          </td>
+                        </tr>
+                        <SortableContext items={rows.map(r => r.id)} strategy={verticalListSortingStrategy}>
+                          {rows.map((row) => (
+                            <SortableRow
+                              key={row.id}
+                              row={row}
+                              isSelected={selectedIds.includes(row.id)}
+                              onToggleSelect={(id, checked) => {
+                                if (checked) {
+                                  setSelectedIds([...selectedIds, id]);
+                                } else {
+                                  setSelectedIds(selectedIds.filter(selectedId => selectedId !== id));
+                                }
+                              }}
+                              onStatusChange={handleStatusChange}
+                              onStatusReset={handleStatusReset}
+                              onEdit={handleEditClick}
+                              onDelete={handleDeleteClick}
+                              getStatusBadge={getStatusBadge}
+                              getMachineAccent={getMachineAccent}
+                            />
+                          ))}
+                        </SortableContext>
+                      </React.Fragment>
+                    ));
+                  })()
+                )}
+              </tbody>
             </table>
           </div>
         </DndContext>
