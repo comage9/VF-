@@ -64,6 +64,7 @@ urlpatterns = [
     path('production-log', views.production_log, name='production-log'),
     path('production-log/<int:id>', views.production_log_detail, name='production-log-detail'),
     path('production-log/<str:date>', views.production_log_by_date, name='production-log-by-date'),
+    path('production/copy-day', views.production_copy_day, name='production-copy-day'),
     path('upload-production-file', views.upload_production_file, name='upload-production-file'),
 
     # Machine User & Plan APIs (모바일 웹앱)

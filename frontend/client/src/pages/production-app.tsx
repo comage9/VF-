@@ -157,6 +157,8 @@ function MachineDashboard({
   const queryClient = useQueryClient();
   const [showNewPlan, setShowNewPlan] = useState(false);
   const [showAIChat, setShowAIChat] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [planToDelete, setPlanToDelete] = useState<MachinePlan | null>(null);
   const [chatMessages, setChatMessages] = useState<{role: string; content: string}[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
@@ -367,7 +369,7 @@ function MachineDashboard({
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => deleteMutation.mutate(plan.id)}
+                        onClick={() => { setPlanToDelete(plan); setShowDeleteConfirm(true); }}
                         disabled={deleteMutation.isPending}
                       >
                         <Trash2 className="w-4 h-4" />
@@ -410,62 +412,71 @@ function MachineDashboard({
 
       {/* 새 계획 Dialog */}
       <Dialog open={showNewPlan} onOpenChange={setShowNewPlan}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>새 생산 계획</DialogTitle>
+        <DialogContent className="sm:max-w-[425px] bg-slate-900 border-slate-800 text-slate-100 shadow-2xl">
+          <DialogHeader className="border-b border-slate-800 pb-4 mb-4">
+            <DialogTitle className="text-xl font-bold flex items-center gap-2 text-white">
+              <Plus className="w-5 h-5 text-blue-400" />
+              새 생산 계획
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label>제품명</Label>
+          <div className="space-y-5 py-2">
+            <div className="space-y-2">
+              <Label className="text-slate-400 text-sm font-semibold ml-1">제품명</Label>
               <Input
                 value={newPlan.product_name}
                 onChange={(e) => setNewPlan({ ...newPlan, product_name: e.target.value })}
                 placeholder="제품명을 입력하세요"
+                className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500/20 h-11"
               />
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label>색상1</Label>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-slate-400 text-sm font-semibold ml-1">색상1</Label>
                 <Input
                   value={newPlan.color1}
                   onChange={(e) => setNewPlan({ ...newPlan, color1: e.target.value })}
-                  placeholder="색상"
+                  placeholder="색상 입력"
+                  className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-blue-500 h-11"
                 />
               </div>
-              <div>
-                <Label>색상2</Label>
+              <div className="space-y-2">
+                <Label className="text-slate-400 text-sm font-semibold ml-1">색상2</Label>
                 <Input
                   value={newPlan.color2}
                   onChange={(e) => setNewPlan({ ...newPlan, color2: e.target.value })}
-                  placeholder="색상2"
+                  placeholder="(선택)"
+                  className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-blue-500 h-11"
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label>박스 수</Label>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-slate-400 text-sm font-semibold ml-1">박스 수</Label>
                 <Input
                   type="number"
                   value={newPlan.quantity}
                   onChange={(e) => setNewPlan({ ...newPlan, quantity: parseInt(e.target.value) || 0 })}
+                  className="bg-slate-800/50 border-slate-700 text-white focus:border-blue-500 h-11"
                 />
               </div>
-              <div>
-                <Label>개/박스</Label>
+              <div className="space-y-2">
+                <Label className="text-slate-400 text-sm font-semibold ml-1">개/박스</Label>
                 <Input
                   type="number"
                   value={newPlan.unit_quantity}
                   onChange={(e) => setNewPlan({ ...newPlan, unit_quantity: parseInt(e.target.value) || 0 })}
+                  className="bg-slate-800/50 border-slate-700 text-white focus:border-blue-500 h-11"
                 />
               </div>
             </div>
+          </div>
+          <div className="pt-4 mt-2">
             <Button
-              className="w-full"
+              className="w-full py-6 text-lg font-bold bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-all"
               onClick={() => createMutation.mutate(newPlan)}
               disabled={!newPlan.product_name || createMutation.isPending}
             >
-              {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-              저장
+              {createMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : "저장하기"}
             </Button>
           </div>
         </DialogContent>
@@ -473,49 +484,127 @@ function MachineDashboard({
 
       {/* AI 챗bots Dialog */}
       <Dialog open={showAIChat} onOpenChange={setShowAIChat}>
-        <DialogContent className="h-[80vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>🤖 AI 생산 계획 도우미</DialogTitle>
+        <DialogContent className="h-[90vh] sm:max-w-[500px] flex flex-col p-0 bg-slate-900 border-slate-800 shadow-2xl">
+          <DialogHeader className="p-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm">
+            <DialogTitle className="text-xl font-bold flex items-center gap-2 text-white">
+              <Sparkles className="w-5 h-5 text-purple-400" />
+              AI 생산 계획 도우미
+            </DialogTitle>
           </DialogHeader>
 
-          {/* 챗 메시지 */}
-          <div className="flex-1 overflow-y-auto space-y-3 p-3">
+          {/* 챗 메시지 영역 */}
+          <div className="flex-1 overflow-y-auto space-y-4 p-4 scroll-smooth">
             {chatMessages.length === 0 && (
-              <div className="text-center text-gray-500 py-8">
-                <p>무엇을 도와드릴까요?</p>
-                <p className="text-sm mt-1">예: "4번 기계에 토이 아이보리 추가해줘"</p>
+              <div className="h-full flex flex-col items-center justify-center text-center px-8">
+                <div className="w-16 h-16 bg-purple-500/10 rounded-full flex items-center justify-center mb-4">
+                  <Sparkles className="w-8 h-8 text-purple-500" />
+                </div>
+                <h3 className="text-lg font-semibold text-white mb-2">무엇을 도와드릴까요?</h3>
+                <p className="text-slate-400 text-sm leading-relaxed">
+                  "4번 기계에 토이 아이보리 추가해줘"와 같이<br />자연어로 지시하면 AI가 최적의 수량을 추천합니다.
+                </p>
               </div>
             )}
             {chatMessages.map((msg, i) => (
               <div
                 key={i}
-                className={`p-3 rounded-lg ${msg.role === 'user' ? 'bg-blue-100 text-right' : 'bg-gray-100'}`}
+                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                {msg.content}
+                <div
+                  className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap shadow-sm
+                    ${msg.role === 'user' 
+                      ? 'bg-blue-600 text-white rounded-tr-none' 
+                      : 'bg-slate-800 text-slate-100 rounded-tl-none border border-slate-700'
+                    }`}
+                >
+                  {msg.content}
+                </div>
               </div>
             ))}
             {isChatLoading && (
-              <div className="flex items-center gap-2 text-gray-500">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                분석 중...
+              <div className="flex justify-start">
+                <div className="bg-slate-800 border border-slate-700 p-3 rounded-2xl rounded-tl-none flex items-center gap-3">
+                  <div className="flex gap-1">
+                    <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                    <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                    <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce"></span>
+                  </div>
+                  <span className="text-xs text-slate-400 font-medium">AI가 분석 중...</span>
+                </div>
               </div>
             )}
           </div>
 
-          {/* 챗 입력 */}
-          <div className="flex gap-2 p-3 border-t">
-            <Input
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              placeholder="예: 4번 기계에 토이 아이보리 추가해줘"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !isChatLoading && chatInput.trim()) {
-                  handleChatSubmit();
+          {/* 챗 입력 영역 */}
+          <div className="p-4 border-t border-slate-800 bg-slate-900/50">
+            <div className="relative">
+              <Input
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="예: 4번 기계에 토이 아이보리 추가해줘"
+                autoFocus
+                className="bg-slate-800/80 border-slate-700 text-white pr-12 py-6 rounded-xl placeholder:text-slate-500 focus:ring-purple-500/20 focus:border-purple-500 transition-all"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !isChatLoading && chatInput.trim()) {
+                    handleChatSubmit();
+                  }
+                }}
+              />
+              <Button 
+                onClick={handleChatSubmit} 
+                className="absolute right-1.5 top-1.5 w-10 h-10 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:opacity-50 transition-all"
+                disabled={isChatLoading || !chatInput.trim()}
+              >
+                <Send className="w-4 h-4" />
+              </Button>
+            </div>
+            <p className="text-[10px] text-slate-500 mt-3 text-center">
+              AI는 마스터 데이터와 과거 실적을 기반으로 수량을 제안합니다.
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 삭제确认 Dialog */}
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent className="sm:max-w-[325px] bg-slate-900 border-slate-800 text-slate-100 shadow-2xl">
+          <DialogHeader className="text-center">
+            <DialogTitle className="text-xl font-bold text-white">
+              계획 삭제
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4 text-center">
+            <p className="text-slate-300 mb-4">
+              다음 계획을 삭제하시겠습니까?
+            </p>
+            {planToDelete && (
+              <div className="bg-slate-800 p-3 rounded-lg text-left">
+                <p className="font-bold text-white">{planToDelete.product_name}</p>
+                <p className="text-sm text-slate-400">
+                  {planToDelete.color1} | {planToDelete.quantity} × {planToDelete.unit_quantity} = {planToDelete.quantity * planToDelete.unit_quantity}개
+                </p>
+              </div>
+            )}
+          </div>
+          <div className="flex gap-3 pt-2">
+            <Button
+              className="flex-1 bg-slate-700 hover:bg-slate-600"
+              onClick={() => { setShowDeleteConfirm(false); setPlanToDelete(null); }}
+            >
+              취소
+            </Button>
+            <Button
+              className="flex-1 bg-red-600 hover:bg-red-700"
+              onClick={() => {
+                if (planToDelete) {
+                  deleteMutation.mutate(planToDelete.id);
                 }
+                setShowDeleteConfirm(false);
+                setPlanToDelete(null);
               }}
-            />
-            <Button onClick={handleChatSubmit} disabled={isChatLoading || !chatInput.trim()}>
-              <Send className="w-4 h-4" />
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "삭제 중..." : "삭제"}
             </Button>
           </div>
         </DialogContent>

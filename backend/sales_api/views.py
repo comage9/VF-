@@ -1823,6 +1823,64 @@ def machine_logout(request):
     return Response({'success': True, 'message': '로그아웃되었습니다.'})
 
 
+@api_view(['POST'])
+def production_copy_day(request):
+    """前一天 生产计划 复制到 指定日期"""
+    from_date = request.data.get('from_date')
+    to_date = request.data.get('to_date')
+    machine_number = request.data.get('machine_number', '')
+
+    if not from_date:
+        return Response({'success': False, 'message': 'from_date가 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not to_date:
+        to_date = (datetime.now() + timedelta(days=1)).date().isoformat()
+
+    # 前一天 计划查询
+    plans = MachinePlan.objects.filter(date=from_date)
+    if machine_number:
+        plans = plans.filter(machine_number=machine_number)
+
+    if not plans.exists():
+        return Response({
+            'success': False,
+            'message': f'{from_date}에 생산 계획이 없습니다.'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    # 复制到新日期
+    copied_plans = []
+    for plan in plans:
+        new_plan = MachinePlan.objects.create(
+            date=datetime.fromisoformat(to_date).date(),
+            machine_number=plan.machine_number,
+            product_name=plan.product_name,
+            product_name_eng=plan.product_name_eng,
+            mold_number=plan.mold_number,
+            color1=plan.color1,
+            color2=plan.color2,
+            unit=plan.unit,
+            quantity=plan.quantity,
+            unit_quantity=plan.unit_quantity,
+            total=plan.total,
+            status='draft',
+            ai_reason=f'{from_date}에서 복사됨',
+            outbound_data=plan.outbound_data,
+        )
+        copied_plans.append({
+            'product_name': new_plan.product_name,
+            'quantity': new_plan.quantity,
+            'unit_quantity': new_plan.unit_quantity,
+            'total': new_plan.total,
+            'color1': new_plan.color1,
+        })
+
+    return Response({
+        'success': True,
+        'message': f'{from_date} → {to_date} {len(copied_plans)}개 계획 복사됨',
+        'copied_plans': copied_plans,
+    })
+
+
 @api_view(['GET'])
 def machine_plan_list(request):
     """기계별 생산 계획 조회"""
@@ -2126,47 +2184,155 @@ def ai_production_chat(request):
     # 메시지 파싱 (간단한 패턴 매칭)
     import re
 
-    # 패턴: "4번 기계에 토이 아이보리 추가해줘" / "M004에 헬로키티 生产해줘"
-    machine_pattern = r'(?:(\d+)번|M0*(\d+))'
-    product_pattern = r'([가-힣\w]+)\s*(?:추가|생산|등록|넣어)'
-    qty_pattern = r'(\d+)\s*(?:개|박스|EA)?'
-
     # 기계번호 추출
+    machine_pattern = r'(?:(\d+)번|M0*(\d+))'
     machine_match = re.search(machine_pattern, message)
     if machine_match:
         extracted_machine = machine_match.group(1) or machine_match.group(2)
         if extracted_machine:
             machine_number = f"M{extracted_machine.zfill(3)}"
 
-    # 제품명 추출
-    product_match = re.search(product_pattern, message)
-    product_name = product_match.group(1) if product_match else None
+    # 색상 추출 - 먼저 초기화
+    extracted_color = None
 
-    # 수량 추출
-    qty_match = re.search(qty_pattern, message)
-    quantity = int(qty_match.group(1)) if qty_match else 10
+    # 색상 추출 - 제품명 앞에 있는 색상을 먼저 찾음
+    color_patterns = ['아이보리', '화이트', '브라운', '레드', '블루', '그린', '옐로', '퍼플', '오렌지', '핑크', '블랙', '그레이', 'ivory', 'white', 'brown', 'red', 'blue', 'green', 'yellow']
+    for cp in color_patterns:
+        if cp.lower() in message.lower():
+            # 정확한 색상명 매칭
+            if cp == 'ivory':
+                extracted_color = '아이보리'
+            elif cp == 'white':
+                extracted_color = '화이트'
+            elif cp == 'brown':
+                extracted_color = '브라운'
+            elif cp == 'red':
+                extracted_color = '레드'
+            elif cp == 'blue':
+                extracted_color = '블루'
+            elif cp == 'green':
+                extracted_color = '그린'
+            elif cp == 'yellow':
+                extracted_color = '옐로'
+            elif cp == 'purple':
+                extracted_color = '퍼플'
+            elif cp == 'orange':
+                extracted_color = '오렌지'
+            elif cp == 'pink':
+                extracted_color = '핑크'
+            elif cp == 'black':
+                extracted_color = '블랙'
+            elif cp == 'gray':
+                extracted_color = '그레이'
+            else:
+                extracted_color = cp
+            break
+
+    # 수량 단위 변환: 팔레트/박스/EA
+    pallet_match = re.search(r'(\d+)\s*팔레트', message)
+    box_match = re.search(r'(\d+)\s*박스', message)
+    qty_match = re.search(r'(\d+)\s*(?:개|EA)', message)
+
+    if '팔레트' in message or 'pallet' in message.lower():
+        if pallet_match:
+            quantity = int(pallet_match.group(1)) * 125
+        else:
+            quantity = 125  # 기본 1팔레트
+    elif '박스' in message:
+        quantity = int(box_match.group(1)) if box_match else 10
+    elif qty_match:
+        quantity = int(qty_match.group(1))
+    else:
+        quantity = 125  # 기본값 1팔레트
+
+    # 제품명 추출 - MasterSpec에서 직접 검색
+    product_name = None
+
+    # 알려진 제품명 패턴들
+    known_products = [
+        '토이 아이보리', 'toy ivory', 'ivory',
+        '로코스', 'locs',
+        '헬로키티', 'hello kitty', 'hello',
+        '리리카', 'lilica',
+        '마이멜로디', 'my melody',
+        '쿠퍼', 'kupi',
+        '바니', 'bani',
+    ]
+
+    # message에서 알려진 제품명 찾기
+    msg_lower = message.lower()
+    for p in known_products:
+        if p.lower() in msg_lower:
+            if p == 'toy ivory' or p == 'ivory':
+                product_name = '토이 아이보리'
+            elif p == 'locs':
+                product_name = '로코스 L'
+            elif p == 'hello kitty' or p == 'hello':
+                product_name = '헬로키티'
+            else:
+                product_name = p
+            break
+
+    # 기존 정규식 시도 (알려진 제품이 없을 때)
+    if not product_name:
+        product_match = re.search(r'([가-힣a-zA-Z0-9]+)(?:\s*(?:추가|생산|등록|넣어|주|해주세요|pallet|박스|EA)|$)', message)
+        product_name = product_match.group(1) if product_match else None
 
     if product_name:
         # 제품명이 있으면 계획 생성 시도
-        # MasterSpec에서 제품 조회
-        spec = MasterSpec.objects.filter(product_name__icontains=product_name).first()
+        # 1순위: ProductionLog (production 데이터優先)
+        prod_data = ProductionLog.objects.filter(
+            product_name__icontains=product_name
+        ).values('product_name', 'color1', 'color2', 'mold_number', 'unit_quantity').first()
 
-        if not spec:
-            #模糊 매칭
-            specs = MasterSpec.objects.filter(product_name__icontains=product_name)
-            if specs.exists():
-                spec = specs.first()
+        # 2순위: MasterSpec (대체)
+        if not prod_data:
+            spec = MasterSpec.objects.filter(product_name__icontains=product_name).first()
+            if not spec:
+                specs = MasterSpec.objects.filter(product_name__icontains=product_name)
+                if specs.exists():
+                    spec = specs.first()
+            if spec:
+                prod_data = {
+                    'product_name': spec.product_name,
+                    'color1': spec.color1 or '',
+                    'color2': spec.color2 or '',
+                    'mold_number': spec.mold_number or '',
+                    'unit_quantity': spec.default_quantity if spec.default_quantity > 0 else 10,
+                }
 
-        if spec:
-            unit_quantity = spec.default_quantity if spec.default_quantity > 0 else 10
-            color1 = spec.color1 or ''
-            color2 = spec.color2 or ''
-            mold_number = spec.mold_number or ''
+        if prod_data:
+            unit_quantity = prod_data.get('unit_quantity') or 10
+            # 메시지에서 색상을 추출했으면 그것을 우선 사용
+            if extracted_color:
+                color1 = extracted_color
+            else:
+                color1 = prod_data.get('color1') or ''
+            color2 = prod_data.get('color2') or ''
+            mold_number = prod_data.get('mold_number') or ''
         else:
             unit_quantity = 10
-            color1 = ''
+            color1 = extracted_color or ''
             color2 = ''
             mold_number = ''
+
+        # 색상 clarification 필요 여부 확인 (색상을 추출하지 못했을 때만)
+        clarification_needed = []
+        if not color1:  # 색상이 없으면 확인
+            if product_name and ('로코스' in product_name.lower() or 'locs' in product_name.lower()):
+                # 로코스는 색상 확인 필요
+                clarification_needed.append({
+                    'type': 'color',
+                    'question': '로코스의 색상은 화이트와 아이보리 중 어느 색상인가요?',
+                    'options': ['화이트', '아이보리']
+                })
+            elif product_name and ('토이' in product_name.lower() or 'toy' in product_name.lower()):
+                # 토이 系列은 색상 확인 필요
+                clarification_needed.append({
+                    'type': 'color',
+                    'question': '토이 시리즈의 색상은 화이트, 아이보리, 브라운 중 어느 색상인가요?',
+                    'options': ['화이트', '아이보리', '브라운']
+                })
 
         # 출고량 분석
         outbound_qty = OutboundRecord.objects.filter(
@@ -2179,6 +2345,23 @@ def ai_production_chat(request):
         # 권장 수량 (출고량 기반)
         recommended_qty = max(int(daily_outbound * 1.1), quantity)
         total = recommended_qty * unit_quantity
+
+        # 색상 확인이 필요하면 clarificationNeeded 포함 후 생성
+        if clarification_needed:
+            # clarificationNeeded만是先返回，不 直接 생성
+            return Response({
+                'success': True,
+                'action': 'clarification',
+                'message': f'"{product_name}"의 색상을 선택해주세요.',
+                'clarification_needed': clarification_needed,
+                'default_values': {
+                    'product_name': product_name,
+                    'quantity': quantity,
+                    'unit_quantity': unit_quantity,
+                    'machine_number': machine_number,
+                    'date': target_date,
+                }
+            })
 
         # 계획 생성
         plan = MachinePlan.objects.create(
@@ -2210,6 +2393,10 @@ def ai_production_chat(request):
                 'total': plan.total,
                 'color1': plan.color1,
                 'color2': plan.color2,
+            },
+            'outbound_info': {
+                'daily_outbound': round(daily_outbound, 1),
+                'recommended': total,
             }
         })
     else:
