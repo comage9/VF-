@@ -1,149 +1,91 @@
-# CLAUDE.md
+# VF- 보노하우스 생산 관리 시스템
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+**도메인:** 제조업 생산 관리 (보노하우스 VF)
+**기술 스택:** Django (Backend) + React/Vite (Frontend) + shadcn/ui + Tailwind CSS v4
+**설명:** 보노하우스 VF 공장의 생산 계획, 출고, 재고, 입고,delivery 예측을 관리하는 웹 시스템
 
-## Project Overview
-
-VF Analytics Dashboard - A hybrid Django + React + Node.js application for visualizing and analyzing sales and inventory data. Originally pure Node.js, refactored to Django backend for performance with 200K+ records.
-
-**Architecture:**
-```
-Browser → Node.js (5174) → Django API (5176) → SQLite DB
-         ↳ Static Files    ↳ Data Processing
-```
-
-**Key Design Principle:** Django is the single source of truth for all data. Node.js only serves static files and proxies `/api/*` requests to Django.
-
-## Development Commands
-
-### Backend (Django)
-```bash
-cd backend
-source .venv/bin/activate  # or: .venv\Scripts\activate (Windows)
-pip install -r requirements.txt
-python manage.py migrate
-python manage.py runserver 0.0.0.0:5176
-```
-
-### Frontend (React + Vite)
-```bash
-cd frontend
-npm install
-npm run dev              # Port 5174, proxies /api/* to Django
-npm run build            # Production build
-npm run lint             # ESLint
-```
-
-### Alternative: Use scripts
-```bash
-./start_backend.sh       # Backend startup
-frontend/start_frontend.sh  # Frontend startup
-```
-
-### Django Management Commands
-```bash
-python manage.py import_legacy_db  # Migrate legacy data to Django DB
-```
-
-## Architecture Details
-
-### Port Configuration
-- **5174** - External access (Node.js server - single entry point)
-- **5176** - Internal Django backend (not exposed externally)
-- For external network access: `SERVER_HOST=0.0.0.0 PORT=5174 npm run dev`
-
-### Environment Variables
-- `DJANGO_BASE_URL` - Django backend URL (default: `http://localhost:5176`)
-- `SERVER_HOST` - Server host for external access
-- `PORT` - Server port (default: 5174)
-- `OUTBOUND_GOOGLE_SHEET_URL` - Google Sheets CSV export URL (optional)
-- `GOOGLE_SHEETS_API_KEY` - For `/api/google-sheets/connect` (optional)
-
-### Key Components
-
-**Backend (`backend/sales_api/`):**
-- `models.py` - Django models (OutboundRecord, InventoryItem, BarcodeMaster, ProductionLog, etc.)
-- `views.py` - API views with server-side aggregation for performance
-- `urls.py` - API endpoints
-- `serializers.py` - DRF serializers
-
-**Frontend (`frontend/client/`):**
-- `src/components/outbound-dashboard-unified.tsx` - Main dashboard component
-- `src/components/outbound-tab.tsx` - Sales data visualization
-- `src/components/inventory-tab.tsx` - Inventory management UI
-- React Query for data fetching
-- Recharts for visualization
-
-**Proxy (`frontend/server/`):**
-- `routes.ts` - API routing, proxies all `/api/*` to Django
-- `index.ts` - Node.js server entry point
-
-## Key API Endpoints (Django)
-
-- `GET /api/outbound` - Outbound records with filtering
-- `GET /api/outbound/stats` - Aggregated sales statistics (groupBy: day/week/month)
-- `GET /api/outbound/top-products` - Top-selling products
-- `GET /api/inventory/unified` - Unified inventory with calculated thresholds
-- `GET /api/production` - Production logs
-- `GET /api/ai/predict-hourly` - AI predictions
-- `POST /api/outbound/sync` - Sync data from external sources
-
-## Important Constraints
-
-1. **No Direct DB Access in Node:** Node.js must NOT read from SQLite or JSON files directly. All data access goes through Django API.
-
-2. **Server-Side Aggregation:** Complex calculations (daily/weekly/monthly grouping) are done in Django views, not frontend.
-
-3. **Date Validation:** Always use `isValid()` checks before passing dates to date functions to prevent `RangeError: Invalid time value`.
-
-4. **Route Duplication:** Check `frontend/server/routes.ts` for duplicate route definitions which cause silent failures.
-
-5. **Performance for Large Datasets:**
-   - Chart downsampling for 60+ days of data
-   - Hide `CompactPivotTable` component for large date ranges
-   - Server-side aggregation via `/api/outbound/stats`
-
-## Known Issues Fixed
-
-- `RangeError: Invalid time value` - Resolved with `isValid()` date validation in `OutboundDashboardUnified.tsx`
-- Performance issues with 200K+ records - Resolved with Django backend and server-side aggregation
-
-## Security Notes
-
-- `.env` file contains sensitive tokens and is excluded from git
-- `sample/` and `legacy/` directories are excluded from git
-- Django DEBUG=True for development only
-- CORS enabled for cross-origin requests (review for production)
-
-## Git Workflow
-
-This repository uses GitHub with HTTPS authentication:
-```bash
-git pull                    # Get latest changes from other AIs/users
-git add .
-git commit -m "message"
-git push
-```
-
-GitHub token is stored in `.env` as `gittoken`.
-
-## File Locations
+## 프로젝트 구조
 
 ```
-Project Root
+VF-/
 ├── backend/
-│   ├── sales_api/          # Django app (models, views, serializers)
-│   ├── config/             # Django settings
-│   ├── manage.py           # Django management
-│   └── db.sqlite3          # SQLite database (excluded from git)
+│   ├── config/          # Django settings, URLs, WSGI
+│   ├── sales_api/       # 메인 Django app (models, views, serializers, urls)
+│   ├── manage.py
+│   └── requirements.txt
 ├── frontend/
-│   ├── client/             # React app
-│   │   ├── src/            # React components
-│   │   └── package.json    # Frontend dependencies
-│   ├── server/             # Node.js proxy (routes.ts, index.ts)
-│   └── package.json        # Root dependencies
-├── .env                    # Environment variables (excluded from git)
-├── README.md               # Main documentation
-├── PROJECT_DESCRIPTION.md  # Detailed project info
-└── RENEWAL_REFACTOR_CHECKLIST.md  # Refactoring checklist
+│   └── client/          # React + Vite + TypeScript
+│       └── src/
+│           ├── pages/       # 페이지 컴포넌트
+│           ├── components/  # UI 컴포넌트 (ui/, integrated/, ai-chatbot/)
+│           ├── hooks/
+│           └── lib/
+├── docs/                # 문서
+└── VF-/.claude/         # Agent Team 정의
 ```
+
+## 핵심 데이터 모델
+
+- **ProductionLog**: 일별 기계별 생산 실적
+- **MachinePlan**: AI 추천 생산 계획 (draft/recommended/applied/cancelled)
+- **MachineUser**: 기계별 사용자 (PIN 인증)
+- **OutboundRecord**: 출고 기록
+- **InventoryItem**: 재고 품목
+- **InboundOrderLine**: 입고 발주서
+- **FCInboundRecord**: FC 입고 기록
+
+## 핵심 API 엔드포인트
+
+```
+GET  /api/production           → 생산 계획 목록 ( trailing slash 없음!)
+GET  /api/production-log       → 생산 로그 ( trailing slash 없음!)
+GET  /api/machine/plans        → 기계별 계획
+POST /api/machine/login        → PIN 인증
+GET  /api/outbound             → 출고 기록
+GET  /api/inventory/unified    → 통합 재고
+```
+
+**⚠️ Django URL은 trailing slash 없음!** `/api/production/` (slash 있음) → 404
+
+## 페이지 구조
+
+| 경로 | 페이지 | 설명 |
+|------|--------|------|
+| `/delivery` | DeliveryOverview | 출고 현황 대시보드 |
+| `/outbound` | OutboundTabs | 출고 수량 분석 |
+| `/inventory/enhanced` | InventoryTab | 전산 재고 |
+| `/production` | ProductionPlan | 생산 계획 |
+| `/production-app` | ProductionApp | 모바일 생산 (PIN 인증) |
+| `/master` | ProductMaster | 제품 마스터 |
+
+## 디자인 시스템
+
+- **Design Language:** `DESIGN-LANGUAGE.md` (Toss/TDS 기반)
+- **UI Primitives:** shadcn/ui
+- **CSS Framework:** Tailwind CSS v4
+- **Font:** Pretendard (CJK) + Inter (Latin)
+- **Accent Color:** `--brand: #721FE5` (보라색)
+
+## AI 기능
+
+- **ai/predict-hourly**: 시간대별 출고 예측
+- **ai/production-recommend**: 생산 계획 AI 추천
+- **ai/chat**: 챗봇 기반 분석
+- **ai/backtest-log**: 예측 정확도 검증
+
+## 개발 명령어
+
+```bash
+# 백엔드
+cd backend && source .venv/bin/activate && python manage.py runserver 0.0.0.0:8000
+
+# 프론트엔드
+cd frontend/client && npm run dev -- --host 0.0.0.0 --port 5174
+```
+
+## Agent Team (Harness 적용)
+
+- **frontend-dev**: React 컴포넌트, 페이지 개발
+- **backend-dev**: Django API, 모델, 뷰 개발
+- **qa**: 테스트, 버그 검증
+- **design**: UI/UX 검토, 디자인 토큰

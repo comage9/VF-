@@ -92,6 +92,11 @@ const PAGE_META: Record<string, PageMeta> = {
     title: "제품 마스터 관리",
     description: "제품 사양 데이터베이스를 관리하고 자동완성 데이터를 설정합니다.",
   },
+  "production-app": {
+    key: "production-app",
+    title: "모바일 생산",
+    description: "스마트폰용 생산 계획 앱 (PIN 인증)",
+  },
 };
 
 function normalizePath(location: string | undefined): string {
@@ -133,6 +138,11 @@ export default function Dashboard() {
   const normalizedPath = useMemo(() => normalizePath(location), [location]);
   const activeKey = resolveActiveKey(normalizedPath);
   const meta = PAGE_META[activeKey] || PAGE_META.delivery;
+
+  // 페이지 제목 설정
+  useEffect(() => {
+    document.title = meta.title ? `${meta.title} | VF 보노하우스` : 'VF 보노하우스';
+  }, [meta]);
 
   // 기본 경로(/sales) 접근 시 /sales/delivery로 정규화
   useEffect(() => {
