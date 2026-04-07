@@ -1561,6 +1561,9 @@ def production_log_bulk_delete(request):
         id_list = [int(x) for x in ids if str(x).isdigit()]
     except (ValueError, TypeError):
         return Response({'success': False, 'error': 'invalid ids format'}, status=status.HTTP_400_BAD_REQUEST)
+    # 빈 배열로 전체 삭제 방지
+    if not id_list:
+        return Response({'success': False, 'error': 'no valid ids provided'}, status=status.HTTP_400_BAD_REQUEST)
     deleted, _ = ProductionLog.objects.filter(id__in=id_list).delete()
     return Response({'success': True, 'deleted': deleted})
 
