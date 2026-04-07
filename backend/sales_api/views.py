@@ -35,7 +35,8 @@ from .serializers import (
     FCInboundRecordSerializer,
     FCInboundFileUploadSerializer,
     OutboundRecordSerializer, InventoryItemSerializer, DataSourceSerializer, DeliverySpecialNoteSerializer,
-    InboundOrderUploadSerializer, InboundOrderLineSerializer, InboundPolicySerializer
+    InboundOrderUploadSerializer, InboundOrderLineSerializer, InboundPolicySerializer,
+    ProductionLogSerializer
 )
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -1416,7 +1417,8 @@ def production_list(request):
     latest_qs = ProductionLog.objects.filter(date=all_dates[-1]) if all_dates else ProductionLog.objects.none()
     latest_qs = latest_qs.order_by('sort_order', 'id')
     latest_page = paginator.paginate_queryset(latest_qs, request)
-    latest_data = [_production_model_to_dict(x) for x in latest_page]
+    latest_serializer = ProductionLogSerializer(latest_page, many=True)
+    latest_data = latest_serializer.data
 
     # Get all data with pagination (optional based on query param)
     get_all = request.GET.get('all', '').lower() == 'true'
@@ -1424,7 +1426,8 @@ def production_list(request):
         data_qs = ProductionLog.objects.all()
         data_qs = data_qs.order_by('date', 'sort_order', 'id')
         data_page = paginator.paginate_queryset(data_qs, request)
-        data = [_production_model_to_dict(x) for x in data_page]
+        data_serializer = ProductionLogSerializer(data_page, many=True)
+        data = data_serializer.data
     else:
         data = []
 
