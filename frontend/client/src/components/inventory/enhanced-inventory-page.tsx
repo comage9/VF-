@@ -7,7 +7,7 @@ import EditableStockSettings from './editable-stock-settings';
 import ThreeMonthAnalysis from './three-month-analysis';
 import InventoryTable from './inventory-table';
 import InboundAvailabilityTab from './inbound-availability-tab';
-import { UnifiedInventoryResponseEnhanced } from '../../types/enhanced-inventory';
+import { UnifiedInventoryResponseEnhanced, InventoryItem, StockStatus } from '../../types/enhanced-inventory';
 
 // React Query 클라이언트 생성
 const queryClient = new QueryClient({
@@ -55,6 +55,22 @@ interface BarcodeMasterRow {
   updatedAt?: string | null;
 }
 
+interface OutboundRecord {
+  id?: string | number;
+  productName: string;
+  skuId?: string;
+  barcode?: string;
+  outboundDate?: string;
+  outbound_date?: string;
+  inboundDate?: string;
+  inbound_date?: string;
+  quantity?: number;
+  unitPrice?: number;
+  unit_price?: number;
+  totalPrice?: number;
+  total_price?: number;
+}
+
 function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageProps) {
   const [activeTab, setActiveTab] = useState<ActiveTab>('inventory');
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -97,7 +113,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
     queryClient.invalidateQueries({ queryKey: ['outbound-barcode-daily'] });
   };
 
-  const handleLifecycleStatusChange = async (item: any, statusValue: string) => {
+  const handleLifecycleStatusChange = async (item: BarcodeMasterRow, statusValue: string) => {
     const lifecycleStatus = String(statusValue || '').trim().toLowerCase();
     if (!['active', 'paused', 'discontinued'].includes(lifecycleStatus)) return;
     const barcode = String(item?.barcode || '').trim();
@@ -114,9 +130,9 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
       }
       queryClient.invalidateQueries({ queryKey: ['enhanced-inventory-overview'] });
       queryClient.invalidateQueries({ queryKey: ['inventory-barcode-master'] });
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('lifecycle status update failed', e);
-      alert(e?.message || '상태 변경에 실패했습니다.');
+      alert(e instanceof Error ? e.message : '상태 변경에 실패했습니다.');
     }
   };
 
@@ -232,9 +248,9 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
         setActiveInventoryDate(null);
       }
     },
-    onError: (error: any) => {
+    onError: (error: Error | unknown) => {
       console.error('업로드 삭제 실패:', error);
-      alert(error?.message || '업로드 삭제에 실패했습니다.');
+      alert(error instanceof Error ? error.message : '업로드 삭제에 실패했습니다.');
     },
   });
 
@@ -246,23 +262,23 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
     let filtered = inventoryItems;
 
     // 위치 정보가 있는 항목만 표시
-    filtered = filtered.filter((item: any) => item && item.location && String(item.location).trim() !== '');
+    filtered = filtered.filter((item: InventoryItem) => item && item.location && String(item.location).trim() !== '');
 
     // 재고 현황 탭 정책: 중단/단종은 숨김(카드/필터 집계에서도 제외)
-    filtered = filtered.filter((item: any) => {
+    filtered = filtered.filter((item: InventoryItem) => {
       const ls = String(item?.lifecycleStatus || 'active').toLowerCase();
       return !['paused', 'discontinued'].includes(ls);
     });
 
     // 예외(숨김) 처리: barcode 기준으로 테이블에서 제외
-    filtered = filtered.filter((item: any) => {
+    filtered = filtered.filter((item: InventoryItem) => {
       const bc = String(item?.barcode || '').trim();
       if (!bc) return true;
       return !hiddenBarcodes.has(bc);
     });
 
     // DB 기반 숨김 처리: 단종/중단(paused/discontinued) + 재고0인 경우 backend가 hiddenReason을 내려줌
-    filtered = filtered.filter((item: any) => {
+    filtered = filtered.filter((item: InventoryItem) => {
       const reason = item?.hiddenReason;
       if (!reason) return true;
       return reason !== 'lifecycle_zero_stock';
@@ -284,7 +300,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
     // 설정 탭 정책: BarcodeMaster 전체 + 상태별 필터 가능
     const filterVal = String(settingsLifecycleFilter || 'all').toLowerCase();
     if (filterVal !== 'all') {
-      filtered = filtered.filter((item: any) => String(item?.lifecycleStatus || 'active').toLowerCase() === filterVal);
+      filtered = filtered.filter((item: InventoryItem) => String(item?.lifecycleStatus || 'active').toLowerCase() === filterVal);
     }
 
     return filtered;
@@ -359,7 +375,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
 
   const inventoryItemsForInventoryTabDisplayed = React.useMemo(() => {
     if (!locationConflictOnly) return inventoryItemsForInventoryTab;
-    return inventoryItemsForInventoryTab.filter((item: any) => locationConflictBarcodeSet.has(String(item?.barcode || '').trim()));
+    return inventoryItemsForInventoryTab.filter((item: InventoryItem) => locationConflictBarcodeSet.has(String(item?.barcode || '').trim()));
   }, [inventoryItemsForInventoryTab, locationConflictBarcodeSet, locationConflictOnly]);
 
   // Calculate Unit Price from Outbound Data (Last 90 days)
@@ -391,7 +407,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
     // Here we use a simple approach: map product/barcode to the latest calculated unit price
 
     // Sort records by date descending
-    const sorted = [...outboundRecords].sort((a: any, b: any) => {
+    const sorted = [...outboundRecords].sort((a: OutboundRecord, b: OutboundRecord) => {
       const dateA = a.outboundDate || a.outbound_date || a.inboundDate || a.inbound_date || 0;
       const dateB = b.outboundDate || b.outbound_date || b.inboundDate || b.inbound_date || 0;
       return new Date(dateB).getTime() - new Date(dateA).getTime();
@@ -421,7 +437,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
 
   const statusSummary = React.useMemo(() => {
     const summary = { critical: 0, low: 0, normal: 0, high: 0, totalValue: 0, totalItems: 0, totalQuantity: 0 };
-    inventoryItemsForInventoryTabDisplayed.forEach((item: any) => {
+    inventoryItemsForInventoryTabDisplayed.forEach((item: InventoryItem) => {
       const key = item?.stockStatus;
       if (key === 'critical') summary.critical += 1;
       else if (key === 'low') summary.low += 1;
@@ -463,7 +479,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
   ];
 
   // 재고 아이템 업데이트 핸들러
-  const handleItemUpdate = (updatedItem: any) => {
+  const handleItemUpdate = (updatedItem: InventoryItem) => {
     console.log('재고 아이템 업데이트:', updatedItem);
     // 여기에 실제 업데이트 로직 구현
   };
@@ -1100,7 +1116,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                     </div>
                   ) : inventoryItemsForSettingsTab.length > 0 ? (
                     (inventoryItemsForSettingsTab
-                      .filter((item: any) => {
+                      .filter((item: BarcodeMasterRow) => {
                         const q = settingsSearch.trim().toLowerCase();
                         if (!q) return true;
                         return (
@@ -1110,7 +1126,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                         );
                       })
                       .slice(0, 50)
-                      .map((item: any) => {
+                      .map((item: BarcodeMasterRow) => {
                         const bc = String(item?.barcode || '').trim();
                         const isHidden = bc ? hiddenBarcodes.has(bc) : false;
                         const lifecycleStatus = String(item?.lifecycleStatus || 'active');

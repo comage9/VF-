@@ -88,19 +88,51 @@ interface ProductionResponse {
 
 type ProductionStatus = NonNullable<ProductionItem['status']>;
 
+interface MasterSpec {
+  id?: number;
+  product_name: string;
+  product_name_eng?: string;
+  mold_number?: string;
+  color1?: string;
+  color2?: string;
+  default_quantity?: number;
+}
+
+type MachineNumberValue = string | number | null | undefined;
+type RawProductionRow = {
+  id?: number;
+  date?: string;
+  machineNumber?: string;
+  line?: string;
+  moldNumber?: string;
+  sequence?: string;
+  productName?: string;
+  productNameEng?: string;
+  color1?: string;
+  color2?: string;
+  unit?: string;
+  quantity?: number | string;
+  unitQuantity?: number | string;
+  total?: number | string;
+  sortOrder?: number | string;
+  status?: string;
+  startTime?: string;
+  endTime?: string;
+};
+
 const NUMBER_FORMATTER = new Intl.NumberFormat("ko-KR");
 const UNIT_OPTIONS = ['BOX', 'P', 'LINE', 'EA'] as const;
 
-// Utility function to extract machine number from any value
-function extractMachineNumber(value: any): number {
+// Utility function to extract machine number from various value types
+function extractMachineNumber(value: MachineNumberValue): number {
   const s = String(value ?? '').trim();
   const digits = s.replace(/[^0-9]/g, "");
   const numeric = digits ? Number(digits) : NaN;
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
-function normalizeProductionRow(row: any): ProductionItem {
-  const toNumber = (v: any) => {
+function normalizeProductionRow(row: RawProductionRow): ProductionItem {
+  const toNumber = (v: number | string | null | undefined): number => {
     if (v === null || v === undefined) return NaN;
     if (typeof v === 'number') return v;
     if (typeof v === 'string') {
@@ -117,20 +149,28 @@ function normalizeProductionRow(row: any): ProductionItem {
   const sortOrder = toNumber(row.sortOrder);
   const computedTotal = (Number.isFinite(quantity) ? quantity : 0) * (Number.isFinite(unitQuantity) ? unitQuantity : 0);
 
+  const statusMap: Record<string, ProductionStatus> = {
+    'pending': 'pending',
+    'started': 'started',
+    'ended': 'ended',
+    'stopped': 'stopped',
+  };
+  const normalizedStatus = row.status ? statusMap[row.status] : 'pending';
+
   return {
-    id: row.id || Math.random(),
-    date: row.date || '',
-    machineNumber: row.machineNumber || row.line || '',
-    moldNumber: row.moldNumber || row.sequence || '',
-    productName: row.productName || '',
-    productNameEng: row.productNameEng || '',
-    color1: row.color1 || '',
-    color2: row.color2 || '',
+    id: row.id ?? Math.random(),
+    date: row.date ?? '',
+    machineNumber: row.machineNumber ?? row.line ?? '',
+    moldNumber: row.moldNumber ?? row.sequence ?? '',
+    productName: row.productName ?? '',
+    productNameEng: row.productNameEng ?? '',
+    color1: row.color1 ?? '',
+    color2: row.color2 ?? '',
     unit: row.unit ? String(row.unit) : '',
     quantity: Number.isFinite(quantity) ? quantity : 0,
     unitQuantity: Number.isFinite(unitQuantity) ? unitQuantity : 0,
     total: Number.isFinite(total) && total > 0 ? total : computedTotal,
-    status: (row.status as any) || 'pending',
+    status: normalizedStatus,
     startTime: row.startTime,
     endTime: row.endTime,
     sortOrder: Number.isFinite(sortOrder) ? sortOrder : 0,
@@ -354,7 +394,7 @@ export default function ProductionPlan() {
   );
 
   // Fetch specs for autocomplete
-  const { data: specs = [] } = useQuery<any[]>({
+  const { data: specs = [] } = useQuery<MasterSpec[]>({
     queryKey: ["/api/master/specs"],
     queryFn: async () => {
       const res = await fetch("/api/master/specs");
@@ -365,8 +405,8 @@ export default function ProductionPlan() {
 
   const uniqueProductNames = useMemo(() => {
     const values: string[] = [];
-    values.push(...specs.map((s: any) => String(s.product_name || '').trim()).filter(Boolean));
-    values.push(...(data?.data || []).map((row: any) => String(row.productName || '').trim()).filter(Boolean));
+    values.push(...specs.map((s: MasterSpec) => String(s.product_name || '').trim()).filter(Boolean));
+    values.push(...(data?.data || []).map((row: ProductionItem) => String(row.productName || '').trim()).filter(Boolean));
     return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
   }, [specs, data?.data]);
 
@@ -389,8 +429,8 @@ export default function ProductionPlan() {
 
     if (newRecord.productName) {
       const fromSpecs = specs
-        .filter((s: any) => s.product_name === newRecord.productName)
-        .map((s: any) => String(s.color1 || '').trim())
+        .filter((s: MasterSpec) => s.product_name === newRecord.productName)
+        .map((s: MasterSpec) => String(s.color1 || '').trim())
         .filter((v: string) => Boolean(v));
       values.push(...fromSpecs);
     }
@@ -409,8 +449,8 @@ export default function ProductionPlan() {
     values.push(...fromLogs);
 
     const fromSpecs = specs
-      .filter((s: any) => s.product_name === newRecord.productName && String(s.color1 || '').trim() === String(newRecord.color1 || '').trim())
-      .map((s: any) => String(s.color2 || '').trim())
+      .filter((s: MasterSpec) => s.product_name === newRecord.productName && String(s.color1 || '').trim() === String(newRecord.color1 || '').trim())
+      .map((s: MasterSpec) => String(s.color2 || '').trim())
       .filter((v: string) => Boolean(v));
     values.push(...fromSpecs);
 
@@ -425,7 +465,7 @@ export default function ProductionPlan() {
     values.push(...fromLogs);
 
     if (values.length === 0 && newRecord.productName) {
-      const spec = specs.find((s: any) => s.product_name === newRecord.productName);
+      const spec = specs.find((s: MasterSpec) => s.product_name === newRecord.productName);
       const fallback = Number(spec?.default_quantity);
       if (Number.isFinite(fallback) && fallback > 0) values.push(fallback);
     }
@@ -469,7 +509,7 @@ export default function ProductionPlan() {
       return true;
     });
 
-    const toMachineNumber = (v: any) => {
+    const toMachineNumber = (v: MachineNumberValue): number | null => {
       const s = String(v ?? '').trim();
       const n = Number(s);
       return Number.isFinite(n) ? n : null;
@@ -538,7 +578,7 @@ export default function ProductionPlan() {
   }), [filteredRows]);
 
   const bulkStatusMutation = useMutation({
-    mutationFn: async (payload: any) => {
+    mutationFn: async (payload: { ids?: number[]; date?: string; scope?: string; status: ProductionStatus }) => {
       const response = await fetch('/api/production/bulk-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -760,7 +800,7 @@ export default function ProductionPlan() {
   };
 
   const handleStatusChange = (item: ProductionItem, newStatus: ProductionItem['status']) => {
-    const updates: any = { status: newStatus };
+    const updates: Partial<ProductionItem> = { status: newStatus };
     updateMutation.mutate({ id: item.id, updates });
   };
 
@@ -1058,10 +1098,10 @@ export default function ProductionPlan() {
                                   value={name}
                                   key={name}
                                   onSelect={() => {
-                                    const spec = specs.find((s: any) => s.product_name === name);
+                                    const spec = specs.find((s: MasterSpec) => s.product_name === name);
                                     const rows = normalizedRows.filter((row) => row.productName === name);
 
-                                    const bestRow = rows.reduce<any>((best, cur) => {
+                                    const bestRow = rows.reduce<ProductionItem | null>((best, cur) => {
                                       if (!best) return cur;
                                       const bestDate = String(best.date || '');
                                       const curDate = String(cur.date || '');
@@ -1089,8 +1129,8 @@ export default function ProductionPlan() {
                                     ).sort((a, b) => a.localeCompare(b));
                                     if (color1Candidates.length === 0) {
                                       const fromSpecs = specs
-                                        .filter((s: any) => s.product_name === name)
-                                        .map((s: any) => String(s.color1 || '').trim())
+                                        .filter((s: MasterSpec) => s.product_name === name)
+                                        .map((s: MasterSpec) => String(s.color1 || '').trim())
                                         .filter((v: string) => Boolean(v));
                                       color1Candidates.push(...Array.from(new Set(fromSpecs)).sort((a, b) => a.localeCompare(b)));
                                     }
@@ -1106,8 +1146,8 @@ export default function ProductionPlan() {
                                     ).sort((a, b) => a.localeCompare(b));
                                     if (color2Candidates.length === 0) {
                                       const fromSpecs2 = specs
-                                        .filter((s: any) => s.product_name === name && String(s.color1 || '').trim() === defaultColor1)
-                                        .map((s: any) => String(s.color2 || '').trim())
+                                        .filter((s: MasterSpec) => s.product_name === name && String(s.color1 || '').trim() === defaultColor1)
+                                        .map((s: MasterSpec) => String(s.color2 || '').trim())
                                         .filter((v: string) => Boolean(v));
                                       color2Candidates.push(...Array.from(new Set(fromSpecs2)).sort((a, b) => a.localeCompare(b)));
                                     }
@@ -1192,8 +1232,8 @@ export default function ProductionPlan() {
                                     ).sort((a, b) => a.localeCompare(b));
                                     if (candidates.length === 0) {
                                       const fromSpecs = specs
-                                        .filter((s: any) => s.product_name === newRecord.productName && String(s.color1 || '').trim() === String(color || '').trim())
-                                        .map((s: any) => String(s.color2 || '').trim())
+                                        .filter((s: MasterSpec) => s.product_name === newRecord.productName && String(s.color1 || '').trim() === String(color || '').trim())
+                                        .map((s: MasterSpec) => String(s.color2 || '').trim())
                                         .filter((v: string) => Boolean(v));
                                       candidates.push(...Array.from(new Set(fromSpecs)).sort((a, b) => a.localeCompare(b)));
                                     }
