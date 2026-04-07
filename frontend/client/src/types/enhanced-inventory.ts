@@ -142,9 +142,26 @@ export interface UnifiedInventoryResponseEnhanced {
     hasMore: boolean;
   };
   summary: {
-    overall: any;
-    filtered: any;
-    options: any;
+    overall: {
+      totalItems: number;
+      totalStock: number;
+      criticalCount: number;
+      lowCount: number;
+      normalCount: number;
+      highCount: number;
+    };
+    filtered: {
+      totalItems: number;
+      totalStock: number;
+      criticalCount: number;
+      lowCount: number;
+      normalCount: number;
+      highCount: number;
+    };
+    options: {
+      showHidden: boolean;
+      lifecycleFilter: string;
+    };
   };
   lastUploadDate: string | null;
   latestDataInfo: LatestDataInfo; // 새로 추가된 필드

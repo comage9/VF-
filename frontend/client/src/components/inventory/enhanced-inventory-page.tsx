@@ -176,9 +176,9 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
   const barcodeMasterItems = barcodeMasterData?.data || [];
 
   const unifiedByBarcode = React.useMemo(() => {
-    const m = new Map<string, any>();
+    const m = new Map<string, InventoryItem>();
     for (const it of inventoryItems) {
-      const bc = String((it as any)?.barcode || '').trim();
+      const bc = String((it as InventoryItem)?.barcode || '').trim();
       if (!bc) continue;
       m.set(bc, it);
     }
@@ -193,17 +193,17 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
         id: bm.id,
         barcode: bc,
         skuId: bm.skuId || '',
-        productName: (bm.productName || (u as any)?.productName || '').trim(),
-        category: (bm.category || (u as any)?.category || '').trim(),
-        location: (bm.location || (u as any)?.location || '').trim(),
-        lifecycleStatus: (bm.lifecycleStatus || (u as any)?.lifecycleStatus || 'active') as any,
+        productName: (bm.productName || (u as InventoryItem | null)?.productName || '').trim(),
+        category: (bm.category || (u as InventoryItem | null)?.category || '').trim(),
+        location: (bm.location || (u as InventoryItem | null)?.location || '').trim(),
+        lifecycleStatus: (bm.lifecycleStatus || (u as InventoryItem | null)?.lifecycleStatus || 'active') as 'active' | 'paused' | 'discontinued',
         minStock: bm.minStock ?? 0,
         maxStock: bm.maxStock ?? 0,
         reorderPoint: bm.reorderPoint ?? 0,
         safetyStock: bm.safetyStock ?? 0,
-        currentStock: (u as any)?.currentStock ?? 0,
-        inventoryDate: (u as any)?.inventoryDate ?? null,
-        stockStatus: (u as any)?.stockStatus ?? 'normal',
+        currentStock: (u as InventoryItem | null)?.currentStock ?? 0,
+        inventoryDate: (u as InventoryItem | null)?.inventoryDate ?? null,
+        stockStatus: (u as InventoryItem | null)?.stockStatus ?? 'normal',
       };
     });
   }, [barcodeMasterItems, unifiedByBarcode]);
@@ -328,7 +328,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
 
   const locationConflictBarcodeSet = React.useMemo(() => {
     const map = new Map<string, Set<string>>();
-    for (const item of inventoryItemsForInventoryTab as any[]) {
+    for (const item of inventoryItemsForInventoryTab) {
       const bc = String(item?.barcode || '').trim();
       if (!bc) continue;
       const loc = String(item?.location ?? '').trim();
@@ -344,7 +344,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
 
   const locationConflictRows = React.useMemo(() => {
     const map = new Map<string, Set<string>>();
-    for (const item of inventoryItemsForInventoryTab as any[]) {
+    for (const item of inventoryItemsForInventoryTab) {
       const bc = String(item?.barcode || '').trim();
       if (!bc) continue;
       const loc = String(item?.location ?? '').trim();

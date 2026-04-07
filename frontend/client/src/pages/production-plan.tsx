@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState, useCallback } from "react";
 import type { ChangeEvent } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { FileText, Plus, Trash2, Upload, Loader2, Edit, Play, CheckCircle, Clock, RotateCcw, Package, TrendingUp, BarChart3, GripVertical } from "lucide-react";
@@ -217,7 +217,7 @@ interface SortableRowProps {
   getMachineAccent: (machineNumber: string | undefined) => { border: string; headerBg: string; rowBg: string };
 }
 
-function SortableRow({
+const SortableRow = React.memo(function SortableRow({
   row,
   isSelected,
   onToggleSelect,
@@ -346,7 +346,7 @@ function SortableRow({
       </td>
     </tr>
   );
-}
+});
 
 function useProductionLog() {
   return useQuery<ProductionResponse>({
@@ -782,7 +782,7 @@ export default function ProductionPlan() {
     }
   };
 
-  const handleEditClick = (item: ProductionItem) => {
+  const handleEditClick = useCallback((item: ProductionItem) => {
     setEditingId(item.id);
     setNewRecord({
       date: item.date,
@@ -799,26 +799,26 @@ export default function ProductionPlan() {
       status: item.status,
     });
     setIsDialogOpen(true);
-  };
+  }, []);
 
-  const handleStatusChange = (item: ProductionItem, newStatus: ProductionItem['status']) => {
+  const handleStatusChange = useCallback((item: ProductionItem, newStatus: ProductionItem['status']) => {
     const updates: Partial<ProductionItem> = { status: newStatus };
     updateMutation.mutate({ id: item.id, updates });
-  };
+  }, [updateMutation]);
 
-  const handleStatusReset = (item: ProductionItem) => {
+  const handleStatusReset = useCallback((item: ProductionItem) => {
     if (!confirm('상태를 대기(Pending)로 초기화하시겠습니까?')) return;
     updateMutation.mutate({ id: item.id, updates: { status: 'pending', startTime: undefined, endTime: undefined } });
-  };
+  }, [updateMutation]);
 
-  const handleDeleteClick = (id: number) => {
+  const handleDeleteClick = useCallback((id: number) => {
     if (!confirm('정말 삭제하시겠습니까?')) return;
     deleteSelectedMutation.mutate([id]);
-  };
+  }, [deleteSelectedMutation]);
 
-  const handleMachineNumberChange = (item: ProductionItem, newMachineNumber: string) => {
+  const handleMachineNumberChange = useCallback((item: ProductionItem, newMachineNumber: string) => {
     updateMutation.mutate({ id: item.id, updates: { machineNumber: newMachineNumber } });
-  };
+  }, [updateMutation]);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
