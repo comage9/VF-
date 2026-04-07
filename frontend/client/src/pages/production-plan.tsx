@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { FileText, Plus, Trash2, Upload, Loader2, Edit, Play, CheckCircle, Clock, RotateCcw, Package, TrendingUp, BarChart3, GripVertical } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import {
   DndContext,
   closestCenter,
@@ -364,6 +365,7 @@ function useProductionLog() {
 
 export default function ProductionPlan() {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data, isLoading } = useProductionLog();
@@ -592,10 +594,10 @@ export default function ProductionPlan() {
     },
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["/api/production"] });
-      alert(`상태가 변경되었습니다. (대상 ${res?.updated ?? 0}건)`);
+      toast({ title: '상태 변경 완료', description: `대상 ${res?.updated ?? 0}건` });
     },
     onError: (error) => {
-      alert(error instanceof Error ? error.message : '일괄 상태 변경 중 문제가 발생했습니다.');
+      toast({ title: '상태 변경 실패', description: error instanceof Error ? error.message : '일괄 상태 변경 중 문제가 발생했습니다.', variant: 'destructive' });
     }
   });
 
@@ -619,11 +621,11 @@ export default function ProductionPlan() {
       }
 
       const result = await response.json();
-      alert(result?.message || '생산 계획 데이터를 업로드했습니다.');
+      toast({ title: '업로드 완료', description: result?.message || '생산 계획 데이터를 업로드했습니다.' });
       await queryClient.invalidateQueries({ queryKey: ["/api/production"] });
     } catch (error) {
       console.error('생산 계획 업로드 오류:', error);
-      alert(error instanceof Error ? error.message : '업로드 처리 중 문제가 발생했습니다.');
+      toast({ title: '업로드 실패', description: error instanceof Error ? error.message : '업로드 처리 중 문제가 발생했습니다.', variant: 'destructive' });
     } finally {
       setIsUploading(false);
       if (event.target) {
@@ -648,7 +650,7 @@ export default function ProductionPlan() {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      alert(`템플릿 다운로드 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+      toast({ title: '다운로드 실패', description: `템플릿 다운로드 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`, variant: 'destructive' });
     }
   };
 
@@ -665,16 +667,16 @@ export default function ProductionPlan() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/production"] });
       setSelectedIds([]);
-      alert('선택된 데이터가 삭제되었습니다.');
+      toast({ title: '삭제 완료', description: '선택된 데이터가 삭제되었습니다.' });
     },
     onError: (error) => {
-      alert(`삭제 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+      toast({ title: '삭제 실패', description: `삭제 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`, variant: 'destructive' });
     }
   });
 
   const handleDeleteByDate = async () => {
     if (selectedDate === 'all' || selectedDate === 'latest') {
-      alert('삭제할 일자를 선택해주세요.');
+      toast({ title: '일자 선택 필요', description: '삭제할 일자를 선택해주세요.', variant: 'destructive' });
       return;
     }
 
@@ -689,9 +691,9 @@ export default function ProductionPlan() {
       }
 
       await queryClient.invalidateQueries({ queryKey: ["/api/production"] });
-      alert(`${selectedDate} 데이터가 삭제되었습니다.`);
+      toast({ title: '삭제 완료', description: `${selectedDate} 데이터가 삭제되었습니다.` });
     } catch (error) {
-      alert(`삭제 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+      toast({ title: '삭제 실패', description: `삭제 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`, variant: 'destructive' });
     } finally {
       setIsDeletingDate(false);
     }
@@ -711,10 +713,10 @@ export default function ProductionPlan() {
       queryClient.invalidateQueries({ queryKey: ["/api/production"] });
       setIsDialogOpen(false);
       setNewRecord(createEmptyRecord());
-      alert('생산 계획이 추가되었습니다.');
+      toast({ title: '추가 완료', description: '생산 계획이 추가되었습니다.' });
     },
     onError: (error) => {
-      alert(`추가 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+      toast({ title: '추가 실패', description: `추가 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`, variant: 'destructive' });
     }
   });
 
@@ -735,7 +737,7 @@ export default function ProductionPlan() {
       setNewRecord(createEmptyRecord());
     },
     onError: (error) => {
-      alert(`수정 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+      toast({ title: '수정 실패', description: `수정 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`, variant: 'destructive' });
     }
   });
 
@@ -753,13 +755,13 @@ export default function ProductionPlan() {
       queryClient.invalidateQueries({ queryKey: ["/api/production"] });
     },
     onError: (error) => {
-      alert(`순서 변경 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+      toast({ title: '순서 변경 실패', description: `순서 변경 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`, variant: 'destructive' });
     }
   });
 
   const handleSubmit = async () => {
     if (!newRecord.date || !newRecord.machineNumber || !newRecord.moldNumber || !newRecord.productName) {
-      alert('일자, 기계번호, 금형번호, 제품명은 필수입니다.');
+      toast({ title: '필수 항목 누락', description: '일자, 기계번호, 금형번호, 제품명은 필수입니다.', variant: 'destructive' });
       return;
     }
 
