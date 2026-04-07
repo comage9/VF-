@@ -1094,7 +1094,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                     <div className="text-sm text-gray-700">상태</div>
                     <select
                       value={settingsLifecycleFilter}
-                      onChange={(e) => setSettingsLifecycleFilter(e.target.value as any)}
+                      onChange={(e) => setSettingsLifecycleFilter(e.target.value as 'all' | 'active' | 'paused' | 'discontinued')}
                       className="text-sm border border-gray-300 rounded px-2 py-2"
                     >
                       <option value="all">전체</option>
