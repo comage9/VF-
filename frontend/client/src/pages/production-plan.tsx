@@ -106,7 +106,7 @@ function normalizeProductionRow(row: any): ProductionItem {
   const quantity = toNumber(row.quantity);
   const unitQuantity = toNumber(row.unitQuantity);
   const total = toNumber(row.total);
-  const sortOrder = toNumber(row.sort_order);
+  const sortOrder = toNumber(row.sortOrder);
   const computedTotal = (Number.isFinite(quantity) ? quantity : 0) * (Number.isFinite(unitQuantity) ? unitQuantity : 0);
 
   return {
@@ -723,9 +723,6 @@ export default function ProductionPlan() {
 
       // Only allow dragging within the same machine number group
       if (activeRow && overRow && activeRow.machineNumber === overRow.machineNumber) {
-        const oldIndex = filteredRows.findIndex(r => r.id === active.id);
-        const newIndex = filteredRows.findIndex(r => r.id === over.id);
-
         // Get all rows for this machine number in the current date
         const machineRows = filteredRows.filter(r => r.machineNumber === activeRow.machineNumber && r.date === activeRow.date);
         const machineIds = machineRows.map(r => r.id);
@@ -736,7 +733,30 @@ export default function ProductionPlan() {
         // Build orders array for API
         const orders = newOrder.map((id, index) => ({ id, sort_order: index + 1 }));
 
-        bulkReorderMutation.mutate(orders);
+        // Optimistic update using queryClient
+        queryClient.setQueryData(["/api/production"], (oldData: ProductionResponse | undefined) => {
+          if (!oldData) return oldData;
+
+          return {
+            ...oldData,
+            data: oldData.data.map(item => {
+              const orderItem = orders.find(o => o.id === item.id);
+              return orderItem ? { ...item, sortOrder: orderItem.sort_order } : item;
+            }),
+            latestData: oldData.latestData.map(item => {
+              const orderItem = orders.find(o => o.id === item.id);
+              return orderItem ? { ...item, sortOrder: orderItem.sort_order } : item;
+            }),
+          };
+        });
+
+        // Call the mutation
+        bulkReorderMutation.mutate(orders, {
+          onError: () => {
+            // On error, revert by invalidating queries to refetch original data
+            queryClient.invalidateQueries({ queryKey: ["/api/production"] });
+          }
+        });
       }
     }
   };
