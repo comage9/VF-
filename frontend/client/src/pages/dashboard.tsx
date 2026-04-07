@@ -203,15 +203,15 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50">
+    <div className="flex h-screen bg-background">
       <Sidebar items={NAV_ITEMS} activeKey={activeKey === "unknown" ? "delivery" : activeKey} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="bg-gradient-to-r from-white via-blue-50 to-purple-50 border-b border-border px-6 py-4 flex items-center justify-between shadow-md">
+        <div className="bg-card border-b border-border px-6 py-4 flex items-center justify-between">
           <div className="flex items-center">
             <MobileNav items={NAV_ITEMS} activeKey={activeKey === "unknown" ? "delivery" : activeKey} />
             <div>
-              <h2 className="text-lg font-bold text-foreground bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent" data-testid="content-title">
+              <h2 className="text-lg font-bold text-foreground" data-testid="content-title">
                 {meta.title}
               </h2>
               <p className="text-sm text-muted-foreground hidden md:block">{meta.description}</p>
