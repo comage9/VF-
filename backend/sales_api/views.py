@@ -1405,19 +1405,36 @@ def master_extract(request):
 
 @api_view(['GET'])
 def production_list(request):
+    paginator = LimitOffsetPagination()
+    paginator.default_limit = 100
+    paginator.max_limit = 1000
+
     all_dates = list(ProductionLog.objects.values_list('date', flat=True).distinct().order_by('date'))
     latest = all_dates[-1].isoformat() if all_dates else None
-    data_qs = ProductionLog.objects.all()
+
+    # Get latest date data with pagination
     latest_qs = ProductionLog.objects.filter(date=all_dates[-1]) if all_dates else ProductionLog.objects.none()
-    data = [_production_model_to_dict(x) for x in data_qs]
-    latest_data = [_production_model_to_dict(x) for x in latest_qs]
-    return Response({
+    latest_qs = latest_qs.order_by('sort_order', 'id')
+    latest_page = paginator.paginate_queryset(latest_qs, request)
+    latest_data = [_production_model_to_dict(x) for x in latest_page]
+
+    # Get all data with pagination (optional based on query param)
+    get_all = request.GET.get('all', '').lower() == 'true'
+    if get_all:
+        data_qs = ProductionLog.objects.all()
+        data_qs = data_qs.order_by('date', 'sort_order', 'id')
+        data_page = paginator.paginate_queryset(data_qs, request)
+        data = [_production_model_to_dict(x) for x in data_page]
+    else:
+        data = []
+
+    return paginator.get_paginated_response({
         'success': True,
         'latestDate': latest,
         'data': data,
         'latestData': latest_data,
         'allDates': [d.isoformat() for d in all_dates],
-        'totalRecords': data_qs.count(),
+        'totalRecords': ProductionLog.objects.count(),
     })
 
 
@@ -1466,87 +1483,94 @@ def production_template(request):
     return resp
 
 
-@api_view(['POST', 'DELETE'])
+@api_view(['POST'])
 def production_log(request):
-    if request.method == 'POST':
-        payload = request.data if isinstance(request.data, dict) else {}
-        record = payload.get('record') if isinstance(payload.get('record'), dict) else payload
-        date = (record.get('date') or '').strip() if isinstance(record, dict) else ''
-        if not date:
-            return Response({'message': 'date is required'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            date_obj = datetime.fromisoformat(date).date()
-        except Exception:
-            try:
-                date_obj = pd.to_datetime(date).date()
-            except Exception:
-                return Response({'message': 'invalid date'}, status=status.HTTP_400_BAD_REQUEST)
-
-        machine = str(record.get('machineNumber') or '').strip()
-        mold = str(record.get('moldNumber') or '').strip()
-        pname = str(record.get('productName') or '').strip()
-        c1 = str(record.get('color1') or '').strip()
-        c2 = str(record.get('color2') or '').strip()
-
-        def _to_int(v):
-            try:
-                if v is None:
-                    return 0
-                if isinstance(v, str):
-                    v = v.replace(',', '').strip()
-                return int(float(v))
-            except Exception:
-                return 0
-
-        qty = _to_int(record.get('quantity'))
-        unit_qty = _to_int(record.get('unitQuantity'))
-        unit_raw = str(record.get('unit') or '').replace(',', '').strip()
-        if not unit_qty and unit_raw.isdigit():
-            unit_qty = int(unit_raw)
-        total = _production_calc_total(qty, unit_qty, record.get('total'))
-        status_value = _production_normalize_status(record.get('status') or 'pending')
-
-        defaults = {
-            'product_name_eng': str(record.get('productNameEng') or '').strip(),
-            'unit': str(record.get('unit') or '').strip(),
-            'quantity': qty,
-            'unit_quantity': unit_qty,
-            'total': total,
-            'color1': c1,
-            'color2': c2,
-            'status': status_value,
-        }
-
-        obj, created = ProductionLog.objects.update_or_create(
-            date=date_obj,
-            machine_number=machine,
-            mold_number=mold,
-            product_name=pname,
-            color1=c1,
-            color2=c2,
-            unit=str(record.get('unit') or '').strip(),
-            defaults=defaults,
-        )
-        _production_apply_status_model(obj, status_value)
-        obj.total = _production_calc_total(obj.quantity, obj.unit_quantity, obj.total)
-        obj.save()
-
-        return Response({'success': True, 'record': _production_model_to_dict(obj)}, status=status.HTTP_201_CREATED)
-
     payload = request.data if isinstance(request.data, dict) else {}
-    if payload.get('type') == 'ids' and isinstance(payload.get('ids'), list):
-        ids = [int(x) for x in payload.get('ids') if str(x).isdigit()]
-        deleted, _ = ProductionLog.objects.filter(id__in=ids).delete()
-        return Response({'success': True, 'deleted': deleted})
+    record = payload.get('record') if isinstance(payload.get('record'), dict) else payload
+    date = (record.get('date') or '').strip() if isinstance(record, dict) else ''
+    if not date:
+        return Response({'message': 'date is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-    deleted, _ = ProductionLog.objects.all().delete()
+    try:
+        date_obj = datetime.fromisoformat(date).date()
+    except Exception:
+        try:
+            date_obj = pd.to_datetime(date).date()
+        except Exception:
+            return Response({'message': 'invalid date'}, status=status.HTTP_400_BAD_REQUEST)
+
+    machine = str(record.get('machineNumber') or '').strip()
+    mold = str(record.get('moldNumber') or '').strip()
+    pname = str(record.get('productName') or '').strip()
+    c1 = str(record.get('color1') or '').strip()
+    c2 = str(record.get('color2') or '').strip()
+
+    def _to_int(v):
+        try:
+            if v is None:
+                return 0
+            if isinstance(v, str):
+                v = v.replace(',', '').strip()
+            return int(float(v))
+        except Exception:
+            return 0
+
+    qty = _to_int(record.get('quantity'))
+    unit_qty = _to_int(record.get('unitQuantity'))
+    unit_raw = str(record.get('unit') or '').replace(',', '').strip()
+    if not unit_qty and unit_raw.isdigit():
+        unit_qty = int(unit_raw)
+    total = _production_calc_total(qty, unit_qty, record.get('total'))
+    status_value = _production_normalize_status(record.get('status') or 'pending')
+
+    defaults = {
+        'product_name_eng': str(record.get('productNameEng') or '').strip(),
+        'unit': str(record.get('unit') or '').strip(),
+        'quantity': qty,
+        'unit_quantity': unit_qty,
+        'total': total,
+        'color1': c1,
+        'color2': c2,
+        'status': status_value,
+    }
+
+    obj, created = ProductionLog.objects.update_or_create(
+        date=date_obj,
+        machine_number=machine,
+        mold_number=mold,
+        product_name=pname,
+        color1=c1,
+        color2=c2,
+        unit=str(record.get('unit') or '').strip(),
+        defaults=defaults,
+    )
+    _production_apply_status_model(obj, status_value)
+    obj.total = _production_calc_total(obj.quantity, obj.unit_quantity, obj.total)
+    obj.save()
+
+    return Response({'success': True, 'record': _production_model_to_dict(obj)}, status=status.HTTP_201_CREATED)
+
+
+@api_view(['DELETE'])
+def production_log_bulk_delete(request):
+    """IDs 리스트로 여러 ProductionLog 삭제"""
+    ids = request.data.get('ids', [])
+    if not ids:
+        return Response({'success': False, 'error': 'ids required'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        id_list = [int(x) for x in ids if str(x).isdigit()]
+    except (ValueError, TypeError):
+        return Response({'success': False, 'error': 'invalid ids format'}, status=status.HTTP_400_BAD_REQUEST)
+    deleted, _ = ProductionLog.objects.filter(id__in=id_list).delete()
     return Response({'success': True, 'deleted': deleted})
 
 
 @api_view(['PUT', 'DELETE'])
 def production_log_detail(request, id: int):
-    item = ProductionLog.objects.filter(id=int(id)).first()
+    try:
+        item = ProductionLog.objects.filter(id=int(id)).first()
+    except (ValueError, TypeError):
+        return Response({'message': 'Invalid id format'}, status=status.HTTP_400_BAD_REQUEST)
     if not item:
         return Response({'message': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
 

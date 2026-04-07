@@ -1,0 +1,1042 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: production-plan-dnd.spec.ts >> 생산계획 DnD 테스트 >> 체크박스 선택 가능함
+- Location: e2e/production-plan-dnd.spec.ts:44:3
+
+# Error details
+
+```
+Error: locator.click: Element is not visible
+Call log:
+  - waiting for locator('[role="checkbox"]').first()
+    - locator resolved to <button value="on" type="button" role="checkbox" aria-checked="false" data-state="unchecked" class="peer h-4 w-4 shrink-0 rounded-sm border border-primary ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"></button>
+  - attempting click action
+    - scrolling into view if needed
+
+```
+
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - generic [ref=e3]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - heading "비즈니스 분석" [level=1] [ref=e7]
+        - paragraph [ref=e8]: 실시간 출고·재고·생산 인사이트
+      - generic [ref=e9]:
+        - link " 출고 현황" [ref=e10] [cursor=pointer]:
+          - /url: /delivery
+          - generic [ref=e11]: 
+          - generic [ref=e12]: 출고 현황
+        - link " 출고 수량" [ref=e13] [cursor=pointer]:
+          - /url: /outbound
+          - generic [ref=e14]: 
+          - generic [ref=e15]: 출고 수량
+        - link " 전산 재고 수량" [ref=e16] [cursor=pointer]:
+          - /url: /inventory/enhanced
+          - generic [ref=e17]: 
+          - generic [ref=e18]: 전산 재고 수량
+        - link " 생산 계획 " [ref=e19] [cursor=pointer]:
+          - /url: /production
+          - generic [ref=e20]: 
+          - generic [ref=e21]: 생산 계획
+          - generic [ref=e22]: 
+        - link " 모바일 생산" [ref=e23] [cursor=pointer]:
+          - /url: /production-app
+          - generic [ref=e24]: 
+          - generic [ref=e25]: 모바일 생산
+        - link " 제품 마스터 관리" [ref=e26] [cursor=pointer]:
+          - /url: /master
+          - generic [ref=e27]: 
+          - generic [ref=e28]: 제품 마스터 관리
+    - generic [ref=e29]:
+      - generic [ref=e30]:
+        - generic [ref=e32]:
+          - heading "생산 계획 모니터링" [level=2] [ref=e33]
+          - paragraph [ref=e34]: 생산 라인·품목별 진행 상황과 작업량을 실시간으로 추적합니다.
+        - generic [ref=e36]:
+          - generic [ref=e37]: 
+          - generic [ref=e38]: "마지막 갱신: 2026. 04. 08. 오전 01:43"
+      - generic [ref=e40]:
+        - generic [ref=e41]:
+          - generic [ref=e42]:
+            - generic [ref=e43]:
+              - generic [ref=e44]: 날짜 선택
+              - combobox "날짜 선택" [ref=e45] [cursor=pointer]:
+                - generic: 최신 날짜 (2026-04-07)
+                - img [ref=e46]
+            - generic [ref=e48]:
+              - generic [ref=e49]: 기계번호
+              - combobox "기계번호" [ref=e50] [cursor=pointer]:
+                - generic: 전체
+                - img [ref=e51]
+            - generic [ref=e53]:
+              - generic [ref=e54]: 검색
+              - textbox "검색" [ref=e55]:
+                - /placeholder: 품목명, 색상명 등
+          - generic [ref=e56]:
+            - button "양식" [ref=e57] [cursor=pointer]:
+              - img
+              - text: 양식
+            - button "업로드" [ref=e58] [cursor=pointer]:
+              - img
+              - text: 업로드
+            - button "신규" [ref=e59] [cursor=pointer]:
+              - img
+              - text: 신규
+            - button "일자 삭제" [disabled]:
+              - img
+              - text: 일자 삭제
+            - generic [ref=e60]:
+              - combobox [ref=e61] [cursor=pointer]:
+                - generic: 대기
+                - img [ref=e62]
+              - button "선택 상태 변경" [disabled]
+              - button "일자 상태 변경" [disabled]
+              - button "전체 상태 변경" [ref=e64] [cursor=pointer]
+        - generic [ref=e65]:
+          - generic [ref=e68]:
+            - generic [ref=e69]:
+              - paragraph [ref=e70]: 총 수량
+              - heading "5,532" [level=3] [ref=e71]
+              - paragraph [ref=e72]: 전체 생산 수량
+            - img [ref=e73]
+          - generic [ref=e79]:
+            - generic [ref=e80]:
+              - paragraph [ref=e81]: 총 단위수량
+              - heading "797" [level=3] [ref=e82]
+              - paragraph [ref=e83]: 누적 단위 생산
+            - img [ref=e84]
+          - generic [ref=e88]:
+            - generic [ref=e89]:
+              - paragraph [ref=e90]: 총 레코드
+              - heading "30" [level=3] [ref=e91]
+              - paragraph [ref=e92]: 생산 계획 수
+            - img [ref=e93]
+          - generic [ref=e98]:
+            - generic [ref=e99]:
+              - paragraph [ref=e100]: 총 생산량
+              - heading "22,028" [level=3] [ref=e101]
+              - paragraph [ref=e102]: 전체 생산 완료
+            - img [ref=e103]
+        - generic [ref=e106]:
+          - table [ref=e108]:
+            - rowgroup [ref=e109]:
+              - row "상태 일자 기계 금형 제품명 색상 단위 생산수량 총계 작업" [ref=e110]:
+                - columnheader [ref=e111]:
+                  - checkbox [ref=e112] [cursor=pointer]
+                - columnheader "상태" [ref=e113]
+                - columnheader "일자" [ref=e114]
+                - columnheader "기계" [ref=e115]
+                - columnheader "금형" [ref=e116]
+                - columnheader "제품명" [ref=e117]
+                - columnheader "색상" [ref=e118]
+                - columnheader "단위" [ref=e119]
+                - columnheader "생산수량" [ref=e120]
+                - columnheader "총계" [ref=e121]
+                - columnheader "작업" [ref=e122]
+            - rowgroup [ref=e123]:
+              - 'row "기계번호: 3 (2건)" [ref=e124]':
+                - 'cell "기계번호: 3 (2건)" [ref=e125]'
+              - row "대기 2026-04-07 3 17 토이 바디 Toy Body(ตัวของเล่น) Ivory / IVORY 1060 125 1 125" [ref=e126]:
+                - cell [ref=e127]:
+                  - generic [ref=e128]:
+                    - button "드래그하여 순서 변경" [ref=e129]:
+                      - img [ref=e130]
+                    - checkbox [ref=e137] [cursor=pointer]
+                - cell "대기" [ref=e138]:
+                  - generic [ref=e139]: 대기
+                - cell "2026-04-07" [ref=e140]
+                - cell "3" [ref=e141]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e142] [cursor=pointer]: "3"
+                - cell "17" [ref=e143]
+                - cell "토이 바디 Toy Body(ตัวของเล่น)" [ref=e144]:
+                  - generic [ref=e145]: 토이 바디
+                  - generic [ref=e146]: Toy Body(ตัวของเล่น)
+                - cell "Ivory / IVORY 1060" [ref=e147]
+                - cell "125" [ref=e148]
+                - cell "1" [ref=e149]
+                - cell "125" [ref=e150]
+                - cell [ref=e151]:
+                  - generic [ref=e152]:
+                    - button "작업 시작" [ref=e153] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e154] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e155] [cursor=pointer]:
+                      - img
+              - row "대기 2026-04-07 3 17 토이 바디 Toy Body(ตัวของเล่น) WHITE1 / WHITE 180 125 1 125" [ref=e156]:
+                - cell [ref=e157]:
+                  - generic [ref=e158]:
+                    - button "드래그하여 순서 변경" [ref=e159]:
+                      - img [ref=e160]
+                    - checkbox [ref=e167] [cursor=pointer]
+                - cell "대기" [ref=e168]:
+                  - generic [ref=e169]: 대기
+                - cell "2026-04-07" [ref=e170]
+                - cell "3" [ref=e171]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e172] [cursor=pointer]: "3"
+                - cell "17" [ref=e173]
+                - cell "토이 바디 Toy Body(ตัวของเล่น)" [ref=e174]:
+                  - generic [ref=e175]: 토이 바디
+                  - generic [ref=e176]: Toy Body(ตัวของเล่น)
+                - cell "WHITE1 / WHITE 180" [ref=e177]
+                - cell "125" [ref=e178]
+                - cell "1" [ref=e179]
+                - cell "125" [ref=e180]
+                - cell [ref=e181]:
+                  - generic [ref=e182]:
+                    - button "작업 시작" [ref=e183] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e184] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e185] [cursor=pointer]:
+                      - img
+              - 'row "기계번호: 4 (1건)" [ref=e186]':
+                - 'cell "기계번호: 4 (1건)" [ref=e187]'
+              - row "대기 2026-04-07 4 2 모던플러스 서랍 Modern Plus Drawer(ลิ้นชักโมเดิร์นพลัส) WHITE1 / WHITE 180 1 649 649" [ref=e188]:
+                - cell [ref=e189]:
+                  - generic [ref=e190]:
+                    - button "드래그하여 순서 변경" [ref=e191]:
+                      - img [ref=e192]
+                    - checkbox [ref=e199] [cursor=pointer]
+                - cell "대기" [ref=e200]:
+                  - generic [ref=e201]: 대기
+                - cell "2026-04-07" [ref=e202]
+                - cell "4" [ref=e203]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e204] [cursor=pointer]: "4"
+                - cell "2" [ref=e205]
+                - cell "모던플러스 서랍 Modern Plus Drawer(ลิ้นชักโมเดิร์นพลัส)" [ref=e206]:
+                  - generic [ref=e207]: 모던플러스 서랍
+                  - generic [ref=e208]: Modern Plus Drawer(ลิ้นชักโมเดิร์นพลัส)
+                - cell "WHITE1 / WHITE 180" [ref=e209]
+                - cell "1" [ref=e210]
+                - cell "649" [ref=e211]
+                - cell "649" [ref=e212]
+                - cell [ref=e213]:
+                  - generic [ref=e214]:
+                    - button "작업 시작" [ref=e215] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e216] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e217] [cursor=pointer]:
+                      - img
+              - 'row "기계번호: 5 (1건)" [ref=e218]':
+                - 'cell "기계번호: 5 (1건)" [ref=e219]'
+              - row "대기 2026-04-07 5 101 신규 모던플러스 프레임 New Modern Plus Frame(ใหม่ โมเดิร์นพลัสเฟรม) WHITE1 / WHITE 180 1 661 661" [ref=e220]:
+                - cell [ref=e221]:
+                  - generic [ref=e222]:
+                    - button "드래그하여 순서 변경" [ref=e223]:
+                      - img [ref=e224]
+                    - checkbox [ref=e231] [cursor=pointer]
+                - cell "대기" [ref=e232]:
+                  - generic [ref=e233]: 대기
+                - cell "2026-04-07" [ref=e234]
+                - cell "5" [ref=e235]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e236] [cursor=pointer]: "5"
+                - cell "101" [ref=e237]
+                - cell "신규 모던플러스 프레임 New Modern Plus Frame(ใหม่ โมเดิร์นพลัสเฟรม)" [ref=e238]:
+                  - generic [ref=e239]: 신규 모던플러스 프레임
+                  - generic [ref=e240]: New Modern Plus Frame(ใหม่ โมเดิร์นพลัสเฟรม)
+                - cell "WHITE1 / WHITE 180" [ref=e241]
+                - cell "1" [ref=e242]
+                - cell "661" [ref=e243]
+                - cell "661" [ref=e244]
+                - cell [ref=e245]:
+                  - generic [ref=e246]:
+                    - button "작업 시작" [ref=e247] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e248] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e249] [cursor=pointer]:
+                      - img
+              - 'row "기계번호: 6 (1건)" [ref=e250]':
+                - 'cell "기계번호: 6 (1건)" [ref=e251]'
+              - row "대기 2026-04-07 6 5 모던플러스 앞판 Modern Plus front panel(แผงด้านหน้าโมเดิร์นพลัส) WHITE1 / WHITE 180 1 578 578" [ref=e252]:
+                - cell [ref=e253]:
+                  - generic [ref=e254]:
+                    - button "드래그하여 순서 변경" [ref=e255]:
+                      - img [ref=e256]
+                    - checkbox [ref=e263] [cursor=pointer]
+                - cell "대기" [ref=e264]:
+                  - generic [ref=e265]: 대기
+                - cell "2026-04-07" [ref=e266]
+                - cell "6" [ref=e267]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e268] [cursor=pointer]: "6"
+                - cell "5" [ref=e269]
+                - cell "모던플러스 앞판 Modern Plus front panel(แผงด้านหน้าโมเดิร์นพลัส)" [ref=e270]:
+                  - generic [ref=e271]: 모던플러스 앞판
+                  - generic [ref=e272]: Modern Plus front panel(แผงด้านหน้าโมเดิร์นพลัส)
+                - cell "WHITE1 / WHITE 180" [ref=e273]
+                - cell "1" [ref=e274]
+                - cell "578" [ref=e275]
+                - cell "578" [ref=e276]
+                - cell [ref=e277]:
+                  - generic [ref=e278]:
+                    - button "작업 시작" [ref=e279] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e280] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e281] [cursor=pointer]:
+                      - img
+              - 'row "기계번호: 7 (1건)" [ref=e282]':
+                - 'cell "기계번호: 7 (1건)" [ref=e283]'
+              - row "대기 2026-04-07 7 901 슬림 서랍장 프레임 신규 New Slim Dresser Frame(กรอบโต๊ะเครื่องแป้งเพรียวบางใหม่) WHITE1 / WHITE 180 1 1,132 1,132" [ref=e284]:
+                - cell [ref=e285]:
+                  - generic [ref=e286]:
+                    - button "드래그하여 순서 변경" [ref=e287]:
+                      - img [ref=e288]
+                    - checkbox [ref=e295] [cursor=pointer]
+                - cell "대기" [ref=e296]:
+                  - generic [ref=e297]: 대기
+                - cell "2026-04-07" [ref=e298]
+                - cell "7" [ref=e299]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e300] [cursor=pointer]: "7"
+                - cell "901" [ref=e301]
+                - cell "슬림 서랍장 프레임 신규 New Slim Dresser Frame(กรอบโต๊ะเครื่องแป้งเพรียวบางใหม่)" [ref=e302]:
+                  - generic [ref=e303]: 슬림 서랍장 프레임 신규
+                  - generic [ref=e304]: New Slim Dresser Frame(กรอบโต๊ะเครื่องแป้งเพรียวบางใหม่)
+                - cell "WHITE1 / WHITE 180" [ref=e305]
+                - cell "1" [ref=e306]
+                - cell "1,132" [ref=e307]
+                - cell "1,132" [ref=e308]
+                - cell [ref=e309]:
+                  - generic [ref=e310]:
+                    - button "작업 시작" [ref=e311] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e312] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e313] [cursor=pointer]:
+                      - img
+              - 'row "기계번호: 8 (1건)" [ref=e314]':
+                - 'cell "기계번호: 8 (1건)" [ref=e315]'
+              - row "대기 2026-04-07 8 801 슬림 서랍장 서랍 신규 New Slim Drawer Chest Drawer(ลิ้นชักตู้ลิ้นชักแบบบางใหม่) WHITE1 / WHITE 180 1 1,132 1,132" [ref=e316]:
+                - cell [ref=e317]:
+                  - generic [ref=e318]:
+                    - button "드래그하여 순서 변경" [ref=e319]:
+                      - img [ref=e320]
+                    - checkbox [ref=e327] [cursor=pointer]
+                - cell "대기" [ref=e328]:
+                  - generic [ref=e329]: 대기
+                - cell "2026-04-07" [ref=e330]
+                - cell "8" [ref=e331]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e332] [cursor=pointer]: "8"
+                - cell "801" [ref=e333]
+                - cell "슬림 서랍장 서랍 신규 New Slim Drawer Chest Drawer(ลิ้นชักตู้ลิ้นชักแบบบางใหม่)" [ref=e334]:
+                  - generic [ref=e335]: 슬림 서랍장 서랍 신규
+                  - generic [ref=e336]: New Slim Drawer Chest Drawer(ลิ้นชักตู้ลิ้นชักแบบบางใหม่)
+                - cell "WHITE1 / WHITE 180" [ref=e337]
+                - cell "1" [ref=e338]
+                - cell "1,132" [ref=e339]
+                - cell "1,132" [ref=e340]
+                - cell [ref=e341]:
+                  - generic [ref=e342]:
+                    - button "작업 시작" [ref=e343] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e344] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e345] [cursor=pointer]:
+                      - img
+              - 'row "기계번호: 9 (1건)" [ref=e346]':
+                - 'cell "기계번호: 9 (1건)" [ref=e347]'
+              - row "대기 2026-04-07 9 32 와이드 서랍 wide drawer(ลิ้นชักกว้าง) WHITE1 / WHITE 180 180 4 720" [ref=e348]:
+                - cell [ref=e349]:
+                  - generic [ref=e350]:
+                    - button "드래그하여 순서 변경" [ref=e351]:
+                      - img [ref=e352]
+                    - checkbox [ref=e359] [cursor=pointer]
+                - cell "대기" [ref=e360]:
+                  - generic [ref=e361]: 대기
+                - cell "2026-04-07" [ref=e362]
+                - cell "9" [ref=e363]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e364] [cursor=pointer]: "9"
+                - cell "32" [ref=e365]
+                - cell "와이드 서랍 wide drawer(ลิ้นชักกว้าง)" [ref=e366]:
+                  - generic [ref=e367]: 와이드 서랍
+                  - generic [ref=e368]: wide drawer(ลิ้นชักกว้าง)
+                - cell "WHITE1 / WHITE 180" [ref=e369]
+                - cell "180" [ref=e370]
+                - cell "4" [ref=e371]
+                - cell "720" [ref=e372]
+                - cell [ref=e373]:
+                  - generic [ref=e374]:
+                    - button "작업 시작" [ref=e375] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e376] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e377] [cursor=pointer]:
+                      - img
+              - 'row "기계번호: 10 (3건)" [ref=e378]':
+                - 'cell "기계번호: 10 (3건)" [ref=e379]'
+              - row "대기 2026-04-07 10 114 데크타일 Deck tiles(กระเบื้องดาดฟ้า) Gray3 / GRAY 9023 9 72 648" [ref=e380]:
+                - cell [ref=e381]:
+                  - generic [ref=e382]:
+                    - button "드래그하여 순서 변경" [ref=e383]:
+                      - img [ref=e384]
+                    - checkbox [ref=e391] [cursor=pointer]
+                - cell "대기" [ref=e392]:
+                  - generic [ref=e393]: 대기
+                - cell "2026-04-07" [ref=e394]
+                - cell "10" [ref=e395]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e396] [cursor=pointer]: "10"
+                - cell "114" [ref=e397]
+                - cell "데크타일 Deck tiles(กระเบื้องดาดฟ้า)" [ref=e398]:
+                  - generic [ref=e399]: 데크타일
+                  - generic [ref=e400]: Deck tiles(กระเบื้องดาดฟ้า)
+                - cell "Gray3 / GRAY 9023" [ref=e401]
+                - cell "9" [ref=e402]
+                - cell "72" [ref=e403]
+                - cell "648" [ref=e404]
+                - cell [ref=e405]:
+                  - generic [ref=e406]:
+                    - button "작업 시작" [ref=e407] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e408] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e409] [cursor=pointer]:
+                      - img
+              - row "대기 2026-04-07 10 114 데크타일 Deck tiles(กระเบื้องดาดฟ้า) Dark Brown / Brown 4142 9 72 648" [ref=e410]:
+                - cell [ref=e411]:
+                  - generic [ref=e412]:
+                    - button "드래그하여 순서 변경" [ref=e413]:
+                      - img [ref=e414]
+                    - checkbox [ref=e421] [cursor=pointer]
+                - cell "대기" [ref=e422]:
+                  - generic [ref=e423]: 대기
+                - cell "2026-04-07" [ref=e424]
+                - cell "10" [ref=e425]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e426] [cursor=pointer]: "10"
+                - cell "114" [ref=e427]
+                - cell "데크타일 Deck tiles(กระเบื้องดาดฟ้า)" [ref=e428]:
+                  - generic [ref=e429]: 데크타일
+                  - generic [ref=e430]: Deck tiles(กระเบื้องดาดฟ้า)
+                - cell "Dark Brown / Brown 4142" [ref=e431]
+                - cell "9" [ref=e432]
+                - cell "72" [ref=e433]
+                - cell "648" [ref=e434]
+                - cell [ref=e435]:
+                  - generic [ref=e436]:
+                    - button "작업 시작" [ref=e437] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e438] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e439] [cursor=pointer]:
+                      - img
+              - row "대기 2026-04-07 10 114 데크타일 Deck tiles(กระเบื้องดาดฟ้า) Ivory / IVORY 1060 9 144 1,296" [ref=e440]:
+                - cell [ref=e441]:
+                  - generic [ref=e442]:
+                    - button "드래그하여 순서 변경" [ref=e443]:
+                      - img [ref=e444]
+                    - checkbox [ref=e451] [cursor=pointer]
+                - cell "대기" [ref=e452]:
+                  - generic [ref=e453]: 대기
+                - cell "2026-04-07" [ref=e454]
+                - cell "10" [ref=e455]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e456] [cursor=pointer]: "10"
+                - cell "114" [ref=e457]
+                - cell "데크타일 Deck tiles(กระเบื้องดาดฟ้า)" [ref=e458]:
+                  - generic [ref=e459]: 데크타일
+                  - generic [ref=e460]: Deck tiles(กระเบื้องดาดฟ้า)
+                - cell "Ivory / IVORY 1060" [ref=e461]
+                - cell "9" [ref=e462]
+                - cell "144" [ref=e463]
+                - cell "1,296" [ref=e464]
+                - cell [ref=e465]:
+                  - generic [ref=e466]:
+                    - button "작업 시작" [ref=e467] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e468] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e469] [cursor=pointer]:
+                      - img
+              - 'row "기계번호: 11 (5건)" [ref=e470]':
+                - 'cell "기계번호: 11 (5건)" [ref=e471]'
+              - row "대기 2026-04-07 11 115 목 늘림 방지 옷걸이(밸런스 옷걸이) Anti-stretch hanger (balance hanger)(ไม้แขวนเสื้อกันยืด (ไม้แขวนเสื้อสมดุล)) Ivory / IVORY 1060 50 32 1,600" [ref=e472]:
+                - cell [ref=e473]:
+                  - generic [ref=e474]:
+                    - button "드래그하여 순서 변경" [ref=e475]:
+                      - img [ref=e476]
+                    - checkbox [ref=e483] [cursor=pointer]
+                - cell "대기" [ref=e484]:
+                  - generic [ref=e485]: 대기
+                - cell "2026-04-07" [ref=e486]
+                - cell "11" [ref=e487]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e488] [cursor=pointer]: "11"
+                - cell "115" [ref=e489]
+                - cell "목 늘림 방지 옷걸이(밸런스 옷걸이) Anti-stretch hanger (balance hanger)(ไม้แขวนเสื้อกันยืด (ไม้แขวนเสื้อสมดุล))" [ref=e490]:
+                  - generic [ref=e491]: 목 늘림 방지 옷걸이(밸런스 옷걸이)
+                  - generic [ref=e492]: Anti-stretch hanger (balance hanger)(ไม้แขวนเสื้อกันยืด (ไม้แขวนเสื้อสมดุล))
+                - cell "Ivory / IVORY 1060" [ref=e493]
+                - cell "50" [ref=e494]
+                - cell "32" [ref=e495]
+                - cell "1,600" [ref=e496]
+                - cell [ref=e497]:
+                  - generic [ref=e498]:
+                    - button "작업 시작" [ref=e499] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e500] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e501] [cursor=pointer]:
+                      - img
+              - row "대기 2026-04-07 11 112 어반 와이드 옷걸이 Urban Wide Hanger(ไม้แขวนเสื้อกว้างแบบเมือง) Gray2 / GRAY 11215-1 50 32 1,600" [ref=e502]:
+                - cell [ref=e503]:
+                  - generic [ref=e504]:
+                    - button "드래그하여 순서 변경" [ref=e505]:
+                      - img [ref=e506]
+                    - checkbox [ref=e513] [cursor=pointer]
+                - cell "대기" [ref=e514]:
+                  - generic [ref=e515]: 대기
+                - cell "2026-04-07" [ref=e516]
+                - cell "11" [ref=e517]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e518] [cursor=pointer]: "11"
+                - cell "112" [ref=e519]
+                - cell "어반 와이드 옷걸이 Urban Wide Hanger(ไม้แขวนเสื้อกว้างแบบเมือง)" [ref=e520]:
+                  - generic [ref=e521]: 어반 와이드 옷걸이
+                  - generic [ref=e522]: Urban Wide Hanger(ไม้แขวนเสื้อกว้างแบบเมือง)
+                - cell "Gray2 / GRAY 11215-1" [ref=e523]
+                - cell "50" [ref=e524]
+                - cell "32" [ref=e525]
+                - cell "1,600" [ref=e526]
+                - cell [ref=e527]:
+                  - generic [ref=e528]:
+                    - button "작업 시작" [ref=e529] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e530] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e531] [cursor=pointer]:
+                      - img
+              - row "대기 2026-04-07 11 115 목 늘림 방지 옷걸이(밸런스 옷걸이) Anti-stretch hanger (balance hanger)(ไม้แขวนเสื้อกันยืด (ไม้แขวนเสื้อสมดุล)) Black / - 50 32 1,600" [ref=e532]:
+                - cell [ref=e533]:
+                  - generic [ref=e534]:
+                    - button "드래그하여 순서 변경" [ref=e535]:
+                      - img [ref=e536]
+                    - checkbox [ref=e543] [cursor=pointer]
+                - cell "대기" [ref=e544]:
+                  - generic [ref=e545]: 대기
+                - cell "2026-04-07" [ref=e546]
+                - cell "11" [ref=e547]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e548] [cursor=pointer]: "11"
+                - cell "115" [ref=e549]
+                - cell "목 늘림 방지 옷걸이(밸런스 옷걸이) Anti-stretch hanger (balance hanger)(ไม้แขวนเสื้อกันยืด (ไม้แขวนเสื้อสมดุล))" [ref=e550]:
+                  - generic [ref=e551]: 목 늘림 방지 옷걸이(밸런스 옷걸이)
+                  - generic [ref=e552]: Anti-stretch hanger (balance hanger)(ไม้แขวนเสื้อกันยืด (ไม้แขวนเสื้อสมดุล))
+                - cell "Black / -" [ref=e553]
+                - cell "50" [ref=e554]
+                - cell "32" [ref=e555]
+                - cell "1,600" [ref=e556]
+                - cell [ref=e557]:
+                  - generic [ref=e558]:
+                    - button "작업 시작" [ref=e559] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e560] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e561] [cursor=pointer]:
+                      - img
+              - row "대기 2026-04-07 11 115 목 늘림 방지 옷걸이(밸런스 옷걸이) Anti-stretch hanger (balance hanger) Ivory / IVORY 1060 30 64 1,920" [ref=e562]:
+                - cell [ref=e563]:
+                  - generic [ref=e564]:
+                    - button "드래그하여 순서 변경" [ref=e565]:
+                      - img [ref=e566]
+                    - checkbox [ref=e573] [cursor=pointer]
+                - cell "대기" [ref=e574]:
+                  - generic [ref=e575]: 대기
+                - cell "2026-04-07" [ref=e576]
+                - cell "11" [ref=e577]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e578] [cursor=pointer]: "11"
+                - cell "115" [ref=e579]
+                - cell "목 늘림 방지 옷걸이(밸런스 옷걸이) Anti-stretch hanger (balance hanger)" [ref=e580]:
+                  - generic [ref=e581]: 목 늘림 방지 옷걸이(밸런스 옷걸이)
+                  - generic [ref=e582]: Anti-stretch hanger (balance hanger)
+                - cell "Ivory / IVORY 1060" [ref=e583]
+                - cell "30" [ref=e584]
+                - cell "64" [ref=e585]
+                - cell "1,920" [ref=e586]
+                - cell [ref=e587]:
+                  - generic [ref=e588]:
+                    - button "작업 시작" [ref=e589] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e590] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e591] [cursor=pointer]:
+                      - img
+              - row "대기 2026-04-07 11 115 목 늘림 방지 옷걸이(밸런스 옷걸이) Anti-stretch hanger (balance hanger) Black / - 30 64 1,920" [ref=e592]:
+                - cell [ref=e593]:
+                  - generic [ref=e594]:
+                    - button "드래그하여 순서 변경" [ref=e595]:
+                      - img [ref=e596]
+                    - checkbox [ref=e603] [cursor=pointer]
+                - cell "대기" [ref=e604]:
+                  - generic [ref=e605]: 대기
+                - cell "2026-04-07" [ref=e606]
+                - cell "11" [ref=e607]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e608] [cursor=pointer]: "11"
+                - cell "115" [ref=e609]
+                - cell "목 늘림 방지 옷걸이(밸런스 옷걸이) Anti-stretch hanger (balance hanger)" [ref=e610]:
+                  - generic [ref=e611]: 목 늘림 방지 옷걸이(밸런스 옷걸이)
+                  - generic [ref=e612]: Anti-stretch hanger (balance hanger)
+                - cell "Black / -" [ref=e613]
+                - cell "30" [ref=e614]
+                - cell "64" [ref=e615]
+                - cell "1,920" [ref=e616]
+                - cell [ref=e617]:
+                  - generic [ref=e618]:
+                    - button "작업 시작" [ref=e619] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e620] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e621] [cursor=pointer]:
+                      - img
+              - 'row "기계번호: 12 (11건)" [ref=e622]':
+                - 'cell "기계번호: 12 (11건)" [ref=e623]'
+              - row "대기 2026-04-07 12 40 로코스 L Locos L(Locos L) WHITE-CAP(WHITE) / WHITE 180 4 64 256" [ref=e624]:
+                - cell [ref=e625]:
+                  - generic [ref=e626]:
+                    - button "드래그하여 순서 변경" [ref=e627]:
+                      - img [ref=e628]
+                    - checkbox [ref=e635] [cursor=pointer]
+                - cell "대기" [ref=e636]:
+                  - generic [ref=e637]: 대기
+                - cell "2026-04-07" [ref=e638]
+                - cell "12" [ref=e639]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e640] [cursor=pointer]: "12"
+                - cell "40" [ref=e641]
+                - cell "로코스 L Locos L(Locos L)" [ref=e642]:
+                  - generic [ref=e643]: 로코스 L
+                  - generic [ref=e644]: Locos L(Locos L)
+                - cell "WHITE-CAP(WHITE) / WHITE 180" [ref=e645]
+                - cell "4" [ref=e646]
+                - cell "64" [ref=e647]
+                - cell "256" [ref=e648]
+                - cell [ref=e649]:
+                  - generic [ref=e650]:
+                    - button "작업 시작" [ref=e651] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e652] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e653] [cursor=pointer]:
+                      - img
+              - row "대기 2026-04-07 12 40 로코스 L Locos L(Locos L) WHITE1 / WHITE 180 8 24 192" [ref=e654]:
+                - cell [ref=e655]:
+                  - generic [ref=e656]:
+                    - button "드래그하여 순서 변경" [ref=e657]:
+                      - img [ref=e658]
+                    - checkbox [ref=e665] [cursor=pointer]
+                - cell "대기" [ref=e666]:
+                  - generic [ref=e667]: 대기
+                - cell "2026-04-07" [ref=e668]
+                - cell "12" [ref=e669]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e670] [cursor=pointer]: "12"
+                - cell "40" [ref=e671]
+                - cell "로코스 L Locos L(Locos L)" [ref=e672]:
+                  - generic [ref=e673]: 로코스 L
+                  - generic [ref=e674]: Locos L(Locos L)
+                - cell "WHITE1 / WHITE 180" [ref=e675]
+                - cell "8" [ref=e676]
+                - cell "24" [ref=e677]
+                - cell "192" [ref=e678]
+                - cell [ref=e679]:
+                  - generic [ref=e680]:
+                    - button "작업 시작" [ref=e681] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e682] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e683] [cursor=pointer]:
+                      - img
+              - row "대기 2026-04-07 12 40 로코스 L Locos L(Locos L) Ivory / IVORY 1060 3 96 288" [ref=e684]:
+                - cell [ref=e685]:
+                  - generic [ref=e686]:
+                    - button "드래그하여 순서 변경" [ref=e687]:
+                      - img [ref=e688]
+                    - checkbox [ref=e695] [cursor=pointer]
+                - cell "대기" [ref=e696]:
+                  - generic [ref=e697]: 대기
+                - cell "2026-04-07" [ref=e698]
+                - cell "12" [ref=e699]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e700] [cursor=pointer]: "12"
+                - cell "40" [ref=e701]
+                - cell "로코스 L Locos L(Locos L)" [ref=e702]:
+                  - generic [ref=e703]: 로코스 L
+                  - generic [ref=e704]: Locos L(Locos L)
+                - cell "Ivory / IVORY 1060" [ref=e705]
+                - cell "3" [ref=e706]
+                - cell "96" [ref=e707]
+                - cell "288" [ref=e708]
+                - cell [ref=e709]:
+                  - generic [ref=e710]:
+                    - button "작업 시작" [ref=e711] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e712] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e713] [cursor=pointer]:
+                      - img
+              - row "대기 2026-04-07 12 126 북트롤리 상판(분리) Book trolley top (separated)(ด้านบนรถเข็นหนังสือ (แยกส่วน)) Butter / YELLO - 3093 24 20 480" [ref=e714]:
+                - cell [ref=e715]:
+                  - generic [ref=e716]:
+                    - button "드래그하여 순서 변경" [ref=e717]:
+                      - img [ref=e718]
+                    - checkbox [ref=e725] [cursor=pointer]
+                - cell "대기" [ref=e726]:
+                  - generic [ref=e727]: 대기
+                - cell "2026-04-07" [ref=e728]
+                - cell "12" [ref=e729]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e730] [cursor=pointer]: "12"
+                - cell "126" [ref=e731]
+                - cell "북트롤리 상판(분리) Book trolley top (separated)(ด้านบนรถเข็นหนังสือ (แยกส่วน))" [ref=e732]:
+                  - generic [ref=e733]: 북트롤리 상판(분리)
+                  - generic [ref=e734]: Book trolley top (separated)(ด้านบนรถเข็นหนังสือ (แยกส่วน))
+                - cell "Butter / YELLO - 3093" [ref=e735]
+                - cell "24" [ref=e736]
+                - cell "20" [ref=e737]
+                - cell "480" [ref=e738]
+                - cell [ref=e739]:
+                  - generic [ref=e740]:
+                    - button "작업 시작" [ref=e741] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e742] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e743] [cursor=pointer]:
+                      - img
+              - row "대기 2026-04-07 12 126 북트롤리 상판(분리) Book trolley top (separated)(ด้านบนรถเข็นหนังสือ (แยกส่วน)) Ivory2 / IVORY 5516-2 24 20 480" [ref=e744]:
+                - cell [ref=e745]:
+                  - generic [ref=e746]:
+                    - button "드래그하여 순서 변경" [ref=e747]:
+                      - img [ref=e748]
+                    - checkbox [ref=e755] [cursor=pointer]
+                - cell "대기" [ref=e756]:
+                  - generic [ref=e757]: 대기
+                - cell "2026-04-07" [ref=e758]
+                - cell "12" [ref=e759]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e760] [cursor=pointer]: "12"
+                - cell "126" [ref=e761]
+                - cell "북트롤리 상판(분리) Book trolley top (separated)(ด้านบนรถเข็นหนังสือ (แยกส่วน))" [ref=e762]:
+                  - generic [ref=e763]: 북트롤리 상판(분리)
+                  - generic [ref=e764]: Book trolley top (separated)(ด้านบนรถเข็นหนังสือ (แยกส่วน))
+                - cell "Ivory2 / IVORY 5516-2" [ref=e765]
+                - cell "24" [ref=e766]
+                - cell "20" [ref=e767]
+                - cell "480" [ref=e768]
+                - cell [ref=e769]:
+                  - generic [ref=e770]:
+                    - button "작업 시작" [ref=e771] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e772] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e773] [cursor=pointer]:
+                      - img
+              - row "대기 2026-04-07 12 41 로코스 M Locos M(Locos M) Ivory / IVORY 1060 4 160 640" [ref=e774]:
+                - cell [ref=e775]:
+                  - generic [ref=e776]:
+                    - button "드래그하여 순서 변경" [ref=e777]:
+                      - img [ref=e778]
+                    - checkbox [ref=e785] [cursor=pointer]
+                - cell "대기" [ref=e786]:
+                  - generic [ref=e787]: 대기
+                - cell "2026-04-07" [ref=e788]
+                - cell "12" [ref=e789]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e790] [cursor=pointer]: "12"
+                - cell "41" [ref=e791]
+                - cell "로코스 M Locos M(Locos M)" [ref=e792]:
+                  - generic [ref=e793]: 로코스 M
+                  - generic [ref=e794]: Locos M(Locos M)
+                - cell "Ivory / IVORY 1060" [ref=e795]
+                - cell "4" [ref=e796]
+                - cell "160" [ref=e797]
+                - cell "640" [ref=e798]
+                - cell [ref=e799]:
+                  - generic [ref=e800]:
+                    - button "작업 시작" [ref=e801] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e802] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e803] [cursor=pointer]:
+                      - img
+              - row "대기 2026-04-07 12 41 로코스 M Locos M(Locos M) WHITE1 / WHITE 180 4 40 160" [ref=e804]:
+                - cell [ref=e805]:
+                  - generic [ref=e806]:
+                    - button "드래그하여 순서 변경" [ref=e807]:
+                      - img [ref=e808]
+                    - checkbox [ref=e815] [cursor=pointer]
+                - cell "대기" [ref=e816]:
+                  - generic [ref=e817]: 대기
+                - cell "2026-04-07" [ref=e818]
+                - cell "12" [ref=e819]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e820] [cursor=pointer]: "12"
+                - cell "41" [ref=e821]
+                - cell "로코스 M Locos M(Locos M)" [ref=e822]:
+                  - generic [ref=e823]: 로코스 M
+                  - generic [ref=e824]: Locos M(Locos M)
+                - cell "WHITE1 / WHITE 180" [ref=e825]
+                - cell "4" [ref=e826]
+                - cell "40" [ref=e827]
+                - cell "160" [ref=e828]
+                - cell [ref=e829]:
+                  - generic [ref=e830]:
+                    - button "작업 시작" [ref=e831] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e832] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e833] [cursor=pointer]:
+                      - img
+              - row "대기 2026-04-07 12 40 로코스 L Locos L(Locos L) WHITE1 / WHITE 180 6 64 384" [ref=e834]:
+                - cell [ref=e835]:
+                  - generic [ref=e836]:
+                    - button "드래그하여 순서 변경" [ref=e837]:
+                      - img [ref=e838]
+                    - checkbox [ref=e845] [cursor=pointer]
+                - cell "대기" [ref=e846]:
+                  - generic [ref=e847]: 대기
+                - cell "2026-04-07" [ref=e848]
+                - cell "12" [ref=e849]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e850] [cursor=pointer]: "12"
+                - cell "40" [ref=e851]
+                - cell "로코스 L Locos L(Locos L)" [ref=e852]:
+                  - generic [ref=e853]: 로코스 L
+                  - generic [ref=e854]: Locos L(Locos L)
+                - cell "WHITE1 / WHITE 180" [ref=e855]
+                - cell "6" [ref=e856]
+                - cell "64" [ref=e857]
+                - cell "384" [ref=e858]
+                - cell [ref=e859]:
+                  - generic [ref=e860]:
+                    - button "작업 시작" [ref=e861] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e862] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e863] [cursor=pointer]:
+                      - img
+              - row "대기 2026-04-07 12 40 로코스 L Locos L(Locos L) Ivory / IVORY 1060 6 96 576" [ref=e864]:
+                - cell [ref=e865]:
+                  - generic [ref=e866]:
+                    - button "드래그하여 순서 변경" [ref=e867]:
+                      - img [ref=e868]
+                    - checkbox [ref=e875] [cursor=pointer]
+                - cell "대기" [ref=e876]:
+                  - generic [ref=e877]: 대기
+                - cell "2026-04-07" [ref=e878]
+                - cell "12" [ref=e879]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e880] [cursor=pointer]: "12"
+                - cell "40" [ref=e881]
+                - cell "로코스 L Locos L(Locos L)" [ref=e882]:
+                  - generic [ref=e883]: 로코스 L
+                  - generic [ref=e884]: Locos L(Locos L)
+                - cell "Ivory / IVORY 1060" [ref=e885]
+                - cell "6" [ref=e886]
+                - cell "96" [ref=e887]
+                - cell "576" [ref=e888]
+                - cell [ref=e889]:
+                  - generic [ref=e890]:
+                    - button "작업 시작" [ref=e891] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e892] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e893] [cursor=pointer]:
+                      - img
+              - row "대기 2026-04-07 12 40 로코스 L Locos L(Locos L) Ivory / IVORY 1060 4 64 256" [ref=e894]:
+                - cell [ref=e895]:
+                  - generic [ref=e896]:
+                    - button "드래그하여 순서 변경" [ref=e897]:
+                      - img [ref=e898]
+                    - checkbox [ref=e905] [cursor=pointer]
+                - cell "대기" [ref=e906]:
+                  - generic [ref=e907]: 대기
+                - cell "2026-04-07" [ref=e908]
+                - cell "12" [ref=e909]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e910] [cursor=pointer]: "12"
+                - cell "40" [ref=e911]
+                - cell "로코스 L Locos L(Locos L)" [ref=e912]:
+                  - generic [ref=e913]: 로코스 L
+                  - generic [ref=e914]: Locos L(Locos L)
+                - cell "Ivory / IVORY 1060" [ref=e915]
+                - cell "4" [ref=e916]
+                - cell "64" [ref=e917]
+                - cell "256" [ref=e918]
+                - cell [ref=e919]:
+                  - generic [ref=e920]:
+                    - button "작업 시작" [ref=e921] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e922] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e923] [cursor=pointer]:
+                      - img
+              - row "대기 2026-04-07 12 41 로코스 M Locos M(Locos M) WHITE1 / WHITE 180 8 64 512" [ref=e924]:
+                - cell [ref=e925]:
+                  - generic [ref=e926]:
+                    - button "드래그하여 순서 변경" [ref=e927]:
+                      - img [ref=e928]
+                    - checkbox [ref=e935] [cursor=pointer]
+                - cell "대기" [ref=e936]:
+                  - generic [ref=e937]: 대기
+                - cell "2026-04-07" [ref=e938]
+                - cell "12" [ref=e939]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e940] [cursor=pointer]: "12"
+                - cell "41" [ref=e941]
+                - cell "로코스 M Locos M(Locos M)" [ref=e942]:
+                  - generic [ref=e943]: 로코스 M
+                  - generic [ref=e944]: Locos M(Locos M)
+                - cell "WHITE1 / WHITE 180" [ref=e945]
+                - cell "8" [ref=e946]
+                - cell "64" [ref=e947]
+                - cell "512" [ref=e948]
+                - cell [ref=e949]:
+                  - generic [ref=e950]:
+                    - button "작업 시작" [ref=e951] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e952] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e953] [cursor=pointer]:
+                      - img
+              - 'row "기계번호: 생산 대기 (3건)" [ref=e954]':
+                - 'cell "기계번호: 생산 대기 (3건)" [ref=e955]'
+              - row "대기 2026-04-07 생산 대기 84 슬라이딩 스텝 L sliding step L(เลื่อนขั้นตอน L) WHITE1 / WHITE 180 10 100 1,000" [ref=e956]:
+                - cell [ref=e957]:
+                  - generic [ref=e958]:
+                    - button "드래그하여 순서 변경" [ref=e959]:
+                      - img [ref=e960]
+                    - checkbox [ref=e967] [cursor=pointer]
+                - cell "대기" [ref=e968]:
+                  - generic [ref=e969]: 대기
+                - cell "2026-04-07" [ref=e970]
+                - cell "생산 대기" [ref=e971]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e972] [cursor=pointer]: 생산 대기
+                - cell "84" [ref=e973]
+                - cell "슬라이딩 스텝 L sliding step L(เลื่อนขั้นตอน L)" [ref=e974]:
+                  - generic [ref=e975]: 슬라이딩 스텝 L
+                  - generic [ref=e976]: sliding step L(เลื่อนขั้นตอน L)
+                - cell "WHITE1 / WHITE 180" [ref=e977]
+                - cell "10" [ref=e978]
+                - cell "100" [ref=e979]
+                - cell "1,000" [ref=e980]
+                - cell [ref=e981]:
+                  - generic [ref=e982]:
+                    - button "작업 시작" [ref=e983] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e984] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e985] [cursor=pointer]:
+                      - img
+              - row "대기 2026-04-07 생산 대기 84 슬라이딩 스텝 L sliding step L(เลื่อนขั้นตอน L) WHITE1 / WHITE 180 5 30 150" [ref=e986]:
+                - cell [ref=e987]:
+                  - generic [ref=e988]:
+                    - button "드래그하여 순서 변경" [ref=e989]:
+                      - img [ref=e990]
+                    - checkbox [ref=e997] [cursor=pointer]
+                - cell "대기" [ref=e998]:
+                  - generic [ref=e999]: 대기
+                - cell "2026-04-07" [ref=e1000]
+                - cell "생산 대기" [ref=e1001]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e1002] [cursor=pointer]: 생산 대기
+                - cell "84" [ref=e1003]
+                - cell "슬라이딩 스텝 L sliding step L(เลื่อนขั้นตอน L)" [ref=e1004]:
+                  - generic [ref=e1005]: 슬라이딩 스텝 L
+                  - generic [ref=e1006]: sliding step L(เลื่อนขั้นตอน L)
+                - cell "WHITE1 / WHITE 180" [ref=e1007]
+                - cell "5" [ref=e1008]
+                - cell "30" [ref=e1009]
+                - cell "150" [ref=e1010]
+                - cell [ref=e1011]:
+                  - generic [ref=e1012]:
+                    - button "작업 시작" [ref=e1013] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e1014] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e1015] [cursor=pointer]:
+                      - img
+              - row "대기 2026-04-07 생산 대기 84 슬라이딩 스텝 L sliding step L(เลื่อนขั้นตอน L) WHITE1 / WHITE 180 15 20 300" [ref=e1016]:
+                - cell [ref=e1017]:
+                  - generic [ref=e1018]:
+                    - button "드래그하여 순서 변경" [ref=e1019]:
+                      - img [ref=e1020]
+                    - checkbox [ref=e1027] [cursor=pointer]
+                - cell "대기" [ref=e1028]:
+                  - generic [ref=e1029]: 대기
+                - cell "2026-04-07" [ref=e1030]
+                - cell "생산 대기" [ref=e1031]:
+                  - generic "더블클릭하여 기계번호 변경" [ref=e1032] [cursor=pointer]: 생산 대기
+                - cell "84" [ref=e1033]
+                - cell "슬라이딩 스텝 L sliding step L(เลื่อนขั้นตอน L)" [ref=e1034]:
+                  - generic [ref=e1035]: 슬라이딩 스텝 L
+                  - generic [ref=e1036]: sliding step L(เลื่อนขั้นตอน L)
+                - cell "WHITE1 / WHITE 180" [ref=e1037]
+                - cell "15" [ref=e1038]
+                - cell "20" [ref=e1039]
+                - cell "300" [ref=e1040]
+                - cell [ref=e1041]:
+                  - generic [ref=e1042]:
+                    - button "작업 시작" [ref=e1043] [cursor=pointer]:
+                      - img
+                    - button "수정" [ref=e1044] [cursor=pointer]:
+                      - img
+                    - button "삭제" [ref=e1045] [cursor=pointer]:
+                      - img
+          - status [ref=e1046]
+      - button "AI 챗봇 열기" [ref=e1047] [cursor=pointer]:
+        - img [ref=e1048]
+```
+
+# Test source
+
+```ts
+  1  | import { test, expect } from '@playwright/test';
+  2  | 
+  3  | test.describe('생산계획 DnD 테스트', () => {
+  4  |   test.beforeEach(async ({ page }) => {
+  5  |     await page.goto('/production');
+  6  |     // 테이블 헤더의 "기계" 텍스트가 보일 때까지 대기
+  7  |     await page.waitForSelector('text=기계', { timeout: 10000 });
+  8  |     // 데이터 행이 로드될 때까지 추가 대기
+  9  |     await page.waitForTimeout(1000);
+  10 |   });
+  11 | 
+  12 |   test('페이지가 정상 로드됨', async ({ page }) => {
+  13 |     await expect(page.locator('h2:has-text("생산 계획 모니터링")')).toBeVisible();
+  14 |     await expect(page.locator('table')).toBeVisible();
+  15 |   });
+  16 | 
+  17 |   test('기계 그룹 헤더가 표시됨', async ({ page }) => {
+  18 |     const headers = page.locator('tr:has-text("기계번호:")');
+  19 |     const count = await headers.count();
+  20 |     expect(count).toBeGreaterThan(0);
+  21 |   });
+  22 | 
+  23 |   test('행에 드래그 핸들(그립)이 존재함', async ({ page }) => {
+  24 |     // 모든 버튼 개수 확인 (드래그 핸들 버튼)
+  25 |     const allButtons = page.locator('table button');
+  26 |     const count = await allButtons.count();
+  27 |     expect(count).toBeGreaterThan(1);
+  28 |   });
+  29 | 
+  30 |   test('첫 번째 데이터 행의 드래그 버튼 위치 확인', async ({ page }) => {
+  31 |     // 테이블 tbody 내 첫 번째 데이터 행의 버튼
+  32 |     const firstDataRow = page.locator('tbody tr').nth(1); // 0은 헤더행, 1부터 데이터
+  33 |     const buttons = firstDataRow.locator('button');
+  34 |     const count = await buttons.count();
+  35 |     expect(count).toBeGreaterThan(0);
+  36 |   });
+  37 | 
+  38 |   test('체크박스가 존재함', async ({ page }) => {
+  39 |     const checkboxes = page.locator('[role="checkbox"]');
+  40 |     const count = await checkboxes.count();
+  41 |     expect(count).toBeGreaterThan(0);
+  42 |   });
+  43 | 
+  44 |   test('체크박스 선택 가능함', async ({ page }) => {
+  45 |     const firstCheckbox = page.locator('[role="checkbox"]').first();
+  46 |     // force: true needed because checkbox is visually hidden (peer pattern)
+> 47 |     await firstCheckbox.click({ force: true });
+     |                         ^ Error: locator.click: Element is not visible
+  48 |     // 체크 상태 확인
+  49 |     const isChecked = await firstCheckbox.getAttribute('aria-checked');
+  50 |     expect(isChecked).toBe('true');
+  51 |   });
+  52 | });
+  53 | 
+```

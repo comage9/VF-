@@ -91,6 +91,14 @@ type ProductionStatus = NonNullable<ProductionItem['status']>;
 const NUMBER_FORMATTER = new Intl.NumberFormat("ko-KR");
 const UNIT_OPTIONS = ['BOX', 'P', 'LINE', 'EA'] as const;
 
+// Utility function to extract machine number from any value
+function extractMachineNumber(value: any): number {
+  const s = String(value ?? '').trim();
+  const digits = s.replace(/[^0-9]/g, "");
+  const numeric = digits ? Number(digits) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
 function normalizeProductionRow(row: any): ProductionItem {
   const toNumber = (v: any) => {
     if (v === null || v === undefined) return NaN;
@@ -125,7 +133,7 @@ function normalizeProductionRow(row: any): ProductionItem {
     status: (row.status as any) || 'pending',
     startTime: row.startTime,
     endTime: row.endTime,
-    sortOrder: Number.isFinite(sortOrder) && sortOrder > 0 ? sortOrder : undefined,
+    sortOrder: Number.isFinite(sortOrder) ? sortOrder : 0,
   };
 }
 
@@ -163,6 +171,7 @@ interface SortableRowProps {
   onStatusReset: (item: ProductionItem) => void;
   onEdit: (item: ProductionItem) => void;
   onDelete: (id: number) => void;
+  onMachineNumberChange: (item: ProductionItem, newMachineNumber: string) => void;
   getStatusBadge: (status: string | undefined) => JSX.Element;
   getMachineAccent: (machineNumber: string | undefined) => { border: string; headerBg: string; rowBg: string };
 }
@@ -175,6 +184,7 @@ function SortableRow({
   onStatusReset,
   onEdit,
   onDelete,
+  onMachineNumberChange,
   getStatusBadge,
   getMachineAccent,
 }: SortableRowProps) {
@@ -192,6 +202,8 @@ function SortableRow({
     transition,
     opacity: isDragging ? 0.5 : 1,
   };
+
+  const [isEditingMachine, setIsEditingMachine] = useState(false);
 
   return (
     <tr
@@ -220,7 +232,38 @@ function SortableRow({
       </td>
       <td className="py-3 px-4">{getStatusBadge(row.status)}</td>
       <td className="py-3 px-4">{row.date}</td>
-      <td className="py-3 px-4">{row.machineNumber}</td>
+      <td className="py-3 px-4">
+        {isEditingMachine ? (
+          <Select
+            value={row.machineNumber}
+            onValueChange={(value) => {
+              onMachineNumberChange(row, value);
+              setIsEditingMachine(false);
+            }}
+            onOpenChange={(open) => !open && setIsEditingMachine(false)}
+            autoFocus
+          >
+            <SelectTrigger className="h-8 w-20">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Array.from({ length: 14 }, (_, i) => i + 1).map((num) => (
+                <SelectItem key={num} value={String(num)}>
+                  {num}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <div
+            className="cursor-pointer hover:bg-muted/50 rounded px-2 py-1 -mx-2 -my-1"
+            onDoubleClick={() => setIsEditingMachine(true)}
+            title="더블클릭하여 기계번호 변경"
+          >
+            {row.machineNumber}
+          </div>
+        )}
+      </td>
       <td className="py-3 px-4">{row.moldNumber}</td>
       <td className="py-3 px-4">
         <div className="font-medium">{row.productName}</div>
@@ -302,7 +345,7 @@ export default function ProductionPlan() {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 5,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -449,13 +492,16 @@ export default function ProductionPlan() {
       const sb = String(b.machineNumber ?? '');
       if (sa !== sb) return sa.localeCompare(sb);
 
-      // Within same date and machineNumber
+      // Within same date and machineNumber: sort_order takes priority
       const soa = a.sortOrder ?? 0;
       const sob = b.sortOrder ?? 0;
-      // If both have sort_order, use it (ignore 0)
-      if (soa > 0 && sob > 0 && soa !== sob) return soa - sob;
-      if (soa > 0 && sob === 0) return -1;
-      if (soa === 0 && sob > 0) return 1;
+      // If either has a sort_order set, use it (non-zero comes first)
+      if (soa !== sob) {
+        // 0 means "no explicit order" - push to end
+        if (soa === 0) return 1;
+        if (sob === 0) return -1;
+        return soa - sob;
+      }
 
       // Same product - group by moldNumber
       if (a.productName === b.productName) {
@@ -469,6 +515,20 @@ export default function ProductionPlan() {
     });
     return rows;
   }, [normalizedRows, search, machineFilter, selectedDate, latestDate]);
+
+  // Machine groups for rendering (must match DOM order for DnD)
+  const { sortableItems, machineGroupEntries } = useMemo(() => {
+    const groups = new Map<string, ProductionItem[]>();
+    filteredRows.forEach(row => {
+      const machine = row.machineNumber || '미분류';
+      if (!groups.has(machine)) groups.set(machine, []);
+      groups.get(machine)!.push(row);
+    });
+    const entries = Array.from(groups.entries());
+    const items: number[] = [];
+    entries.forEach(([, rows]) => rows.forEach(r => items.push(r.id)));
+    return { sortableItems: items, machineGroupEntries: entries };
+  }, [filteredRows]);
 
   const summary = useMemo(() => ({
     totalRecords: filteredRows.length,
@@ -714,51 +774,85 @@ export default function ProductionPlan() {
     deleteSelectedMutation.mutate([id]);
   };
 
+  const handleMachineNumberChange = (item: ProductionItem, newMachineNumber: string) => {
+    updateMutation.mutate({ id: item.id, updates: { machineNumber: newMachineNumber } });
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    console.log('[DnD] dragEnd', { activeId: active.id, overId: over?.id });
 
-    if (over && active.id !== over.id) {
-      const activeRow = filteredRows.find(r => r.id === active.id);
-      const overRow = filteredRows.find(r => r.id === over.id);
-
-      // Only allow dragging within the same machine number group
-      if (activeRow && overRow && activeRow.machineNumber === overRow.machineNumber) {
-        // Get all rows for this machine number in the current date
-        const machineRows = filteredRows.filter(r => r.machineNumber === activeRow.machineNumber && r.date === activeRow.date);
-        const machineIds = machineRows.map(r => r.id);
-
-        // Reorder within the machine group
-        const newOrder = arrayMove(machineIds, machineIds.indexOf(active.id as number), machineIds.indexOf(over.id as number));
-
-        // Build orders array for API
-        const orders = newOrder.map((id, index) => ({ id, sort_order: index + 1 }));
-
-        // Optimistic update using queryClient
-        queryClient.setQueryData(["/api/production"], (oldData: ProductionResponse | undefined) => {
-          if (!oldData) return oldData;
-
-          return {
-            ...oldData,
-            data: oldData.data.map(item => {
-              const orderItem = orders.find(o => o.id === item.id);
-              return orderItem ? { ...item, sortOrder: orderItem.sort_order } : item;
-            }),
-            latestData: oldData.latestData.map(item => {
-              const orderItem = orders.find(o => o.id === item.id);
-              return orderItem ? { ...item, sortOrder: orderItem.sort_order } : item;
-            }),
-          };
-        });
-
-        // Call the mutation
-        bulkReorderMutation.mutate(orders, {
-          onError: () => {
-            // On error, revert by invalidating queries to refetch original data
-            queryClient.invalidateQueries({ queryKey: ["/api/production"] });
-          }
-        });
-      }
+    if (!over || active.id === over.id) {
+      console.log('[DnD] skipped: no over or same id');
+      return;
     }
+
+    // Find rows from normalizedRows (source of truth)
+    const activeRow = normalizedRows.find(r => r.id === active.id);
+    const overRow = normalizedRows.find(r => r.id === over.id);
+    console.log('[DnD] rows found', { activeRow: !!activeRow, overRow: !!overRow });
+
+    if (!activeRow || !overRow) {
+      console.log('[DnD] skipped: row not found');
+      return;
+    }
+
+    const activeMachineNum = extractMachineNumber(activeRow.machineNumber);
+    const overMachineNum = extractMachineNumber(overRow.machineNumber);
+
+    console.log('[DnD] comparing', {
+      activeMachine: activeRow.machineNumber,
+      overMachine: overRow.machineNumber,
+      activeMachineNum,
+      overMachineNum,
+      activeDate: activeRow.date,
+      overDate: overRow.date
+    });
+
+    // Only allow dragging within the same machine number and date
+    if (activeMachineNum !== overMachineNum || activeRow.date !== overRow.date) {
+      console.log('[DnD] skipped: different machine or date');
+      return;
+    }
+
+    // Get all rows for this machine number and date from normalizedRows
+    const machineRows = normalizedRows.filter(r =>
+      extractMachineNumber(r.machineNumber) === activeMachineNum &&
+      r.date === activeRow.date
+    );
+    const machineIds = machineRows.map(r => r.id);
+
+    // Reorder within the machine group
+    const newOrder = arrayMove(machineIds, machineIds.indexOf(active.id as number), machineIds.indexOf(over.id as number));
+
+    // Build orders array for API - assign sort_order to ALL rows in this group
+    const orders = newOrder.map((id, index) => ({ id, sort_order: index + 1 }));
+    console.log('[DnD] orders', orders);
+
+    // Optimistic update using queryClient
+    queryClient.setQueryData(["/api/production"], (oldData: ProductionResponse | undefined) => {
+      if (!oldData) return oldData;
+
+      return {
+        ...oldData,
+        data: oldData.data.map(item => {
+          const orderItem = orders.find(o => o.id === item.id);
+          return orderItem ? { ...item, sortOrder: orderItem.sort_order } : item;
+        }),
+        latestData: oldData.latestData.map(item => {
+          const orderItem = orders.find(o => o.id === item.id);
+          return orderItem ? { ...item, sortOrder: orderItem.sort_order } : item;
+        }),
+      };
+    });
+
+    // Call the mutation
+    bulkReorderMutation.mutate(orders, {
+      onError: () => {
+        // On error, revert by invalidating queries to refetch original data
+        queryClient.invalidateQueries({ queryKey: ["/api/production"] });
+      }
+    });
   };
 
   const getMachineAccent = (machineNumber: string | undefined) => {
@@ -1601,26 +1695,15 @@ export default function ProductionPlan() {
                     </td>
                   </tr>
                 ) : (
-                  // Group by machine number
-                  (() => {
-                    const machineGroups = new Map<string, ProductionItem[]>();
-                    filteredRows.forEach(row => {
-                      const machine = row.machineNumber || '미분류';
-                      if (!machineGroups.has(machine)) {
-                        machineGroups.set(machine, []);
-                      }
-                      machineGroups.get(machine)!.push(row);
-                    });
-
-                    return Array.from(machineGroups.entries()).map(([machineNumber, rows]) => (
+                  <SortableContext items={sortableItems} strategy={verticalListSortingStrategy}>
+                    {machineGroupEntries.map(([machineNumber, rows]) => (
                       <React.Fragment key={machineNumber}>
                         <tr className={cn("border-t-2 border-border/80", getMachineAccent(machineNumber).headerBg)}>
                           <td colSpan={11} className="py-2 px-4 font-semibold text-sm">
                             기계번호: {machineNumber} ({rows.length}건)
                           </td>
                         </tr>
-                        <SortableContext items={rows.map(r => r.id)} strategy={verticalListSortingStrategy}>
-                          {rows.map((row) => (
+                        {rows.map((row) => (
                             <SortableRow
                               key={row.id}
                               row={row}
@@ -1636,14 +1719,14 @@ export default function ProductionPlan() {
                               onStatusReset={handleStatusReset}
                               onEdit={handleEditClick}
                               onDelete={handleDeleteClick}
+                              onMachineNumberChange={handleMachineNumberChange}
                               getStatusBadge={getStatusBadge}
                               getMachineAccent={getMachineAccent}
                             />
-                          ))}
-                        </SortableContext>
+                        ))}
                       </React.Fragment>
-                    ));
-                  })()
+                    ))}
+                  </SortableContext>
                 )}
               </tbody>
             </table>
