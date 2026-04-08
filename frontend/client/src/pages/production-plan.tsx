@@ -829,10 +829,16 @@ export default function ProductionPlan() {
       return;
     }
 
+    // FIX: Check if overId is actually a sortable item (not a header or other element)
+    if (!sortableItems.includes(over.id as number)) {
+      console.log('[DnD] skipped: overId is not a sortable item', over.id);
+      return;
+    }
+
     // Find rows from normalizedRows (source of truth)
     const activeRow = normalizedRows.find(r => r.id === active.id);
     const overRow = normalizedRows.find(r => r.id === over.id);
-    console.log('[DnD] rows found', { activeRow: !!activeRow, overRow: !!overRow });
+    console.log('[DnD] rows found', { activeRow: !!activeRow, overRow: !!overRow, sortableItemsCount: sortableItems.length });
 
     if (!activeRow || !overRow) {
       console.log('[DnD] skipped: row not found');
