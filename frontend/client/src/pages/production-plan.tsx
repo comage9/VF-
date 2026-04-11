@@ -378,6 +378,128 @@ function useProductionLog() {
   });
 }
 
+interface SortableMobileCardProps {
+  row: ProductionItem;
+  selectedIds: number[];
+  onToggleSelect: (id: number, checked: boolean) => void;
+  onStatusChange: (row: ProductionItem, status: ProductionStatus) => void;
+  onStatusReset: (row: ProductionItem) => void;
+  onEdit: (row: ProductionItem) => void;
+  onDelete: (id: number) => void;
+  getStatusBadge: (status: string | undefined) => JSX.Element;
+  getMachineAccent: (machineNumber: string | undefined) => { border: string; headerBg: string; rowBg: string };
+  onReorder: (activeId: number, overId: number) => void;
+}
+
+const SortableMobileCard = React.memo(function SortableMobileCard({
+  row,
+  selectedIds,
+  onToggleSelect,
+  onStatusChange,
+  onStatusReset,
+  onEdit,
+  onDelete,
+  getStatusBadge,
+  getMachineAccent,
+}: SortableMobileCardProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: row.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <Card
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "overflow-hidden border-l-4 touch-none",
+        getMachineAccent(row.machineNumber).border,
+        isDragging && "shadow-lg scale-105"
+      )}
+    >
+      <CardHeader
+        className={cn(
+          "p-3 flex flex-row items-center justify-between",
+          getMachineAccent(row.machineNumber).headerBg,
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground">
+            <GripVertical className="w-4 h-4" />
+          </button>
+          <Checkbox
+            checked={selectedIds.includes(row.id)}
+            onCheckedChange={(checked) => onToggleSelect(row.id, checked as boolean)}
+          />
+          <Badge variant="outline">{row.machineNumber}</Badge>
+          <span className="font-medium text-sm">{row.date}</span>
+        </div>
+        {getStatusBadge(row.status)}
+      </CardHeader>
+      <CardContent className="p-3 space-y-2">
+        <div className="flex justify-between items-start">
+          <div>
+            <h4 className="font-semibold text-base">{row.productName}</h4>
+            <p className="text-xs text-muted-foreground">{row.productNameEng}</p>
+          </div>
+          <div className="text-right">
+            <p className="font-bold text-lg">{NUMBER_FORMATTER.format((row.unitQuantity || 0) * (row.quantity || 0))}</p>
+            <p className="text-xs text-muted-foreground">총계</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <div>
+            <span className="text-muted-foreground text-xs">금형:</span> {row.moldNumber}
+          </div>
+          <div>
+            <span className="text-muted-foreground text-xs">색상:</span> {row.color1} {row.color2 && `/ ${row.color2}`}
+          </div>
+        </div>
+
+        <div className="pt-2 flex flex-wrap gap-2 border-t mt-2">
+          {row.status === 'pending' && (
+            <Button size="sm" className="flex-1 min-w-[120px] bg-blue-600 hover:bg-blue-700" onClick={() => onStatusChange(row, 'started')}>
+              <Play className="w-4 h-4 mr-2" /> 시작
+            </Button>
+          )}
+          {row.status === 'started' && (
+            <Button size="sm" className="flex-1 min-w-[120px] bg-green-600 hover:bg-green-700" onClick={() => onStatusChange(row, 'ended')}>
+              <CheckCircle className="w-4 h-4 mr-2" /> 완료
+            </Button>
+          )}
+          {row.status === 'started' && (
+            <Button size="sm" variant="outline" className="flex-1 min-w-[120px]" onClick={() => onStatusChange(row, 'stopped')}>
+              <Clock className="w-4 h-4 mr-2" /> 중지
+            </Button>
+          )}
+          {(row.status === 'ended' || row.status === 'started' || row.status === 'stopped') && (
+            <Button size="sm" variant="outline" className="flex-1 min-w-[120px]" onClick={() => onStatusReset(row)}>
+              <RotateCcw className="w-4 h-4 mr-2" /> 초기화
+            </Button>
+          )}
+          <Button size="sm" variant="outline" className="flex-1 min-w-[120px]" onClick={() => onEdit(row)}>
+            <Edit className="w-4 h-4 mr-2" /> 수정
+          </Button>
+          <Button size="sm" variant="destructive" className="flex-1 min-w-[120px]" onClick={() => onDelete(row.id)}>
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+});
+
 function useProductionMeta() {
   return useQuery<{ latestDate: string; allDates: string[] }>({
     queryKey: ["/api/production-meta"],
@@ -1749,102 +1871,27 @@ export default function ProductionPlan() {
       >
         <SortableContext items={displayRows.map(r => r.id)} strategy={verticalListSortingStrategy}>
           <div className="md:hidden space-y-4">
-            {displayRows.map((row) => {
-              const {
-                attributes, listeners, setNodeRef, transform, transition, isDragging
-              } = useSortable({ id: row.id });
-              return (
-                <Card
-                  ref={setNodeRef}
-                  style={{
-                    transform: CSS.Transform.toString(transform),
-                    transition,
-                    opacity: isDragging ? 0.5 : 1,
-                  }}
-                  className={cn(
-                    "overflow-hidden border-l-4 touch-none",
-                    getMachineAccent(row.machineNumber).border,
-                    isDragging && "shadow-lg scale-105"
-                  )}
-                >
-                  <CardHeader
-                    className={cn(
-                      "p-3 flex flex-row items-center justify-between",
-                      getMachineAccent(row.machineNumber).headerBg,
-                    )}
-                  >
-                    <div className="flex items-center gap-2">
-                      <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground">
-                        <GripVertical className="w-4 h-4" />
-                      </button>
-                      <Checkbox
-                        checked={selectedIds.includes(row.id)}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            setSelectedIds([...selectedIds, row.id]);
-                          } else {
-                            setSelectedIds(selectedIds.filter(id => id !== row.id));
-                          }
-                        }}
-                      />
-                      <Badge variant="outline">{row.machineNumber}</Badge>
-                      <span className="font-medium text-sm">{row.date}</span>
-                    </div>
-                    {getStatusBadge(row.status)}
-                  </CardHeader>
-                  <CardContent className="p-3 space-y-2">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h4 className="font-semibold text-base">{row.productName}</h4>
-                        <p className="text-xs text-muted-foreground">{row.productNameEng}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-lg">{NUMBER_FORMATTER.format((row.unitQuantity || 0) * (row.quantity || 0))}</p>
-                        <p className="text-xs text-muted-foreground">총계</p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div>
-                        <span className="text-muted-foreground text-xs">금형:</span> {row.moldNumber}
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground text-xs">색상:</span> {row.color1} {row.color2 && `/ ${row.color2}`}
-                      </div>
-                    </div>
-
-                    <div className="pt-2 flex flex-wrap gap-2 border-t mt-2">
-                      {row.status === 'pending' && (
-                        <Button size="sm" className="flex-1 min-w-[120px] bg-blue-600 hover:bg-blue-700" onClick={() => handleStatusChange(row, 'started')}>
-                          <Play className="w-4 h-4 mr-2" /> 시작
-                        </Button>
-                      )}
-                      {row.status === 'started' && (
-                        <Button size="sm" className="flex-1 min-w-[120px] bg-green-600 hover:bg-green-700" onClick={() => handleStatusChange(row, 'ended')}>
-                          <CheckCircle className="w-4 h-4 mr-2" /> 완료
-                        </Button>
-                      )}
-                      {row.status === 'started' && (
-                        <Button size="sm" variant="outline" className="flex-1 min-w-[120px]" onClick={() => handleStatusChange(row, 'stopped')}>
-                          <Clock className="w-4 h-4 mr-2" /> 중지
-                        </Button>
-                      )}
-                      {(row.status === 'ended' || row.status === 'started' || row.status === 'stopped') && (
-                        <Button size="sm" variant="outline" className="flex-1 min-w-[120px]" onClick={() => handleStatusReset(row)}>
-                          <RotateCcw className="w-4 h-4 mr-2" /> 초기화
-                        </Button>
-                      )}
-                      <Button size="sm" variant="outline" className="flex-1 min-w-[120px]" onClick={() => handleEditClick(row)}>
-                        <Edit className="w-4 h-4 mr-2" /> 수정
-                      </Button>
-                      <Button size="sm" variant="destructive" className="flex-1 min-w-[120px]" onClick={() => handleDeleteClick(row.id)}>
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+            {displayRows.map((row) => (
+              <SortableMobileCard
+                key={row.id}
+                row={row}
+                selectedIds={selectedIds}
+                onToggleSelect={(id, checked) => {
+                  if (checked) {
+                    setSelectedIds([...selectedIds, id]);
+                  } else {
+                    setSelectedIds(selectedIds.filter(selectedId => selectedId !== id));
+                  }
+                }}
+                onStatusChange={handleStatusChange}
+                onStatusReset={handleStatusReset}
+                onEdit={handleEditClick}
+                onDelete={handleDeleteClick}
+                getStatusBadge={getStatusBadge}
+                getMachineAccent={getMachineAccent}
+                onReorder={() => {}}
+              />
+            ))}
             {!isLoading && displayRows.length === 0 && (
               <div className="text-center py-10 text-muted-foreground">데이터가 없습니다.</div>
             )}
