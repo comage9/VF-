@@ -550,8 +550,8 @@ export default function ProductionPlan() {
     }),
     useSensor(TouchSensor, {
       activationConstraint: {
-        delay: 200,
-        tolerance: 5,
+        delay: 0,
+        tolerance: 8,
       },
     }),
     useSensor(KeyboardSensor, {
