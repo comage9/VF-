@@ -422,10 +422,11 @@ const SortableMobileCard = React.memo(function SortableMobileCard({
       ref={setNodeRef}
       style={style}
       className={cn(
-        "overflow-hidden border-l-4 touch-none",
+        "overflow-hidden border-l-4",
         getMachineAccent(row.machineNumber).border,
         isDragging && "shadow-lg scale-105"
       )}
+      style={{ ...style, touchAction: 'pan-y' }}
     >
       <CardHeader
         className={cn(
