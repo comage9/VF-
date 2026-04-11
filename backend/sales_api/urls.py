@@ -93,4 +93,5 @@ urlpatterns = [
     path('fc-inbound/upload/<str:upload_id>', views.delete_fc_inbound_upload, name='fc-inbound-upload-delete'),
     path('fc-inbound/sync-from-sheet', views.sync_fc_inbound_from_sheet, name='fc-inbound-sync-from-sheet'),
     path('fc-inbound/delete-all', views.delete_fc_inbound_uploaded_data, name='fc-inbound-delete-all'),
+    path('health', views.health_check, name='health-check'),
 ]

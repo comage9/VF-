@@ -212,6 +212,8 @@ const CompactTotalTable = ({
                                         <th className="px-2 py-2 text-left font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 border-r min-w-[140px]">
                                             {rowLabel}
                                         </th>
+                                        <th className="px-2 py-2 text-right font-medium text-gray-500 min-w-[100px]">제품명</th>
+                                        <th className="px-2 py-2 text-right font-medium text-gray-500 min-w-[100px]">합계</th>
                                         <th className="px-2 py-2 text-right font-medium text-gray-500 min-w-[100px]">{quantityLabel}({quantityUnit})</th>
                                         <th className="px-2 py-2 text-right font-medium text-gray-500 min-w-[140px]">{salesLabel}</th>
                                     </tr>
@@ -221,6 +223,12 @@ const CompactTotalTable = ({
                                         <tr key={idx} className="hover:bg-gray-50">
                                             <td className="px-2 py-1 whitespace-nowrap font-medium text-gray-900 sticky left-0 bg-white border-r">
                                                 {row[rowKey]}
+                                            </td>
+                                            <td className="px-2 py-1 whitespace-nowrap text-gray-900">
+                                                {row.productName || "-"}
+                                            </td>
+                                            <td className="px-2 py-1 text-right whitespace-nowrap font-bold text-gray-900">
+                                                {row.totalSum || 0}
                                             </td>
                                             <td className="px-2 py-1 text-right whitespace-nowrap font-bold text-gray-900">
                                                 {NUMBER_FORMATTER.format(row?.total?.[quantityKey] || 0)}
@@ -297,12 +305,12 @@ const CompactPivotTable = ({
                                         <th className="px-2 py-2 text-left font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 border-r min-w-[120px]">
                                             {rowLabel}
                                         </th>
+                                        <th className="px-2 py-2 text-right font-bold text-gray-700 bg-gray-50 sticky left-[120px] border-r border-l">합계</th>
                                         {dates.map((date, idx) => (
                                             <th key={idx} className="px-2 py-2 text-center font-medium text-gray-500 min-w-[80px]">
                                                 {safeFormatDate(date, 'MM/dd')}
                                             </th>
                                         ))}
-                                        <th className="px-2 py-2 text-right font-bold text-gray-700 bg-gray-50 sticky right-0 border-l">합계</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
@@ -310,6 +318,16 @@ const CompactPivotTable = ({
                                         <tr key={idx} className={`hover:bg-gray-50 ${selectedItems.includes(row[rowKey]) ? 'bg-blue-50' : ''}`}>
                                             <td className="px-2 py-1 whitespace-nowrap font-medium text-gray-900 sticky left-0 bg-white border-r">
                                                 {row[rowKey]}
+                                            </td>
+                                            <td className="px-2 py-1 text-right whitespace-nowrap font-bold text-gray-900 sticky left-[120px] bg-gray-50 border-r border-l">
+                                                <div className="leading-tight">
+                                                    <div>{NUMBER_FORMATTER.format(row.total[valueKey])}</div>
+                                                    {secondaryValueKey && (row.total?.[secondaryValueKey] || 0) > 0 && (
+                                                        <div className="text-[10px] font-medium text-gray-600">
+                                                            {formatCurrency(row.total[secondaryValueKey])}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </td>
                                             {dates.map((date, dIdx) => {
                                                 const dateKey = safeFormatDate(date, 'yyyy-MM-dd');
@@ -335,16 +353,6 @@ const CompactPivotTable = ({
                                                     </td>
                                                 );
                                             })}
-                                            <td className="px-2 py-1 text-right whitespace-nowrap font-bold text-gray-900 sticky right-0 bg-gray-50 border-l">
-                                                <div className="leading-tight">
-                                                    <div>{NUMBER_FORMATTER.format(row.total[valueKey])}</div>
-                                                    {secondaryValueKey && (row.total?.[secondaryValueKey] || 0) > 0 && (
-                                                        <div className="text-[10px] font-medium text-gray-600">
-                                                            {formatCurrency(row.total[secondaryValueKey])}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -739,14 +747,14 @@ const IntegratedPivotTable = ({
                                         <th className="px-2 py-2 text-left font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 border-r min-w-[150px] z-20">
                                             분류
                                         </th>
+                                        <th className="px-2 py-2 text-right font-medium text-gray-500 min-w-[100px] bg-gray-50">
+                                            합계
+                                        </th>
                                         {dateColumns.map(col => (
                                             <th key={col.key} className="px-2 py-2 text-center font-medium text-gray-500 min-w-[80px] whitespace-nowrap">
                                                 {col.label}
                                             </th>
                                         ))}
-                                        <th className="px-2 py-2 text-right font-medium text-gray-500 min-w-[100px] bg-gray-50">
-                                            합계
-                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
@@ -754,6 +762,10 @@ const IntegratedPivotTable = ({
                                     <tr className="bg-blue-50 font-bold">
                                         <td className="px-2 py-2 whitespace-nowrap sticky left-0 bg-blue-50 border-r z-20">
                                             📊 전체 합계
+                                        </td>
+                                        <td className="px-2 py-2 text-right whitespace-nowrap text-blue-900 font-bold bg-blue-50">
+                                            <div>{NUMBER_FORMATTER.format(grandTotalQuantity)}</div>
+                                            <div className="text-[10px]">{formatCurrency(grandTotalSales)}</div>
                                         </td>
                                         {dateColumns.map(col => {
                                             const total = pivotData.columnTotals.get(col.key);
@@ -768,10 +780,6 @@ const IntegratedPivotTable = ({
                                                 </td>
                                             );
                                         })}
-                                        <td className="px-2 py-2 text-right whitespace-nowrap text-blue-900 font-bold bg-blue-50">
-                                            <div>{NUMBER_FORMATTER.format(grandTotalQuantity)}</div>
-                                            <div className="text-[10px]">{formatCurrency(grandTotalSales)}</div>
-                                        </td>
                                     </tr>
 
                                     {/* Category Rows */}
@@ -811,6 +819,10 @@ const IntegratedPivotTable = ({
                                                             {isSelected && <span className="text-blue-600 font-bold">✓</span>}
                                                         </div>
                                                     </td>
+                                                    <td className="px-2 py-2 text-right whitespace-nowrap font-bold text-gray-900 bg-white">
+                                                        <div>{NUMBER_FORMATTER.format(totals.quantity)}</div>
+                                                        <div className="text-[10px] text-gray-600">{formatCurrency(totals.salesAmount)}</div>
+                                                    </td>
                                                     {dateColumns.map(col => {
                                                         const catData = pivotData.categoryData.get(category);
                                                         const cellData = catData?.get(col.key);
@@ -825,10 +837,6 @@ const IntegratedPivotTable = ({
                                                             </td>
                                                         );
                                                     })}
-                                                    <td className="px-2 py-2 text-right whitespace-nowrap font-bold text-gray-900 bg-white">
-                                                        <div>{NUMBER_FORMATTER.format(totals.quantity)}</div>
-                                                        <div className="text-[10px] text-gray-600">{formatCurrency(totals.salesAmount)}</div>
-                                                    </td>
                                                 </tr>
 
                                                 {/* Product Rows (when expanded) */}
@@ -843,6 +851,10 @@ const IntegratedPivotTable = ({
                                                                 <span className="text-gray-500">📦</span>
                                                                 <span className="ml-1 text-gray-700">{productName}</span>
                                                                 <span className="text-gray-400 text-[9px] ml-1">({prodShare.toFixed(1)}%)</span>
+                                                            </td>
+                                                            <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700 bg-gray-50/80">
+                                                                <div className="text-[9px]">{NUMBER_FORMATTER.format(prodTotals.quantity)}</div>
+                                                                <div className="text-[8px] text-gray-500">{formatCurrency(prodTotals.salesAmount)}</div>
                                                             </td>
                                                             {dateColumns.map(col => {
                                                                 const prodMap = pivotData.productData.get(category);
@@ -859,10 +871,6 @@ const IntegratedPivotTable = ({
                                                                     </td>
                                                                 );
                                                             })}
-                                                            <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700 bg-gray-50/80">
-                                                                <div className="text-[9px]">{NUMBER_FORMATTER.format(prodTotals.quantity)}</div>
-                                                                <div className="text-[8px] text-gray-500">{formatCurrency(prodTotals.salesAmount)}</div>
-                                                            </td>
                                                         </tr>
                                                     );
                                                 })}

@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState, useCallback } from "react";
 import type { ChangeEvent } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { FileText, Plus, Trash2, Upload, Loader2, Edit, Play, CheckCircle, Clock, RotateCcw, Package, TrendingUp, BarChart3, GripVertical } from "lucide-react";
+import { FileText, Plus, Trash2, Upload, Loader2, Edit, Play, CheckCircle, Clock, RotateCcw, Package, TrendingUp, BarChart3, GripVertical, Star, Lightbulb } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   DndContext,
@@ -43,6 +43,11 @@ import {
 } from "@/components/ui/popover"
 import { Check, ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
+
+// 공통 API hooks 및 타입 (로컬 타입과 구분하기 위해 alias 사용)
+import { useProductionPlans, useCreateProduction, useUpdateProduction, useDeleteProduction, useInventory, useUpdateInventory } from '@/components/shared/api';
+import type { ProductionItem as SharedProductionItem, ProductionDraft as SharedProductionDraft, OutboundData } from '@/components/shared/types';
+import { OutboundStatsPanel } from '@/components/shared/outbound-stats-panel';
 
 interface ProductionItem {
   id: number;
@@ -101,6 +106,7 @@ interface MasterSpec {
 
 type MachineNumberValue = string | number | null | undefined;
 type RawProductionRow = {
+  // camelCase keys
   id?: number;
   date?: string;
   machineNumber?: string;
@@ -119,6 +125,12 @@ type RawProductionRow = {
   status?: string;
   startTime?: string;
   endTime?: string;
+  // underscore keys (from API)
+  machine_number?: string;
+  mold_number?: string;
+  product_name?: string;
+  product_name_eng?: string;
+  unit_quantity?: number | string;
 };
 
 const NUMBER_FORMATTER = new Intl.NumberFormat("ko-KR");
@@ -161,15 +173,15 @@ function normalizeProductionRow(row: RawProductionRow): ProductionItem {
   return {
     id: row.id ?? Math.random(),
     date: row.date ?? '',
-    machineNumber: row.machineNumber ?? row.line ?? '',
-    moldNumber: row.moldNumber ?? row.sequence ?? '',
-    productName: row.productName ?? '',
-    productNameEng: row.productNameEng ?? '',
+    machineNumber: row.machineNumber ?? row.line ?? row.machine_number ?? '',
+    moldNumber: row.moldNumber ?? row.sequence ?? row.mold_number ?? '',
+    productName: row.productName ?? row.product_name ?? '',
+    productNameEng: row.productNameEng ?? row.product_name_eng ?? '',
     color1: row.color1 ?? '',
     color2: row.color2 ?? '',
     unit: row.unit ? String(row.unit) : '',
     quantity: Number.isFinite(quantity) ? quantity : 0,
-    unitQuantity: Number.isFinite(unitQuantity) ? unitQuantity : 0,
+    unitQuantity: Number.isFinite(unitQuantity) ? unitQuantity : (row.unit_quantity ? toNumber(row.unit_quantity) : 0),
     total: Number.isFinite(total) && total > 0 ? total : computedTotal,
     status: normalizedStatus,
     startTime: row.startTime,
@@ -349,16 +361,32 @@ const SortableRow = React.memo(function SortableRow({
 });
 
 function useProductionLog() {
-  return useQuery<ProductionResponse>({
+  return useQuery<ProductionItem[]>({
     queryKey: ["/api/production"],
     queryFn: async () => {
       const response = await fetch('/api/production');
       if (!response.ok) {
         throw new Error('생산 계획 데이터를 불러오지 못했습니다.');
       }
-      return response.json();
+      const json = await response.json();
+      return json.results.latestData; // unwrap results object and return latestData
     },
     retry: 2,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+function useProductionMeta() {
+  return useQuery<{ latestDate: string; allDates: string[] }>({
+    queryKey: ["/api/production-meta"],
+    queryFn: async () => {
+      const response = await fetch('/api/production');
+      if (!response.ok) {
+        throw new Error('생산 계획 메타 데이터를 불러오지 못했습니다.');
+      }
+      const json = await response.json();
+      return { latestDate: json.results.latestDate, allDates: json.results.allDates };
+    },
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -368,7 +396,8 @@ export default function ProductionPlan() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { data, isLoading } = useProductionLog();
+  const { data: latestData = [], isLoading } = useProductionLog();
+  const { data: meta } = useProductionMeta();
 
   const [selectedDate, setSelectedDate] = useState<string>('latest');
   const [machineFilter, setMachineFilter] = useState<string>('all');
@@ -382,6 +411,9 @@ export default function ProductionPlan() {
   const [isDeletingDate, setIsDeletingDate] = useState(false);
   const [bulkStatus, setBulkStatus] = useState<ProductionStatus>('pending');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [showAIRecommend, setShowAIRecommend] = useState(false);
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -408,13 +440,13 @@ export default function ProductionPlan() {
   const uniqueProductNames = useMemo(() => {
     const values: string[] = [];
     values.push(...specs.map((s: MasterSpec) => String(s.product_name || '').trim()).filter(Boolean));
-    values.push(...(data?.data || []).map((row: ProductionItem) => String(row.productName || '').trim()).filter(Boolean));
+    values.push(...(Array.isArray(latestData) ? latestData : []).map((row: ProductionItem) => String(row.productName || '').trim()).filter(Boolean));
     return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
-  }, [specs, data?.data]);
+  }, [specs, latestData]);
 
   const normalizedRows = useMemo(() => {
-    return (data?.data || []).map(normalizeProductionRow);
-  }, [data?.data]);
+    return Array.isArray(latestData) ? latestData.map(normalizeProductionRow) : [];
+  }, [latestData]);
 
   const productLogRows = useMemo(() => {
     if (!newRecord.productName) return [] as ProductionItem[];
@@ -484,8 +516,8 @@ export default function ProductionPlan() {
     return Array.from(new Set(values));
   }, [productLogRows]);
 
-  const latestDate = data?.latestDate || null;
-  const allDates = data?.allDates || [];
+  const latestDate = meta?.latestDate || '';
+  const allDates = meta?.allDates || [];
   const sortedDates = useMemo(() => {
     return [...allDates].sort((a, b) => String(b).localeCompare(String(a)));
   }, [allDates]);
@@ -594,6 +626,7 @@ export default function ProductionPlan() {
     },
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["/api/production"] });
+      setSelectedIds([]); // 선택 해제
       toast({ title: '상태 변경 완료', description: `대상 ${res?.updated ?? 0}건` });
     },
     onError: (error) => {
@@ -696,6 +729,27 @@ export default function ProductionPlan() {
       toast({ title: '삭제 실패', description: `삭제 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`, variant: 'destructive' });
     } finally {
       setIsDeletingDate(false);
+    }
+  };
+
+  // AI 추천 불러오기
+  const fetchAIRecommendations = async () => {
+    setAiLoading(true);
+    setShowAIRecommend(true);
+    try {
+      const res = await fetch('/api/ai/production-recommend');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.recommendations)) {
+        setAiRecommendations(data.recommendations);
+      } else if (Array.isArray(data)) {
+        setAiRecommendations(data);
+      } else {
+        setAiRecommendations([]);
+      }
+    } catch (e) {
+      setAiRecommendations([]);
+    } finally {
+      setAiLoading(false);
     }
   };
 
@@ -822,85 +876,81 @@ export default function ProductionPlan() {
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    console.log('[DnD] dragEnd', { activeId: active.id, overId: over?.id });
+    // console.log('[DnD] dragEnd', { activeId: active.id, overId: over?.id });
 
     if (!over || active.id === over.id) {
-      console.log('[DnD] skipped: no over or same id');
-      return;
-    }
-
-    // FIX: Check if overId is actually a sortable item (not a header or other element)
-    if (!sortableItems.includes(over.id as number)) {
-      console.log('[DnD] skipped: overId is not a sortable item', over.id);
       return;
     }
 
     // Find rows from normalizedRows (source of truth)
     const activeRow = normalizedRows.find(r => r.id === active.id);
     const overRow = normalizedRows.find(r => r.id === over.id);
-    console.log('[DnD] rows found', { activeRow: !!activeRow, overRow: !!overRow, sortableItemsCount: sortableItems.length });
-
-    if (!activeRow || !overRow) {
-      console.log('[DnD] skipped: row not found');
+    
+    // Determine the target row (if over is another row)
+    const targetRow = overRow; // simplified
+    
+    // If not dropped on a row, we can't reliably reorder, so abort
+    if (!activeRow || !targetRow) {
       return;
     }
 
     const activeMachineNum = extractMachineNumber(activeRow.machineNumber);
-    const overMachineNum = extractMachineNumber(overRow.machineNumber);
+    const targetMachineNum = extractMachineNumber(targetRow.machineNumber);
 
     console.log('[DnD] comparing', {
       activeMachine: activeRow.machineNumber,
-      overMachine: overRow.machineNumber,
-      activeMachineNum,
-      overMachineNum,
+      targetMachine: targetRow.machineNumber,
       activeDate: activeRow.date,
-      overDate: overRow.date
+      targetDate: targetRow.date
     });
 
     // Only allow dragging within the same machine number and date
-    if (activeMachineNum !== overMachineNum || activeRow.date !== overRow.date) {
-      console.log('[DnD] skipped: different machine or date');
+    if (activeMachineNum !== targetMachineNum || activeRow.date !== targetRow.date) {
+      toast({ title: '순서 변경 불가', description: '같은 기계, 같은 일자 내에서만 순서를 변경할 수 있습니다.', variant: 'destructive' });
       return;
     }
 
-    // Get all rows for this machine number and date from normalizedRows
-    const machineRows = normalizedRows.filter(r =>
+    // Get all rows for this machine number and date from filteredRows (current display order)
+    const currentMachineRows = filteredRows.filter(r =>
       extractMachineNumber(r.machineNumber) === activeMachineNum &&
       r.date === activeRow.date
     );
-    const machineIds = machineRows.map(r => r.id);
+    const machineIds = currentMachineRows.map(r => r.id);
 
     // Reorder within the machine group
-    const newOrder = arrayMove(machineIds, machineIds.indexOf(active.id as number), machineIds.indexOf(over.id as number));
+    const activeIndex = machineIds.indexOf(active.id as number);
+    const overIndex = machineIds.indexOf(targetRow.id as number);
+    
+    if (activeIndex === -1 || overIndex === -1) {
+      return;
+    }
 
-    // Build orders array for API - assign sort_order to ALL rows in this group
+    const newOrder = arrayMove(machineIds, activeIndex, overIndex);
+    
+    // Build orders array for API - assign sort_order to updated rows
     const orders = newOrder.map((id, index) => ({ id, sort_order: index + 1 }));
-    console.log('[DnD] orders', orders);
 
-    // Optimistic update using queryClient
-    queryClient.setQueryData(["/api/production"], (oldData: ProductionResponse | undefined) => {
+    // Optimistic update
+    queryClient.setQueryData(["/api/production"], (oldData: any) => {
       if (!oldData) return oldData;
+      
+      const isArray = Array.isArray(oldData);
+      const items = isArray ? (oldData as ProductionItem[]) : (oldData as ProductionResponse)?.latestData || [];
 
-      return {
+      const updatedItems = items.map(item => {
+        const orderItem = orders.find(o => o.id === item.id);
+        return orderItem ? { ...item, sortOrder: orderItem.sort_order } : item;
+      });
+
+      return isArray ? updatedItems : {
         ...oldData,
-        data: oldData.data.map(item => {
-          const orderItem = orders.find(o => o.id === item.id);
-          return orderItem ? { ...item, sortOrder: orderItem.sort_order } : item;
-        }),
-        latestData: oldData.latestData.map(item => {
-          const orderItem = orders.find(o => o.id === item.id);
-          return orderItem ? { ...item, sortOrder: orderItem.sort_order } : item;
-        }),
+        latestData: updatedItems,
+        data: updatedItems,
       };
     });
 
     // Call the mutation
-    bulkReorderMutation.mutate(orders, {
-      onError: () => {
-        // On error, revert by invalidating queries to refetch original data
-        queryClient.invalidateQueries({ queryKey: ["/api/production"] });
-      }
-    });
+    bulkReorderMutation.mutate(orders);
   };
 
   const getMachineAccent = (machineNumber: string | undefined) => {
@@ -968,8 +1018,8 @@ export default function ProductionPlan() {
 
   return (
     <div className="space-y-6 pb-28 md:pb-0">
-      {/* 상단 컨트롤 패널 */}
-      <div className="bg-card border border-border rounded-lg p-4 space-y-4">
+      {/* 상단 컨트롤 패널 - 스크롤해도 고정 */}
+      <div className="bg-card border border-border rounded-lg p-4 space-y-4 sticky top-0 z-10 backdrop-blur-sm bg-card/95">
         <div className="flex items-center justify-between gap-2">
           <div className="text-sm text-muted-foreground">
             {selectedIds.length > 0 ? `선택 ${selectedIds.length}건` : ''}
@@ -1048,6 +1098,16 @@ export default function ProductionPlan() {
             className="hidden"
             onChange={handleUploadChange}
           />
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchAIRecommendations}
+            disabled={aiLoading}
+          >
+            {aiLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Lightbulb className="w-4 h-4 mr-2" />}
+            AI 추천
+          </Button>
 
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
@@ -1544,6 +1604,57 @@ export default function ProductionPlan() {
           </CardContent>
         </Card>
       </div>
+
+      {/* AI 추천 결과 섹션 */}
+      {showAIRecommend && (
+        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-bold text-purple-800 dark:text-purple-300 flex items-center gap-2">
+              <Star className="w-4 h-4" />
+              AI 생산 추천 결과
+            </h3>
+            <Button size="sm" variant="ghost" onClick={() => setShowAIRecommend(false)}>닫기</Button>
+          </div>
+          {aiLoading ? (
+            <div className="flex items-center justify-center py-6">
+              <Loader2 className="w-6 h-6 animate-spin text-purple-500" />
+              <span className="ml-2 text-sm text-purple-600">AI가 분석 중...</span>
+            </div>
+          ) : aiRecommendations.length === 0 ? (
+            <p className="text-sm text-purple-600 text-center py-4">추천 결과가 없습니다.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {aiRecommendations.map((rec: any, idx: number) => (
+                <div
+                  key={idx}
+                  className="bg-white/80 dark:bg-slate-900/60 rounded-lg p-3 border border-purple-100 dark:border-purple-800"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <Badge className={`text-xs ${idx < 2 ? 'bg-red-500' : idx < 5 ? 'bg-orange-500' : 'bg-blue-500'}`}>
+                        {idx < 2 ? '최우선' : idx < 5 ? '우선' : '일반'}
+                      </Badge>
+                      <span className="font-medium text-sm">{rec.product_name || rec.productName}</span>
+                    </div>
+                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
+                      {rec.quantity || rec.recommended_quantity || '-'}개
+                    </span>
+                  </div>
+                  {rec.reason && (
+                    <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">{rec.reason}</p>
+                  )}
+                  {rec.machine_number && (
+                    <p className="text-xs text-gray-500 mt-1">기계: {rec.machine_number}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 출고량 통계 패널 */}
+      <OutboundStatsPanel />
 
       {/* 모바일 뷰 (카드 리스트) */}
       <div className="md:hidden space-y-4">

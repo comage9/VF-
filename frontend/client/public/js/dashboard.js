@@ -3961,10 +3961,27 @@ class Dashboard {
             return;
         }
 
-        // 🎯 AI 분석 결과 캐시 확인 (새로고침 시 캐시된 분석 결과 사용)
-        // 단, 캐시의 시간과 현재 데이터 시간이 다르면 다시 분석
+        // 🎯 AI 분석 최적화: 새로운 시간대의 데이터가 있을 때만 분석 실행
+        const currentData = this.getCurrentDayData();
+        if (!currentData) {
+            console.warn('🤖 No current data found for AI analysis');
+            return;
+        }
+
         const now = new Date();
         const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const lastNonZeroHour = this.getLastNonZeroHour(currentData);
+        const currentHourKey = `hour_${String(lastNonZeroHour).padStart(2, '0')}`;
+        const lastNonZeroValue = parseInt(currentData[currentHourKey]) || 0;
+
+        // 오늘 데이터가 아니면 스킵
+        if (currentData.date !== todayStr) {
+            console.log('🤖 AI 분석 스킵: 오늘 데이터 아님');
+            return;
+        }
+
+        // 🎯 AI 분석 결과 캐시 확인 (새로고침 시 캐시된 분석 결과 사용)
+        // 단, 캐시의 시간과 현재 데이터 시간이 다르면 다시 분석
 
         if (this.aiInsightCache) {
             const cachedDate = this.lastAIAnalysisDate;
@@ -3981,23 +3998,6 @@ class Dashboard {
                 this.aiInsightCache = null;
                 localStorage.removeItem('ai_insight_cache');
             }
-        }
-
-        // 🎯 AI 분석 최적화: 새로운 시간대의 데이터가 있을 때만 분석 실행
-        const currentData = this.getCurrentDayData();
-        if (!currentData) {
-            console.warn('🤖 No current data found for AI analysis');
-            return;
-        }
-
-        const lastNonZeroHour = this.getLastNonZeroHour(currentData);
-        const currentHourKey = `hour_${String(lastNonZeroHour).padStart(2, '0')}`;
-        const lastNonZeroValue = parseInt(currentData[currentHourKey]) || 0;
-
-        // 오늘 데이터가 아니면 스킵
-        if (currentData.date !== todayStr) {
-            console.log('🤖 AI 분석 스킵: 오늘 데이터 아님');
-            return;
         }
 
         // 마지막으로 입력된 시간대와 값이 같으면 스킵 (새로운 데이터 입력 없음)
@@ -4097,8 +4097,21 @@ class Dashboard {
 
             if (json.success && json.insight) {
                 console.log('🤖 AI Insight received:', json.insight.substring(0, 100) + '...');
+                
+                // 🎯 필터링: 한글 위주, 영어 과다 줄 제거, 라인 접두어 정리
+                const filteredInsight = json.insight
+                    .split('\n')
+                    .map(line => line.replace(/^Line\d+\s*:\s*/i, '').trim())
+                    .filter(line => {
+                        const koreanChars = (line.match(/[가-힣]/g) || []).length;
+                        const englishWords = (line.match(/[a-zA-Z]+/g) || []).length;
+                        // 한글 문자 3개 이상, 영어 단어 수보다 한글이 많은 줄만
+                        return koreanChars >= 3 && koreanChars > englishWords;
+                    })
+                    .join('\n');
+
                 // 마크다운을 HTML로 변환 (간단한 처리)
-                const htmlInsight = json.insight
+                const htmlInsight = filteredInsight
                     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                     .replace(/^## (.*$)/gim, '<h4 class="font-bold mt-2 mb-1 text-indigo-900">$1</h4>')
                     .replace(/- /g, '• ')

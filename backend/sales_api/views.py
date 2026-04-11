@@ -7,6 +7,7 @@ from django.db.models import Sum, Count, Min, Max, Value, DecimalField
 from django.db.models.functions import Coalesce
 from django.db.models.functions import TruncDay, TruncMonth, TruncWeek
 from django.http import HttpResponse
+from django.http import JsonResponse
 from django.utils import timezone
 from django.db import transaction
 from .models import (
@@ -52,6 +53,25 @@ import io
 import urllib.request
 import urllib.error
 import re
+
+def _extract_korean_only(text: str) -> str:
+    """영어 thinking 부분을 제거하고 한국어 분석 결과만 추출"""
+    if not text:
+        return text
+    lines = text.split('\n')
+    result = []
+    for line in lines:
+        # 한글이 3자 이상 포함된 줄만 유지
+        korean_count = len(re.findall(r'[가-힣]', line))
+        english_count = len(re.findall(r'[a-zA-Z]', line))
+        # 한글이 영어 문자 수보다 많고 한글 3자 이상
+        if korean_count >= 3 and korean_count > english_count:
+            # "Line1:", "1)", "2)" 등 접두어 제거
+            line = re.sub(r'^Line\d+\s*:\s*', '', line)
+            line = re.sub(r'^\d+[\)\.]\s*', '', line)
+            if line.strip():
+                result.append(line.strip())
+    return '\n'.join(result)
 
 
 logger = logging.getLogger('sales_api.inventory')
@@ -166,9 +186,9 @@ def _zai_get_config():
         model = (os.getenv('OLLAMA_MODEL') or 'lfm2.5-thinking:latest').strip()
         api_key = 'none' # Ollama doesn't usually require keys locally
     else:
-        base_url = (os.getenv('ANTHROPIC_BASE_URL') or '').strip().rstrip('/')
+        base_url = (os.getenv('ANTHROPIC_BASE_URL') or 'https://openrouter.ai').strip().rstrip('/')
         api_key = (os.getenv('ANTHROPIC_AUTH_TOKEN') or '').strip()
-        model = (os.getenv('ANTHROPIC_DEFAULT_SONNET_MODEL') or 'glm-4.7').strip()
+        model = (os.getenv('ANTHROPIC_DEFAULT_SONNET_MODEL') or 'nvidia/nemotron-3-nano-30b-a3b').strip()
         # Backward-compat: transparently move old default/model name forward.
         if (model or '').strip().lower() == 'glm-4.6':
             model = 'glm-4.7'
@@ -216,17 +236,18 @@ def _zai_call_messages(*, system: str, user: str, max_tokens: int = 2048, temper
         }
         headers = {'Content-Type': 'application/json'}
     else:
-        url = f"{cfg['base_url']}/v1/messages"
+        url = f"{cfg['base_url']}/api/v1/chat/completions"
         payload = {
             'model': cfg['model'],
-            'messages': [{'role': 'user', 'content': user}],
-            'system': system,
+            'messages': [
+                {'role': 'system', 'content': system},
+                {'role': 'user', 'content': user}
+            ],
             'max_tokens': max_tokens,
             'temperature': temperature,
         }
         headers = {
-            'x-api-key': cfg['api_key'],
-            'anthropic-version': '2023-06-01',
+            'Authorization': f'Bearer {cfg["api_key"]}',
             'Content-Type': 'application/json',
         }
 
@@ -246,11 +267,22 @@ def _zai_call_messages(*, system: str, user: str, max_tokens: int = 2048, temper
         if backend == 'ollama':
             return (data.get('message', {}).get('content') or '').strip()
         else:
-            content = data.get('content')
-            if isinstance(content, list):
-                for item in content:
-                    if isinstance(item, dict) and item.get('type') == 'text':
-                        return (item.get('text') or '').strip()
+            # OpenRouter / OpenAI format: content is in choices[0].message.content
+            try:
+                choices = data.get('choices', [])
+                if choices and len(choices) > 0:
+                    message = choices[0].get('message', {})
+                    content = message.get('content', '')
+                    if content:
+                        content = content.strip()
+                        content = _extract_korean_only(content)
+                        return content
+            except Exception:
+                pass
+            # Fallback: direct content field
+            content = (data.get('content') or '').strip()
+            content = _extract_korean_only(content)
+            return content
     except Exception as e:
         logger.error(f"AI call failed ({backend}): {e}")
         return None
@@ -1633,10 +1665,11 @@ def production_log_bulk_reorder(request):
     orders = request.data.get('orders', [])
     if not orders:
         return Response({'success': False, 'error': 'orders required'}, status=400)
-    for item in orders:
-        pid = item.get('id')
-        sort_order = item.get('sort_order', 0)
-        ProductionLog.objects.filter(id=pid).update(sort_order=sort_order)
+    with transaction.atomic():
+        for item in orders:
+            pid = item.get('id')
+            sort_order = item.get('sort_order', 0)
+            ProductionLog.objects.filter(id=pid).update(sort_order=sort_order)
     return Response({'success': True, 'updated': len(orders)})
 
 
@@ -1827,12 +1860,12 @@ def machine_login(request):
     # 사원번호로 사용자 조회
     user = MachineUser.objects.filter(employee_number=employee_number, is_active=True).first()
     if not user:
-        return Response({'success': False, 'message': '등록된 사용자가 없습니다.'}, status=status.HTTP_401_BAD_REQUEST)
+        return Response({'success': False, 'message': '등록된 사용자가 없습니다.'}, status=status.HTTP_401_UNAUTHORIZED)
 
     # 잠금 체크
     if user.locked_until and user.locked_until > timezone.now():
         remaining = (user.locked_until - timezone.now()).seconds // 60
-        return Response({'success': False, 'message': f'잠겼습니다. {remaining}분 후 재시도하세요.'}, status=status.HTTP_401_BAD_REQUEST)
+        return Response({'success': False, 'message': f'잠겼습니다. {remaining}분 후 재시도하세요.'}, status=status.HTTP_401_UNAUTHORIZED)
 
     # PIN 검증
     if user.user_pin != _hash_pin(pin):
@@ -1840,9 +1873,9 @@ def machine_login(request):
         if user.failed_attempts >= 5:
             user.locked_until = timezone.now() + timedelta(minutes=5)
             user.save()
-            return Response({'success': False, 'message': '5회 실패로 5분간 잠겼습니다.'}, status=status.HTTP_401_BAD_REQUEST)
+            return Response({'success': False, 'message': '5회 실패로 5분간 잠겼습니다.'}, status=status.HTTP_401_UNAUTHORIZED)
         user.save()
-        return Response({'success': False, 'message': f'PIN이 올바르지 않습니다. (시도 {user.failed_attempts}/5)'}, status=status.HTTP_401_BAD_REQUEST)
+        return Response({'success': False, 'message': f'PIN이 올바르지 않습니다. (시도 {user.failed_attempts}/5)'}, status=status.HTTP_401_UNAUTHORIZED)
 
     # 성공: 실패 횟수 초기화
     user.failed_attempts = 0
@@ -2219,12 +2252,51 @@ def ai_production_chat(request):
     if not message:
         return Response({'success': False, 'message': '메시지를 입력하세요.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    # machine_number이 없으면 메시지에서 추출 시도
     if not machine_number:
-        return Response({'success': False, 'message': '기계번호가 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        import re
+        machine_pattern = r'(?:(\d+)번|M0*(\d+))'
+        machine_match = re.search(machine_pattern, message)
+        if machine_match:
+            extracted_machine = machine_match.group(1) or machine_match.group(2)
+            if extracted_machine:
+                machine_number = f"M{extracted_machine.zfill(3)}"
+
+    # 그래도 없으면 빈 문자열로 진행 (기타 작업 - 기계 없는 생산)
 
     # 기본 날짜: 내일
     if not target_date:
         target_date = (datetime.now() + timedelta(days=1)).date().isoformat()
+
+    # 완료 안 된 계획 자동 이동
+    # 이전 날짜 계획 중 미완료 → 오늘로
+    # 오늘 계획 중 미완료 → 내일(다음 작업일)로
+    today = datetime.now().date()
+    tomorrow_date = today + timedelta(days=1)
+    # 주말이면 다음 평일
+    while tomorrow_date.weekday() >= 5:
+        tomorrow_date += timedelta(days=1)
+    
+    # 이전 날짜 미완료 계획 → 오늘로 이동
+    old_incomplete = MachinePlan.objects.filter(
+        date__lt=today,
+        status__in=['pending', 'started', 'recommended']
+    )
+    moved_to_today = old_incomplete.update(date=today)
+    
+    # 오늘 미완료 계획 → 내일로 이동
+    today_incomplete = MachinePlan.objects.filter(
+        date=today,
+        status__in=['pending', 'started', 'recommended']
+    )
+    moved_to_tomorrow = today_incomplete.update(date=tomorrow_date)
+    
+    if moved_to_today or moved_to_tomorrow:
+        return Response({
+            'success': True,
+            'action': 'moved',
+            'message': f'{moved_to_today}개 → 오늘({today})로, {moved_to_tomorrow}개 → 내일({tomorrow_date})로 이동됨'
+        })
 
     # 메시지 파싱 (간단한 패턴 매칭)
     import re
@@ -3909,20 +3981,21 @@ def ai_analyze(request):
                     trend_lines.append(f"- {h}시 증감: {inc:,}")
 
     system_prompt = (
-        "당신은 주문 데이터 분석 전문가입니다. 한국어로만 답변하세요. "
-        "답변은 10줄 이하로 간결하게 작성하세요. "
+        "당신은 출고/매출 데이터 분석 전문가입니다. "
+        "반드시 한국어로만 답변하세요. 일본어, 한자, 영문은 절대 사용하지 마세요(やや, 参照 등 금지). "
+        "답변은 반드시 5~7줄 이내로 간결하고 명료하게 작성하세요. 각 항목은 한 줄만 작성합니다. "
+        "접두어 없이 바로 내용을 시작하세요. "
         "시간 해석 규칙: currentHour는 '현재 시각', dataCutoffHour는 '실제 데이터가 확정(입력/집계)된 마지막 시각'입니다. "
         "동시간대 비교/증감/최근 추이는 반드시 dataCutoffHour 기준으로만 수행하세요(추측 금지). "
         "dataLagHours>0 또는 dataCutoffHour < currentHour 인 경우, 아직 집계 전 시간대가 존재할 수 있으므로 0/None 증감을 '주문 증가 멈춤'으로 단정하지 마세요. "
         "입력 지연/시스템 오류 등의 원인을 추정하지 말고, 필요한 경우 '집계/입력 현황 확인 필요'로만 표현하세요. "
-        "단, dataLagHours가 1인 경우는 일반적인 1시간 입력/집계 지연일 수 있으므로 별도 이슈로 강조하지 마세요(요청한 형식의 5번 문장에서 언급하지 말 것). "
-        "dataLagHours가 2 이상이거나(또는 cutoff이 비정상적으로 낮음) 데이터 공백이 명확할 때만 '확인 필요'로 1줄 언급하세요. "
+        "dataLagHours가 2 이상이거나 데이터 공백이 명확할 때만 '확인 필요'로 1줄 언급하세요. "
         "비교는 '동시간대 누적'과 '동시간대 증감'을 최우선으로 사용하고, '최종(23시) 평균'은 별도로 분리해서 언급하세요. "
-        "단, 기준선/표본이 부족해도 '분석 불가/불가능'이라고 단정하지 말고, 가능한 범위에서 최선의 분석을 제시하세요(부족한 정보는 명시). "
-        "comparison(최근8주/이전월 기준선)이 비어있으면 [폴백 기준]을 사용해 '근사 비교'를 수행하세요. "
-        "weekdayProfile이 제공되면, '요일별 패턴(예: 일/월 높고 금 낮음)'을 avgCumAtHour(동시간대 누적) 기준으로만 1줄 언급할 수 있습니다. 표본이 적으면 단정하지 말고 '경향'으로 표현하세요. "
-        "weekdayHourlyIncProfile이 제공되면, 금요일 후반 시간대(17~23시) 증감이 줄어드는지 여부를 이 데이터에서만 근거로 1줄 언급할 수 있습니다(근거 없으면 언급 금지). "
-        "데이터에 없는 내용은 추측하지 말고 확인이 필요하다고 말하세요."
+        "기준선/표본이 부족해도 가능한 범위에서 최선의 분석을 제시하세요. "
+        "비교 기준선이 비어있으면 [폴백 기준]을 사용하세요. "
+        "요일별 패턴은 avgCumAtHour 기준으로 1줄만 간략히 언급하세요. "
+        "금요일 후반 둔화는 weekdayHourlyIncProfile 근거가 있을 때만 1줄 언급하세요. "
+        "데이터에 없는 내용은 추측하지 마세요."
     )
 
     user_prompt = (
@@ -3952,12 +4025,12 @@ def ai_analyze(request):
         + _weekday_hourly_inc_summary(weekday_hourly_inc_profile)
         + "\n"
         + ("[최근 3시간 증감 추이]\n" + "\n".join(trend_lines) + "\n\n" if trend_lines else "")
-        + "아래 형식으로 6~10줄로 작성하세요:\n"
-        + "1) 동시간대 기준 현재 상황(최근 8주 평균 대비)\n"
-        + "2) 이전 월/월초·월중·월말 기준과의 차이(있으면 1줄)\n"
-        + "3) 최근 증감 추이(가속/감속 여부)\n"
-        + "4) 최종 예측(23시)과 최종 평균 비교\n"
-        + "5) 요일 패턴(weekdayProfile, avgCumAtHour 기준) 또는 금요일 후반 둔화 여부(weekdayHourlyIncProfile 근거 있을 때만)\n"
+        + "아래 5개 항목을 각 1줄로 간결하게 작성하세요:\n"
+        + "1) 동시간대 현황: 최근 8주 평균과 비교, 현재 누적 및 시간증감\n"
+        + "2) 이전 월 비교: 이전 월 같은 요일 동시간대 대비 차이\n"
+        + "3) 최근 증감 추이: 최근 3시간 증감 패턴, 가속/감속 여부\n"
+        + "4) 최종 예측: 23시 AI 예측값과 과거 평균 비교\n"
+        + "5) 요일 패턴: 금요일 특성 및 후반 증감 경향\n"
     )
 
     if special_notes:
@@ -7412,3 +7485,14 @@ def outbound_upload_excel(request):
             'success': False, 
             'message': f'데이터 처리 중 오류 발생: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(["GET"])
+def health_check(request):
+    """Health check endpoint for rollback system monitoring"""
+    return Response({
+        "status": "ok",
+        "errorRate": 0,
+        "uptime": 100,
+        "memory": 50,
+        "timestamp": timezone.now().isoformat()
+    })

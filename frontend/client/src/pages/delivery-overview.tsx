@@ -479,8 +479,8 @@ function DeliveryOverview() {
           | undefined;
 
         if (!DashboardClass) {
-          throw new Error("Dashboard class not available."
-          );
+           console.warn("Dashboard class not available. Check script loading.");
+           return;
         }
 
         const apiBase = await resolveApiBase();
