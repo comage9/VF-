@@ -414,6 +414,7 @@ export default function ProductionPlan() {
   const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const [showAIRecommend, setShowAIRecommend] = useState(false);
+  const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -590,10 +591,15 @@ export default function ProductionPlan() {
     return rows;
   }, [normalizedRows, search, machineFilter, selectedDate, latestDate]);
 
+  // 진행 중 / 완료 탭 분리
+  const activeRows = useMemo(() => filteredRows.filter(r => r.status !== 'ended'), [filteredRows]);
+  const completedRows = useMemo(() => filteredRows.filter(r => r.status === 'ended'), [filteredRows]);
+  const displayRows = activeTab === 'active' ? activeRows : completedRows;
+
   // Machine groups for rendering (must match DOM order for DnD)
   const { sortableItems, machineGroupEntries } = useMemo(() => {
     const groups = new Map<string, ProductionItem[]>();
-    filteredRows.forEach(row => {
+    displayRows.forEach(row => {
       const machine = row.machineNumber || '미분류';
       if (!groups.has(machine)) groups.set(machine, []);
       groups.get(machine)!.push(row);
@@ -602,14 +608,14 @@ export default function ProductionPlan() {
     const items: number[] = [];
     entries.forEach(([, rows]) => rows.forEach(r => items.push(r.id)));
     return { sortableItems: items, machineGroupEntries: entries };
-  }, [filteredRows]);
+  }, [displayRows]);
 
   const summary = useMemo(() => ({
-    totalRecords: filteredRows.length,
-    totalQuantity: filteredRows.reduce((sum, row) => sum + (row.quantity || 0), 0),
-    totalUnitQuantity: filteredRows.reduce((sum, row) => sum + (row.unitQuantity || 0), 0),
-    totalOutput: filteredRows.reduce((sum, row) => sum + ((row.unitQuantity || 0) * (row.quantity || 0)), 0),
-  }), [filteredRows]);
+    totalRecords: displayRows.length,
+    totalQuantity: displayRows.reduce((sum, row) => sum + (row.quantity || 0), 0),
+    totalUnitQuantity: displayRows.reduce((sum, row) => sum + (row.unitQuantity || 0), 0),
+    totalOutput: displayRows.reduce((sum, row) => sum + ((row.unitQuantity || 0) * (row.quantity || 0)), 0),
+  }), [displayRows]);
 
   const bulkStatusMutation = useMutation({
     mutationFn: async (payload: { ids?: number[]; date?: string; scope?: string; status: ProductionStatus }) => {
@@ -1653,12 +1659,30 @@ export default function ProductionPlan() {
         </div>
       )}
 
+      {/* 진행 중 / 완료 탭 */}
+      <div className="flex gap-2 mb-4">
+        <Button
+          variant={activeTab === 'active' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setActiveTab('active')}
+        >
+          진행 중 ({activeRows.length})
+        </Button>
+        <Button
+          variant={activeTab === 'completed' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setActiveTab('completed')}
+        >
+          완료 ({completedRows.length})
+        </Button>
+      </div>
+
       {/* 출고량 통계 패널 */}
       <OutboundStatsPanel />
 
       {/* 모바일 뷰 (카드 리스트) */}
       <div className="md:hidden space-y-4">
-        {filteredRows.map((row) => (
+        {displayRows.map((row) => (
           <Card
             key={row.id}
             className={cn(
@@ -1740,7 +1764,7 @@ export default function ProductionPlan() {
             </CardContent>
           </Card>
         ))}
-        {!isLoading && filteredRows.length === 0 && (
+        {!isLoading && displayRows.length === 0 && (
           <div className="text-center py-10 text-muted-foreground">데이터가 없습니다.</div>
         )}
       </div>
@@ -1824,10 +1848,10 @@ export default function ProductionPlan() {
                 <tr className="text-left text-muted-foreground">
                   <th className="py-3 px-4 w-10">
                     <Checkbox
-                      checked={selectedIds.length === filteredRows.length && filteredRows.length > 0}
+                      checked={selectedIds.length === displayRows.length && displayRows.length > 0}
                       onCheckedChange={(checked) => {
                         if (checked) {
-                          setSelectedIds(filteredRows.map(row => row.id));
+                          setSelectedIds(displayRows.map(row => row.id));
                         } else {
                           setSelectedIds([]);
                         }
@@ -1847,7 +1871,7 @@ export default function ProductionPlan() {
                 </tr>
               </thead>
               <tbody>
-                {filteredRows.length === 0 ? (
+                {displayRows.length === 0 ? (
                   <tr>
                     <td colSpan={11} className="text-center py-10 text-muted-foreground">
                       데이터가 없습니다.

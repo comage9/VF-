@@ -6,16 +6,16 @@
 
 # Test info
 
-- Name: production-plan-dnd.spec.ts >> 생산계획 DnD 테스트 >> 체크박스 선택 가능함
-- Location: e2e/production-plan-dnd.spec.ts:44:3
+- Name: production-plan-dnd.spec.ts >> 생산계획 DnD 테스트 >> 첫 번째 데이터 행의 드래그 버튼 위치 확인
+- Location: e2e/production-plan-dnd.spec.ts:30:3
 
 # Error details
 
 ```
-Error: expect(received).toBe(expected) // Object.is equality
+Error: expect(received).toBeGreaterThan(expected)
 
-Expected: "true"
-Received: "false"
+Expected: > 0
+Received:   0
 ```
 
 # Page snapshot
@@ -130,7 +130,7 @@ Received: "false"
             - rowgroup [ref=e109]:
               - row "상태 일자 기계 금형 제품명 색상 단위 생산수량 총계 작업" [ref=e110]:
                 - columnheader [ref=e111]:
-                  - checkbox [active] [ref=e112] [cursor=pointer]
+                  - checkbox [ref=e112] [cursor=pointer]
                 - columnheader "상태" [ref=e113]
                 - columnheader "일자" [ref=e114]
                 - columnheader "기계" [ref=e115]
@@ -186,7 +186,8 @@ Received: "false"
   32 |     const firstDataRow = page.locator('tbody tr').nth(1); // 0은 헤더행, 1부터 데이터
   33 |     const buttons = firstDataRow.locator('button');
   34 |     const count = await buttons.count();
-  35 |     expect(count).toBeGreaterThan(0);
+> 35 |     expect(count).toBeGreaterThan(0);
+     |                   ^ Error: expect(received).toBeGreaterThan(expected)
   36 |   });
   37 | 
   38 |   test('체크박스가 존재함', async ({ page }) => {
@@ -201,8 +202,7 @@ Received: "false"
   47 |     await firstCheckbox.click({ force: true });
   48 |     // 체크 상태 확인
   49 |     const isChecked = await firstCheckbox.getAttribute('aria-checked');
-> 50 |     expect(isChecked).toBe('true');
-     |                       ^ Error: expect(received).toBe(expected) // Object.is equality
+  50 |     expect(isChecked).toBe('true');
   51 |   });
   52 | });
   53 | 
