@@ -8,9 +8,11 @@ import {
   closestCenter,
   KeyboardSensor,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   DragEndEvent,
+  DragOverlay,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -415,12 +417,19 @@ export default function ProductionPlan() {
   const [aiLoading, setAiLoading] = useState(false);
   const [showAIRecommend, setShowAIRecommend] = useState(false);
   const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
+  const [activeId, setActiveId] = useState<number | null>(null);
 
   // Drag and drop sensors
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
         distance: 5,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 200,
+        tolerance: 5,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -1680,94 +1689,191 @@ export default function ProductionPlan() {
       {/* 출고량 통계 패널 */}
       <OutboundStatsPanel />
 
-      {/* 모바일 뷰 (카드 리스트) */}
-      <div className="md:hidden space-y-4">
-        {displayRows.map((row) => (
-          <Card
-            key={row.id}
-            className={cn(
-              "overflow-hidden border-l-4",
-              getMachineAccent(row.machineNumber).border,
-            )}
-          >
-            <CardHeader
-              className={cn(
-                "p-3 flex flex-row items-center justify-between",
-                getMachineAccent(row.machineNumber).headerBg,
-              )}
-            >
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  checked={selectedIds.includes(row.id)}
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      setSelectedIds([...selectedIds, row.id]);
-                    } else {
-                      setSelectedIds(selectedIds.filter(id => id !== row.id));
-                    }
+      {/* 모바일 뷰 (카드 리스트) - 드래그 앤 드롭 */}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={({ active }) => setActiveId(active.id as number)}
+        onDragEnd={(event) => {
+          const { active, over } = event;
+          setActiveId(null);
+          if (!over || active.id === over.id) return;
+
+          const activeRow = displayRows.find(r => r.id === active.id);
+          const overRow = displayRows.find(r => r.id === over.id);
+          if (!activeRow || !overRow) return;
+
+          // 같은 기계, 같은 날짜 내에서만 순서 변경
+          if (activeRow.machineNumber !== overRow.machineNumber || activeRow.date !== overRow.date) {
+            toast({ title: '순서 변경 불가', description: '같은 기계, 같은 일자 내에서만 순서를 변경할 수 있습니다.', variant: 'destructive' });
+            return;
+          }
+
+          // 순서 변경
+          const sameGroupRows = displayRows.filter(r => r.machineNumber === activeRow.machineNumber && r.date === activeRow.date);
+          const activeIndex = sameGroupRows.findIndex(r => r.id === active.id);
+          const overIndex = sameGroupRows.findIndex(r => r.id === over.id);
+          if (activeIndex === -1 || overIndex === -1) return;
+
+          const newOrder = arrayMove(sameGroupRows, activeIndex, overIndex);
+          const orders = newOrder.map((r, idx) => ({ id: r.id, sort_order: idx + 1 }));
+
+          // Optimistic update
+          queryClient.setQueryData(["/api/production"], (oldData: any) => {
+            if (!oldData) return oldData;
+            const items = Array.isArray(oldData) ? oldData : oldData?.results?.latestData || [];
+            const updatedItems = items.map((item: any) => {
+              const order = orders.find((o: any) => o.id === item.id);
+              return order ? { ...item, sortOrder: order.sort_order } : item;
+            });
+            return Array.isArray(oldData) ? updatedItems : { ...oldData, results: { ...oldData.results, latestData: updatedItems } };
+          });
+
+          // API 호출
+          fetch('/api/production-log/bulk-reorder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orders }),
+          }).then(res => res.json()).then(data => {
+            if (!data.success) {
+              queryClient.invalidateQueries({ queryKey: ["/api/production"] });
+              toast({ title: '순서 변경 실패', variant: 'destructive' });
+            } else {
+              toast({ title: '순서 변경 완료' });
+            }
+          }).catch(() => {
+            queryClient.invalidateQueries({ queryKey: ["/api/production"] });
+            toast({ title: '순서 변경 실패', variant: 'destructive' });
+          });
+        }}
+      >
+        <SortableContext items={displayRows.map(r => r.id)} strategy={verticalListSortingStrategy}>
+          <div className="md:hidden space-y-4">
+            {displayRows.map((row) => {
+              const {
+                attributes, listeners, setNodeRef, transform, transition, isDragging
+              } = useSortable({ id: row.id });
+              return (
+                <Card
+                  ref={setNodeRef}
+                  style={{
+                    transform: CSS.Transform.toString(transform),
+                    transition,
+                    opacity: isDragging ? 0.5 : 1,
                   }}
-                />
-                <Badge variant="outline">{row.machineNumber}</Badge>
-                <span className="font-medium text-sm">{row.date}</span>
-              </div>
-              {getStatusBadge(row.status)}
-            </CardHeader>
-            <CardContent className="p-3 space-y-2">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h4 className="font-semibold text-base">{row.productName}</h4>
-                  <p className="text-xs text-muted-foreground">{row.productNameEng}</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-bold text-lg">{NUMBER_FORMATTER.format((row.unitQuantity || 0) * (row.quantity || 0))}</p>
-                  <p className="text-xs text-muted-foreground">총계</p>
-                </div>
-              </div>
+                  className={cn(
+                    "overflow-hidden border-l-4 touch-none",
+                    getMachineAccent(row.machineNumber).border,
+                    isDragging && "shadow-lg scale-105"
+                  )}
+                >
+                  <CardHeader
+                    className={cn(
+                      "p-3 flex flex-row items-center justify-between",
+                      getMachineAccent(row.machineNumber).headerBg,
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground">
+                        <GripVertical className="w-4 h-4" />
+                      </button>
+                      <Checkbox
+                        checked={selectedIds.includes(row.id)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedIds([...selectedIds, row.id]);
+                          } else {
+                            setSelectedIds(selectedIds.filter(id => id !== row.id));
+                          }
+                        }}
+                      />
+                      <Badge variant="outline">{row.machineNumber}</Badge>
+                      <span className="font-medium text-sm">{row.date}</span>
+                    </div>
+                    {getStatusBadge(row.status)}
+                  </CardHeader>
+                  <CardContent className="p-3 space-y-2">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h4 className="font-semibold text-base">{row.productName}</h4>
+                        <p className="text-xs text-muted-foreground">{row.productNameEng}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-lg">{NUMBER_FORMATTER.format((row.unitQuantity || 0) * (row.quantity || 0))}</p>
+                        <p className="text-xs text-muted-foreground">총계</p>
+                      </div>
+                    </div>
 
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>
-                  <span className="text-muted-foreground text-xs">금형:</span> {row.moldNumber}
-                </div>
-                <div>
-                  <span className="text-muted-foreground text-xs">색상:</span> {row.color1} {row.color2 && `/ ${row.color2}`}
-                </div>
-              </div>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <span className="text-muted-foreground text-xs">금형:</span> {row.moldNumber}
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground text-xs">색상:</span> {row.color1} {row.color2 && `/ ${row.color2}`}
+                      </div>
+                    </div>
 
-              <div className="pt-2 flex flex-wrap gap-2 border-t mt-2">
-                {row.status === 'pending' && (
-                  <Button size="sm" className="flex-1 min-w-[120px] bg-blue-600 hover:bg-blue-700" onClick={() => handleStatusChange(row, 'started')}>
-                    <Play className="w-4 h-4 mr-2" /> 시작
-                  </Button>
-                )}
-                {row.status === 'started' && (
-                  <Button size="sm" className="flex-1 min-w-[120px] bg-green-600 hover:bg-green-700" onClick={() => handleStatusChange(row, 'ended')}>
-                    <CheckCircle className="w-4 h-4 mr-2" /> 완료
-                  </Button>
-                )}
-                {row.status === 'started' && (
-                  <Button size="sm" variant="outline" className="flex-1 min-w-[120px]" onClick={() => handleStatusChange(row, 'stopped')}>
-                    <Clock className="w-4 h-4 mr-2" /> 중지
-                  </Button>
-                )}
-                {(row.status === 'ended' || row.status === 'started' || row.status === 'stopped') && (
-                  <Button size="sm" variant="outline" className="flex-1 min-w-[120px]" onClick={() => handleStatusReset(row)}>
-                    <RotateCcw className="w-4 h-4 mr-2" /> 초기화
-                  </Button>
-                )}
-                <Button size="sm" variant="outline" className="flex-1 min-w-[120px]" onClick={() => handleEditClick(row)}>
-                  <Edit className="w-4 h-4 mr-2" /> 수정
-                </Button>
-                <Button size="sm" variant="destructive" className="flex-1 min-w-[120px]" onClick={() => handleDeleteClick(row.id)}>
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-        {!isLoading && displayRows.length === 0 && (
-          <div className="text-center py-10 text-muted-foreground">데이터가 없습니다.</div>
-        )}
-      </div>
+                    <div className="pt-2 flex flex-wrap gap-2 border-t mt-2">
+                      {row.status === 'pending' && (
+                        <Button size="sm" className="flex-1 min-w-[120px] bg-blue-600 hover:bg-blue-700" onClick={() => handleStatusChange(row, 'started')}>
+                          <Play className="w-4 h-4 mr-2" /> 시작
+                        </Button>
+                      )}
+                      {row.status === 'started' && (
+                        <Button size="sm" className="flex-1 min-w-[120px] bg-green-600 hover:bg-green-700" onClick={() => handleStatusChange(row, 'ended')}>
+                          <CheckCircle className="w-4 h-4 mr-2" /> 완료
+                        </Button>
+                      )}
+                      {row.status === 'started' && (
+                        <Button size="sm" variant="outline" className="flex-1 min-w-[120px]" onClick={() => handleStatusChange(row, 'stopped')}>
+                          <Clock className="w-4 h-4 mr-2" /> 중지
+                        </Button>
+                      )}
+                      {(row.status === 'ended' || row.status === 'started' || row.status === 'stopped') && (
+                        <Button size="sm" variant="outline" className="flex-1 min-w-[120px]" onClick={() => handleStatusReset(row)}>
+                          <RotateCcw className="w-4 h-4 mr-2" /> 초기화
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" className="flex-1 min-w-[120px]" onClick={() => handleEditClick(row)}>
+                        <Edit className="w-4 h-4 mr-2" /> 수정
+                      </Button>
+                      <Button size="sm" variant="destructive" className="flex-1 min-w-[120px]" onClick={() => handleDeleteClick(row.id)}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+            {!isLoading && displayRows.length === 0 && (
+              <div className="text-center py-10 text-muted-foreground">데이터가 없습니다.</div>
+            )}
+          </div>
+        </SortableContext>
+        <DragOverlay>
+          {activeId ? (
+            (() => {
+              const row = displayRows.find(r => r.id === activeId);
+              if (!row) return null;
+              return (
+                <Card className={cn("overflow-hidden border-l-4 shadow-2xl scale-105 bg-card", getMachineAccent(row.machineNumber).border)}>
+                  <CardHeader className={cn("p-3", getMachineAccent(row.machineNumber).headerBg)}>
+                    <div className="flex items-center gap-2">
+                      <GripVertical className="w-4 h-4" />
+                      <Badge variant="outline">{row.machineNumber}</Badge>
+                      <span className="font-medium text-sm">{row.date}</span>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-3">
+                    <h4 className="font-semibold">{row.productName}</h4>
+                    <p className="text-xs text-muted-foreground">{row.productNameEng}</p>
+                  </CardContent>
+                </Card>
+              );
+            })()
+          ) : null}
+        </DragOverlay>
+      </DndContext>
 
       <div className="md:hidden fixed bottom-0 left-0 right-0 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="p-3 space-y-2">
