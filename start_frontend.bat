@@ -7,7 +7,7 @@ echo.
 echo Starting Frontend Server on port 5174...
 echo.
 
-cd /d "%~dp0frontend"
+cd /d "%~dp0frontend\client"
 
 set SERVER_HOST=0.0.0.0
 

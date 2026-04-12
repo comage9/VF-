@@ -89,3 +89,15 @@ cd frontend/client && npm run dev -- --host 0.0.0.0 --port 5174
 - **backend-dev**: Django API, 모델, 뷰 개발
 - **qa**: 테스트, 버그 검증
 - **design**: UI/UX 검토, 디자인 토큰
+
+## MindVault — MANDATORY
+
+**ALWAYS run `mindvault query "<question>" --global` BEFORE answering any codebase question.**
+This is not optional. The knowledge graph contains project context, relationships, and decisions
+that you cannot derive from reading files alone.
+
+1. Run `mindvault query "<question>" --global` first
+2. Read the Search Results, Graph Context, and Wiki Context in the output
+3. Use this context to inform your answer — do NOT ignore it
+4. If `mindvault-out/` doesn't exist, run `mindvault ingest .` first
+5. Only fall back to reading raw files if MindVault returns no results

@@ -17,7 +17,7 @@ start "VF Backend" cmd /k "cd /d %~dp0backend && .venv\Scripts\activate && pytho
 timeout /t 3 /nobreak >nul
 
 echo Starting Frontend Server...
-start "VF Frontend" cmd /k "cd /d %~dp0frontend && set SERVER_HOST=0.0.0.0 && npx tsx server/index.ts"
+start "VF Frontend" cmd /k "cd /d %~dp0frontend\client && set SERVER_HOST=0.0.0.0 && npx tsx server/index.ts"
 
 echo.
 echo ================================================
