@@ -736,7 +736,7 @@ function DeliveryOverview() {
                 <div className="flex-1">
                   <h3 className="text-sm font-bold text-indigo-900 mb-1 flex items-center gap-2">
                     AI 배송 예측 분석
-                    <span className="text-[10px] px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full">AI (OLLAMA)</span>
+                    <span className="text-[10px] px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full">AI (MiniMax M2.7)</span>
                   </h3>
                   <div id="ai-insight-content" className="text-sm text-indigo-800 leading-relaxed whitespace-pre-line">
                     데이터 분석 중...
