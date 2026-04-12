@@ -43,7 +43,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { Check, ChevronDown } from "lucide-react"
+import { Check, ChevronDown, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 // 공통 API hooks 및 타입 (로컬 타입과 구분하기 위해 alias 사용)
@@ -523,6 +523,8 @@ export default function ProductionPlan() {
 
   const { data: latestData = [], isLoading } = useProductionLog();
   const { data: meta } = useProductionMeta();
+  const { data: invData, isLoading: invLoading } = useInventory();
+  const updateInventory = useUpdateInventory();
 
   const [selectedDate, setSelectedDate] = useState<string>('latest');
   const [machineFilter, setMachineFilter] = useState<string>('all');
@@ -539,7 +541,9 @@ export default function ProductionPlan() {
   const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const [showAIRecommend, setShowAIRecommend] = useState(false);
-  const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
+  const [activeTab, setActiveTab] = useState<'active' | 'completed' | 'inventory'>('active');
+  const [editingInventory, setEditingInventory] = useState<string | null>(null);
+  const [editStockValue, setEditStockValue] = useState<string>('');
   const [activeId, setActiveId] = useState<number | null>(null);
 
   // Drag and drop sensors
@@ -1807,10 +1811,111 @@ export default function ProductionPlan() {
         >
           완료 ({completedRows.length})
         </Button>
+        <Button
+          variant={activeTab === 'inventory' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setActiveTab('inventory')}
+        >
+          재고 확인
+        </Button>
       </div>
 
-      {/* 출고량 통계 패널 */}
-      <OutboundStatsPanel />
+      {/* 재고 확인 탭 */}
+      {activeTab === 'inventory' && (
+        <div className="space-y-4">
+          <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-indigo-50">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Package className="w-5 h-5 text-purple-600" />
+                  <span className="font-semibold text-purple-900">현재 재고 수량</span>
+                </div>
+                <Badge variant="outline" className="text-purple-700 border-purple-300">
+                  수정 가능
+                </Badge>
+              </div>
+              {invLoading ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                  로딩 중...
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                  {(invData?.items || invData?.data || []).slice(0, 50).map((item: any) => (
+                    <div
+                      key={item.id || item.barcode}
+                      className="flex items-center justify-between bg-white/60 rounded-lg p-3"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm text-purple-900 truncate">
+                          {item.product_name || item.barcode}
+                        </p>
+                        <p className="text-xs text-purple-600">
+                          최소: {NUMBER_FORMATTER.format(item.min_stock || 0)} | 기준: {NUMBER_FORMATTER.format(item.reorder_point || 0)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 ml-4">
+                        {editingInventory === (item.id || item.barcode) ? (
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              value={editStockValue}
+                              onChange={(e) => setEditStockValue(e.target.value)}
+                              className="w-24 h-8 text-sm"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  updateInventory.mutate({
+                                    id: String(item.id || item.barcode),
+                                    data: { current_stock: parseInt(editStockValue) || 0 }
+                                  });
+                                  setEditingInventory(null);
+                                } else if (e.key === 'Escape') {
+                                  setEditingInventory(null);
+                                }
+                              }}
+                            />
+                            <Button size="sm" className="h-8 px-2" onClick={() => {
+                              updateInventory.mutate({
+                                id: String(item.id || item.barcode),
+                                data: { current_stock: parseInt(editStockValue) || 0 }
+                              });
+                              setEditingInventory(null);
+                            }}>
+                              <Check className="w-4 h-4" />
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-8 px-2" onClick={() => setEditingInventory(null)}>
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="font-bold text-lg text-purple-900">
+                              {NUMBER_FORMATTER.format(item.current_stock || 0)}
+                            </span>
+                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => {
+                              setEditingInventory(String(item.id || item.barcode));
+                              setEditStockValue(String(item.current_stock || 0));
+                            }}>
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* 생산计划的 탭이 아닐 때만 출고량 통계 + 생산 목록 표시 */}
+      {activeTab !== 'inventory' && (
+        <>
+          {/* 출고량 통계 패널 */}
+          <OutboundStatsPanel />
 
       {/* 모바일 뷰 (카드 리스트) - 드래그 앤 드롭 */}
       <DndContext
@@ -1922,6 +2027,8 @@ export default function ProductionPlan() {
           ) : null}
         </DragOverlay>
       </DndContext>
+        </>
+      )}
 
       <div className="md:hidden fixed bottom-0 left-0 right-0 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="p-3 space-y-2">
