@@ -58,21 +58,50 @@ def _extract_korean_only(text: str) -> str:
     """영어 thinking 부분을 제거하고 한국어 분석 결과만 추출"""
     if not text:
         return text
+    
+    # thinking/thought 키워드 패턴 제거
+    thinking_patterns = [
+        r'^\s*\[.*?\]\s*',
+        r'^\s*Thought[\s:].*$',
+        r'^\s*Thinking[\s:].*$',
+        r'^\s*##?\s*(thoughts?|thinking|reasoning)',
+        r'^\s*<!--.*?-->\s*$',
+        r'^\s*###\s+Thought\s*$',
+    ]
+    
     lines = text.split('\n')
     result = []
+    in_code_block = False
+    
     for line in lines:
-        # 한글이 3자 이상 포함된 줄만 유지
+        if line.strip().startswith('```'):
+            in_code_block = not in_code_block
+            result.append(line)
+            continue
+        
+        if in_code_block:
+            result.append(line)
+            continue
+        
+        stripped = line.strip()
+        skip_line = False
+        for pattern in thinking_patterns:
+            if re.match(pattern, stripped, re.IGNORECASE):
+                skip_line = True
+                break
+        
+        if skip_line:
+            continue
+        
         korean_count = len(re.findall(r'[가-힣]', line))
         english_count = len(re.findall(r'[a-zA-Z]', line))
-        # 한글이 영어 문자 수보다 많고 한글 3자 이상
         if korean_count >= 3 and korean_count > english_count:
-            # "Line1:", "1)", "2)" 등 접두어 제거
             line = re.sub(r'^Line\d+\s*:\s*', '', line)
-            line = re.sub(r'^\d+[\)\.]\s*', '', line)
+            line = re.sub(r'^\d+[\)\.\s*', '', line)
             if line.strip():
                 result.append(line.strip())
+    
     return '\n'.join(result)
-
 
 logger = logging.getLogger('sales_api.inventory')
 
