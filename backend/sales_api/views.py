@@ -208,33 +208,23 @@ def _production_model_to_dict(obj: ProductionLog):
 
 
 def _zai_get_config():
-    backend = (os.getenv('AI_BACKEND') or 'anthropic').strip().lower()
-    
-    if backend == 'ollama':
-        base_url = (os.getenv('OLLAMA_BASE_URL') or 'http://localhost:11434').strip().rstrip('/')
-        model = (os.getenv('OLLAMA_MODEL') or 'lfm2.5-thinking:latest').strip()
-        api_key = 'none' # Ollama doesn't usually require keys locally
-    else:
-        base_url = (os.getenv('ANTHROPIC_BASE_URL') or 'https://openrouter.ai').strip().rstrip('/')
-        api_key = (os.getenv('ANTHROPIC_AUTH_TOKEN') or '').strip()
-        model = (os.getenv('ANTHROPIC_DEFAULT_SONNET_MODEL') or 'nvidia/nemotron-3-nano-30b-a3b').strip()
-        # Backward-compat: transparently move old default/model name forward.
-        if (model or '').strip().lower() == 'glm-4.6':
-            model = 'glm-4.7'
+    base_url = (os.getenv('ANTHROPIC_BASE_URL') or 'https://openrouter.ai').strip().rstrip('/')
+    api_key = (os.getenv('ANTHROPIC_AUTH_TOKEN') or '').strip()
+    # 빠른 무료 모델: minimax M2.7 (thinking 없음)
+    model = (os.getenv('ANTHROPIC_DEFAULT_SONNET_MODEL') or 'minimax/MiniMax-M2.7').strip()
 
     timeout_ms_raw = (os.getenv('API_TIMEOUT_MS') or '').strip()
-    timeout_s = 60
+    timeout_s = 30  # 빠른 모델이라 30초로 단축
     if timeout_ms_raw:
         try:
             timeout_s = max(1, int(int(timeout_ms_raw) / 1000))
         except Exception:
-            timeout_s = 60
+            timeout_s = 30
 
-    if backend == 'anthropic' and (not base_url or not api_key):
+    if not base_url or not api_key:
         return None
 
     return {
-        'backend': backend,
         'base_url': base_url,
         'api_key': api_key,
         'model': model,
@@ -247,38 +237,20 @@ def _zai_call_messages(*, system: str, user: str, max_tokens: int = 2048, temper
     if not cfg:
         return None
 
-    backend = cfg.get('backend', 'anthropic')
-
-    if backend == 'ollama':
-        url = f"{cfg['base_url']}/api/chat"
-        payload = {
-            'model': cfg['model'],
-            'messages': [
-                {'role': 'system', 'content': system},
-                {'role': 'user', 'content': user}
-            ],
-            'stream': False,
-            'options': {
-                'num_predict': max_tokens,
-                'temperature': temperature,
-            }
-        }
-        headers = {'Content-Type': 'application/json'}
-    else:
-        url = f"{cfg['base_url']}/api/v1/chat/completions"
-        payload = {
-            'model': cfg['model'],
-            'messages': [
-                {'role': 'system', 'content': system},
-                {'role': 'user', 'content': user}
-            ],
-            'max_tokens': max_tokens,
-            'temperature': temperature,
-        }
-        headers = {
-            'Authorization': f'Bearer {cfg["api_key"]}',
-            'Content-Type': 'application/json',
-        }
+    url = f"{cfg['base_url']}/api/v1/chat/completions"
+    payload = {
+        'model': cfg['model'],
+        'messages': [
+            {'role': 'system', 'content': system},
+            {'role': 'user', 'content': user}
+        ],
+        'max_tokens': max_tokens,
+        'temperature': temperature,
+    }
+    headers = {
+        'Authorization': f'Bearer {cfg["api_key"]}',
+        'Content-Type': 'application/json',
+    }
 
     try:
         req = urllib.request.Request(
@@ -292,26 +264,22 @@ def _zai_call_messages(*, system: str, user: str, max_tokens: int = 2048, temper
             raw = resp.read().decode('utf-8')
 
         data = json.loads(raw) if raw else {}
-        
-        if backend == 'ollama':
-            return (data.get('message', {}).get('content') or '').strip()
-        else:
-            # OpenRouter / OpenAI format: content is in choices[0].message.content
-            try:
-                choices = data.get('choices', [])
-                if choices and len(choices) > 0:
-                    message = choices[0].get('message', {})
-                    content = message.get('content', '')
-                    if content:
-                        content = content.strip()
-                        content = _extract_korean_only(content)
-                        return content
-            except Exception:
-                pass
-            # Fallback: direct content field
-            content = (data.get('content') or '').strip()
-            content = _extract_korean_only(content)
-            return content
+        # OpenRouter / OpenAI format: content is in choices[0].message.content
+        try:
+            choices = data.get('choices', [])
+            if choices and len(choices) > 0:
+                message = choices[0].get('message', {})
+                content = message.get('content', '')
+                if content:
+                    content = content.strip()
+                    content = _extract_korean_only(content)
+                    return content
+        except Exception:
+            pass
+        # Fallback: direct content field
+        content = (data.get('content') or '').strip()
+        content = _extract_korean_only(content)
+        return content
     except Exception as e:
         logger.error(f"AI call failed ({backend}): {e}")
         return None
