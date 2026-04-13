@@ -1745,6 +1745,25 @@ def upload_production_file(request):
         if missing:
             return Response({'message': f"필수 컬럼이 없습니다: {', '.join(missing)}"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # 박스 수량 기준 (1팔레트 기준)
+        BOX_QUANTITY_STANDARDS = {
+            '슬림형 앞판': 75,
+            '에센셜 앞판': 140,
+            '해피 바디': 270,
+            '와이드 상판': 30,
+            '와이드 앞판': 70,
+            '와이드 서랍': 180,
+            '데크타일': 72,
+        }
+
+        # 색상 세트 조합 규칙: 색상1 → 기대되는 색상2
+        COLOR_COMBINATION_RULES = {
+            'WHITE1': 'WHITE 180',
+            'WHITE2': 'IVORY 1154',
+        }
+
+        warnings = []
+
         rows_processed = 0
         rows_added = 0
         rows_updated = 0
@@ -1790,6 +1809,45 @@ def upload_production_file(request):
 
                 qty = _to_int(row.get('quantity'))
                 unit_qty = _to_int(row.get('unitQuantity')) or _to_int(row.get('unit'))
+
+                # === 색상 세트 조합 확인 ===
+                if c1 and c2:
+                    if c1 in COLOR_COMBINATION_RULES:
+                        expected_color2 = COLOR_COMBINATION_RULES[c1]
+                        if c2 != expected_color2:
+                            warnings.append({
+                                'type': 'color_combination',
+                                'row': _idx + 2,  # 1-indexed + header row
+                                'product': pname,
+                                'color1': c1,
+                                'color2': c2,
+                                'expected': expected_color2,
+                                'message': f'[{pname}] 색상1 "{c1}"일 때 색상2는 "{expected_color2}"이어야 합니다. (현재: {c2})'
+                            })
+                    # 기타 색상1에 대한 경고
+                    elif c1 not in COLOR_COMBINATION_RULES and c2:
+                        warnings.append({
+                            'type': 'color_combination_unknown',
+                            'row': _idx + 2,
+                            'product': pname,
+                            'color1': c1,
+                            'color2': c2,
+                            'message': f'[{pname}] 알 수 없는 색상 조합입니다. (색상1: {c1}, 색상2: {c2})'
+                        })
+
+                # === 박스 수량 확인 (unit_quantity가 있는 경우) ===
+                if unit_qty > 0 and pname in BOX_QUANTITY_STANDARDS:
+                    standard_qty = BOX_QUANTITY_STANDARDS[pname]
+                    if unit_qty != standard_qty:
+                        warnings.append({
+                            'type': 'box_quantity',
+                            'row': _idx + 2,
+                            'product': pname,
+                            'actual': unit_qty,
+                            'standard': standard_qty,
+                            'message': f'[{pname}] 표준 박스 수량은 {standard_qty}이어야 합니다. (현재: {unit_qty})'
+                        })
+
                 total = _production_calc_total(qty, unit_qty, row.get('total'))
                 status_value = _production_normalize_status(str(row.get('status') or 'pending'))
 
@@ -1831,6 +1889,7 @@ def upload_production_file(request):
             'rowsAdded': rows_added,
             'rowsUpdated': rows_updated,
             'latestDate': latest_date,
+            'warnings': warnings,
         })
     except Exception as e:
         return Response({'message': '생산 계획 파일 처리 중 오류가 발생했습니다.', 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)

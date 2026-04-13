@@ -417,16 +417,20 @@ const SortableMobileCard = React.memo(function SortableMobileCard({
     opacity: isDragging ? 0.5 : 1,
   };
 
+  const cardStyle = useMemo(() => ({
+    ...style,
+    touchAction: 'pan-y' as const,
+  }), [style]);
+
   return (
     <Card
       ref={setNodeRef}
-      style={style}
+      style={cardStyle}
       className={cn(
         "overflow-hidden border-l-4",
         getMachineAccent(row.machineNumber).border,
         isDragging && "shadow-lg scale-105"
       )}
-      style={{ ...style, touchAction: 'pan-y' }}
     >
       <CardHeader
         className={cn(
@@ -734,6 +738,30 @@ export default function ProductionPlan() {
   const completedRows = useMemo(() => filteredRows.filter(r => r.status === 'ended'), [filteredRows]);
   const displayRows = activeTab === 'active' ? activeRows : completedRows;
 
+  // Drag overlay content - extracted to avoid IIFE pattern
+  const renderDragOverlay = useCallback(() => {
+    if (!activeId) return null;
+
+    const row = displayRows.find(r => r.id === activeId);
+    if (!row) return null;
+
+    return (
+      <Card className={cn("overflow-hidden border-l-4 shadow-2xl scale-105 bg-card", getMachineAccent(row.machineNumber).border)}>
+        <CardHeader className={cn("p-3", getMachineAccent(row.machineNumber).headerBg)}>
+          <div className="flex items-center gap-2">
+            <GripVertical className="w-4 h-4" />
+            <Badge variant="outline">{row.machineNumber}</Badge>
+            <span className="font-medium text-sm">{row.date}</span>
+          </div>
+        </CardHeader>
+        <CardContent className="p-3">
+          <h4 className="font-semibold">{row.productName}</h4>
+          <p className="text-xs text-muted-foreground">{row.productNameEng}</p>
+        </CardContent>
+      </Card>
+    );
+  }, [activeId, displayRows, getMachineAccent]);
+
   // Machine groups for rendering (must match DOM order for DnD)
   const { sortableItems, machineGroupEntries } = useMemo(() => {
     const groups = new Map<string, ProductionItem[]>();
@@ -1020,7 +1048,6 @@ export default function ProductionPlan() {
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    // console.log('[DnD] dragEnd', { activeId: active.id, overId: over?.id });
 
     if (!over || active.id === over.id) {
       return;
@@ -1029,27 +1056,17 @@ export default function ProductionPlan() {
     // Find rows from normalizedRows (source of truth)
     const activeRow = normalizedRows.find(r => r.id === active.id);
     const overRow = normalizedRows.find(r => r.id === over.id);
-    
-    // Determine the target row (if over is another row)
-    const targetRow = overRow; // simplified
-    
-    // If not dropped on a row, we can't reliably reorder, so abort
-    if (!activeRow || !targetRow) {
+
+    // If not dropped on a valid row, abort
+    if (!activeRow || !overRow) {
       return;
     }
 
     const activeMachineNum = extractMachineNumber(activeRow.machineNumber);
-    const targetMachineNum = extractMachineNumber(targetRow.machineNumber);
-
-    console.log('[DnD] comparing', {
-      activeMachine: activeRow.machineNumber,
-      targetMachine: targetRow.machineNumber,
-      activeDate: activeRow.date,
-      targetDate: targetRow.date
-    });
+    const targetMachineNum = extractMachineNumber(overRow.machineNumber);
 
     // Only allow dragging within the same machine number and date
-    if (activeMachineNum !== targetMachineNum || activeRow.date !== targetRow.date) {
+    if (activeMachineNum !== targetMachineNum || activeRow.date !== overRow.date) {
       toast({ title: '순서 변경 불가', description: '같은 기계, 같은 일자 내에서만 순서를 변경할 수 있습니다.', variant: 'destructive' });
       return;
     }
@@ -1063,21 +1080,21 @@ export default function ProductionPlan() {
 
     // Reorder within the machine group
     const activeIndex = machineIds.indexOf(active.id as number);
-    const overIndex = machineIds.indexOf(targetRow.id as number);
-    
+    const overIndex = machineIds.indexOf(overRow.id as number);
+
     if (activeIndex === -1 || overIndex === -1) {
       return;
     }
 
     const newOrder = arrayMove(machineIds, activeIndex, overIndex);
-    
+
     // Build orders array for API - assign sort_order to updated rows
     const orders = newOrder.map((id, index) => ({ id, sort_order: index + 1 }));
 
     // Optimistic update
     queryClient.setQueryData(["/api/production"], (oldData: any) => {
       if (!oldData) return oldData;
-      
+
       const isArray = Array.isArray(oldData);
       const items = isArray ? (oldData as ProductionItem[]) : (oldData as ProductionResponse)?.latestData || [];
 
@@ -2013,27 +2030,7 @@ export default function ProductionPlan() {
           </div>
         </SortableContext>
         <DragOverlay>
-          {activeId ? (
-            (() => {
-              const row = displayRows.find(r => r.id === activeId);
-              if (!row) return null;
-              return (
-                <Card className={cn("overflow-hidden border-l-4 shadow-2xl scale-105 bg-card", getMachineAccent(row.machineNumber).border)}>
-                  <CardHeader className={cn("p-3", getMachineAccent(row.machineNumber).headerBg)}>
-                    <div className="flex items-center gap-2">
-                      <GripVertical className="w-4 h-4" />
-                      <Badge variant="outline">{row.machineNumber}</Badge>
-                      <span className="font-medium text-sm">{row.date}</span>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-3">
-                    <h4 className="font-semibold">{row.productName}</h4>
-                    <p className="text-xs text-muted-foreground">{row.productNameEng}</p>
-                  </CardContent>
-                </Card>
-              );
-            })()
-          ) : null}
+          {renderDragOverlay()}
         </DragOverlay>
       </DndContext>
         </>
