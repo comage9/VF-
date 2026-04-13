@@ -474,29 +474,29 @@ const SortableMobileCard = React.memo(function SortableMobileCard({
 
         <div className="pt-2 flex flex-wrap gap-2 border-t mt-2">
           {row.status === 'pending' && (
-            <Button size="sm" className="flex-1 min-w-[120px] bg-blue-600 hover:bg-blue-700" onClick={() => onStatusChange(row, 'started')}>
+            <Button size="sm" className="flex-1 min-w-[120px] bg-blue-600 hover:bg-blue-700" onClick={() => onStatusChange(row, 'started')} style={{ touchAction: 'manipulation' }}>
               <Play className="w-4 h-4 mr-2" /> 시작
             </Button>
           )}
           {row.status === 'started' && (
-            <Button size="sm" className="flex-1 min-w-[120px] bg-green-600 hover:bg-green-700" onClick={() => onStatusChange(row, 'ended')}>
+            <Button size="sm" className="flex-1 min-w-[120px] bg-green-600 hover:bg-green-700" onClick={() => onStatusChange(row, 'ended')} style={{ touchAction: 'manipulation' }}>
               <CheckCircle className="w-4 h-4 mr-2" /> 완료
             </Button>
           )}
           {row.status === 'started' && (
-            <Button size="sm" variant="outline" className="flex-1 min-w-[120px]" onClick={() => onStatusChange(row, 'stopped')}>
+            <Button size="sm" variant="outline" className="flex-1 min-w-[120px]" onClick={() => onStatusChange(row, 'stopped')} style={{ touchAction: 'manipulation' }}>
               <Clock className="w-4 h-4 mr-2" /> 중지
             </Button>
           )}
           {(row.status === 'ended' || row.status === 'started' || row.status === 'stopped') && (
-            <Button size="sm" variant="outline" className="flex-1 min-w-[120px]" onClick={() => onStatusReset(row)}>
+            <Button size="sm" variant="outline" className="flex-1 min-w-[120px]" onClick={() => onStatusReset(row)} style={{ touchAction: 'manipulation' }}>
               <RotateCcw className="w-4 h-4 mr-2" /> 초기화
             </Button>
           )}
-          <Button size="sm" variant="outline" className="flex-1 min-w-[120px]" onClick={() => onEdit(row)}>
+          <Button size="sm" variant="outline" className="flex-1 min-w-[120px]" onClick={() => onEdit(row)} style={{ touchAction: 'manipulation' }}>
             <Edit className="w-4 h-4 mr-2" /> 수정
           </Button>
-          <Button size="sm" variant="destructive" className="flex-1 min-w-[120px]" onClick={() => onDelete(row.id)}>
+          <Button size="sm" variant="destructive" className="flex-1 min-w-[120px]" onClick={() => onDelete(row.id)} style={{ touchAction: 'manipulation' }}>
             <Trash2 className="w-4 h-4" />
           </Button>
         </div>
