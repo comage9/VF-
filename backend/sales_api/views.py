@@ -7564,33 +7564,73 @@ def _get_next_workday(date_obj):
 
 def move_incomplete_production_logs():
     """
-    자정 또는 수동 실행용: 미완료 생산 계획을 다음 작업일로 이동
-    - 이전 날짜 pending/start/stopped → 오늘로
-    - 오늘 pending/start/stopped → 내일(다음 작업일)로
+    자정 또는 수동 실행용: 이전 날짜 미완료 생산 계획을 다음 작업일로 이동
+    - 이전 날짜(date < today) pending/start/stopped → 다음 작업일로
+    - 오늘 미완료는 이동하지 않음 (작업 중인 계획 보존)
     """
-    from datetime import datetime, timedelta
-    
+    from datetime import datetime
+
     today = datetime.now().date()
     next_workday = _get_next_workday(today)
-    
-    # 이전 날짜 미완료 → 오늘로
-    old_incomplete = ProductionLog.objects.filter(
+
+    # 이전 날짜 미완료만 조회 (오늘 것은 제외)
+    incomplete_logs = ProductionLog.objects.filter(
         date__lt=today,
         status__in=['pending', 'started', 'stopped']
     )
-    old_count = old_incomplete.count()
-    old_incomplete.update(date=today)
-    
-    # 오늘 미완료 → 다음 작업일로
-    today_incomplete = ProductionLog.objects.filter(
-        date=today,
-        status__in=['pending', 'started', 'stopped']
-    )
-    today_count = today_incomplete.count()
-    today_incomplete.update(date=next_workday)
-    
-    logger.info(f"ProductionLog 자동 이동: {old_count}개→오늘({today}), {today_count}개→다음작업일({next_workday})")
-    return {'old_to_today': old_count, 'today_to_next': today_count, 'next_workday': next_workday.isoformat()}
+
+    moved_count = 0
+    skipped_count = 0
+    skipped_details = []
+    errors = []
+
+    for log in incomplete_logs:
+        # 충돌 확인: 같은 조합이 이미 대상 날짜에 있는지
+        conflict = ProductionLog.objects.filter(
+            date=next_workday,
+            machine_number=log.machine_number,
+            mold_number=log.mold_number,
+            product_name=log.product_name,
+            color1=log.color1,
+            color2=log.color2,
+            unit=log.unit
+        ).exists()
+
+        if conflict:
+            skipped_count += 1
+            skipped_details.append({
+                'id': log.id,
+                'original_date': log.date.isoformat(),
+                'machine': log.machine_number,
+                'product': log.product_name,
+                'reason': 'Already exists on target date'
+            })
+            logger.warning(f"ProductionLog 충돌 스킵: ID={log.id}, date={log.date}→{next_workday}, machine={log.machine_number}, product={log.product_name}")
+            continue
+
+        # 이동 시도
+        try:
+            log.date = next_workday
+            log.save(update_fields=['date'])
+            moved_count += 1
+        except Exception as e:
+            errors.append({
+                'id': log.id,
+                'date': log.date.isoformat(),
+                'error': str(e)
+            })
+            logger.error(f"ProductionLog 이동 실패: ID={log.id}, error={e}")
+
+    logger.info(f"ProductionLog 자동 이동 완료: {moved_count}개 이동됨, {skipped_count}개 스킵, {len(errors)}개 에러 → {next_workday}")
+
+    return {
+        'moved_count': moved_count,
+        'skipped_count': skipped_count,
+        'skipped_details': skipped_details,
+        'error_count': len(errors),
+        'errors': errors,
+        'next_workday': next_workday.isoformat()
+    }
 
 @api_view(['POST'])
 def production_move_incomplete(request):
