@@ -46,8 +46,7 @@ import {
 import { Check, ChevronDown, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-// 공통 API hooks 및 타입 (로컬 타입과 구분하기 위해 alias 사용)
-import { useProductionPlans, useCreateProduction, useUpdateProduction, useDeleteProduction, useInventory, useUpdateInventory } from '@/components/shared/api';
+import { MobileFilterDrawer } from "@/components/MobileFilterDrawer";
 import type { ProductionItem as SharedProductionItem, ProductionDraft as SharedProductionDraft, OutboundData } from '@/components/shared/types';
 import { OutboundStatsPanel } from '@/components/shared/outbound-stats-panel';
 
@@ -538,6 +537,8 @@ export default function ProductionPlan() {
   const [isDeletingDate, setIsDeletingDate] = useState(false);
   const [bulkStatus, setBulkStatus] = useState<ProductionStatus>('pending');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [sortOrder, setSortOrder] = useState<string>('recent');
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const [showAIRecommend, setShowAIRecommend] = useState(false);
@@ -1160,27 +1161,34 @@ export default function ProductionPlan() {
 
   return (
     <div className="space-y-6 pb-28 md:pb-0">
-      {/* 상단 컨트롤 패널 - 스크롤해도 고정 */}
-      <div className="bg-card border border-border rounded-lg p-4 space-y-4 sticky top-0 z-10 backdrop-blur-sm bg-card/95">
+      {/* 모바일 최소 헤더 - Drawer 열기 */}
+      <div className="md:hidden sticky top-0 z-10 bg-card border-b border-border p-3 flex items-center justify-between backdrop-blur-sm bg-card/95">
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsDrawerOpen(true)}
+            className="h-9 w-9 p-0"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+          </Button>
+          <span className="text-sm font-semibold">생산 계획</span>
+          {selectedIds.length > 0 && (
+            <Badge variant="secondary" className="text-xs">{selectedIds.length}건 선택</Badge>
+          )}
+        </div>
+      </div>
+
+      {/* 데스크탑 필터 패널 - 스크롤해도 고정 */}
+      <div className="hidden md:block bg-card border border-border rounded-lg p-4 space-y-4 sticky top-0 z-10 backdrop-blur-sm bg-card/95">
         <div className="flex items-center justify-between gap-2">
           <div className="text-sm text-muted-foreground">
             {selectedIds.length > 0 ? `선택 ${selectedIds.length}건` : ''}
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="md:hidden"
-            onClick={() => setShowMobileFilters((prev) => !prev)}
-          >
-            {showMobileFilters ? '필터 닫기' : '필터 열기'}
-          </Button>
         </div>
 
-        <div className={cn(
-          "grid grid-cols-1 md:grid-cols-3 gap-4",
-          !showMobileFilters && "hidden md:grid"
-        )}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="flex flex-col space-y-1.5">
             <Label htmlFor="date-filter">날짜 선택</Label>
             <Select value={selectedDate} onValueChange={setSelectedDate}>
@@ -2176,6 +2184,25 @@ export default function ProductionPlan() {
             </table>
           </div>
         </DndContext>
+
+      {/* 모바일 필터 Drawer */}
+      <MobileFilterDrawer
+        open={isDrawerOpen}
+        onOpenChange={setIsDrawerOpen}
+        selectedDate={selectedDate}
+        onDateChange={setSelectedDate}
+        machineFilter={machineFilter}
+        onMachineChange={setMachineFilter}
+        search={search}
+        onSearchChange={setSearch}
+        sortOrder={sortOrder}
+        onSortChange={setSortOrder}
+        sortedDates={sortedDates}
+        latestDate={latestDate}
+        machines={machines}
+        selectedIds={selectedIds}
+        onClearSelection={() => setSelectedIds([])}
+      />
       </div>
     </div>
   );

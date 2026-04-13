@@ -7493,3 +7493,49 @@ def health_check(request):
         "memory": 50,
         "timestamp": timezone.now().isoformat()
     })
+
+# ========== ProductionLog 자정 자동 이동 ==========
+def _get_next_workday(date_obj):
+    """다음 작업일 반환 (주말이면 월요일)"""
+    from datetime import timedelta
+    next_day = date_obj + timedelta(days=1)
+    while next_day.weekday() >= 5:  # 5=Saturday, 6=Sunday
+        next_day += timedelta(days=1)
+    return next_day
+
+def move_incomplete_production_logs():
+    """
+    자정 또는 수동 실행용: 미완료 생산 계획을 다음 작업일로 이동
+    - 이전 날짜 pending/start/stopped → 오늘로
+    - 오늘 pending/start/stopped → 내일(다음 작업일)로
+    """
+    from datetime import datetime, timedelta
+    
+    today = datetime.now().date()
+    next_workday = _get_next_workday(today)
+    
+    # 이전 날짜 미완료 → 오늘로
+    old_incomplete = ProductionLog.objects.filter(
+        date__lt=today,
+        status__in=['pending', 'started', 'stopped']
+    )
+    old_count = old_incomplete.count()
+    old_incomplete.update(date=today)
+    
+    # 오늘 미완료 → 다음 작업일로
+    today_incomplete = ProductionLog.objects.filter(
+        date=today,
+        status__in=['pending', 'started', 'stopped']
+    )
+    today_count = today_incomplete.count()
+    today_incomplete.update(date=next_workday)
+    
+    logger.info(f"ProductionLog 자동 이동: {old_count}개→오늘({today}), {today_count}개→다음작업일({next_workday})")
+    return {'old_to_today': old_count, 'today_to_next': today_count, 'next_workday': next_workday.isoformat()}
+
+@api_view(['POST'])
+def production_move_incomplete(request):
+    """미완료 생산 계획 다음 작업일로 이동 (API 호출용)"""
+    result = move_incomplete_production_logs()
+    return Response({'success': True, **result})
+
