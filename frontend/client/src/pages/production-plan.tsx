@@ -47,6 +47,7 @@ import { Check, ChevronDown, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 import { MobileFilterDrawer } from "@/components/MobileFilterDrawer";
+import { useProductionPlans, useCreateProduction, useUpdateProduction, useDeleteProduction, useInventory, useUpdateInventory } from '@/components/shared/api';
 import type { ProductionItem as SharedProductionItem, ProductionDraft as SharedProductionDraft, OutboundData } from '@/components/shared/types';
 import { OutboundStatsPanel } from '@/components/shared/outbound-stats-panel';
 
