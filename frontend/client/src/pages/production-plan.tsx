@@ -520,6 +520,31 @@ function useProductionMeta() {
   });
 }
 
+function getMachineAccent(machineNumber: string | undefined) {
+  const palette = [
+    { border: "border-l-blue-500", headerBg: "bg-blue-50/60 dark:bg-blue-950/20", rowBg: "bg-blue-50/30 dark:bg-blue-950/10" },
+    { border: "border-emerald-500", headerBg: "bg-emerald-50/60 dark:bg-emerald-950/20", rowBg: "bg-emerald-50/30 dark:bg-emerald-950/10" },
+    { border: "border-amber-500", headerBg: "bg-amber-50/60 dark:bg-amber-950/20", rowBg: "bg-amber-50/30 dark:bg-amber-950/10" },
+    { border: "border-purple-500", headerBg: "bg-purple-50/60 dark:bg-purple-950/20", rowBg: "bg-purple-50/30 dark:bg-purple-950/10" },
+    { border: "border-rose-500", headerBg: "bg-rose-50/60 dark:bg-rose-950/20", rowBg: "bg-rose-50/30 dark:bg-rose-950/10" },
+    { border: "border-cyan-500", headerBg: "bg-cyan-50/60 dark:bg-cyan-950/20", rowBg: "bg-cyan-50/30 dark:bg-cyan-950/10" },
+  ] as const;
+  const raw = String(machineNumber ?? "").trim();
+  const digits = raw.replace(/[^0-9]/g, "");
+  const numeric = digits ? Number(digits) : NaN;
+  let idx = 0;
+  if (Number.isFinite(numeric)) {
+    idx = Math.abs(numeric) % palette.length;
+  } else {
+    let hash = 0;
+    for (let i = 0; i < raw.length; i++) {
+      hash = (hash * 31 + raw.charCodeAt(i)) >>> 0;
+    }
+    idx = hash % palette.length;
+  }
+  return palette[idx];
+}
+
 export default function ProductionPlan() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -1114,55 +1139,7 @@ export default function ProductionPlan() {
     bulkReorderMutation.mutate(orders);
   };
 
-  const getMachineAccent = (machineNumber: string | undefined) => {
-    const palette = [
-      {
-        border: "border-l-blue-500",
-        headerBg: "bg-blue-50/60 dark:bg-blue-950/20",
-        rowBg: "bg-blue-50/30 dark:bg-blue-950/10",
-      },
-      {
-        border: "border-emerald-500",
-        headerBg: "bg-emerald-50/60 dark:bg-emerald-950/20",
-        rowBg: "bg-emerald-50/30 dark:bg-emerald-950/10",
-      },
-      {
-        border: "border-amber-500",
-        headerBg: "bg-amber-50/60 dark:bg-amber-950/20",
-        rowBg: "bg-amber-50/30 dark:bg-amber-950/10",
-      },
-      {
-        border: "border-purple-500",
-        headerBg: "bg-purple-50/60 dark:bg-purple-950/20",
-        rowBg: "bg-purple-50/30 dark:bg-purple-950/10",
-      },
-      {
-        border: "border-rose-500",
-        headerBg: "bg-rose-50/60 dark:bg-rose-950/20",
-        rowBg: "bg-rose-50/30 dark:bg-rose-950/10",
-      },
-      {
-        border: "border-cyan-500",
-        headerBg: "bg-cyan-50/60 dark:bg-cyan-950/20",
-        rowBg: "bg-cyan-50/30 dark:bg-cyan-950/10",
-      },
-    ] as const;
-
-    const raw = String(machineNumber ?? "").trim();
-    const digits = raw.replace(/[^0-9]/g, "");
-    const numeric = digits ? Number(digits) : NaN;
-    let idx = 0;
-    if (Number.isFinite(numeric)) {
-      idx = Math.abs(numeric) % palette.length;
-    } else {
-      let hash = 0;
-      for (let i = 0; i < raw.length; i++) {
-        hash = (hash * 31 + raw.charCodeAt(i)) >>> 0;
-      }
-      idx = hash % palette.length;
-    }
-    return palette[idx];
-  };
+  // moved to module scope (see above)
 
   const getStatusBadge = (status: string | undefined) => {
     switch (status) {
