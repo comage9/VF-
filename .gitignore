@@ -1,0 +1,158 @@
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# nyc test coverage
+.nyc_output
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# parcel-bundler cache (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# Next.js build output
+.next
+out
+
+# Nuxt.js build / generate output
+.nuxt
+dist
+
+# Gatsby files
+.cache/
+public
+
+# VuePress build output
+.vuepress/dist
+
+# Serverless directories
+.serverless/
+
+# FuseBox cache
+.fusebox/
+
+# DynamoDB Local files
+.dynamodb/
+
+# TernJS port file
+.tern-port
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
+
+# Temporary folders
+tmp/
+temp/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build outputs
+build/
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+*.lib
+*.out
+*.app
+*.ipa
+*.apk
+
+# Test outputs
+*.test.js
+*.spec.js
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional local development files
+.local-*
+
+# VF 프로젝트 특정
+# Windows 서버 동기화 임시 파일
+/tmp/vf-*.json
+*.tmp
+
+# 옵시디언 캐시 및 설정 (Git에 포함된 설정 제외)
+.obsidian/workspace.json
+.obsidian/workspaces.json
+.obsidian/appearance.json
+.obsidian/plugins/
+
+# 데이터 백업 파일
+*.bak
+*.backup
+
+# 로컬 테스트 데이터
+test-data/
+sample-data/
+
+# 크롬 개발자 도구 프로필
+*.crx
+*.pem
+
+# 압축 파일
+*.zip
+*.tar.gz
+*.rar
+
+# 미디어 파일 (대용량)
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.mp3
+*.wav
