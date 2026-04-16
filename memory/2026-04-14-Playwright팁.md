@@ -1,0 +1,1 @@
+- Palywright는 Chromium이 아닌 Firefox로도 사용 가능하다
