@@ -29,6 +29,7 @@
     "date-fns": "^4.1.0",
     "jsbarcode": "^3.12.3",
     "lucide-react": "^0.263.1",
+    "playwright": "^1.59.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-markdown": "^10.1.0",

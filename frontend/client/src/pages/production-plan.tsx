@@ -47,7 +47,7 @@ import { Check, ChevronDown, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 import { MobileFilterDrawer } from "@/components/MobileFilterDrawer";
-import { useProductionPlans, useCreateProduction, useUpdateProduction, useDeleteProduction, useInventory, useUpdateInventory } from '@/components/shared/api';
+import { useInventory, useUpdateInventory } from '@/components/shared/api';
 import type { ProductionItem as SharedProductionItem, ProductionDraft as SharedProductionDraft, OutboundData } from '@/components/shared/types';
 import { OutboundStatsPanel } from '@/components/shared/outbound-stats-panel';
 
@@ -296,7 +296,6 @@ const SortableRow = React.memo(function SortableRow({
               setIsEditingMachine(false);
             }}
             onOpenChange={(open) => !open && setIsEditingMachine(false)}
-            autoFocus
           >
             <SelectTrigger className="h-8 w-20">
               <SelectValue />
@@ -1960,21 +1959,15 @@ export default function ProductionPlan() {
             return Array.isArray(oldData) ? updatedItems : { ...oldData, results: { ...oldData.results, latestData: updatedItems } };
           });
 
-          // API 호출
-          fetch('/api/production-log/bulk-reorder', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orders }),
-          }).then(res => res.json()).then(data => {
-            if (!data.success) {
+// Use mutation to persist order change
+          bulkReorderMutation.mutate(orders, {
+            onSuccess: () => {
+              toast({ title: '순서 변경 완료' });
+            },
+            onError: () => {
               queryClient.invalidateQueries({ queryKey: ["/api/production"] });
               toast({ title: '순서 변경 실패', variant: 'destructive' });
-            } else {
-              toast({ title: '순서 변경 완료' });
-            }
-          }).catch(() => {
-            queryClient.invalidateQueries({ queryKey: ["/api/production"] });
-            toast({ title: '순서 변경 실패', variant: 'destructive' });
+            },
           });
         }}
       >
