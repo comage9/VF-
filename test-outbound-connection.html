@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CORS 프록시 연결 테스트</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
+        .info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .data-table th, .data-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .data-table th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>CORS 프록시 연결 테스트</h1>
+
+        <div class="test-section info">
+            <h2>테스트 정보</h2>
+            <p><strong>CORS 프록시 URL:</strong> <code>http://127.0.0.1:3001</code></p>
+            <p><strong>Google Sheets URL:</strong> <code>https://docs.google.com/spreadsheets/d/e/2PACX-1vQwqI0BG-d2aMrql7DK4fQQTjvu57VtToSLAkY_nq92a4Cg5GFVbIn6_IR7Fq6_O-2TloFSNlXT8ZWC/pub?gid=1152588885&single=true&output=csv</code></p>
+        </div>
+
+        <div class="test-section">
+            <h2>1. Health Check 테스트</h2>
+            <button onclick="testHealthCheck()" id="healthCheckBtn">Health Check 실행</button>
+            <span id="healthCheckLoading" class="loading" style="display: none;"></span>
+            <div id="healthCheckResult"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>2. Google Sheets 프록시 테스트</h2>
+            <button onclick="testGoogleSheetsProxy()" id="googleSheetsBtn">Google Sheets 데이터 가져오기</button>
+            <span id="googleSheetsLoading" class="loading" style="display: none;"></span>
+            <div id="googleSheetsResult"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>3. OutboundConfig 테스트</h2>
+            <button onclick="testOutboundConfig()" id="outboundConfigBtn">OutboundConfig 테스트</button>
+            <span id="outboundConfigLoading" class="loading" style="display: none;"></span>
+            <div id="outboundConfigResult"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>4. 전체 연결 테스트</h2>
+            <button onclick="testFullConnection()" id="fullConnectionBtn">전체 연결 테스트</button>
+            <span id="fullConnectionLoading" class="loading" style="display: none;"></span>
+            <div id="fullConnectionResult"></div>
+        </div>
+    </div>
+
+    <script>
+        const CORS_PROXY_URL = 'http://127.0.0.1:3001';
+        const GOOGLE_SHEETS_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQwqI0BG-d2aMrql7DK4fQQTjvu57VtToSLAkY_nq92a4Cg5GFVbIn6_IR7Fq6_O-2TloFSNlXT8ZWC/pub?gid=1152588885&single=true&output=csv';
+        const PROXY_GOOGLE_SHEETS_URL = CORS_PROXY_URL + '/spreadsheets/d/e/2PACX-1vQwqI0BG-d2aMrql7DK4fQQTjvu57VtToSLAkY_nq92a4Cg5GFVbIn6_IR7Fq6_O-2TloFSNlXT8ZWC/pub?gid=1152588885&single=true&output=csv';
+
+        function showResult(elementId, html, isSuccess) {
+            const element = document.getElementById(elementId);
+            element.className = isSuccess ? 'success' : 'error';
+            element.innerHTML = html;
+        }
+
+        function showLoading(loadingId, show) {
+            document.getElementById(loadingId).style.display = show ? 'inline-block' : 'none';
+        }
+
+        async function testHealthCheck() {
+            showLoading('healthCheckLoading', true);
+            const btn = document.getElementById('healthCheckBtn');
+            btn.disabled = true;
+
+            try {
+                const response = await fetch(CORS_PROXY_URL + '/health');
+                const data = await response.json();
+                showResult('healthCheckResult',
+                    `<h3>✅ Health Check 성공</h3>
+                     <p>Status: ${data.status}</p>
+                     <p>Timestamp: ${data.timestamp}</p>
+                     <p>Service: ${data.service}</p>`,
+                    true);
+            } catch (error) {
+                showResult('healthCheckResult',
+                    `<h3>❌ Health Check 실패</h3>
+                     <p>Error: ${error.message}</p>
+                     <p>상세 에러: ${error.toString()}</p>`,
+                    false);
+            }
+
+            showLoading('healthCheckLoading', false);
+            btn.disabled = false;
+        }
+
+        async function testGoogleSheetsProxy() {
+            showLoading('googleSheetsLoading', true);
+            const btn = document.getElementById('googleSheetsBtn');
+            btn.disabled = true;
+
+            try {
+                const response = await fetch(PROXY_GOOGLE_SHEETS_URL);
+                const csvText = await response.text();
+                const lines = csvText.split('\n');
+
+                // 첫 5줄만 표시
+                const previewLines = lines.slice(0, 5).join('\n');
+
+                showResult('googleSheetsResult',
+                    `<h3>✅ Google Sheets 프록시 성공</h3>
+                     <p>Status: ${response.status}</p>
+                     <p>데이터 길이: ${csvText.length} 문자</p>
+                     <p>라인 수: ${lines.length}</p>
+                     <h4>데이터 미리보기:</h4>
+                     <pre>${previewLines}</pre>`,
+                    true);
+            } catch (error) {
+                showResult('googleSheetsResult',
+                    `<h3>❌ Google Sheets 프록시 실패</h3>
+                     <p>Error: ${error.message}</p>
+                     <p>상세 에러: ${error.toString()}</p>`,
+                    false);
+            }
+
+            showLoading('googleSheetsLoading', false);
+            btn.disabled = false;
+        }
+
+        function parseCSV(csvString) {
+            const lines = csvString.split('\n').filter(line => line.trim());
+            if (lines.length < 2) return [];
+
+            const headers = lines[0].split(',').map(header => header.trim().replace(/^"|"$/g, ''));
+            const data = [];
+
+            for (let i = 1; i < Math.min(lines.length, 6); i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+
+                const values = [];
+                let currentValue = '';
+                let inQuotes = false;
+
+                for (let j = 0; j < line.length; j++) {
+                    const char = line[j];
+                    if (char === '"') {
+                        if (inQuotes && j + 1 < line.length && line[j + 1] === '"') {
+                            currentValue += '"';
+                            j++;
+                        } else {
+                            inQuotes = !inQuotes;
+                        }
+                    } else if (char === ',' && !inQuotes) {
+                        values.push(currentValue.trim());
+                        currentValue = '';
+                    } else {
+                        currentValue += char;
+                    }
+                }
+                values.push(currentValue.trim());
+
+                if (values.length === headers.length) {
+                    const row = {};
+                    headers.forEach((header, index) => {
+                        let value = values[index] || '';
+                        value = value.replace(/^"|"$/g, '').trim();
+                        row[header] = value;
+                    });
+                    data.push(row);
+                }
+            }
+
+            return data;
+        }
+
+        async function testOutboundConfig() {
+            showLoading('outboundConfigLoading', true);
+            const btn = document.getElementById('outboundConfigBtn');
+            btn.disabled = true;
+
+            try {
+                // OutboundConfig 모듈이 있다고 가정하고 테스트
+                const response = await fetch(PROXY_GOOGLE_SHEETS_URL);
+                const csvText = await response.text();
+                const parsedData = parseCSV(csvText);
+
+                if (parsedData.length > 0) {
+                    let tableHtml = '<table class="data-table"><thead><tr>';
+                    const headers = Object.keys(parsedData[0]);
+                    headers.forEach(header => {
+                        tableHtml += `<th>${header}</th>`;
+                    });
+                    tableHtml += '</tr></thead><tbody>';
+
+                    parsedData.forEach(row => {
+                        tableHtml += '<tr>';
+                        headers.forEach(header => {
+                            tableHtml += `<td>${row[header] || ''}</td>`;
+                        });
+                        tableHtml += '</tr>';
+                    });
+                    tableHtml += '</tbody></table>';
+
+                    showResult('outboundConfigResult',
+                        `<h3>✅ OutboundConfig 테스트 성공</h3>
+                         <p>파싱된 데이터 수: ${parsedData.length}</p>
+                         <h4>데이터 테이블:</h4>
+                         ${tableHtml}`,
+                        true);
+                } else {
+                    showResult('outboundConfigResult',
+                        `<h3>⚠️ OutboundConfig 테스트 경고</h3>
+                         <p>데이터가 없거나 파싱 실패</p>`,
+                        false);
+                }
+            } catch (error) {
+                showResult('outboundConfigResult',
+                    `<h3>❌ OutboundConfig 테스트 실패</h3>
+                     <p>Error: ${error.message}</p>
+                     <p>상세 에러: ${error.toString()}</p>`,
+                    false);
+            }
+
+            showLoading('outboundConfigLoading', false);
+            btn.disabled = false;
+        }
+
+        async function testFullConnection() {
+            showLoading('fullConnectionLoading', true);
+            const btn = document.getElementById('fullConnectionBtn');
+            btn.disabled = true;
+
+            const results = [];
+
+            try {
+                // 1. Health Check
+                try {
+                    const healthResponse = await fetch(CORS_PROXY_URL + '/health');
+                    const healthData = await healthResponse.json();
+                    results.push({ name: 'Health Check', success: true, data: healthData });
+                } catch (error) {
+                    results.push({ name: 'Health Check', success: false, error: error.message });
+                }
+
+                // 2. Google Sheets 프록시
+                try {
+                    const sheetsResponse = await fetch(PROXY_GOOGLE_SHEETS_URL);
+                    const csvText = await sheetsResponse.text();
+                    const parsedData = parseCSV(csvText);
+                    results.push({ name: 'Google Sheets 프록시', success: true, dataCount: parsedData.length });
+                } catch (error) {
+                    results.push({ name: 'Google Sheets 프록시', success: false, error: error.message });
+                }
+
+                // 결과 표시
+                let html = '<h3>전체 연결 테스트 결과</h3><table class="data-table"><thead><tr><th>테스트</th><th>결과</th><th>상세</th></tr></thead><tbody>';
+
+                results.forEach(result => {
+                    html += '<tr>';
+                    html += `<td>${result.name}</td>`;
+                    html += `<td>${result.success ? '✅ 성공' : '❌ 실패'}</td>`;
+                    html += `<td>${result.success ?
+                        (result.data ? JSON.stringify(result.data) : `데이터 수: ${result.dataCount}`) :
+                        result.error}</td>`;
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table>';
+
+                const allSuccess = results.every(r => r.success);
+                showResult('fullConnectionResult', html, allSuccess);
+
+            } catch (error) {
+                showResult('fullConnectionResult',
+                    `<h3>❌ 전체 연결 테스트 실패</h3>
+                     <p>Error: ${error.message}</p>
+                     <p>상세 에러: ${error.toString()}</p>`,
+                    false);
+            }
+
+            showLoading('fullConnectionLoading', false);
+            btn.disabled = false;
+        }
+
+        // 페이지 로드 시 자동으로 health check 실행
+        window.onload = function() {
+            testHealthCheck();
+        };
+    </script>
+</body>
+</html>

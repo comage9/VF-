@@ -1,0 +1,29 @@
+{
+  "name": "vf-outbound-tabs-fix",
+  "version": "1.0.0",
+  "description": "VF Outbound-Tabs.tsx 수정 적용 패키지",
+  "main": "test-outbound-connection.js",
+  "scripts": {
+    "test": "node test-outbound-connection.js",
+    "setup": "node setup-env.js",
+    "start": "npm run setup && npm test",
+    "quick-fix": "node quick-fix.js"
+  },
+  "keywords": [
+    "vf",
+    "outbound-tabs",
+    "fix",
+    "test"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

@@ -111,7 +111,7 @@ claude --permission-mode bypassPermissions --print "작업 지시"
 ### 핵심 문서
 - [[VF-생산-계획-최종-색상-매핑]] - 색상 컬러 매핑 테이블
 - [[VF-생산-계획-색상-매핑]] - 원본 색상 데이터
-- [[MEMORY]] - 프로젝트 진행 상황 기록
+- [[메모리-시스템-가이드]] - 프로젝트 진행 상황 기록
 
 ### 기술 문서
 - [[vf_production_mobile_ui_test_report]] - 테스트 보고서

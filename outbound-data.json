@@ -1,0 +1,65 @@
+{
+  "data": [
+    {
+      "id": "OUT-001",
+      "productName": "러블리 옷걸이",
+      "customerName": "ABC 물류",
+      "orderDate": "2026-04-10",
+      "deliveryDate": "2026-04-20",
+      "quantity": 500,
+      "status": "processing",
+      "address": "서울특별시 강남구 테헤란로 123",
+      "trackingNumber": "1234567890123"
+    },
+    {
+      "id": "OUT-002",
+      "productName": "모던플러스 서랍",
+      "customerName": "XYZ 상사",
+      "orderDate": "2026-04-12",
+      "deliveryDate": "2026-04-22",
+      "quantity": 300,
+      "status": "pending",
+      "address": "부산광역시 해운대구 센텀로 456",
+      "notes": "특별 포장 요청"
+    },
+    {
+      "id": "OUT-003",
+      "productName": "신규 모던플러스 프레임",
+      "customerName": "DEF 트레이딩",
+      "orderDate": "2026-04-08",
+      "deliveryDate": "2026-04-18",
+      "quantity": 200,
+      "status": "shipped",
+      "address": "경기도 성남시 분당구 판교로 789",
+      "trackingNumber": "9876543210987"
+    },
+    {
+      "id": "OUT-004",
+      "productName": "컴팩트 수납장",
+      "customerName": "GHI 리테일",
+      "orderDate": "2026-04-05",
+      "deliveryDate": "2026-04-15",
+      "quantity": 150,
+      "status": "delivered",
+      "address": "대전광역시 유성구 대덕대로 111",
+      "trackingNumber": "5555555555555"
+    },
+    {
+      "id": "OUT-005",
+      "productName": "플로팅 책장",
+      "customerName": "JKL 디자인",
+      "orderDate": "2026-04-14",
+      "deliveryDate": "2026-04-24",
+      "quantity": 100,
+      "status": "cancelled",
+      "address": "광주광역시 북구 무등대로 222",
+      "notes": "고객 요청으로 취소"
+    }
+  ],
+  "metadata": {
+    "totalItems": 5,
+    "lastUpdated": "2026-04-16T10:00:00.000Z",
+    "dataSource": "local",
+    "description": "VF 프로젝트 출고 데이터 예시"
+  }
+}

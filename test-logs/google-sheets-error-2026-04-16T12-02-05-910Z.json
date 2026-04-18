@@ -1,0 +1,9 @@
+{
+  "timestamp": "2026. 4. 16. PM 9:02:05",
+  "url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vQwqI0BG-d2aMrql7DK4fQQTjvu57VtToSLAkY_nq92a4Cg5GFVbIn6_IR7Fq6_O-2TloFSNlXT8ZWC/pub?gid=1152588885&single=true&output=csv",
+  "success": false,
+  "error": {
+    "message": "HTTP 307: Temporary Redirect",
+    "stack": "Error: HTTP 307: Temporary Redirect\n    at ClientRequest.<anonymous> (/home/comage/.openclaw/workspace/test-csv-parsing.js:52:16)\n    at Object.onceWrapper (node:events:634:26)\n    at ClientRequest.emit (node:events:519:28)\n    at HTTPParser.parserOnIncomingClient [as onIncoming] (node:_http_client:780:27)\n    at HTTPParser.parserOnHeadersComplete (node:_http_common:125:17)\n    at TLSSocket.socketOnData (node:_http_client:615:22)\n    at TLSSocket.emit (node:events:519:28)\n    at addChunk (node:internal/streams/readable:561:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)\n    at Readable.push (node:internal/streams/readable:392:5)"
+  }
+}

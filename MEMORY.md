@@ -2,81 +2,165 @@
 
 ## 📅 프로젝트 타임라인
 - **시작일**: 2026-04-15
-- **최근 업데이트**: 2026-04-16
-- **상태**: 주요 컴포넌트 구현 완료
+- **최근 업데이트**: 2026-04-18
+- **상태**: 진행 중
+
+## 🤖 AI 모델 상태
+- **기본 모델**: `openrouter/nvidia/nemotron-3-super-120b-a12b:free` (NVIDIA Nemotron-3 Super 120B A12B - Free)
+- **폴백 1**: `openrouter/moonshotai/kimi-k2.5` (Moonshot Kimi K2.5)
+- **폴백 2**: `openrouter/openrouter/elephant-alpha` (Elephant Alpha)
+- **폴백 3**: `openrouter/qwen/qwen3.5-flash-02-23` (Qwen 3.5 Flash)
+- **폴백 4**: `openrouter/minimax/minimax-m2.5:free` (MiniMax M2.5 Free)
+- **폴백 5**: `deepseek/deepseek-chat` (DeepSeek Chat)
+- **API 키 설정**: OpenRouter, DeepSeek 완료
 
 ## 🔗 Claude Code 연결 상태
-- **상태**: 정상 동작 확인 (검증 완료)
-- **연결 방법**: `timeout 30 claude --permission-mode bypassPermissions --print "작업 지시"`
-- **검증 일시**: 2026-04-16
-- **특이사항**: ACP 에이전트 구성 없이 CLI 직접 실행 방식으로 연결 확보
+- **상태**: OpenCoder로 전환 완료
+- **OpenCoder 버전**: 1.4.7
+- **모델**: openai/gpt-oss-120b:free (OpenRouter 무료)
+- **연결 방법**: `~/.opencode/bin/opencode run "작업 지시"`
 
 ## 📋 완료된 작업
 
-### 1. 색상 데이터 전수 조사 및 매핑
-- **추출 색상**: 50+ 종류의 VF 프로젝트 색상
-- **컬러 매핑**: 방안 A(텍스트+배경) 적용
-- **화이트/아이보리 구분**: 특별 처리 완료
-- **문서화**: 옵시디언에 등록 완료
+### 1. VF 프로젝트 출고 페이지 오류 수정 (2026-04-18) ✅
+**문제**: `configStatus is not defined` - 흰화면 현상
+**솔루션**: `outboundConfig.ts` 의 `checkOutboundConfigStatus()` import 추가
+**Git 커밋**: `d6ab8c4` - fix: configStatus 참조 오류 수정
+**출력**: outbound 페이지 정상 작동
 
-### 2. Windows 서버 데이터 동기화
-- **동기화 일시**: 2026-04-16
-- **데이터 양**: 44개 생산 레코드
-- **마스터 데이터**: 전체 스펙 정보
-- **저장 위치**: `vf_production_data.json`, `vf_master_specs.json`
+### 2. Git 동기화 완료 (2026-04-18) ✅
+- **GitHub 토큰**: `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`
+- **저장소**: `https://github.com/comage9/VF-.git`
+- **업로드된 커밋**:
+  - `d6ab8c4` - outbound 페이지 오류 수정
+  - `cc05cf2` - getMachineAccent TDZ 에러 수정
+  - `c1a29e4` - docs 및 불필요 파일 정리
+  - `9fa0129` - 불필요한 프론트엔드 파일 정리
 
-### 3. Claude Code를 통한 컴포넌트 구현
-#### ✅ 순차적 구현 완료 (Claude Code 작업)
-1. **ProgressBar.tsx** - 진행률 바 컴포넌트
-2. **StatusIndicator.tsx** - 상태 표시기 컴포넌트
-3. **ProgressCard.tsx** - 통합 진행 카드 컴포넌트
+### 3. 옵시디언 파일 정리 완료 (2026-04-18) ✅
+**정리 완료**: 22 개 날짜 파일 재정리
+**생성된 파일**:
+- 2026-04-06 ~ 2026-04-15 일일 메모 파일 (내용 추가 완료)
+- 자동 정리 스크립트 2 개
+- 옵시디언 템플릿 1 개
 
-#### ✅ 직접 구현 + Claude Code 검토
-1. **MobileProductionCard.tsx** - 모바일 최적화 카드
-2. **color-mapping-utility.ts** - 색상 매핑 유틸리티
-3. **quantity-calculator.ts** - 수량 계산 유틸리티
+### 4. 긴급 문제 해결 (2026-04-17)
+#### ✅ VF 프로젝트
+1. **CORS 프록시 문제 해결**: 3001 포트 제거, 백엔드 API(5176) 사용
+2. **React 속성 오류 수정**: `jsx="true"` boolean 오류 해결
+3. **빌드 오류 수정**: 구문 오류 수정, 빌드 성공 확인
+4. **GitHub 백업본 방식 복원**: Google Sheets 연동 최적화
 
-### 4. 코드 검토 및 개선 (Claude Code)
-- **검토 일시**: 2026-04-16
-- **개선점 제안**: 5가지 주요 개선사항
-- **우선순위**: 타입 안전성 > 성능 최적화 > 스타일 통합
+#### ✅ 키 프로젝트
+1. **자동 완료 체크 시스템 구현**: 실시간 모니터링 시스템
+2. **보고 시스템 개선**: 자동 완료 감지, 상태 대시보드
+3. **테스트 완료**: 시스템 정상 작동 확인
+
+### 5. 시스템 개선
+1. **OpenCoder 설치 및 설정**: OpenRouter 무료 모델 연동
+2. **자동 알림 시스템**: 보고 파일 시스템 구현
+3. **실시간 모니터링**: 10 초 간격 상태 확인
+4. **명령어 체계 정립**: 사용자 친화적 명령어 시스템
+
+### 6. 문서화
+1. **옵시디언 동기화**: 모든 작업 기록 저장
+2. **메모리 시스템 업데이트**: 체계적 정보 관리
+3. **Git 백업**: 모든 변경사항 버전 관리
 
 ## 🗂️ 생성된 파일 구조
 ```
 workspace/
-├── 컴포넌트/ (4 files)
-├── 유틸리티/ (2 files)
-├── 데이터/ (2 files)
-├── 문서/ (3 files)
-└── 메모리/ (this file)
+├── 컴포넌트/ (VF 프로젝트)
+├── 유틸리티/ (VF 프로젝트)
+├── 데이터/ (VF 프로젝트)
+├── 문서/ (모든 프로젝트)
+├── 메모리/ (시스템 메모리)
+│   ├── index.md (메모리 시스템 인덱스) ✅
+│   └── 2026-04-*.md (일일 기록)
+└── ki-ai-trader/ (키 프로젝트)
+    ├── reports/ (보고 시스템)
+    ├── src/ (AI 매매 시스템)
+    ├── scripts/ (실행 스크립트)
+    └── *.sh (명령어 스크립트)
 ```
 
 ## 🎯 구현된 핵심 기능
-1. **색상 컬러링**: 텍스트+배경 방식 (방안 A)
-2. **수량 계산**: 낱개 → 박스 → 팔레트 변환
-3. **진행률 추적**: 실시간 작업량 모니터링
-4. **모바일 최적화**: 터치 인터페이스 지원
+1. **VF 프로젝트**: 출고 현황 페이지 Google Sheets 연동 복원
+2. **키 프로젝트**: AI 매매 시스템 기반 구축
+3. **시스템**: 자동 완료 체크 및 실시간 모니터링
 
 ## 📊 데이터 소스
 - **Windows 서버**: bonohouse.p-e.kr:5174
 - **API 엔드포인트**: /api/production, /api/master/specs
-- **동기화 방식**: 주기적 자동 동기화 가능
+- **Google Sheets**: 출고 데이터 연동
 
-## 🔄 다음 단계
-1. **Git 동기화**: 로컬 저장소 커밋 및 푸시
-2. **Windows 앱 연동**: 실제 VF 프로젝트 통합
-3. **테스트 배포**: 모바일 환경에서 검증
-4. **피드백 반영**: 현장 작업자 피드백 수집
+## 🔄 현재 진행 중
+1. **VF 프로젝트 서버 테스트** - 출고 현황 페이지 확인
+2. **Git 동기화** - Windows 서버 배포 준비
+3. **옵시디언 인덱스 관리** - MEMORY.md 업데이트
 
 ## ⚠️ 주의사항
-- Claude Code 연결 시 `timeout` 설정 필수
-- Windows 서버 API 응답 형식 유지 필요
-- 색상 매핑은 실제 현장 색상과 일치 여부 검증 필요
+- OpenCoder 작업 시 20 분 타임아웃 설정 권장
+- 모니터링 시스템은 백그라운드 실행 유지
+- 모든 작업은 보고 시스템 통해 추적
+- **메모리 시스템**: MEMORY.md 파일이 모든 작업 기록의 핵심 인덱스 역할
+
+## 🚀 사용 가능한 명령어 시스템
+
+### OpenCoder 작업 실행
+```bash
+./run_opencode_with_report.sh "작업 설명"
+```
+
+### 상태 확인
+```bash
+./check_opencode_status.sh      # 전체 상태 확인
+./check_opencode_reports.sh     # 보고서 확인
+```
+
+### 모니터링 관리
+```bash
+./opencode_monitor.sh start     # 모니터링 시작
+./opencode_monitor.sh stop      # 모니터링 중지
+```
+
+### VF 프로젝트
+```bash
+cd /home/comage/coding/VF/frontend/client
+npm run build                   # 빌드 테스트
+npm run dev                     # 개발 서버 실행
+```
 
 ## 📞 문제 해결
-- **Claude Code 연결 문제**: `--permission-mode bypassPermissions` 필수
-- **데이터 동기화 실패**: Windows 서버 상태 확인
-- **컴포넌트 오류**: 타입스크립트 컴파일 확인
+- **OpenCoder 연결 문제**: `~/.opencode/bin/opencode --version` 확인
+- **보고 시스템 문제**: `./check_opencode_status.sh` 실행
+- **빌드 오류**: `npm run build` 로그 확인
+
+## 📝 메모리 시스템 가이드
+
+### 인덱스 파일 활용
+1. **MEMORY.md**: 주요 프로젝트 및 작업 기록 (이 파일)
+2. **memory/index.md**: 모든 메모리 파일 인덱스
+3. **memory/2026-04-*.md**: 일일 세션 기록
+
+### 메모리 관리 원칙
+- **일일 기록**: 매일 끝에 요약 기록
+- **주요 결정**: MEMORY.md 에 즉시 기록
+- **인덱스 업데이트**: 모든 새로운 메모리 추가 시 인덱스 업데이트
+- **Git 백업**: 정기적으로 Git 에 푸시
+
+### 메모리 검색 방법
+```bash
+# MEMORY.md 검색
+grep -r "키워드" ~/.openclaw/workspace/MEMORY.md
+
+# 메모리 디렉토리 검색
+grep -r "키워드" ~/.openclaw/workspace/memory/
+
+# 옵시디언 검색
+Ctrl+P (옵시디언 명령 팔레트)
+```
 
 ---
 *이 문서는 자동 업데이트되며, 주요 변경사항이 있을 때마다 갱신됩니다.*
+*최종 업데이트: 2026 년 4 월 18 일 22:12*

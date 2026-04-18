@@ -44,13 +44,13 @@ const MobileProductionCard: React.FC<MobileProductionCardProps> = ({
   const reactStyle = colorStyle ? createReactStyle(item.color) : {};
 
   // 진행률에 따른 상태 결정
-  const getStatus = (): 'in-progress' | 'delayed' | 'completed' | 'problem' => {
-    if (progressData.progressPercent >= 100) return 'completed';
-    if (progressData.progressPercent > 70) return 'in-progress';
-    if (progressData.progressPercent > 30) return 'in-progress';
-    if (progressData.progressPercent === 0) return 'problem';
-    return 'delayed';
-  };
+const getStatus = (): 'in-progress' | 'delayed' | 'completed' | 'problem' => {
+  if (progressData.progressPercent >= 100) return 'completed';
+  if (progressData.progressPercent > 70) return 'in-progress';
+  if (progressData.progressPercent > 30) return 'delayed';
+  if (progressData.progressPercent === 0) return 'problem';
+  return 'delayed';
+};
 
   // 카드 탭 핸들러
   const handleCardPress = () => {
@@ -102,6 +102,7 @@ const MobileProductionCard: React.FC<MobileProductionCardProps> = ({
     <div 
       className={`mobile-production-card ${className}`}
       onClick={handleCardPress}
+      onTouchStart={handleCardPress}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {

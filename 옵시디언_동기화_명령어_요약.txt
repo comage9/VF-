@@ -1,0 +1,97 @@
+# 옵시디언 동기화 명령어 요약 (Windows)
+
+## 🚀 빠른 시작
+
+### 1. Git 설치 확인
+```powershell
+git --version
+```
+
+### 2. 저장소 초기화 (처음 한 번만)
+```powershell
+cd C:\Users\[사용자명]\.openclaw\workspace
+git init
+git add .
+git commit -m "초기 설정"
+```
+
+### 3. GitHub 저장소 연결
+```powershell
+git remote add origin https://github.com/[사용자명]/openclaw-workspace.git
+git push -u origin main
+```
+
+## 🔄 일상적인 동기화
+
+### 업로드 (변경사항 저장)
+```powershell
+cd C:\Users\[사용자명]\.openclaw\workspace
+git add .
+git commit -m "업데이트"
+git push
+```
+
+### 다운로드 (최신 버전 가져오기)
+```powershell
+cd C:\Users\[사용자명]\.openclaw\workspace
+git pull
+```
+
+## ⚡ 배치 파일 사용법
+
+### 1. sync.bat 생성 (바탕화면에 저장)
+```batch
+@echo off
+cd /d "C:\Users\%USERNAME%\.openclaw\workspace"
+git add .
+git commit -m "업데이트: %date%"
+git push
+echo 동기화 완료!
+pause
+```
+
+### 2. 옵시디언 실행 배치 파일
+```batch
+@echo off
+start "" "C:\Program Files\Obsidian\Obsidian.exe" "C:\Users\%USERNAME%\.openclaw\workspace"
+```
+
+## 📱 모바일 동기화 (옵션)
+
+### Obsidian Mobile 앱 설정
+1. Obsidian Git 플러그인 설치
+2. GitHub 토큰 생성
+3. 모바일에서 저장소 클론
+
+## 🛠️ 문제 해결 명령어
+
+### Git 오류 시
+```powershell
+# 강제 푸시
+git push -f origin main
+
+# 저장소 재설정
+git fetch origin
+git reset --hard origin/main
+```
+
+### 파일 권한 문제
+```powershell
+# PowerShell 관리자 권한
+icacls "C:\Users\%USERNAME%\.openclaw" /grant "%USERNAME%:(OI)(CI)F"
+```
+
+## ⏰ 자동 동기화 설정
+
+### 작업 스케줄러 등록
+```powershell
+# PowerShell 관리자 권한
+$action = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-File C:\Users\%USERNAME%\sync.ps1"
+$trigger = New-ScheduledTaskTrigger -Daily -At "09:00AM"
+Register-ScheduledTask -TaskName "OpenClawSync" -Action $action -Trigger $trigger
+```
+
+---
+*사용자명은 실제 Windows 사용자 이름으로 변경하세요.*
+*예: C:\Users\john\.openclaw\workspace*
+```
