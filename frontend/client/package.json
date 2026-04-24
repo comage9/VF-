@@ -35,12 +35,14 @@
     "react-markdown": "^10.1.0",
     "recharts": "^2.8.0",
     "tailwind-merge": "^3.5.0",
-    "wouter": "^2.8.0"
+    "wouter": "^2.8.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
+    "@types/xlsx": "^0.0.35",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "@vitejs/plugin-react": "^4.0.3",

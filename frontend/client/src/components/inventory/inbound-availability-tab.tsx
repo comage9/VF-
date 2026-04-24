@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import JsBarcode from 'jsbarcode';
+import * as XLSX from 'xlsx';
 
 interface InboundOrderLine {
   id: string;
@@ -36,6 +37,8 @@ interface InventoryItem {
   minStock?: number | null;
   maxStock?: number | null;
   location?: string;
+  avgDailyOutbound14d?: number;
+  avgDailyOutbound30d?: number;
 }
 
 export default function InboundAvailabilityTab() {
@@ -51,6 +54,50 @@ export default function InboundAvailabilityTab() {
       return 'min';
     }
   });
+
+  // 기간 선택 (3, 7, 10, 14, 30일)
+  const [periodDays, setPeriodDays] = useState<number>(10);
+
+  // 일별 출고 데이터 조회 (Enhanced 가중치 계산용)
+  const { data: outboundDailyData } = useQuery<{
+    success: boolean;
+    data: Array<{
+      barcode: string;
+      productName: string;
+      category: string;
+      dailyData: Array<{ date: string; quantity: number }>;
+      totalOutbound: number;
+      avgDaily: number;
+    }>;
+    summary: { totalRecords: number; totalBarcodes: number };
+  }>({
+    queryKey: ['outbound-barcode-daily', 60],
+    queryFn: async () => {
+      const response = await fetch('/api/outbound/barcode-daily?days=60');
+      if (!response.ok) throw new Error('일별 출고 데이터를 불러올 수 없습니다.');
+      return response.json();
+    },
+    staleTime: 5 * 60_000, // 5분
+  });
+
+
+  // 일별 출고 데이터 맵 (바코드 기반, last 60days)
+  const outboundDailyMap = useMemo(() => {
+    const map = new Map<string, Array<{ date: string; quantity: number }>>();
+    const data = outboundDailyData?.data || [];
+    for (const item of data) {
+      const bc = (item.barcode || '').trim();
+      if (bc) map.set(bc, item.dailyData || []);
+    }
+    return map;
+  }, [outboundDailyData]);
+
+  // 0 수량 필터 토글 (true = 숨기기, false = 보기)
+  const [hideZeroQty, setHideZeroQty] = useState<boolean>(true);
+  // 계산법 도움말 토글
+  const [showCalcHelp, setShowCalcHelp] = useState<boolean>(false);
+  // 확정수량 수정 상태 (barcode -> 수정된 수량)
+  const [editedQuantities, setEditedQuantities] = useState<Map<string, number>>(new Map());
 
   // 최신 입고 발주서 데이터 조회
   const { data: inboundData, isLoading: isLoadingInbound, refetch: refetchInbound } = useQuery<{
@@ -220,10 +267,219 @@ export default function InboundAvailabilityTab() {
     setPolicyStatuses(policyStatuses.filter((s) => s !== status));
   };
 
+  // 확정수량 수정 핸들러
+  const handleConfirmedQtyChange = (barcode: string, value: string) => {
+    const num = parseInt(value, 10);
+    if (isNaN(num) || num < 0) return;
+    setEditedQuantities((prev) => {
+      const next = new Map(prev);
+      next.set(barcode, num);
+      return next;
+    });
+  };
+
+  // Excel 내보내기 핸들러
+  const handleExportExcel = () => {
+    if (visibleInboundLines.length === 0) {
+      alert('내보낼 데이터가 없습니다.');
+      return;
+    }
+
+    const rows = visibleInboundLines.map((line) => {
+      const bc = String(line.barcode || '').trim();
+      const editedQty = editedQuantities.get(bc) ?? line.confirmedQty;
+      const item = inventoryMap.get(bc);
+      const currentStock = Number(item?.currentStock ?? 0) || 0;
+      const avgDailyOutbound = getAvgDailyOutbound(item);
+      const targetStock = avgDailyOutbound * periodDays;
+      const recommendedQty = (() => {
+        // per-row direct calculation instead of aggregated map (for Excel export)
+        const bc = String(line.barcode || '').trim();
+        const item = inventoryMap.get(bc);
+        const currentStock = Number(item?.currentStock ?? 0) || 0;
+        const avgDailyOutbound = getAvgDailyOutbound(item);
+        const targetStock = avgDailyOutbound * periodDays;
+        const confirmedQty = line.confirmedQty;
+        const isUnreceivedCsv = uploadInfo?.fileType === 'unreceived_csv';
+        const base = isUnreceivedCsv
+          ? Math.max(0, (confirmedQty - line.receivedQty))
+          : Math.max(0, confirmedQty);
+        const needToTarget = Math.max(0, targetStock - (currentStock + base));
+        return Math.floor(Math.min(base, needToTarget));
+      })();
+
+      return {
+        '상품명': line.productName || '-',
+        '상품바코드': bc,
+        '상대방 발주수량': line.orderedQty,
+        '확정수량': editedQty,
+        '평균일일출고': avgDailyOutbound,
+        [`목표재고(${periodDays}일)`]: Math.round(targetStock),
+        '현재고': currentStock,
+        '추천확정수량': recommendedQty,
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '발주서 검토');
+
+
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const filename = `발주서_검토_${today}.xlsx`;
+    XLSX.writeFile(workbook, filename);
+  };
+
   const inboundLines = inboundData?.data || [];
   const uploadInfo = inboundData?.uploadInfo;
 
-  // 입고 가능 수량 계산 (바코드별 예상입고 합산 후 목표재고 부족분으로 캡)
+  // 표시할 발주 품목 (바코드 기준 중복 제거, 0 수량 필터)
+  const visibleInboundLines = useMemo(() => {
+    if (inboundLines.length === 0) return [];
+    const seen = new Set<string>();
+    return inboundLines.filter((line) => {
+      const bc = String(line.barcode || '').trim();
+      if (!bc || seen.has(bc)) return false;
+      seen.add(bc);
+      if (hideZeroQty) {
+        const editedOrOriginal = editedQuantities.get(bc) ?? line.confirmedQty;
+        if (editedOrOriginal === 0) return false;
+      }
+      return true;
+    });
+  }, [inboundLines, hideZeroQty, editedQuantities]);
+
+  // Enhanced 평균일일출고 계산 (이중 가중치)
+  const calcEnhancedAvgDaily = (barcode: string): number => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+
+    // 선택기간 종료일 = 오늘, 시작일 = 오늘 - (periodDays - 1)
+    const endDate = new Date(today);
+    const startDate = new Date(today);
+    startDate.setDate(startDate.getDate() - (periodDays - 1));
+
+    // 월초 포함 여부 체크 (1일~5일)
+    const startMonth = startDate.getMonth();
+    const startYear = startDate.getFullYear();
+    
+    
+
+    let includesMonthStart = false;
+    const ms = new Date(startYear, startMonth, 1);
+    const me = new Date(startYear, startMonth, 5);
+    if (ms <= endDate && me >= startDate) includesMonthStart = true;
+
+    const dailyData = outboundDailyMap.get(barcode) || [];
+
+    // 1) 이전달 전체 데이터
+    let prevMonthTotal = 0;
+    let prevMonthDays = 0;
+    if (includesMonthStart) {
+      const prevMonth = new Date(startYear, startMonth, 0); // 이전달 마지막일
+      
+      for (const d of dailyData) {
+        const dd = new Date(d.date);
+        if (dd.getFullYear() === prevMonth.getFullYear() && dd.getMonth() === prevMonth.getMonth()) {
+          prevMonthTotal += d.quantity;
+          prevMonthDays += 1;
+        }
+      }
+    }
+
+    // 2) 선택기간 데이터 (최종 7일 가중치 1.5, 예전 7일 가중치 1.0, 미만 전체 1.5)
+    let weightedSum = 0;
+    let weightSum = 0;
+    const periodData = dailyData.filter((d) => {
+      const dd = new Date(d.date);
+      return dd >= startDate && dd <= endDate;
+    });
+    const totalDays = periodData.length;
+
+    if (totalDays === 0) return 0;
+
+    if (totalDays >= 7) {
+      // 최신 7일: 가중치 1.5, 예전 7일: 가중치 1.0
+      const recentData = periodData.slice(-7);
+      const olderData = periodData.slice(0, -7);
+      for (const d of olderData) {
+        weightedSum += d.quantity * 1.0;
+        weightSum += 1 * 1.0;
+      }
+      for (const d of recentData) {
+        weightedSum += d.quantity * 1.5;
+        weightSum += 1 * 1.5;
+      }
+    } else {
+      // 7일 미만: 전체 가중치 1.5
+      for (const d of periodData) {
+        weightedSum += d.quantity * 1.5;
+        weightSum += 1 * 1.5;
+      }
+    }
+
+    // 최종 가중치 합산
+    const prevWeighted = prevMonthTotal * 1.0;
+    const prevWeight = prevMonthDays * 1.0;
+
+    if (weightSum + prevWeight === 0) return 0;
+    return Math.round((weightedSum + prevWeighted) / (weightSum + prevWeight));
+  };
+
+  // 기간별 평균 일일 출고량 계산 (정수 반환, Enhanced 우선)
+  const getAvgDailyOutbound = (item: InventoryItem | undefined): number => {
+    if (!item) return 0;
+    const bc = (item.barcode || '').trim();
+    const hasDailyData = outboundDailyMap.has(bc) && (outboundDailyMap.get(bc) || []).length > 0;
+
+    // Enhanced 계산 가능 시 사용
+    if (hasDailyData) {
+      return calcEnhancedAvgDaily(bc);
+    }
+
+    // Fallback: 기존 aggregate 데이터比例計算
+    const avg14d = Number(item.avgDailyOutbound14d ?? 0) || 0;
+    const avg30d = Number(item.avgDailyOutbound30d ?? 0) || 0;
+    if (periodDays === 14) return Math.round(avg14d);
+    if (periodDays === 30) return Math.round(avg30d);
+    if (avg14d > 0) return Math.round(avg14d * (periodDays / 14));
+    if (avg30d > 0) return Math.round(avg30d * (periodDays / 30));
+    return 0;
+  };
+
+  // 입고 가능 수량 계산 (기간별 목표재고 기반, 확정수량에서 줄이기만 가능)
+  // NOTE: This stores per-row values, NOT aggregated by barcode (unlike inboundAvailableByBarcode below).
+  // Each row's inboundAvailable = Math.floor(Math.min(thisRowQty, Math.max(0, targetStock - (currentStock + thisRowQty))))
+  const inboundAvailableByRow = useMemo(() => {
+    const out: Array<{ bc: string; lineId: string; value: number }> = [];
+    for (const line of inboundLines) {
+      const bc = String(line.barcode || '').trim();
+      if (!bc) continue;
+
+      const item = inventoryMap.get(bc);
+      const currentStock = Number(item?.currentStock ?? 0) || 0;
+      const avgDailyOutbound = getAvgDailyOutbound(item);
+      const targetStock = avgDailyOutbound * periodDays;
+
+      const isUnreceivedCsv = uploadInfo?.fileType === 'unreceived_csv';
+      const base = isUnreceivedCsv
+        ? Math.max(0, (line.confirmedQty - line.receivedQty))
+        : Math.max(0, line.confirmedQty);
+
+      const needToTarget = Math.max(0, targetStock - (currentStock + base));
+      const inboundAvail = Math.floor(Math.min(base, needToTarget));
+      out.push({ bc, lineId: line.id, value: inboundAvail });
+    }
+    return out;
+  }, [inboundLines, inventoryMap, periodDays, uploadInfo?.fileType]);
+
+  // DEBUG: Log inboundAvailableByRow stats
+  console.debug('[DEBUG inboundAvailableByRow] total rows:', inboundAvailableByRow.length);
+  console.debug('[DEBUG inboundAvailableByRow] unique barcodes:', new Set(inboundAvailableByRow.map(r => r.bc)).size);
+  console.debug('[DEBUG inboundAvailableByRow] sum of all values:', inboundAvailableByRow.reduce((s, r) => s + r.value, 0));
+
+  // 입고 가능 수량 맵 (바코드 -> 중복聚合값, Excel 내보내기용으로만 사용)
   const inboundAvailableByBarcode = useMemo(() => {
     const baseByBarcode = new Map<string, number>();
     const isUnreceivedCsv = uploadInfo?.fileType === 'unreceived_csv';
@@ -231,6 +487,7 @@ export default function InboundAvailabilityTab() {
     for (const line of inboundLines) {
       const bc = String(line.barcode || '').trim();
       if (!bc) continue;
+
 
       const base = isUnreceivedCsv
         ? Math.max(0, (line.confirmedQty - line.receivedQty))
@@ -243,35 +500,60 @@ export default function InboundAvailabilityTab() {
     for (const [bc, baseSum] of baseByBarcode.entries()) {
       const item = inventoryMap.get(bc);
       const currentStock = Number(item?.currentStock ?? 0) || 0;
-      const rawTarget = targetMode === 'min' ? item?.minStock : item?.maxStock;
-      const targetStock = Number(rawTarget ?? 0) || 0;
-      const base = Math.max(0, baseSum);
-      const needToTarget = targetStock > 0 ? Math.max(0, targetStock - currentStock) : base;
-      out.set(bc, Math.min(base, needToTarget));
+
+      // 기간 기반 목표 재고 계산
+      const avgDailyOutbound = getAvgDailyOutbound(item);
+      const targetStock = avgDailyOutbound * periodDays;
+
+      // 현재고 + 발주량으로 목표 재고 대비 부족분 계산 (정수 연산)
+      const currentWithOrdered = currentStock + baseSum;
+      const needToTarget = Math.max(0, targetStock - currentWithOrdered);
+
+      // 확정수량에서 줄이기만 가능 (증가 불가) - 소수점 버림
+      out.set(bc, Math.floor(Math.min(baseSum, Math.max(0, needToTarget))));
     }
+
+    // DEBUG: Log stats
+    console.debug('[DEBUG inboundAvailableByBarcode] map size:', out.size);
+    console.debug('[DEBUG inboundAvailableByBarcode] sum of all values:', Array.from(out.values()).reduce((s, v) => s + v, 0));
+
     return out;
-  }, [inboundLines, inventoryMap, targetMode, uploadInfo?.fileType]);
+  }, [inboundLines, inventoryMap, periodDays, uploadInfo?.fileType]);
 
-  // 입고 가능 수량이 있는 바코드만 필터링
-  const includedBarcodeSet = useMemo(() => {
-    const set = new Set<string>();
-    for (const [bc, qty] of inboundAvailableByBarcode.entries()) {
-      if (qty > 0) set.add(bc);
-    }
-    return set;
-  }, [inboundAvailableByBarcode]);
 
-  const visibleInboundLines = useMemo(() => {
-    if (inboundLines.length === 0) return [];
-    return inboundLines.filter((line) => includedBarcodeSet.has(String(line.barcode || '').trim()));
-  }, [inboundLines, includedBarcodeSet]);
+  // DEBUG: visibleInboundLines length log (moved after declaration)
+  console.debug('[DEBUG visibleInboundLines] length:', visibleInboundLines.length, '| original inboundLines:', inboundLines.length);
 
-  // 입고 가능 수량 합계
+  // 입고 가능 수량 합계 (per-row 직접 계산 - aggregate 값 아님)
   const totalInboundAvailable = useMemo(() => {
     let total = 0;
-    for (const v of inboundAvailableByBarcode.values()) total += v;
+    // DEBUG: collect per-row avgDailyOutbound samples
+    const avgSamples: Array<{ bc: string; avg: number; targetStock: number; currentStock: number; qty: number; inboundAvail: number }> = [];
+    for (const line of visibleInboundLines) {
+      const bc = String(line.barcode || '').trim();
+      const qty = editedQuantities.get(bc) ?? line.confirmedQty;
+      const item = inventoryMap.get(bc);
+      const currentStock = Number(item?.currentStock ?? 0) || 0;
+      const avgDailyOutbound = getAvgDailyOutbound(item);
+      const targetStock = avgDailyOutbound * periodDays;
+      const currentWithOrdered = currentStock + qty;
+      const needToTarget = Math.max(0, targetStock - currentWithOrdered);
+      const inboundAvail = Math.floor(Math.min(qty, Math.max(0, needToTarget)));
+      total += inboundAvail;
+      avgSamples.push({ bc, avg: avgDailyOutbound, targetStock, currentStock, qty, inboundAvail });
+    }
+    // DEBUG: Log calculation breakdown with avgDailyOutbound samples (top 10 by inboundAvail > 0)
+    const topSamples = avgSamples.filter(s => s.inboundAvail > 0).slice(0, 10);
+    console.debug('[DEBUG totalInboundAvailable] sum:', total, '| visible count:', visibleInboundLines.length);
+    console.debug('[DEBUG avgDailyOutbound] top samples (inboundAvail>0):', topSamples);
+    console.debug('[DEBUG avgDailyOutbound] avg value stats:', {
+      totalRows: avgSamples.length,
+      rowsWithAvgGt0: avgSamples.filter(s => s.avg > 0).length,
+      rowsWithInboundAvailGt0: avgSamples.filter(s => s.inboundAvail > 0).length,
+      avgOfAvg: avgSamples.length > 0 ? Math.round(avgSamples.reduce((s, r) => s + r.avg, 0) / avgSamples.length) : 0,
+    });
     return total;
-  }, [inboundAvailableByBarcode]);
+  }, [visibleInboundLines, editedQuantities, inventoryMap, periodDays]);
 
   const BarcodeCell = React.memo(function BarcodeCell({ value }: { value: string }) {
     const svgRef = useRef<SVGSVGElement | null>(null);
@@ -460,51 +742,120 @@ export default function InboundAvailabilityTab() {
       </div>
 
       <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">🎯 목표치 선택</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">🎯 기간 및 목표치 선택</h3>
 
         <div className="space-y-4">
-          <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="targetMode"
-                value="min"
-                checked={targetMode === 'min'}
-                onChange={() => setTargetMode('min')}
-                className="w-4 h-4 text-blue-600"
-              />
-              <span className="text-sm text-gray-700">적정 재고 (minStock)</span>
+          {/* 기간 선택 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              분석 기간
             </label>
-
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="targetMode"
-                value="max"
-                checked={targetMode === 'max'}
-                onChange={() => setTargetMode('max')}
-                className="w-4 h-4 text-blue-600"
-              />
-              <span className="text-sm text-gray-700">최대 재고 (maxStock)</span>
-            </label>
+            <div className="flex flex-wrap gap-2">
+              {[3, 7, 10, 14, 30].map((days) => (
+                <button
+                  key={days}
+                  onClick={() => setPeriodDays(days)}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    periodDays === days
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {days}일
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              기간별 평균 일일 출고량 기반으로 목표 재고를 산출합니다 (기본: 10일)
+            </p>
           </div>
 
-          <p className="text-sm text-gray-600">
-            {targetMode === 'min'
-              ? '현재 적정 재고(minStock)를 목표치로 사용합니다.'
-              : '현재 최대 재고(maxStock)를 목표치로 사용합니다.'}
-          </p>
+          {/* 목표치 선택 */}
+          <div className="pt-4 border-t border-gray-200">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              목표 재고 기준
+            </label>
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="targetMode"
+                  value="min"
+                  checked={targetMode === 'min'}
+                  onChange={() => setTargetMode('min')}
+                  className="w-4 h-4 text-blue-600"
+                />
+                <span className="text-sm text-gray-700">적정 재고 (minStock)</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="targetMode"
+                  value="max"
+                  checked={targetMode === 'max'}
+                  onChange={() => setTargetMode('max')}
+                  className="w-4 h-4 text-blue-600"
+                />
+                <span className="text-sm text-gray-700">최대 재고 (maxStock)</span>
+              </label>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              {periodDays}일 기준 목표 재고 = {periodDays}일 × 평균 일일 출고량
+            </p>
+          </div>
         </div>
       </div>
 
       {/* 입고 가능 수량 요약 */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">📊 입고 가능 수량 요약</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">📊 {periodDays}일 기준 입고 가능 수량 요약</h3>
+        <p className="text-sm text-gray-600 mb-4">
+          목표재고({periodDays}일) - 현재고 기준, 확정수량에서 감소한 추천 수량
+        </p>
+        {/* 계산법 도움말 팝업 */}
+        {showCalcHelp && (
+          <div className="mb-4 p-4 bg-white border border-blue-200 rounded-lg text-left text-sm">
+            <h4 className="font-bold text-blue-800 mb-2">📖 Enhanced 평균일일출고 계산법</h4>
+            <ol className="list-decimal list-inside space-y-1 text-gray-700">
+              <li><b>월초 가중치:</b> 선택 기간에 1일~5일이 포함되면 이전달 전체 데이터 추가 (가중치 1.0)</li>
+              <li><b>최근 추세 가중치:</b> 선택 기간 중 최신 7일 → 가중치 <b>1.5배</b>, 예전 7일 → 가중치 <b>1.0배</b></li>
+              <li><b>7일 미만:</b> 전체 가중치 <b>1.5배</b></li>
+            </ol>
+            <p className="mt-2 text-gray-500 text-xs">
+              공식: 평균 = Σ(데이터 × 가중치) ÷ Σ(일수 × 가중치)
+            </p>
+          </div>
+        )}
+        {/* 입고 가능 수량 합계 */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-600">
+              {hideZeroQty ? '0 수량 숨기기' : '0 수량 보기'}
+            </span>
+            <button
+              onClick={() => setHideZeroQty((v) => !v)}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                hideZeroQty
+                  ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              {hideZeroQty ? '0 수량 보기' : '0 수량 숨기기'}
+            </button>
+          </div>
+          <button
+            onClick={handleExportExcel}
+            className="bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 text-sm font-medium"
+          >
+            📥 확정수량 엑셀로 내보내기
+          </button>
+        </div>
         <div className="text-center">
           <div className="text-4xl font-bold text-blue-600">
             {totalInboundAvailable.toLocaleString()}
           </div>
-          <div className="text-sm text-gray-600 mt-1">총 입고 가능 수량</div>
+          <div className="text-sm text-gray-600 mt-1">총 추천 확정 수량</div>
         </div>
       </div>
 
@@ -514,7 +865,7 @@ export default function InboundAvailabilityTab() {
           <h3 className="text-lg font-semibold text-gray-900">📋 입고 발주서 데이터</h3>
           {visibleInboundLines.length > 0 && (
             <p className="text-sm text-gray-600 mt-1">
-              입고 가능수량이 있는 바코드만 표시 (총 {visibleInboundLines.length}개 발주 항목)
+              전체 발주 품목 (총 {visibleInboundLines.length}개)
             </p>
           )}
         </div>
@@ -526,50 +877,75 @@ export default function InboundAvailabilityTab() {
           </div>
         ) : visibleInboundLines.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
-            입고 가능 수량이 있는 항목이 없습니다. 파일을 업로드하거나 데이터를 확인해주세요.
+            발주서 데이터가 없습니다. 파일을 업로드해주세요.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto min-w-[1200px]">
             <table className="w-full text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left font-medium text-gray-700">상품명</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-700">발주수량</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-700">확정수량</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-700">입고수량</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-700">현재고</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-700">발주번호(바코드)</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-700">상품바코드(바코드)</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-700">로케이션(바코드)</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-700">입고가능수량(바코드)</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-700">입고예정일</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-700">발주상태</th>
+                  <th className="px-3 py-3 text-left font-medium text-gray-700 min-w-[180px]">상품명</th>
+                  <th className="px-3 py-3 text-right font-medium text-gray-700 min-w-[70px]">현재고</th>
+                  <th className="px-3 py-3 text-right font-medium text-gray-700 min-w-[70px]">평균 일일출고 <button onClick={() => setShowCalcHelp((v) => !v)} title="계산법 도움말" className="ml-1 text-blue-500 hover:text-blue-700 text-xs align-middle">?</button></th>
+                  <th className="px-3 py-3 text-right font-medium text-gray-700 min-w-[80px]">목표재고<br/>({periodDays}일)</th>
+                  <th className="px-3 py-3 text-right font-medium text-gray-700 min-w-[80px]">현재고+<br/>발주</th>
+                  <th className="px-3 py-3 text-right font-medium text-gray-700 min-w-[80px]">발주<br/>수량</th>
+                  <th className="px-3 py-3 text-right font-medium text-gray-700 bg-blue-50 min-w-[90px]">추천<br/>확정수량</th>
+                  <th className="px-3 py-3 text-right font-medium text-gray-700 min-w-[110px]">확정수량<br/><span className="text-xs font-normal text-gray-500">(수정가능)</span></th>
+                  <th className="px-3 py-3 text-left font-medium text-gray-700 min-w-[200px]">상품바코드</th>
+                  <th className="px-3 py-3 text-left font-medium text-gray-700 min-w-[90px]">입고예정일</th>
+                  <th className="px-3 py-3 text-left font-medium text-gray-700 min-w-[80px]">발주상태</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {visibleInboundLines.map((line) => {
                   const inventoryItem = inventoryMap.get(line.barcode);
-                  const currentStock = inventoryItem?.currentStock ?? 0;
-                  const location = String((inventoryItem as any)?.location || '').trim();
-                  const inboundAvailable = inboundAvailableByBarcode.get(String(line.barcode || '').trim()) || 0;
+                  const currentStock = Number(inventoryItem?.currentStock ?? 0) || 0;
+                  const avgDailyOutbound = getAvgDailyOutbound(inventoryItem);
+                  const targetStock = avgDailyOutbound * periodDays;
+                  const confirmedQty = line.confirmedQty;
+                  const inboundAvailable = (() => {
+                    // per-row direct calculation instead of aggregated map
+                    const bc = String(line.barcode || '').trim();
+                    const item = inventoryMap.get(bc);
+                    const currentStock = Number(item?.currentStock ?? 0) || 0;
+                    const avgDailyOutbound = getAvgDailyOutbound(item);
+                    const targetStock = avgDailyOutbound * periodDays;
+                    const confirmedQty = line.confirmedQty;
+                    const isUnreceivedCsv = uploadInfo?.fileType === 'unreceived_csv';
+                    const base = isUnreceivedCsv
+                      ? Math.max(0, (confirmedQty - line.receivedQty))
+                      : Math.max(0, confirmedQty);
+                    const needToTarget = Math.max(0, targetStock - (currentStock + base));
+                    return Math.floor(Math.min(base, needToTarget));
+                  })();
+                  const currentWithOrdered = currentStock + confirmedQty;
 
                   return (
                     <tr key={line.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-gray-900">{line.productName || '-'}</td>
-                      <td className="px-4 py-3 text-right text-gray-600">{line.orderedQty.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-right text-gray-900 font-medium">{line.confirmedQty.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-right text-gray-600">
-                        {line.receivedQty > 0 ? line.receivedQty.toLocaleString() : '-'}
+                      <td className="px-3 py-3 text-gray-900 text-xs">{line.productName || '-'}</td>
+                      <td className="px-3 py-3 text-right text-gray-900">{currentStock.toLocaleString()}</td>
+                      <td className="px-3 py-3 text-right text-gray-600 min-w-[70px]">{avgDailyOutbound.toLocaleString()}</td>
+                      <td className="px-3 py-3 text-right text-gray-900 font-medium">{Math.round(targetStock).toLocaleString()}</td>
+                      <td className="px-3 py-3 text-right text-gray-600">{currentWithOrdered.toLocaleString()}</td>
+                      <td className="px-3 py-3 text-right text-gray-600">{line.orderedQty.toLocaleString()}</td>
+                      <td className="px-3 py-3 text-right font-bold text-blue-700 bg-blue-50">
+                        {inboundAvailable > 0 ? inboundAvailable.toLocaleString() : '0'}
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-900">{currentStock.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-gray-900"><BarcodeCell value={line.orderNo} /></td>
-                      <td className="px-4 py-3 text-gray-900"><BarcodeCell value={line.barcode} /></td>
-                      <td className="px-4 py-3 text-gray-900"><BarcodeCell value={location || '-'} /></td>
-                      <td className="px-4 py-3 text-gray-900"><BarcodeCell value={String(inboundAvailable)} /></td>
-                      <td className="px-4 py-3 text-gray-600">
+                      <td className="px-3 py-3 text-right">
+                        <input
+                          type="number"
+                          min="0"
+                          value={editedQuantities.get(String(line.barcode || '').trim()) ?? line.confirmedQty}
+                          onChange={(e) => handleConfirmedQtyChange(String(line.barcode || '').trim(), e.target.value)}
+                          className="w-20 px-2 py-1 text-right border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </td>
+                      <td className="px-3 py-3 text-gray-900"><BarcodeCell value={line.barcode} /></td>
+                      <td className="px-3 py-3 text-gray-600 text-xs">
                         {line.expectedDate ? new Date(line.expectedDate).toLocaleDateString('ko-KR') : '-'}
                       </td>
-                      <td className="px-4 py-3 text-gray-600">{line.orderStatus || '-'}</td>
+                      <td className="px-3 py-3 text-gray-600 text-xs">{line.orderStatus || '-'}</td>
                     </tr>
                   );
                 })}

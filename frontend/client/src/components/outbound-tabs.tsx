@@ -52,6 +52,7 @@ export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, 
   const [activeTab, setActiveTab] = useState<OutboundTabKey>(getInitialTabFromUrl());
   const [isSyncing, setIsSyncing] = useState(false);
   const [uploadDate, setUploadDate] = useState(() => {
+    // VF 출고 데이터는 어제까지가 최신, 오늘 데이터는 출고 완료 후 업로드
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     return yesterday.toISOString().split('T')[0];
@@ -141,16 +142,27 @@ export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, 
   const handleSync = async () => {
     setIsSyncing(true);
     try {
+      console.log('🔍 동기화 시작, 업로드 날짜:', uploadDate);
+      
       const response = await fetch('/api/outbound/sync', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ date: uploadDate }),
+        body: JSON.stringify({ 
+          date: uploadDate,
+          url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQwqI0BG-d2aMrql7DK4fQQTjvu57VtToSLAkY_nq92a4Cg5GFVbIn6_IR7Fq6_O-2TloFSNlXT8ZWC/pub?gid=1152588885&single=true&output=csv'
+        }),
       });
 
       if (!response.ok) {
-        throw new Error(`동기화 실패: ${response.status}`);
+        const errorText = await response.text();
+        console.error('❌ 동기화 실패 상세:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorText: errorText
+        });
+        throw new Error(`동기화 실패: ${response.status} - ${errorText.substring(0, 100)}`);
       }
 
       const result = await response.json();

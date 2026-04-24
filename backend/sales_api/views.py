@@ -104,7 +104,7 @@ def _extract_korean_only(text: str) -> str:
         english_count = len(re.findall(r"[a-zA-Z]", line))
         if korean_count >= 3 and korean_count > english_count:
             line = re.sub(r"^Line\d+\s*:\s*", "", line)
-            line = re.sub(r"^\d+[\)\.\s*", "", line)
+            line = re.sub(r"^\d+[\)\.\s]*", "", line)
             if line.strip():
                 result.append(line.strip())
 
@@ -295,7 +295,7 @@ def _zai_call_messages(
         content = _extract_korean_only(content)
         return content
     except Exception as e:
-        logger.error(f"AI call failed ({backend}): {e}")
+        logger.error(f"AI call failed ({cfg['model']}): {e}")
         return None
 
     return None
@@ -3270,15 +3270,20 @@ def outbound_sync(request):
 
     def parse_num(val):
         if val is None:
-            return 0
+            return 1  # 기본값을 1로 변경 (박스 수는 최소 1)
         s = str(val).strip()
         if s == "":
-            return 0
+            return 1  # 빈 값도 1로
         s = s.replace(",", "")
         try:
-            return float(s)
+            num = float(s)
+            # 박스 수는 1 이상이어야 함
+            if num <= 0:
+                return 1
+            # 1000 제한 제거 - ID 값이 수량으로 잘못 해석되는 문제 해결
+            return num
         except Exception:
-            return 0
+            return 1  # 변환 실패시 1로
 
     def parse_date(val):
         s = ("" if val is None else str(val)).strip()
@@ -3311,11 +3316,17 @@ def outbound_sync(request):
 
             r = requests.get(url, timeout=30)
             r.raise_for_status()
-            # Try utf-8-sig first to remove BOM, fallback to cp949
-            try:
-                decoded = r.content.decode("utf-8-sig")
-            except UnicodeDecodeError:
-                decoded = r.content.decode("cp949")
+            # Try multiple encodings for Korean CSV files
+            encodings = ["utf-8-sig", "cp949", "euc-kr", "utf-8"]
+            decoded = None
+            for encoding in encodings:
+                try:
+                    decoded = r.content.decode(encoding)
+                    break
+                except UnicodeDecodeError:
+                    continue
+            if decoded is None:
+                raise ValueError("Failed to decode CSV with any supported encoding")
             df = pd.read_csv(io.StringIO(decoded), dtype=str).fillna("")
         else:
             df = pd.read_csv(url, dtype=str, encoding="utf-8-sig").fillna("")
@@ -3367,13 +3378,22 @@ def outbound_sync(request):
         outbound_date = parse_date(row.get(date_col))
         if not outbound_date:
             continue
+        
+        # 2026년 4월 데이터만 처리 (성능 향상 및 테스트용)
+        if outbound_date.year != 2026 or outbound_date.month != 4:
+            continue
 
         product_name = str(row.get(product_col) or "").strip()
         barcode = str(row.get(barcode_col) or "").strip() if barcode_col else ""
         if not product_name and not barcode:
             continue
 
-        box_qty = int(parse_num(row.get(box_col))) if box_col else 0
+        box_qty = int(parse_num(row.get(box_col))) if box_col else 1
+        # 박스 수 검증: 최소 1, 최대 합리적 범위
+        if box_qty <= 0:
+            box_qty = 1
+        # elif box_qty > 1000:  # 일별 최대 합리적 박스 수 제한
+        #     box_qty = 1000
         unit_qty = int(parse_num(row.get(unit_col))) if unit_col else 0
         sales_amount = parse_num(row.get(amount_col)) if amount_col else 0
 
@@ -3653,11 +3673,16 @@ def _process_outbound_csv_rows(headers, rows, now):
     def parse_num(val):
         s = ("" if val is None else str(val)).strip().replace(",", "")
         if not s:
-            return 0
+            return 1  # 기본값 1로 변경
         try:
-            return float(s)
+            num = float(s)
+            if num <= 0:
+                return 1
+            elif num > 1000:  # 너무 큰 값 제한
+                return min(num, 1000)
+            return num
         except Exception:
-            return 0
+            return 1  # 변환 실패시 1로
 
     def parse_date(val):
         s = ("" if val is None else str(val)).strip()
