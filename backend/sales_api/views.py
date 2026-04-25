@@ -31,6 +31,7 @@ from .models import (
     InboundPolicy,
     FCInboundRecord,
     FCInboundFileUpload,
+    OutboundAnalysis,
 )
 from .serializers import (
     FCInboundRecordSerializer,
@@ -9076,3 +9077,116 @@ def google_sheets_proxy(request):
     """미완료 생산 계획 다음 작업일로 이동 (API 호출용)"""
     result = move_incomplete_production_logs()
     return Response({"success": True, **result})
+
+
+# ============================================================
+# NotebookLM 분석 결과 API
+# ============================================================
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.dateparse import parse_date
+import json
+
+@csrf_exempt
+def outbound_analysis_list(request):
+    """분석 결과 목록 조회/생성"""
+    if request.method == 'GET':
+        date_from = request.GET.get('date_from')
+        date_to = request.GET.get('date_to')
+        period = request.GET.get('period')
+        
+        queryset = OutboundAnalysis.objects.all()
+        if period:
+            queryset = queryset.filter(period=period)
+        if date_from:
+            queryset = queryset.filter(date__gte=parse_date(date_from))
+        if date_to:
+            queryset = queryset.filter(date__lte=parse_date(date_to))
+        
+        data = [{
+            'id': a.id,
+            'date': str(a.date),
+            'period': a.period,
+            'summary': a.summary,
+            'chart_data': a.chart_data,
+            'table_data': a.table_data,
+            'insights': a.insights,
+            'recommendations': a.recommendations,
+            'created_at': a.created_at.isoformat(),
+        } for a in queryset[:100]]
+        
+        return JsonResponse({'success': True, 'data': data, 'count': len(data)})
+    
+    elif request.method == 'POST':
+        try:
+            body = json.loads(request.body)
+            analysis = OutboundAnalysis.objects.create(
+                date=parse_date(body.get('date', '')),
+                period=body.get('period', 'daily'),
+                summary=body.get('summary', {}),
+                chart_data=body.get('chart_data', {}),
+                table_data=body.get('table_data', {}),
+                insights=body.get('insights', []),
+                recommendations=body.get('recommendations', []),
+                source_ids=body.get('source_ids', []),
+            )
+            return JsonResponse({'success': True, 'id': analysis.id})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+@csrf_exempt
+def outbound_analysis_detail(request, pk):
+    """분석 결과 상세 조회/수정/삭제"""
+    try:
+        analysis = OutboundAnalysis.objects.get(pk=pk)
+    except OutboundAnalysis.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found'}, status=404)
+    
+    if request.method == 'GET':
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'id': analysis.id,
+                'date': str(analysis.date),
+                'period': analysis.period,
+                'summary': analysis.summary,
+                'chart_data': analysis.chart_data,
+                'table_data': analysis.table_data,
+                'insights': analysis.insights,
+                'recommendations': analysis.recommendations,
+                'source_ids': analysis.source_ids,
+                'created_at': analysis.created_at.isoformat(),
+            }
+        })
+    
+    elif request.method == 'PUT':
+        body = json.loads(request.body)
+        for field in ['summary', 'chart_data', 'table_data', 'insights', 'recommendations']:
+            if field in body:
+                setattr(analysis, field, body[field])
+        analysis.save()
+        return JsonResponse({'success': True})
+    
+    elif request.method == 'DELETE':
+        analysis.delete()
+        return JsonResponse({'success': True})
+
+@csrf_exempt
+def outbound_analytics_summary(request):
+    """전체 분석 요약 (VF 대시보드용)"""
+    latest = OutboundAnalysis.objects.first()
+    if not latest:
+        return JsonResponse({'success': True, 'data': None})
+    
+    # 최근 7개 일별 분석에서 요약
+    daily_list = OutboundAnalysis.objects.filter(period='daily').order_by('-date')[:7]
+    
+    return JsonResponse({
+        'success': True,
+        'data': {
+            'latest_date': str(latest.date),
+            'latest_insights': latest.insights[:3] if latest.insights else [],
+            'daily_count': daily_list.count(),
+            'trend': 'up' if len(daily_list) >= 2 and daily_list[0].summary.get('total', 0) > daily_list[1].summary.get('total', 0) else 'down',
+        }
+    })

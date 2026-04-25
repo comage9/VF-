@@ -249,4 +249,8 @@ urlpatterns = [
         views.production_move_incomplete,
         name="production-move-incomplete",
     ),
+    # NotebookLM 분석 API
+    path('analytics/list', views.outbound_analysis_list),
+    path('analytics/detail/<int:pk>', views.outbound_analysis_detail),
+    path('analytics/summary', views.outbound_analytics_summary),
 ]

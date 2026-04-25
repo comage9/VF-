@@ -457,3 +457,42 @@ class FCInboundFileUpload(models.Model):
 
     def __str__(self):
         return f"{self.file_name} ({self.upload_date.strftime('%Y-%m-%d %H:%M')}) - {self.records_created} created"
+
+# ============================================================
+# NotebookLM 분석 결과 저장 모델
+# ============================================================
+class OutboundAnalysis(models.Model):
+    """NotebookLM 출고 분석 결과"""
+    
+    PERIOD_CHOICES = [
+        ('daily', '일별'),
+        ('weekly', '주간'),
+        ('monthly', '월간'),
+    ]
+    
+    date = models.DateField(db_index=True)  # 분석 기준일
+    period = models.CharField(max_length=10, choices=PERIOD_CHOICES, default='daily')
+    
+    # 분석 결과 (JSON)
+    summary = models.JSONField(default=dict)      # 요약
+    chart_data = models.JSONField(default=dict)   # 차트 데이터
+    table_data = models.JSONField(default=dict)   # 테이블 데이터
+    insights = models.JSONField(default=list)    # 인사이트 리스트
+    recommendations = models.JSONField(default=list)  # 권장 액션
+    
+    # 원본 참고
+    source_ids = models.JSONField(default=list)   # 사용한 NotebookLM 소스 ID
+    
+    # 메타
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'outbound_analysis'
+        ordering = ['-date']
+        indexes = [
+            models.Index(fields=['date', 'period']),
+        ]
+    
+    def __str__(self):
+        return f"{self.date} ({self.period})"
