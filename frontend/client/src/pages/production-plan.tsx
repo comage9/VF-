@@ -287,7 +287,7 @@ const SortableRow = React.memo(function SortableRow({
           />
         </div>
       </td>
-      <td className="py-3 px-4 text-center text-muted-foreground">{index}</td>
+      <td className="py-3 px-4 text-center text-red-600 text-xl font-bold">{index}</td>
       <td className="py-3 px-4">{getStatusBadge(row.status)}</td>
       <td className="py-3 px-4">{row.date}</td>
       <td className="py-3 px-4">
@@ -382,6 +382,7 @@ function useProductionLog() {
 
 interface SortableMobileCardProps {
   row: ProductionItem;
+  index: number;
   selectedIds: number[];
   onToggleSelect: (id: number, checked: boolean) => void;
   onStatusChange: (row: ProductionItem, status: ProductionStatus) => void;
@@ -395,6 +396,7 @@ interface SortableMobileCardProps {
 
 const SortableMobileCard = React.memo(function SortableMobileCard({
   row,
+  index,
   selectedIds,
   onToggleSelect,
   onStatusChange,
@@ -450,6 +452,7 @@ const SortableMobileCard = React.memo(function SortableMobileCard({
           />
           <Badge variant="outline">{row.machineNumber}</Badge>
           <span className="font-medium text-sm">{row.date}</span>
+          <span className="text-red-600 text-lg font-bold">№ {index}</span>
         </div>
         {getStatusBadge(row.status)}
       </CardHeader>
@@ -1976,10 +1979,11 @@ export default function ProductionPlan() {
       >
         <SortableContext items={displayRows.map(r => r.id)} strategy={verticalListSortingStrategy}>
           <div className="md:hidden space-y-4">
-            {displayRows.map((row) => (
+            {displayRows.map((row, index) => (
               <SortableMobileCard
                 key={row.id}
                 row={row}
+                index={index}
                 selectedIds={selectedIds}
                 onToggleSelect={(id, checked) => {
                   if (checked) {

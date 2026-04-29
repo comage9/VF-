@@ -155,6 +155,11 @@ urlpatterns = [
     path("baco/transfer-stats", views.baco_transfer_stats, name="baco-transfer-stats"),
     path("production", views.production_list, name="production-list"),
     path(
+        "production/<int:id>",
+        views.production_delete,
+        name="production-delete",
+    ),
+    path(
         "production/bulk-status",
         views.production_bulk_status,
         name="production-bulk-status",

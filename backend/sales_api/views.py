@@ -1684,6 +1684,21 @@ def production_list(request):
     )
 
 
+@api_view(["DELETE"])
+def production_delete(request, id: int):
+    """DELETE /api/production/<id> - Delete a single production log by ID"""
+    try:
+        item = ProductionLog.objects.filter(id=int(id)).first()
+    except (ValueError, TypeError):
+        return Response({"message": "Invalid id format"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not item:
+        return Response({"message": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    item.delete()
+    return Response({"success": True, "deleted_id": id})
+
+
 @api_view(["POST"])
 def production_bulk_status(request):
     payload = request.data if isinstance(request.data, dict) else {}
@@ -4440,27 +4455,83 @@ def ai_chat(request):
         except Exception as e:
             logger.warning(f"Failed to fetch delivery data: {e}")
 
-        # 5. Production Data
+        # 5. Production Data - 사용자가 언급한 날짜도 함께 조회
         try:
             from .models import ProductionLog
+            from datetime import datetime
 
-            # 오늘 전체 생산 (pending + started + ended)
-            production_logs = ProductionLog.objects.filter(date=today)
-            active_production = production_logs.filter(status="started").count()
-            completed_today = production_logs.filter(status="ended").count()
-            pending_count = production_logs.filter(status="pending").count()
-            total_today = production_logs.count()
-            context_info["production_active_count"] = active_production
-            context_info["production_completed_today"] = completed_today
-            context_info["production_pending_count"] = pending_count
-            context_info["production_today_total"] = total_today
+            # 사용자가 언급한 날짜 파싱 (04-27, 2026-04-27, 4월27일等形式)
+            mentioned_dates = []
+            import re
+            date_patterns = [
+                r'(\d{4})-(\d{2})-(\d{2})',  # 2026-04-27
+                r'(\d{2})-(\d{2})',          # 04-27
+                r'(\d{1,2})월\s*(\d{1,2})일',  # 4월 27일
+            ]
+            msg_lower = message.lower()
+            for pattern in date_patterns:
+                matches = re.findall(pattern, msg_lower)
+                for m in matches:
+                    try:
+                        if len(m) == 3:
+                            year, month, day = int(m[0]), int(m[1]), int(m[2])
+                            if year < 100:
+                                year = 2026
+                            mentioned_dates.append(f"{year:04d}-{month:02d}-{day:02d}")
+                        elif len(m) == 2:
+                            month, day = int(m[0]), int(m[1])
+                            mentioned_dates.append(f"2026-{month:02d}-{day:02d}")
+                    except:
+                        pass
 
-            # Today's production output (quantity * unit_quantity)
-            today_output_qs = production_logs.filter(status="ended")
-            today_output = sum(
-                log.quantity * log.unit_quantity for log in today_output_qs
-            )
-            context_info["production_today_output"] = today_output
+            # 오늘 + 언급된 날짜 모두 조회
+            all_target_dates = {today.isoformat()}
+            for d in mentioned_dates:
+                all_target_dates.add(d)
+
+            all_production_data = {}
+            for target_date in all_target_dates:
+                logs = ProductionLog.objects.filter(date=target_date)
+                total = logs.count()
+                if total > 0:
+                    active = logs.filter(status="started").count()
+                    completed = logs.filter(status="ended").count()
+                    pending = logs.filter(status="pending").count()
+                    output = sum(log.quantity * log.unit_quantity for log in logs.filter(status="ended"))
+                    items = []
+                    sorted_logs = logs.order_by('date', 'id')
+                    for idx, log in enumerate(sorted_logs[:30], 1):
+                        product = log.product_name or '알 수 없음'
+                        items.append(f"순번{idx}|ID:{log.id}|날짜:{log.date}|기계:{log.machine_number}|제품:{product}|상태:{log.status}|수량:{log.quantity}")
+                    all_production_data[target_date] = {
+                        "total": total, "active": active, "completed": completed,
+                        "pending": pending, "output": output, "items": items
+                    }
+
+            # 대표 값 (오늘 기준)
+            today_data = all_production_data.get(today.isoformat(), {})
+            context_info["production_active_count"] = today_data.get("active", 0)
+            context_info["production_completed_today"] = today_data.get("completed", 0)
+            context_info["production_pending_count"] = today_data.get("pending", 0)
+            context_info["production_today_total"] = today_data.get("total", 0)
+            context_info["production_today_output"] = today_data.get("output", 0)
+            context_info["production_items"] = today_data.get("items", [])
+
+            # 모든 날짜 데이터를 AI에게 전달
+            if len(all_production_data) > 1:
+                all_items = []
+                for d, data in sorted(all_production_data.items()):
+                    all_items.append(f"=== {d} 생산 데이터 (총 {data['total']}건) ===")
+                    all_items.extend(data["items"])
+                context_info["production_all_dates"] = all_items
+            elif len(all_production_data) == 1:
+                # 단일 날짜면 그 날짜를 명시
+                for d, data in all_production_data.items():
+                    all_items = [f"=== {d} 생산 데이터 (총 {data['total']}건) ==="]
+                    all_items.extend(data["items"])
+                    context_info["production_all_dates"] = all_items
+
+            logger.info(f"[AI-CHAT] production dates: {list(all_production_data.keys())}")
         except Exception as e:
             logger.warning(f"Failed to fetch production data: {e}")
 
@@ -4587,6 +4658,14 @@ def ai_chat(request):
             user_prompt += (
                 f"\n- 오늘 생산량: {context_info['production_today_output']:,.0f}"
             )
+        if "production_items" in context_info and context_info["production_items"]:
+            user_prompt += "\n- 오늘 생산 항목 목록:"
+            for item in context_info["production_items"]:
+                user_prompt += f"\n  {item}"
+        if "production_all_dates" in context_info and context_info["production_all_dates"]:
+            user_prompt += "\n\n=== 모든 날짜 생산 데이터 ==="
+            for line in context_info["production_all_dates"]:
+                user_prompt += f"\n  {line}"
 
         user_prompt += "\n\n=== BACO 데이터 ==="
         if "baco_today_transfers" in context_info:
@@ -4606,7 +4685,16 @@ def ai_chat(request):
 6. 특이사항이 있으면 명확히 설명하세요
 7. 데이터에 없는 날짜를 물어보면 솔직하게 "데이터에 없습니다"라고 말씀하세요
 8. VF 출고, FC 입고, 재고, 배송, 생산 데이터를 모두 고려하여 종합적으로 분석하세요
-9. **매우 중요: "최근 며칠", "최근 일주일" 등 상대적 표현 대신 실제 날짜 범위를 반드시 명시하세요**"""
+9. **매우 중요: "최근 며칠", "최근 일주일" 등 상대적 표현 대신 실제 날짜 범위를 반드시 명시하세요**
+10. **중요: 삭제 요청 시 "생산 항목 목록"의 순번과 ID를 확인하고, 삭제할 ID가 있으면 AI가 직접 삭제 API를 호출하여 삭제합니다. 목록에 없는 순번은 "존재하지 않습니다"라고 답변하세요**
+
+**삭제 기능:**
+- 사용자가 "순번 3번 삭제", "ID 5번 삭제", "3번 지워줘" 등 삭제 요청을 하면:
+  1. 먼저 production_items에서 해당 순번의 ID를 찾음
+  2. ID를 찾으면 DELETE /api/production-log/{id} 또는 POST /api/production-log/bulk-delete (ids 배열) 호출하여 삭제
+  3. 삭제 결과(성공/실패)를 사용자에게 안내
+- **주의: 삭제 전 반드시 목록에서 해당 순번/ID가 실제로 존재하는지 확인하세요**
+"""
 
         # System prompt
         system_prompt = (
@@ -4619,6 +4707,67 @@ def ai_chat(request):
             "데이터가 없으면 없다고 명확히 말씀하세요. "
             "가능한 한 구체적인 수치를 제공하세요."
         )
+
+        # =========================================
+        # 삭제 요청 처리 (AI 호출 전에 먼저 처리)
+        # =========================================
+        import re
+        delete_patterns = [
+            r'순번\s*(\d+)\s*삭제',
+            r'순번\s*(\d+)번?\s*삭제',
+            r'ID\s*(\d+)\s*삭제',
+            r'(\d+)번\s*삭제',           # Must have "삭제" immediately after number+번
+            r'삭제\s*(\d+)',
+            r'(\d+)번\s*지워[줘]',
+            r'지워\s*(\d+)번?',
+            r'삭제해\s*(\d+)',
+        ]
+        delete_match = None
+        for pattern in delete_patterns:
+            m = re.search(pattern, message)
+            if m:
+                delete_match = m.group(1)
+                break
+
+        if delete_match and 'production_items' in context_info and context_info['production_items']:
+            seq_num = int(delete_match)
+            items = context_info['production_items']
+            # items 형식: "순번{idx}|ID:{log.id}|날짜:...|..."
+            target_id = None
+            for item in items:
+                item_str = str(item)
+                # "순번3|ID:5|..." 에서 순번 추출
+                seq_match = re.search(r'순번(\d+)', item_str)
+                id_match = re.search(r'ID:(\d+)', item_str)
+                if seq_match and int(seq_match.group(1)) == seq_num:
+                    if id_match:
+                        target_id = int(id_match.group(1))
+                        break
+            
+            if target_id:
+                try:
+                    logger.info(f"[AI-DELETE] Attempting to delete seq_num={seq_num}, target_id={target_id}")
+                    logger.info(f"[AI-DELETE] Before delete - ProductionLog id={target_id} exists: {ProductionLog.objects.filter(id=target_id).exists()}")
+                    deleted_count, _ = ProductionLog.objects.filter(id=target_id).delete()
+                    logger.info(f"[AI-DELETE] After delete - deleted_count={deleted_count}")
+                    if deleted_count > 0:
+                        return Response({
+                            "answer": f"✅ 순번 {seq_num}번 (ID: {target_id}) 생산 로그 삭제가 완료되었습니다. 삭제 후 페이지를 새로고침하여 확인해주세요."
+                        })
+                    else:
+                        return Response({
+                            "answer": f"순번 {seq_num}번 (ID: {target_id}) 존재하지 않거나 이미 삭제되었습니다."
+                        })
+                except Exception as del_err:
+                    logger.error(f"Failed to delete production log: {del_err}")
+                    return Response({
+                        "answer": f"삭제 처리 중 오류가 발생했습니다: {str(del_err)}"
+                    })
+            else:
+                logger.info(f"[AI-DELETE] target_id is None for seq_num={seq_num}. Items available: {len(context_info.get('production_items', []))}")
+                return Response({
+                    "answer": f"순번 {seq_num}번은 현재 목록에 존재하지 않습니다. 현재 목록의 순번을 확인해주세요."
+                })
 
         # Call AI
         try:
@@ -8575,95 +8724,6 @@ def _get_project_context():
         for issue in issues:
             lines.append(f"[{issue.date}] {issue.product_name}: {issue.memo}")
     else:
-        lines.append("No special notes recorded in the last 7 days.")
-
-    return "\n".join(lines)
-
-
-@api_view(["POST"])
-def ai_chat(request):
-    """
-    AI 챗봇 엔드포인트
-    Request Body: { "message": "사용자 메시지", "pageContext": {...}, "filters": {...} }
-    """
-    try:
-        user_message = request.data.get("message", "").strip()
-        if not user_message:
-            return Response(
-                {"error": "Message required"}, status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # 시스템 프롬프트 구성
-        system_prompt = (
-            "You are a helpful AI data assistant for a warehouse management system (VF). "
-            "Answer in Korean. Be concise and professional.\n"
-            "Below is the current system status and data context (Sales, Inventory, Production, Issues):\n\n"
-        )
-
-        # 프로젝트 전체 데이터 컨텍스트 주입
-        try:
-            context_data = _get_project_context()
-            system_prompt += context_data
-        except Exception as e:
-            logger.error(f"Failed to get project context: {e}")
-            system_prompt += "(Data context unavailable due to error)\n"
-
-        # 페이지 컨텍스트 활용 (선택사항)
-        page_context = request.data.get("pageContext")
-        if page_context:
-            page_name = page_context.get("name", "")
-            page_type = page_context.get("type", "")
-            system_prompt += f"\n[User is currently on page: '{page_name}']"
-
-            # 생산 계획 페이지인 경우, 현재 표시 중인 데이터 상세 정보 추가
-            if page_type == "production":
-                filters = request.data.get("filters", {})
-                selected_date = filters.get("date") if filters else None
-
-                # MachinePlan 데이터 조회
-                from datetime import timedelta
-                if selected_date:
-                    try:
-                        from datetime import datetime
-                        query_date = datetime.fromisoformat(selected_date).date()
-                    except:
-                        query_date = timezone.now().date()
-                else:
-                    query_date = timezone.now().date()
-
-                # 해당 날짜의 생산 계획 +前后 3일
-                date_range_start = query_date - timedelta(days=3)
-                date_range_end = query_date + timedelta(days=3)
-
-                plans_qs = MachinePlan.objects.filter(
-                    date__gte=date_range_start,
-                    date__lte=date_range_end
-                ).exclude(status='cancelled').order_by('date', 'machine_number')
-
-                system_prompt += f"\n[Production Plan Context - Date Range: {date_range_start} to {date_range_end}]"
-                system_prompt += f"\nTotal plans in range: {plans_qs.count()}"
-                for i, plan in enumerate(plans_qs[:15], 1):
-                    system_prompt += (
-                        f"\n{i}. [Seq:{i}] Date:{plan.date} Machine:{plan.machine_number} "
-                        f"Product:{plan.product_name} Qty:{plan.quantity} Status:{plan.status}"
-                    )
-
-        # AI 호출
-        response_text = _zai_call_messages(
-            system=system_prompt,
-            user=user_message,
-        )
-
-        if response_text:
-            return Response({"answer": response_text, "success": True})
-        else:
-            return Response(
-                {"error": "Failed to get response from AI"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-    except Exception as e:
-        logger.error(f"AI Chat Error: {e}")
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
