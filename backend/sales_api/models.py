@@ -238,6 +238,95 @@ class MasterSpec(models.Model):
         return self.product_name
 
 
+class MasterColor(models.Model):
+    """색상 마스터 - 30개 색상 정의"""
+    color_code = models.CharField(max_length=50, unique=True, db_index=True)  # 예: WHITE1, GRAY9097
+    color_name = models.CharField(max_length=100)  # 예: 화이트1, 그레이1
+    color_name_eng = models.CharField(max_length=100, blank=True, default='')  # 예: White1, Gray1
+    lot_number = models.CharField(max_length=100, blank=True, default='')  # 예: WHITE 180, IVORY 1154
+    client = models.CharField(max_length=255, blank=True, default='')  # 거래처
+    representative_product = models.CharField(max_length=255, blank=True, default='')  # 대표 품목
+    sort_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'master_colors'
+        ordering = ['sort_order', 'color_code']
+
+    def __str__(self):
+        return f"{self.color_code} - {self.color_name}"
+
+
+class MasterUnit(models.Model):
+    """단위 마스터 - 6개 단위 정의"""
+    UNIT_CHOICES = [
+        ('P', '파렛트'),
+        ('BOX', '박스'),
+        ('SET', '세트'),
+        ('EA', '개'),
+        ('LINE', '라인'),
+        ('-', '미지정'),
+    ]
+    unit_code = models.CharField(max_length=20, unique=True, db_index=True)  # 예: P, BOX, SET, EA, LINE, -
+    unit_name = models.CharField(max_length=100)  # 예: 파렛트, 박스, 세트, 개, 라인, 미지정
+    unit_description = models.TextField(blank=True, default='')
+    sort_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'master_units'
+        ordering = ['sort_order', 'unit_code']
+
+    def __str__(self):
+        return f"{self.unit_code} - {self.unit_name}"
+
+
+class MasterMold(models.Model):
+    """금형번호 마스터 - 135개 금형 정의"""
+    mold_number = models.CharField(max_length=50, unique=True, db_index=True)  # 예: 0, 1, 2, ..., 135
+    product_name = models.CharField(max_length=255)  # 예: 이유, 모던플러스 프레임
+    product_name_eng = models.CharField(max_length=255, blank=True, default='')
+    product_name_th = models.CharField(max_length=255, blank=True, default='')  # 태국어
+    weight_grams = models.IntegerField(null=True, blank=True)  # 중량(g)
+    sort_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'master_molds'
+        ordering = ['sort_order', 'mold_number']
+
+    def __str__(self):
+        return f"{self.mold_number} - {self.product_name}"
+
+
+class ProductUnitSpec(models.Model):
+    """제품별 단위 규격 - 기존 데이터에서 수집"""
+    product_name = models.CharField(max_length=255, db_index=True)
+    color_code = models.CharField(max_length=50, blank=True, default='')
+    unit = models.CharField(max_length=20, blank=True, default='BOX')
+    unit_quantity = models.IntegerField(default=0)  # 박스당 개수 (예: 4개입, 8개입)
+    boxes_per_pallet = models.IntegerField(default=40)  # 1파렛트당 박스 수
+    is_default = models.BooleanField(default=False)  # 대표 규격 여부
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'product_unit_specs'
+        unique_together = [['product_name', 'color_code', 'unit']]
+        indexes = [
+            models.Index(fields=['product_name', 'color_code']),
+        ]
+
+    def __str__(self):
+        return f"{self.product_name} {self.color_code} {self.unit}"
+
+
 class ProductionLog(models.Model):
     date = models.DateField(db_index=True)
     machine_number = models.CharField(max_length=100, blank=True, default='', db_index=True)

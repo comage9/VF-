@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
+from . import views_master
 
 router = DefaultRouter()
 router.register(r"inventory", views.InventoryItemViewSet)
@@ -253,4 +254,13 @@ urlpatterns = [
     path('analytics/list', views.outbound_analysis_list),
     path('analytics/detail/<int:pk>', views.outbound_analysis_detail),
     path('analytics/summary', views.outbound_analytics_summary),
+    
+    # 마스터 데이터 API (색상, 단위, 금형, 제품단위규격)
+    path('master/colors', views_master.master_colors, name='master-colors'),
+    path('master/units', views_master.master_units, name='master-units'),
+    path('master/molds', views_master.master_molds, name='master-molds'),
+    path('master/product-specs', views_master.master_product_specs, name='master-product-specs'),
+    path('master/product-specs/<str:product_name>', views_master.master_product_specs_by_product, name='master-product-specs-by-product'),
+    path('master/lookup', views_master.master_lookup, name='master-lookup'),
+    path('master/summary', views_master.master_summary, name='master-summary'),
 ]
