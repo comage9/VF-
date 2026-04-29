@@ -8526,7 +8526,7 @@ def _get_project_context():
     else:
         lines.append("All items are above minimum stock levels.")
 
-    # 3. 생산 (Production)
+    # 3. 생산 (Production) - ProductionLog (실제 생산 실적)
     prod_today = ProductionLog.objects.filter(
         date=today, status__in=["running", "completed"]
     )
@@ -8540,6 +8540,20 @@ def _get_project_context():
             )
     else:
         lines.append("No active production logs for today.")
+
+    # 3b. 생산 계획 (MachinePlan - AI 추천/적용 계획)
+    # 현재 표시 중인 생산 계획 데이터 (모든 상태)
+    machine_plans = MachinePlan.objects.exclude(status='cancelled').order_by('date', 'machine_number')
+    lines.append(f"\n=== Production Plans (MachinePlan) ===")
+    lines.append(f"Total active plans: {machine_plans.count()}")
+    if machine_plans.exists():
+        for i, plan in enumerate(machine_plans[:20], 1):  # 최대 20개만 표시
+            lines.append(
+                f"{i}. [{plan.date}] Machine {plan.machine_number}: {plan.product_name} "
+                f"Qty:{plan.quantity} Status:{plan.status}"
+            )
+    else:
+        lines.append("No production plans found.")
 
     # 4. 입고 (Inbound - FC)
     # Recent 3 days
@@ -8598,7 +8612,41 @@ def ai_chat(request):
         page_context = request.data.get("pageContext")
         if page_context:
             page_name = page_context.get("name", "")
+            page_type = page_context.get("type", "")
             system_prompt += f"\n[User is currently on page: '{page_name}']"
+
+            # 생산 계획 페이지인 경우, 현재 표시 중인 데이터 상세 정보 추가
+            if page_type == "production":
+                filters = request.data.get("filters", {})
+                selected_date = filters.get("date") if filters else None
+
+                # MachinePlan 데이터 조회
+                from datetime import timedelta
+                if selected_date:
+                    try:
+                        from datetime import datetime
+                        query_date = datetime.fromisoformat(selected_date).date()
+                    except:
+                        query_date = timezone.now().date()
+                else:
+                    query_date = timezone.now().date()
+
+                # 해당 날짜의 생산 계획 +前后 3일
+                date_range_start = query_date - timedelta(days=3)
+                date_range_end = query_date + timedelta(days=3)
+
+                plans_qs = MachinePlan.objects.filter(
+                    date__gte=date_range_start,
+                    date__lte=date_range_end
+                ).exclude(status='cancelled').order_by('date', 'machine_number')
+
+                system_prompt += f"\n[Production Plan Context - Date Range: {date_range_start} to {date_range_end}]"
+                system_prompt += f"\nTotal plans in range: {plans_qs.count()}"
+                for i, plan in enumerate(plans_qs[:15], 1):
+                    system_prompt += (
+                        f"\n{i}. [Seq:{i}] Date:{plan.date} Machine:{plan.machine_number} "
+                        f"Product:{plan.product_name} Qty:{plan.quantity} Status:{plan.status}"
+                    )
 
         # AI 호출
         response_text = _zai_call_messages(

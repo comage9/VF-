@@ -225,6 +225,7 @@ export default function Dashboard() {
                    activeKey === "production" ? "생산 계획" :
                    activeKey === "master" ? "제품 마스터" : "대시보드",
             type: activeKey === "outbound" ? "vf-outbound" :
+                   activeKey === "production" ? "production" :
                    activeKey === "inventory" ? "inventory" : "dashboard"
           }}
         />
