@@ -220,6 +220,7 @@ const STATUS_OPTIONS: Array<{ value: ProductionStatus; label: string }> = [
 // SortableRow component for drag and drop
 interface SortableRowProps {
   row: ProductionItem;
+  index: number;
   isSelected: boolean;
   onToggleSelect: (id: number, checked: boolean) => void;
   onStatusChange: (item: ProductionItem, newStatus: ProductionItem['status']) => void;
@@ -233,6 +234,7 @@ interface SortableRowProps {
 
 const SortableRow = React.memo(function SortableRow({
   row,
+  index,
   isSelected,
   onToggleSelect,
   onStatusChange,
@@ -285,6 +287,7 @@ const SortableRow = React.memo(function SortableRow({
           />
         </div>
       </td>
+      <td className="py-3 px-4 text-center text-muted-foreground">{index}</td>
       <td className="py-3 px-4">{getStatusBadge(row.status)}</td>
       <td className="py-3 px-4">{row.date}</td>
       <td className="py-3 px-4">
@@ -2095,6 +2098,7 @@ export default function ProductionPlan() {
                       }}
                     />
                   </th>
+                  <th className="py-3 px-4 w-12 text-center">순번</th>
                   <th className="py-3 px-4">상태</th>
                   <th className="py-3 px-4">일자</th>
                   <th className="py-3 px-4">기계</th>
@@ -2110,23 +2114,28 @@ export default function ProductionPlan() {
               <tbody>
                 {displayRows.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="text-center py-10 text-muted-foreground">
+                    <td colSpan={12} className="text-center py-10 text-muted-foreground">
                       데이터가 없습니다.
                     </td>
                   </tr>
                 ) : (
                   <SortableContext items={sortableItems} strategy={verticalListSortingStrategy}>
-                    {machineGroupEntries.map(([machineNumber, rows]) => (
-                      <React.Fragment key={machineNumber}>
-                        <tr className={cn("border-t-2 border-border/80", getMachineAccent(machineNumber).headerBg)}>
-                          <td colSpan={11} className="py-2 px-4 font-semibold text-sm">
-                            기계번호: {machineNumber} ({rows.length}건)
-                          </td>
-                        </tr>
-                        {rows.map((row) => (
+                    {(() => {
+                      let globalIndex = 0;
+                      return machineGroupEntries.map(([machineNumber, rows]) => (
+                        <React.Fragment key={machineNumber}>
+                          <tr className={cn("border-t-2 border-border/80", getMachineAccent(machineNumber).headerBg)}>
+                            <td colSpan={12} className="py-2 px-4 font-semibold text-sm">
+                              기계번호: {machineNumber} ({rows.length}건)
+                            </td>
+                          </tr>
+                          {rows.map((row) => {
+                            const displayIndex = displayRows.findIndex(r => r.id === row.id) + 1;
+                            return (
                             <SortableRow
                               key={row.id}
                               row={row}
+                              index={displayIndex}
                               isSelected={selectedIds.includes(row.id)}
                               onToggleSelect={(id, checked) => {
                                 if (checked) {
@@ -2143,9 +2152,11 @@ export default function ProductionPlan() {
                               getStatusBadge={getStatusBadge}
                               getMachineAccent={getMachineAccent}
                             />
-                        ))}
-                      </React.Fragment>
-                    ))}
+                            );
+                          })}
+                        </React.Fragment>
+                      ));
+                    })()}
                   </SortableContext>
                 )}
               </tbody>
