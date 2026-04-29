@@ -285,6 +285,9 @@ def _zai_call_messages(
             if choices and len(choices) > 0:
                 message = choices[0].get("message", {})
                 content = message.get("content", "")
+                # tencent/hy3-preview:free returns content=null, reasoning has the actual response
+                if not content:
+                    content = message.get("reasoning", "")
                 if content:
                     content = content.strip()
                     content = _extract_korean_only(content)
@@ -4441,18 +4444,19 @@ def ai_chat(request):
         try:
             from .models import ProductionLog
 
-            production_logs = ProductionLog.objects.all()
+            # 오늘 전체 생산 (pending + started + ended)
+            production_logs = ProductionLog.objects.filter(date=today)
             active_production = production_logs.filter(status="started").count()
-            completed_today = production_logs.filter(
-                status="ended", end_time__date=today
-            ).count()
+            completed_today = production_logs.filter(status="ended").count()
+            pending_count = production_logs.filter(status="pending").count()
+            total_today = production_logs.count()
             context_info["production_active_count"] = active_production
             context_info["production_completed_today"] = completed_today
+            context_info["production_pending_count"] = pending_count
+            context_info["production_today_total"] = total_today
 
             # Today's production output (quantity * unit_quantity)
-            today_output_qs = production_logs.filter(
-                status="ended", end_time__date=today
-            )
+            today_output_qs = production_logs.filter(status="ended")
             today_output = sum(
                 log.quantity * log.unit_quantity for log in today_output_qs
             )
@@ -4494,13 +4498,15 @@ def ai_chat(request):
             )
         if "vf_daily_change" in context_info:
             user_prompt += f"\n- VF 전일 대비: {context_info['vf_daily_change']}"
-        if "vf_top_products" in context_info:
-            user_prompt += "\n- VF 상위 품목:"
+        if "vf_top_products" in context_info and context_info["vf_top_products"]:
+            user_prompt += "\n- VF 전체 출고 상위 품목(전체 기간):"
             for i, p in enumerate(context_info["vf_top_products"][:3], 1):
                 if isinstance(p, dict):
                     name = p.get("product_name", p.get("name", ""))
                     qty = p.get("total_quantity", p.get("quantity", 0))
                     user_prompt += f"  {i}. {name}: {qty:,.0f}"
+        else:
+            user_prompt += "\n- VF 출고 데이터: 현재 시스템에 출고 기록이 없습니다"
 
         # Add daily trend data for specific date queries
         if "vf_daily_trend" in context_info:
@@ -4565,6 +4571,10 @@ def ai_chat(request):
                 user_prompt += f"  • {note}"
 
         user_prompt += "\n\n=== 생산 데이터 ==="
+        if "production_today_total" in context_info:
+            user_prompt += f"\n- 오늘 전체 생산: {context_info['production_today_total']}건"
+        if "production_pending_count" in context_info:
+            user_prompt += f"\n- 대기 중 생산: {context_info['production_pending_count']}건"
         if "production_active_count" in context_info:
             user_prompt += (
                 f"\n- 진행 중 생산: {context_info['production_active_count']}건"
@@ -4603,7 +4613,9 @@ def ai_chat(request):
             "VF 출고, FC 입고, 재고, 배송, 생산 등 전체 데이터에 대해 종합적으로 분석할 수 있습니다. "
             "한국어로만 답변하세요. "
             "답변은 친절하고 전문적인 어조로 작성하세요. "
-            "데이터에 없는 내용은 추측하지 말고 솔직하게 말씀하세요. "
+            "매우 중요: 실제 데이터가 없거나 데이터가 0인 경우, '데이터가 없습니다' 또는 '0건입니다'라고 솔직하게 답변하세요. "
+            "절대 존재하지 않는 가상의 수치나 품목을 만들어서 답변하지 마세요. "
+            "데이터가 없으면 없다고 명확히 말씀하세요. "
             "가능한 한 구체적인 수치를 제공하세요."
         )
 
