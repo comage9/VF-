@@ -480,7 +480,6 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
 
   // 재고 아이템 업데이트 핸들러
   const handleItemUpdate = (updatedItem: InventoryItem) => {
-    console.log('재고 아이템 업데이트:', updatedItem);
     // 여기에 실제 업데이트 로직 구현
   };
 

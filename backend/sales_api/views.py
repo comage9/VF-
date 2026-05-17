@@ -127,11 +127,11 @@ _PRODUCTION_STATUS_VALUES = {"pending", "started", "ended", "stopped"}
 def _production_calc_total(quantity, unit_quantity, current_total=None):
     try:
         q = int(float(quantity))
-    except Exception:
+    except (ValueError, TypeError):
         q = 0
     try:
         uq = int(float(unit_quantity))
-    except Exception:
+    except (ValueError, TypeError):
         uq = 0
     if q < 0:
         q = 0
@@ -231,7 +231,7 @@ def _zai_get_config():
     if timeout_ms_raw:
         try:
             timeout_s = max(1, int(int(timeout_ms_raw) / 1000))
-        except Exception:
+        except ValueError:
             timeout_s = 30
 
     if not base_url or not api_key:
@@ -355,7 +355,7 @@ def _parse_int(val) -> int:
         return 0
     try:
         return int(float(s))
-    except Exception:
+    except (ValueError, TypeError):
         return 0
 
 
@@ -366,7 +366,7 @@ def _parse_date_ymd(val):
     for fmt in ("%Y-%m-%d", "%Y.%m.%d", "%Y/%m/%d", "%Y%m%d"):
         try:
             return datetime.strptime(s, fmt).date()
-        except Exception:
+        except ValueError:
             pass
     try:
         dt = pd.to_datetime(s, errors="coerce")
@@ -761,7 +761,7 @@ def inventory_baseline_upload(request):
     try:
         for f in files:
             total_bytes += int(getattr(f, "size", 0) or 0)
-    except Exception:
+    except (ValueError, TypeError, AttributeError):
         total_bytes = 0
 
     logger.info(
@@ -951,18 +951,12 @@ def inventory_baseline_upload(request):
             BarcodeMaster.objects.bulk_create(
                 to_create, ignore_conflicts=True, batch_size=2000
             )
-        if to_update:
-            BarcodeMaster.objects.bulk_update(
-                to_update,
-                ["sku_id", "category", "location", "product_name"],
-                batch_size=2000,
-            )
     except Exception:
         logger.exception(
-            "baseline_upload barcode_master upsert failed error_id=%s", error_id
+            "receipts_upload barcode_master auto-register failed error_id=%s", error_id
         )
 
-    upload.total_rows = int(total_rows)
+    # Upsert by (barcode, receipt_datetime)
     upload.total_barcodes = int(len(items))
     upload.save(update_fields=["total_rows", "total_barcodes"])
 
@@ -1242,7 +1236,7 @@ def inventory_unified_download_csv(request):
     resp = inventory_unified(raw_request)
     try:
         payload = resp.data if hasattr(resp, "data") else None
-    except Exception:
+    except (AttributeError, TypeError):
         payload = None
 
     rows = []
@@ -1650,34 +1644,45 @@ def production_list(request):
     )
     latest = all_dates[-1].isoformat() if all_dates else None
 
-    # Get latest date data with pagination
-    latest_qs = (
-        ProductionLog.objects.filter(date=all_dates[-1])
-        if all_dates
-        else ProductionLog.objects.none()
-    )
-    latest_qs = latest_qs.order_by("sort_order", "id")
-    latest_page = paginator.paginate_queryset(latest_qs, request)
-    latest_serializer = ProductionLogSerializer(latest_page, many=True)
-    latest_data = latest_serializer.data
-
-    # Get all data with pagination (optional based on query param)
+    # Date filter parameter
+    date_param = request.GET.get("date", "").strip()
     get_all = request.GET.get("all", "").lower() == "true"
-    if get_all:
+
+    # Determine which data to return
+    if date_param:
+        # Specific date requested
+        try:
+            date_obj = datetime.fromisoformat(date_param).date()
+            data_qs = ProductionLog.objects.filter(date=date_obj)
+            data_qs = data_qs.order_by("sort_order", "id")
+            latest = date_param
+        except ValueError:
+            return Response(
+                {"error": f"Invalid date format: {date_param}. Use YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    elif get_all:
+        # All data requested
         data_qs = ProductionLog.objects.all()
         data_qs = data_qs.order_by("date", "sort_order", "id")
-        data_page = paginator.paginate_queryset(data_qs, request)
-        data_serializer = ProductionLogSerializer(data_page, many=True)
-        data = data_serializer.data
     else:
-        data = []
+        # Default: latest date only
+        data_qs = (
+            ProductionLog.objects.filter(date=all_dates[-1])
+            if all_dates
+            else ProductionLog.objects.none()
+        )
+        data_qs = data_qs.order_by("sort_order", "id")
+
+    data_page = paginator.paginate_queryset(data_qs, request)
+    data_serializer = ProductionLogSerializer(data_page, many=True)
+    data = data_serializer.data
 
     return paginator.get_paginated_response(
         {
             "success": True,
             "latestDate": latest,
             "data": data,
-            "latestData": latest_data,
             "allDates": [d.isoformat() for d in all_dates],
             "totalRecords": ProductionLog.objects.count(),
         }
@@ -1778,7 +1783,7 @@ def production_log(request):
 
     try:
         date_obj = datetime.fromisoformat(date).date()
-    except Exception:
+    except ValueError:
         try:
             date_obj = pd.to_datetime(date).date()
         except Exception:
@@ -1799,7 +1804,7 @@ def production_log(request):
             if isinstance(v, str):
                 v = v.replace(",", "").strip()
             return int(float(v))
-        except Exception:
+        except (ValueError, TypeError):
             return 0
 
     qty = _to_int(record.get("quantity"))
@@ -1886,7 +1891,7 @@ def production_log_detail(request, id: int):
     if "date" in payload:
         try:
             item.date = datetime.fromisoformat(str(payload.get("date"))).date()
-        except Exception:
+        except ValueError:
             pass
     if "machineNumber" in payload:
         item.machine_number = str(payload.get("machineNumber") or "").strip()
@@ -1907,7 +1912,7 @@ def production_log_detail(request, id: int):
             item.quantity = int(
                 float(str(payload.get("quantity")).replace(",", "").strip())
             )
-        except Exception:
+        except (ValueError, TypeError):
             item.quantity = 0
     if "unitQuantity" in payload:
         try:
@@ -1953,6 +1958,81 @@ def production_log_by_date(request, date: str):
         return Response({"message": "invalid date"}, status=status.HTTP_400_BAD_REQUEST)
     deleted, _ = ProductionLog.objects.filter(date=date_obj).delete()
     return Response({"success": True, "deleted": deleted})
+
+
+@api_view(["POST"])
+def production_log_move_pending_to_today(request):
+    """
+    과거 날짜의 pending/start，生产日志移到今天
+    POST /api/production-log/move-pending-to-today
+    {
+      "from_date": "2026-04-21"  // optional, moves all past dates if not specified
+    }
+    """
+    from django.db import transaction
+    from django.db.models import Q
+
+    today = datetime.now().date()
+    payload = request.data if isinstance(request.data, dict) else {}
+    from_date_str = payload.get("from_date")
+
+    try:
+        from_date = datetime.fromisoformat(from_date_str).date() if from_date_str else None
+    except ValueError:
+        return Response({"message": "invalid from_date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Build query - move pending/started from past dates to today
+    query = ProductionLog.objects.filter(
+        date__lt=today,
+        status__in=["pending", "started"]
+    )
+    if from_date:
+        query = query.filter(date=from_date)
+
+    records = list(query.select_related().all())
+    count = len(records)
+
+    if count == 0:
+        return Response({
+            "success": True,
+            "message": "이동할生产日志为0",
+            "moved_count": 0
+        })
+
+    with transaction.atomic():
+        # Delete existing records for today that would cause unique constraint conflict
+        for record in records:
+            # Check if a record with same (machine, mold, product, color1, color2, unit) exists on today
+            existing = ProductionLog.objects.filter(
+                date=today,
+                machine_number=record.machine_number,
+                mold_number=record.mold_number,
+                product_name=record.product_name,
+                color1=record.color1,
+                color2=record.color2,
+                unit=record.unit
+            ).first()
+
+            if existing:
+                # Update existing instead of creating new
+                existing.quantity = record.quantity
+                existing.unit_quantity = record.unit_quantity
+                existing.total = record.total
+                existing.status = record.status
+                existing.sort_order = record.sort_order
+                existing.product_name_eng = record.product_name_eng
+                existing.save()
+                record.delete()
+            else:
+                # Just update the date
+                record.date = today
+                record.save()
+
+    return Response({
+        "success": True,
+        "message": f"{count}개 생산로그를 오늘({today})로 이동했습니다.",
+        "moved_count": count
+    })
 
 
 @api_view(["POST"])
@@ -2051,7 +2131,6 @@ def upload_production_file(request):
         rows_processed = 0
         rows_added = 0
         rows_updated = 0
-        from django.db import transaction
 
         with transaction.atomic():
             for _idx, row in df.iterrows():
@@ -3277,8 +3356,16 @@ def delete_outbound_by_date(request):
 @api_view(["POST"])
 def outbound_sync(request):
     url = None
+    upload_date = None
+    start_date = None
+    end_date = None
+
     if isinstance(request.data, dict):
         url = request.data.get("url")
+        upload_date = request.data.get("date")
+        start_date = request.data.get("start_date")
+        end_date = request.data.get("end_date")
+
     url = url or os.environ.get("OUTBOUND_GOOGLE_SHEET_URL")
 
     if not url:
@@ -3289,20 +3376,18 @@ def outbound_sync(request):
 
     def parse_num(val):
         if val is None:
-            return 1  # 기본값을 1로 변경 (박스 수는 최소 1)
+            return 1
         s = str(val).strip()
         if s == "":
-            return 1  # 빈 값도 1로
+            return 1
         s = s.replace(",", "")
         try:
             num = float(s)
-            # 박스 수는 1 이상이어야 함
             if num <= 0:
                 return 1
-            # 1000 제한 제거 - ID 값이 수량으로 잘못 해석되는 문제 해결
             return num
         except Exception:
-            return 1  # 변환 실패시 1로
+            return 1
 
     def parse_date(val):
         s = ("" if val is None else str(val)).strip()
@@ -3328,14 +3413,12 @@ def outbound_sync(request):
             return None
 
     try:
-        # Use simple read first, but for proper BOM handling with URL, might need request
         if url.startswith("http"):
             import requests
             import io
 
-            r = requests.get(url, timeout=30)
+            r = requests.get(url, timeout=120)
             r.raise_for_status()
-            # Try multiple encodings for Korean CSV files
             encodings = ["utf-8-sig", "cp949", "euc-kr", "utf-8"]
             decoded = None
             for encoding in encodings:
@@ -3350,7 +3433,6 @@ def outbound_sync(request):
         else:
             df = pd.read_csv(url, dtype=str, encoding="utf-8-sig").fillna("")
 
-        # Normalize headers (strip whitespace and BOM)
         df.columns = [str(c).strip().lstrip("\ufeff") for c in df.columns]
     except Exception as e:
         return Response(
@@ -3393,13 +3475,26 @@ def outbound_sync(request):
     dates = []
     now = timezone.now()
 
+    # Date range filter
+    filter_start = parse_date(start_date) if start_date else None
+    filter_end = parse_date(end_date) if end_date else None
+    # Fallback to upload_date if only one date provided
+    if upload_date and not filter_start and not filter_end:
+        filter_start = parse_date(upload_date)
+        filter_end = filter_start
+
+    batch_num = 0
+    batch_size = 10000
+
     for _, row in df.iterrows():
         outbound_date = parse_date(row.get(date_col))
         if not outbound_date:
             continue
-        
-        # 2026년 4월 데이터만 처리 (성능 향상 및 테스트용)
-        if outbound_date.year != 2026 or outbound_date.month != 4:
+
+        # Apply date range filter
+        if filter_start and outbound_date < filter_start:
+            continue
+        if filter_end and outbound_date > filter_end:
             continue
 
         product_name = str(row.get(product_col) or "").strip()
@@ -3408,11 +3503,8 @@ def outbound_sync(request):
             continue
 
         box_qty = int(parse_num(row.get(box_col))) if box_col else 1
-        # 박스 수 검증: 최소 1, 최대 합리적 범위
         if box_qty <= 0:
             box_qty = 1
-        # elif box_qty > 1000:  # 일별 최대 합리적 박스 수 제한
-        #     box_qty = 1000
         unit_qty = int(parse_num(row.get(unit_col))) if unit_col else 0
         sales_amount = parse_num(row.get(amount_col)) if amount_col else 0
 
@@ -3446,112 +3538,121 @@ def outbound_sync(request):
             status=status.HTTP_200_OK,
         )
 
-    start = min(dates)
-    end = max(dates)
+    start = min(dates) if dates else None
+    end = max(dates) if dates else None
+
+    # No date range? Use filter dates
+    if not start:
+        start = filter_start if filter_start else (datetime.now().date() - timedelta(days=30))
+    if not end:
+        end = filter_end if filter_end else datetime.now().date()
 
     from django.db import transaction
 
-    created = 0
-    updated = 0
-    deleted = 0
+    # Batch processing: 10,000 records per batch
+    batch_size = 10000
+    total_created = 0
+    total_updated = 0
+    total_deleted = 0
 
-    try:
-        with transaction.atomic():
-            # 기존 데이터 조회 (변경 감지용)
-            existing_records = OutboundRecord.objects.filter(
-                outbound_date__range=[start, end]
-            ).values(
-                "id",
-                "outbound_date",
-                "product_name",
-                "quantity",
-                "sales_amount",
-                "category",
-                "barcode",
-            )
+    for batch_start in range(0, len(records), batch_size):
+        batch_end = min(batch_start + batch_size, len(records))
+        batch_records = records[batch_start:batch_end]
 
-            # (outbound_date, product_name) → record 맵핑
-            existing_map = {
-                (str(r["outbound_date"]), r["product_name"]): r
-                for r in existing_records
-            }
+        batch_start_date = min(r.outbound_date for r in batch_records) if batch_records else start
+        batch_end_date = max(r.outbound_date for r in batch_records) if batch_records else end
 
-            # 새 데이터 키 집합
-            new_keys = {(str(r.outbound_date), r.product_name) for r in records}
-
-            # 삭제: 기존에 있었으나 새 데이터에 없는 레코드
-            to_delete_ids = [
-                r["id"]
-                for r in existing_records
-                if (str(r["outbound_date"]), r["product_name"]) not in new_keys
-            ]
-
-            if to_delete_ids:
-                deleted, _ = OutboundRecord.objects.filter(
-                    id__in=to_delete_ids
-                ).delete()
-
-            # 생성 및 업데이트 분리
-            to_create = []
-            to_update = []
-
-            for record in records:
-                key = (str(record.outbound_date), record.product_name)
-                if key in existing_map:
-                    # 기존 레코드 - 변경사항 확인
-                    existing = existing_map[key]
-                    needs_update = (
-                        existing["quantity"] != record.quantity
-                        or existing["sales_amount"] != record.sales_amount
-                        or existing["category"] != record.category
-                        or existing["barcode"] != record.barcode
-                    )
-
-                    if needs_update:
-                        # DB 객체 조회
-                        obj = OutboundRecord.objects.get(id=existing["id"])
-                        obj.quantity = record.quantity
-                        obj.box_quantity = record.box_quantity
-                        obj.unit_count = record.unit_count
-                        obj.sales_amount = record.sales_amount
-                        obj.category = record.category
-                        obj.barcode = record.barcode
-                        obj.client = record.client
-                        obj.notes = record.notes
-                        obj.updated_at = now
-                        to_update.append(obj)
-                else:
-                    # 새 레코드
-                    to_create.append(record)
-
-            # 벌크 연산 실행
-            if to_create:
-                OutboundRecord.objects.bulk_create(to_create, batch_size=5000)
-                created = len(to_create)
-
-            if to_update:
-                OutboundRecord.objects.bulk_update(
-                    to_update,
-                    [
-                        "quantity",
-                        "box_quantity",
-                        "unit_count",
-                        "sales_amount",
-                        "category",
-                        "barcode",
-                        "client",
-                        "notes",
-                        "updated_at",
-                    ],
-                    batch_size=5000,
+        try:
+            with transaction.atomic():
+                existing_records = OutboundRecord.objects.filter(
+                    outbound_date__range=[batch_start_date, batch_end_date]
+                ).values(
+                    "id",
+                    "outbound_date",
+                    "product_name",
+                    "quantity",
+                    "sales_amount",
+                    "category",
+                    "barcode",
                 )
-                updated = len(to_update)
 
-    except Exception as e:
-        return Response(
-            {"error": f"Sync failed: {str(e)}"},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
+                existing_map = {
+                    (str(r["outbound_date"]), r["product_name"]): r
+                    for r in existing_records
+                }
+
+                new_keys = {(str(r.outbound_date), r.product_name) for r in batch_records}
+
+                to_delete_ids = [
+                    r["id"]
+                    for r in existing_records
+                    if (str(r["outbound_date"]), r["product_name"]) not in new_keys
+                ]
+
+                if to_delete_ids:
+                    deleted, _ = OutboundRecord.objects.filter(
+                        id__in=to_delete_ids
+                    ).delete()
+                    total_deleted += deleted
+
+                to_create = []
+                to_update = []
+
+                for record in batch_records:
+                    key = (str(record.outbound_date), record.product_name)
+                    if key in existing_map:
+                        existing = existing_map[key]
+                        needs_update = (
+                            existing["quantity"] != record.quantity
+                            or existing["sales_amount"] != record.sales_amount
+                            or existing["category"] != record.category
+                            or existing["barcode"] != record.barcode
+                        )
+
+                        if needs_update:
+                            obj = OutboundRecord.objects.get(id=existing["id"])
+                            obj.quantity = record.quantity
+                            obj.box_quantity = record.box_quantity
+                            obj.unit_count = record.unit_count
+                            obj.sales_amount = record.sales_amount
+                            obj.category = record.category
+                            obj.barcode = record.barcode
+                            obj.client = record.client
+                            obj.notes = record.notes
+                            obj.updated_at = now
+                            to_update.append(obj)
+                    else:
+                        to_create.append(record)
+
+                if to_create:
+                    OutboundRecord.objects.bulk_create(to_create, batch_size=5000)
+                    total_created += len(to_create)
+
+                if to_update:
+                    OutboundRecord.objects.bulk_update(
+                        to_update,
+                        [
+                            "quantity",
+                            "box_quantity",
+                            "unit_count",
+                            "sales_amount",
+                            "category",
+                            "barcode",
+                            "client",
+                            "notes",
+                            "updated_at",
+                        ],
+                        batch_size=5000,
+                    )
+                    total_updated += len(to_update)
+
+        except Exception as e:
+            logger.error(f"Batch sync error (batch {batch_start}-{batch_end}): {e}")
+            continue
+
+    created = total_created
+    updated = total_updated
+    deleted = total_deleted
 
     try:
         DataSource.objects.update_or_create(
@@ -4304,7 +4405,7 @@ def ai_chat(request):
 
             # Today's outbound
             vf_today_quantity = (
-                OutboundRecord.objects.filter(date=today).aggregate(
+                OutboundRecord.objects.filter(outbound_date=today).aggregate(
                     total=Sum("quantity")
                 )["total"]
                 or 0
@@ -4313,7 +4414,7 @@ def ai_chat(request):
 
             # Yesterday's outbound
             vf_yesterday_quantity = (
-                OutboundRecord.objects.filter(date=yesterday).aggregate(
+                OutboundRecord.objects.filter(outbound_date=yesterday).aggregate(
                     total=Sum("quantity")
                 )["total"]
                 or 0
@@ -4327,7 +4428,18 @@ def ai_chat(request):
                 ) * 100
                 context_info["vf_daily_change"] = f"{change_pct:+.1f}%"
 
-            # Top products
+            # Yesterday's top products
+            yesterday_top_products = list(
+                OutboundRecord.objects.filter(outbound_date=yesterday)
+                .values("product_name")
+                .annotate(
+                    total_quantity=Sum("quantity"), total_sales=Sum("sales_amount")
+                )
+                .order_by("-total_quantity")[:5]
+            )
+            context_info["vf_yesterday_top_products"] = yesterday_top_products
+
+            # Top products (all time)
             top_products = list(
                 OutboundRecord.objects.values("product_name")
                 .annotate(
@@ -4349,10 +4461,10 @@ def ai_chat(request):
 
             # Recent daily trend (last 7 days)
             recent_dates = (
-                OutboundRecord.objects.filter(date__gte=today - timedelta(days=7))
-                .values("date")
+                OutboundRecord.objects.filter(outbound_date__gte=today - timedelta(days=7))
+                .values("outbound_date")
                 .annotate(quantity=Sum("quantity"), sales_amount=Sum("sales_amount"))
-                .order_by("date")
+                .order_by("outbound_date")
             )
             context_info["vf_daily_trend"] = list(recent_dates)
 
@@ -4579,12 +4691,21 @@ def ai_chat(request):
         else:
             user_prompt += "\n- VF 출고 데이터: 현재 시스템에 출고 기록이 없습니다"
 
+        if "vf_yesterday_top_products" in context_info and context_info["vf_yesterday_top_products"]:
+            user_prompt += f"\n- VF 어제({yesterday}) 출고 상위 품목:"
+            for i, p in enumerate(context_info["vf_yesterday_top_products"][:5], 1):
+                if isinstance(p, dict):
+                    name = p.get("product_name", p.get("name", ""))
+                    qty = p.get("total_quantity", p.get("quantity", 0))
+                    sales = p.get("total_sales", 0)
+                    user_prompt += f"  {i}. {name}: {qty:,.0f}개 (매출 {sales:,.0f}원)"
+
         # Add daily trend data for specific date queries
         if "vf_daily_trend" in context_info:
             user_prompt += "\n- VF 최근 7일 추이 (날짜별 조회 가능):"
             for trend in context_info["vf_daily_trend"][:10]:
                 if isinstance(trend, dict):
-                    date = trend.get("date", "")
+                    date = trend.get("outbound_date", trend.get("date", ""))
                     qty = trend.get("quantity", 0)
                     sales = trend.get("sales_amount", 0)
                     user_prompt += f"  * {date}: {qty:,.0f}개 (매출 {sales:,.0f}원)"
@@ -4687,6 +4808,8 @@ def ai_chat(request):
 8. VF 출고, FC 입고, 재고, 배송, 생산 데이터를 모두 고려하여 종합적으로 분석하세요
 9. **매우 중요: "최근 며칠", "최근 일주일" 등 상대적 표현 대신 실제 날짜 범위를 반드시 명시하세요**
 10. **중요: 삭제 요청 시 "생산 항목 목록"의 순번과 ID를 확인하고, 삭제할 ID가 있으면 AI가 직접 삭제 API를 호출하여 삭제합니다. 목록에 없는 순번은 "존재하지 않습니다"라고 답변하세요**
+11. **매우 중요: 답변은 간결하게! 불필요한 설명, 참고 사항, 분석,吐槽은 제외하세요. 핵심 데이터만Returned.**
+12. **단일 수치 조회 질문 시(예: "어제 출고량?", "오늘 생산량?" 등): 표나 목록 대신 "640개"처럼 단일 값으로Returned.**
 
 **삭제 기능:**
 - 사용자가 "순번 3번 삭제", "ID 5번 삭제", "3번 지워줘" 등 삭제 요청을 하면:
@@ -4705,7 +4828,8 @@ def ai_chat(request):
             "매우 중요: 실제 데이터가 없거나 데이터가 0인 경우, '데이터가 없습니다' 또는 '0건입니다'라고 솔직하게 답변하세요. "
             "절대 존재하지 않는 가상의 수치나 품목을 만들어서 답변하지 마세요. "
             "데이터가 없으면 없다고 명확히 말씀하세요. "
-            "가능한 한 구체적인 수치를 제공하세요."
+            "가능한 한 구체적인 수치를 제공하세요. "
+            "**매우 중요: 답변은 간결하게! 표, 목록, 분석, 참고 사항 없이 핵심 값만Returned.**"
         )
 
         # =========================================

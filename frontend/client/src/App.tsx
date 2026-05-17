@@ -6,7 +6,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Dashboard from "@/pages/dashboard";
 
 function App() {
-  console.log("App component rendering");
   const envBase = (import.meta as any)?.env?.BASE_URL ?? "/";
   const detectedBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/sales')
     ? '/sales'

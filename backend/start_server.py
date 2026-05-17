@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 VF Backend Server - Robust Start Script
-Performs pre-flight checks before starting Django server.
+로컬 우선 모드 (SYNC_MODE=local 기본값)
+원격 동기화는 수동으로 python sync_all.py 실행
 """
 
 import os
@@ -17,6 +18,10 @@ DB_PATH = os.path.join(BASE_DIR, "db.sqlite3")
 DEFAULT_PORT = 5176
 DEFAULT_HOST = "0.0.0.0"
 
+# 로컬 우선 모드 (기본값)
+SYNC_MODE = os.getenv("SYNC_MODE", "local").lower()
+REMOTE = os.getenv("REMOTE_URL", "http://bonohouse.p-e.kr:5176")
+
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 sys.path.insert(0, BASE_DIR)
 
@@ -31,6 +36,30 @@ def check_port_available(port):
     except OSError:
         sock.close()
         return False
+
+
+def check_remote_connection():
+    """원격 서버 연결 확인 (원격 모드일 때만)"""
+    if SYNC_MODE != "remote":
+        print("[LOCAL MODE] 원격 연결 확인 스킵")
+        return True
+        
+    import urllib.request
+    import urllib.error
+    
+    try:
+        url = f"{REMOTE}/api/production"
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            print(f"[OK] 원격 서버 연결 성공: {REMOTE}")
+            return True
+    except urllib.error.URLError as e:
+        print(f"[WARN] 원격 서버 연결 실패: {e.reason}")
+        print(f"[INFO] 로컬 모드로 자동 전환됩니다")
+        return True  # 로컬 모드로 폴백
+    except Exception as e:
+        print(f"[WARN] 원격 연결 확인 실패: {e}")
+        print(f"[INFO] 로컬 모드로 자동 전환됩니다")
+        return True
 
 
 def check_database():
@@ -127,9 +156,12 @@ def start_server(host=DEFAULT_HOST, port=DEFAULT_PORT):
     print("=" * 50)
     print("VF Backend Server - Pre-flight Checks")
     print("=" * 50)
+    print(f"동작 모드: {'원격' if SYNC_MODE == 'remote' else '로컬'}")
+    print("=" * 50)
 
     # Pre-flight checks
     checks = [
+        ("Remote Connection", check_remote_connection),
         ("Database", check_database),
         ("Migrations", check_migrations),
         ("System Check", check_django_system),

@@ -99,18 +99,15 @@ const UnifiedInventoryPage: React.FC = () => {
       Object.entries(filters).forEach(([key, value]) => {
         if (value) params.append(key, value.toString());
       });
-      
-      console.log('Fetching unified inventory data:', params.toString());
       const response = await fetch(`/api/inventory/unified?${params}`);
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error('API Error:', response.status, errorText);
         throw new Error(`API 오류: ${response.status} - ${errorText}`);
       }
-      
+
       const data = await response.json();
-      console.log('Unified inventory data received:', data);
       setInventoryData(data);
     } catch (error) {
       console.error('Fetch error:', error);

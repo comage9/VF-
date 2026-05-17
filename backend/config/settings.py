@@ -23,6 +23,9 @@ def _load_project_env(path: Path):
     except Exception:
         return
 
+    # DEBUG는 나중에 정의되므로 환경변수로 직접 확인
+    _debug = os.environ.get('DEBUG', 'False') == 'True'
+
     for line in raw.splitlines():
         s = line.strip()
         if not s or s.startswith('#'):
@@ -40,19 +43,21 @@ def _load_project_env(path: Path):
         }
         allowed_prefixes = ('ANTHROPIC_', 'OLLAMA_')
         import sys
-        if 'GOOGLE' in key or 'MASTER_DATA' in key or 'OUTBOUND' in key:
+        if _debug and ('GOOGLE' in key or 'MASTER_DATA' in key or 'OUTBOUND' in key):
             print(f'[DEBUG] Found {key} in allowed_keys: {key in allowed_keys}', file=sys.stderr)
         if not (any(key.startswith(p) for p in allowed_prefixes) or key in allowed_keys):
-            print(f'[DEBUG] Skipping key: {key}', file=sys.stderr)
+            if _debug:
+                print(f'[DEBUG] Skipping key: {key}', file=sys.stderr)
             continue
 
         value = (v or '').strip().strip('"').strip("'")
         import sys
-        if key in allowed_keys:
+        if _debug and key in allowed_keys:
             print(f'[DEBUG] Key {key} in allowed, value={repr(value[:50] if len(value) > 50 else value)}, key in os.environ: {key in os.environ}', file=sys.stderr)
         if key and value and key not in os.environ:
             os.environ[key] = value
-            print(f'[DEBUG] Set {key} = {value[:50]}', file=sys.stderr)
+            if _debug:
+                print(f'[DEBUG] Set {key} = {value[:50]}', file=sys.stderr)
 
 
 _load_project_env(BASE_DIR.parent / '.env')
@@ -72,7 +77,7 @@ except Exception:
 SECRET_KEY = "django-insecure-*b1@6n%61-q1ho6p_z#-aqyadphr7$&_7f=##++b!vaetilu%p"
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = ['*']
 

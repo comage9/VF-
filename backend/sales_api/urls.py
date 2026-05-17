@@ -2,6 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
 from . import views_master
+from .agents import views as agent_views
 
 router = DefaultRouter()
 router.register(r"inventory", views.InventoryItemViewSet)
@@ -120,6 +121,8 @@ urlpatterns = [
     path("ai/predict-hourly", views.ai_predict_hourly, name="ai-predict-hourly"),
     path("ai/analyze", views.ai_analyze, name="ai-analyze"),
     path("ai/chat", views.ai_chat, name="ai-chat"),
+    path("ai/agent-chat", agent_views.ai_agent_chat, name="ai-agent-chat"),
+    path("ai/agent-status", agent_views.ai_agent_status, name="ai-agent-status"),
     path("ai/backtest-log", views.ai_backtest_log, name="ai-backtest-log"),
     path("ai/accuracy-stats", views.ai_accuracy_stats, name="ai-accuracy-stats"),
     path(
@@ -182,10 +185,11 @@ urlpatterns = [
         name="production-log-detail",
     ),
     path(
-        "production-log/<str:date>",
-        views.production_log_by_date,
-        name="production-log-by-date",
+        "production-log/move-pending-to-today",
+        views.production_log_move_pending_to_today,
+        name="production-log-move-pending-to-today",
     ),
+    path("production-log/<str:date>", views.production_log_by_date, name="production-log-by-date"),
     path("production/copy-day", views.production_copy_day, name="production-copy-day"),
     path(
         "upload-production-file",

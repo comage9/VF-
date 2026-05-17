@@ -155,16 +155,13 @@ export default function Dashboard() {
   }, [activeKey, normalizedPath]);
 
   const renderContent = () => {
-    console.log('🎯🎯🎯 DASHBOARD renderContent called with:', normalizedPath);
     switch (normalizedPath) {
       case "/":
       case "/delivery":
-        console.log('📦 Rendering DeliveryOverview');
         return <DeliveryOverview />;
       case "/outbound":
       case "/outbound/records":
       case "/outbound/analysis":
-        console.log('🚚🚚🚚 Rendering OutboundTabs for /outbound');
         return (
           <OutboundTabs />
         );

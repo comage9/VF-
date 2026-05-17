@@ -117,11 +117,6 @@ export default function ImprovedInventoryPage() {
     
     // 재고 기준일 추가
     formData.append('inventoryDate', inventoryDate);
-    
-    // 디버깅: 값 확인
-    console.log('🔍 inventoryDate 값:', inventoryDate);
-    console.log('🔍 inventoryDate 타입:', typeof inventoryDate);
-    console.log('🔍 파일 개수:', uploadFiles.length);
 
     try {
       setIsUploading(true);

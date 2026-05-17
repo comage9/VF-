@@ -474,11 +474,6 @@ export default function InboundAvailabilityTab() {
     return out;
   }, [inboundLines, inventoryMap, periodDays, uploadInfo?.fileType]);
 
-  // DEBUG: Log inboundAvailableByRow stats
-  console.debug('[DEBUG inboundAvailableByRow] total rows:', inboundAvailableByRow.length);
-  console.debug('[DEBUG inboundAvailableByRow] unique barcodes:', new Set(inboundAvailableByRow.map(r => r.bc)).size);
-  console.debug('[DEBUG inboundAvailableByRow] sum of all values:', inboundAvailableByRow.reduce((s, r) => s + r.value, 0));
-
   // 입고 가능 수량 맵 (바코드 -> 중복聚合값, Excel 내보내기용으로만 사용)
   const inboundAvailableByBarcode = useMemo(() => {
     const baseByBarcode = new Map<string, number>();
@@ -521,14 +516,9 @@ export default function InboundAvailabilityTab() {
   }, [inboundLines, inventoryMap, periodDays, uploadInfo?.fileType]);
 
 
-  // DEBUG: visibleInboundLines length log (moved after declaration)
-  console.debug('[DEBUG visibleInboundLines] length:', visibleInboundLines.length, '| original inboundLines:', inboundLines.length);
-
   // 입고 가능 수량 합계 (per-row 직접 계산 - aggregate 값 아님)
   const totalInboundAvailable = useMemo(() => {
     let total = 0;
-    // DEBUG: collect per-row avgDailyOutbound samples
-    const avgSamples: Array<{ bc: string; avg: number; targetStock: number; currentStock: number; qty: number; inboundAvail: number }> = [];
     for (const line of visibleInboundLines) {
       const bc = String(line.barcode || '').trim();
       const qty = editedQuantities.get(bc) ?? line.confirmedQty;
@@ -540,18 +530,7 @@ export default function InboundAvailabilityTab() {
       const needToTarget = Math.max(0, targetStock - currentWithOrdered);
       const inboundAvail = Math.floor(Math.min(qty, Math.max(0, needToTarget)));
       total += inboundAvail;
-      avgSamples.push({ bc, avg: avgDailyOutbound, targetStock, currentStock, qty, inboundAvail });
     }
-    // DEBUG: Log calculation breakdown with avgDailyOutbound samples (top 10 by inboundAvail > 0)
-    const topSamples = avgSamples.filter(s => s.inboundAvail > 0).slice(0, 10);
-    console.debug('[DEBUG totalInboundAvailable] sum:', total, '| visible count:', visibleInboundLines.length);
-    console.debug('[DEBUG avgDailyOutbound] top samples (inboundAvail>0):', topSamples);
-    console.debug('[DEBUG avgDailyOutbound] avg value stats:', {
-      totalRows: avgSamples.length,
-      rowsWithAvgGt0: avgSamples.filter(s => s.avg > 0).length,
-      rowsWithInboundAvailGt0: avgSamples.filter(s => s.inboundAvail > 0).length,
-      avgOfAvg: avgSamples.length > 0 ? Math.round(avgSamples.reduce((s, r) => s + r.avg, 0) / avgSamples.length) : 0,
-    });
     return total;
   }, [visibleInboundLines, editedQuantities, inventoryMap, periodDays]);
 

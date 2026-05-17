@@ -16,7 +16,6 @@ interface OutboundTabsProps {
 }
 
 export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, initialDataSource = 'vf' }: OutboundTabsProps = {}) {
-  console.log('🔥🔥🔥 OutboundTabs RENDERING!!!', { initialTab, initialDataSource });
   const [location] = useLocation();
 
   // URL 파라미터에서 초기 탭 상태 읽기
@@ -116,7 +115,6 @@ export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, 
       }
 
       const result = await response.json();
-      console.log('업로드 결과:', result);
 
       toast({
         title: '업로드 성공',
@@ -142,8 +140,6 @@ export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, 
   const handleSync = async () => {
     setIsSyncing(true);
     try {
-      console.log('🔍 동기화 시작, 업로드 날짜:', uploadDate);
-      
       const response = await fetch('/api/outbound/sync', {
         method: 'POST',
         headers: {
@@ -166,7 +162,6 @@ export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, 
       }
 
       const result = await response.json();
-      console.log('동기화 결과:', result);
 
       toast({
         title: '동기화 성공',

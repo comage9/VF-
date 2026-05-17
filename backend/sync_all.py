@@ -1,9 +1,22 @@
 #!/usr/bin/env python3
-"""bonohouse → 로컬 DB 동기화 스크립트 (전체 테이블)"""
-import os, sys, json, urllib.request, urllib.error
+"""bonohouse → 로컬 DB 동기화 스크립트 (전체 테이블)
+
+사용법:
+  SYNC_MODE=remote python sync_all.py  # 전체 원격 동기화
+  python sync_all.py                     # 로컬 모드 (기본값)
+"""
+import os
+import sys
+import json
+import urllib.request
+import urllib.error
+
+# 로컬 우선 모드 (기본값)
+SYNC_MODE = os.getenv("SYNC_MODE", "local").lower()
+REMOTE = os.getenv("REMOTE_URL", "http://bonohouse.p-e.kr:5176")
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
-sys.path.insert(0, '/home/comage/coding/VF-/backend')
+sys.path.insert(0, '/home/comtop/workspace/VF/backend')
 
 import django
 django.setup()
@@ -13,26 +26,36 @@ from sales_api.models import (
     DeliveryDailyRecord, BarcodeMaster, FCInboundRecord
 )
 
-REMOTE = "http://bonohouse.p-e.kr:5176"
 
-
-def fetch_json(url):
+def fetch_remote(url):
+    """원격 서버에서 데이터 가져오기 (실패 시 None 반환)"""
     try:
         with urllib.request.urlopen(url, timeout=30) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        print(f"  HTTP {e.code}: {url}")
+        print(f"  HTTP 오류 {e.code}: {url}")
+        return None
+    except urllib.error.URLError as e:
+        print(f"  연결 오류: {e.reason}")
         return None
     except Exception as e:
-        print(f"  에러: {url} - {e}")
+        print(f"  오류: {e}")
         return None
 
 
 def sync_production():
+    """ProductionLog 동기화"""
     print("\n=== ProductionLog ===")
-    data = fetch_json(f"{REMOTE}/api/production")
-    if not data:
+    if SYNC_MODE != "remote":
+        print("  [LOCAL MODE] 동기화 스킵")
+        print(f"  로컬 DB 총 레코드: {ProductionLog.objects.count()}")
         return
+        
+    data = fetch_remote(f"{REMOTE}/api/production")
+    if not data:
+        print("  [FALLBACK] 원격 연결 실패")
+        return
+        
     items = data.get("results", {}).get("latestData", [])
     created, updated = 0, 0
     for item in items:
@@ -49,18 +72,33 @@ def sync_production():
 
 
 def sync_outbound():
+    """OutboundRecord 동기화"""
     print("\n=== OutboundRecord ===")
+    if SYNC_MODE != "remote":
+        print("  [LOCAL MODE] 동기화 스킵")
+        print(f"  로컬 DB 총 레코드: {OutboundRecord.objects.count()}")
+        return
+        
     all_items = []
     url = f"{REMOTE}/api/outbound?limit=100&offset=0"
-    while url:
-        data = fetch_json(url)
-        if not data:
-            break
-        if isinstance(data, list):
-            all_items = data
-            break
+    data = fetch_remote(url)
+    if not data:
+        print("  [FALLBACK] 원격 연결 실패")
+        return
+        
+    if isinstance(data, list):
+        all_items = data
+    else:
         all_items.extend(data.get("results", []))
-        url = data.get("next")
+        next_url = data.get("next")
+        while next_url:
+            data = fetch_remote(next_url)
+            if data:
+                all_items.extend(data.get("results", []))
+                next_url = data.get("next")
+            else:
+                break
+                
     created, updated = 0, 0
     for item in all_items:
         try:
@@ -80,11 +118,18 @@ def sync_outbound():
 
 
 def sync_delivery_hourly():
+    """DeliveryDailyRecord 동기화"""
     print("\n=== DeliveryDailyRecord ===")
-    data = fetch_json(f"{REMOTE}/api/delivery/hourly")
-    if not data or not data.get("success"):
-        print("  스킵 (데이터 없음)")
+    if SYNC_MODE != "remote":
+        print("  [LOCAL MODE] 동기화 스킵")
+        print(f"  로컬 DB 총 레코드: {DeliveryDailyRecord.objects.count()}")
         return
+        
+    data = fetch_remote(f"{REMOTE}/api/delivery/hourly")
+    if not data or not data.get("success"):
+        print("  [FALLBACK] 원격 연결 실패 또는 데이터 없음")
+        return
+        
     items = data.get("data", [])
     created, updated = 0, 0
     for item in items:
@@ -112,15 +157,23 @@ def sync_delivery_hourly():
 
 
 def sync_barcode_master():
+    """BarcodeMaster 동기화"""
     print("\n=== BarcodeMaster ===")
-    data = fetch_json(f"{REMOTE}/api/inventory/barcode-master")
-    if not data or not data.get("success"):
-        print("  스킵 (데이터 없음)")
+    if SYNC_MODE != "remote":
+        print("  [LOCAL MODE] 동기화 스킵")
+        print(f"  로컬 DB 총 레코드: {BarcodeMaster.objects.count()}")
         return
+        
+    data = fetch_remote(f"{REMOTE}/api/inventory/barcode-master")
+    if not data or not data.get("success"):
+        print("  [FALLBACK] 원격 연결 실패 또는 데이터 없음")
+        return
+        
     items = data.get("data", [])
     if not isinstance(items, list):
-        print("  스킵 (데이터 형식 오류)")
+        print("  [ERROR] 데이터 형식 오류")
         return
+        
     created, updated = 0, 0
     for item in items:
         fields = {
@@ -153,10 +206,18 @@ def sync_barcode_master():
 
 
 def sync_fc_inbound():
+    """FCInboundRecord 동기화"""
     print("\n=== FCInboundRecord ===")
-    data = fetch_json(f"{REMOTE}/api/fc-inbound?limit=100&offset=0")
-    if not data:
+    if SYNC_MODE != "remote":
+        print("  [LOCAL MODE] 동기화 스킵")
+        print(f"  로컬 DB 총 레코드: {FCInboundRecord.objects.count()}")
         return
+        
+    data = fetch_remote(f"{REMOTE}/api/fc-inbound?limit=100&offset=0")
+    if not data:
+        print("  [FALLBACK] 원격 연결 실패")
+        return
+        
     items = data if isinstance(data, list) else data.get("results", [])
     created, updated = 0, 0
     for item in items:
@@ -189,13 +250,23 @@ def sync_fc_inbound():
 
 
 def sync_all():
-    print("=== bonohouse → 로컬 DB 동기화 시작 ===")
+    """전체 동기화 실행"""
+    print("=" * 50)
+    print("VF 전체 동기화")
+    print("=" * 50)
+    print(f"모드: {'원격' if SYNC_MODE == 'remote' else '로컬'}")
+    print(f"원격 서버: {REMOTE}")
+    print("=" * 50)
+    
     sync_production()
     sync_outbound()
     sync_delivery_hourly()
     sync_barcode_master()
     sync_fc_inbound()
-    print("\n=== 동기화 완료 ===")
+    
+    print("\n" + "=" * 50)
+    print("동기화 완료")
+    print("=" * 50)
 
 
 if __name__ == "__main__":

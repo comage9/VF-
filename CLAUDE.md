@@ -47,6 +47,32 @@ GET  /api/inventory/unified    → 통합 재고
 
 **⚠️ Django URL은 trailing slash 없음!** `/api/production/` (slash 있음) → 404
 
+## ⚠️ 중요 규칙 (반드시 확인)
+
+### API 엔드포인트 규칙
+
+**Django URL은 trailing slash 없음!** `/api/production/` (slash 있음) → 404
+
+**production-log 삭제:**
+```
+DELETE /api/production-log          → ❌ 405 Method Not Allowed (POST 전용)
+DELETE /api/production-log/bulk-delete → ✅ 벌크 삭제 (ids 배열)
+DELETE /api/production-log/<date>    → ✅ 특정 날짜 삭제
+```
+
+**⚠️ production-log 뷰는 POST만 허용!** 생성/수정/삭제는 별도 엔드포인트 사용
+
+### 발견된 문제점 기록
+
+**2026-05-14: 삭제 기능 405 에러**
+- 증상: DELETE /api/production-log → 405 Method Not Allowed
+- 원인: production_log 뷰 (line 1768) 는 POST만 허용
+- 해결: /api/production-log/bulk-delete 사용 (ids 배열)
+- 수정: production-plan.tsx line 894-897
+- 테스트: 선택 삭제 ✅, 날짜별 삭제 ✅
+
+---
+
 ## 페이지 구조
 
 | 경로 | 페이지 | 설명 |

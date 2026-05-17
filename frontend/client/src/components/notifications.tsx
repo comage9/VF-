@@ -48,12 +48,10 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
     });
 
     socketConnection.on('connect', () => {
-      console.log('🔌 실시간 알림 서버에 연결됨');
       setIsConnected(true);
     });
 
     socketConnection.on('disconnect', () => {
-      console.log('🔌 실시간 알림 서버 연결 해제됨');
       setIsConnected(false);
     });
 
