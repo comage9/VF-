@@ -3,7 +3,7 @@ from django.core.management.base import BaseCommand
 from django.conf import settings
 import os
 import uuid
-from datetime import datetime
+from django.utils import timezone
 
 class Command(BaseCommand):
     help = 'Import data from legacy SQLite database using Raw SQL'
@@ -86,8 +86,8 @@ class Command(BaseCommand):
                 unit = int(unit) if unit is not None else None
                 
                 # Timestamps
-                created = row_dict.get('created_at') or datetime.now().isoformat()
-                updated = row_dict.get('updated_at') or datetime.now().isoformat()
+                created = row_dict.get('created_at') or timezone.now().isoformat()
+                updated = row_dict.get('updated_at') or timezone.now().isoformat()
 
                 batch_data.append((
                     id_val,

@@ -105,7 +105,7 @@ export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, 
 
     setIsSyncing(true);
     try {
-      const response = await fetch('/api/outbound/upload', {
+      const response = await fetch('/api/outbound/upload-excel', {
         method: 'POST',
         body: formData,
       });

@@ -459,7 +459,7 @@ const IntegratedPivotTable = ({
             }
         }
 
-        return columns;
+        return [...columns].reverse();
     }, [startDate, endDate, groupBy]);
 
     // Aggregate data by category and date column
@@ -849,7 +849,7 @@ const IntegratedPivotTable = ({
                                                         <tr key={`prod-${category}-${productName}`} className="hover:bg-blue-50 bg-gray-50/50">
                                                             <td className="px-2 py-1 whitespace-nowrap sticky left-0 bg-gray-50/80 border-r z-10 pl-6">
                                                                 <span className="text-gray-500">📦</span>
-                                                                <span className="ml-1 text-gray-700">{productName}</span>
+                                                                <span className="ml-1 text-gray-700">[{productNumberMap.get(productName) || "?"}] {productName}</span>
                                                                 <span className="text-gray-400 text-[9px] ml-1">({prodShare.toFixed(1)}%)</span>
                                                             </td>
                                                             <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700 bg-gray-50/80">
@@ -1043,6 +1043,31 @@ export default function OutboundDashboardUnified({ dataSource = 'vf', activeTab 
     const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
     const [selectedLogisticsCenter, setSelectedLogisticsCenter] = useState<string[]>([]);  // 다중 선택
     const [selectedRangePreset, setSelectedRangePreset] = useState<string>('');  // 선택된 기간 프리셋
+    const [productNumberMap, setProductNumberMap] = useState<Map<string, string>>(new Map());
+
+    useEffect(() => {
+        const fetchProductNumbers = async () => {
+            try {
+                const res = await fetch("https://docs.google.com/spreadsheets/d/e/2PACX-1vRPjO9qxLlACh8vfMLlrSoRZlVMtkuuKLxd7HH-XAZFW-f9QGrSsdckK5p_pmHDss4CVgLbZDqQjgFh/pub?gid=626478017&single=true&output=csv");
+                const text = await res.text();
+                const lines = text.split("\n");
+                if (lines.length < 2) return;
+                const map = new Map<string, string>();
+                for (let i = 1; i < lines.length; i++) {
+                    const cols = lines[i].split(",");
+                    if (cols.length >= 7) {
+                        const productNumber = cols[1].trim();
+                        const productName = cols[5].trim();
+                        if (productName && productNumber) map.set(productName, productNumber);
+                    }
+                }
+                setProductNumberMap(map);
+            } catch (err) {
+                console.error("Failed to load product number CSV:", err);
+            }
+        };
+        fetchProductNumbers();
+    }, []);
 
     // dataSource가 변경될 때 필터 초기화 (VF/FC 독립적인 필터링)
     useEffect(() => {
@@ -1596,34 +1621,50 @@ export default function OutboundDashboardUnified({ dataSource = 'vf', activeTab 
             categoryShareFull = serverCats;
         }
 
-        // Calculate total quantity for share percentage in top products
-        const totalQtyForTopProducts = filtered.reduce((sum, r) => sum + Number(r.boxQuantity ?? r.quantity ?? 0), 0);
+// Calculate total quantity for share percentage in top products
+        // Note: share uses TOP 30's own total as denominator, not ALL records
 
         const topProducts = hasMultiCategorySelection
-            ? Array.from(filtered.reduce((acc, r) => {
-                const name = String(r.productName || '-');
-                const entry = acc.get(name) || { name, value: 0, sales: 0, share: 0 };
-                entry.value += Number(r.boxQuantity ?? r.quantity ?? 0);
-                entry.sales += Number(r.salesAmount ?? 0);
-                acc.set(name, entry);
-                return acc;
-            }, new Map<string, { name: string; value: number; sales: number; share: number }>())
-                .values())
-                .map(p => ({
+            ? (() => {
+                const aggregated = Array.from(
+                    filtered.reduce((acc, r) => {
+                        const name = String(r.productName || '-');
+                        const entry = acc.get(name) || { name, value: 0, sales: 0 };
+                        entry.value += Number(r.boxQuantity ?? r.quantity ?? 0);
+                        entry.sales += Number(r.salesAmount ?? 0);
+                        acc.set(name, entry);
+                        return acc;
+                    }, new Map<string, { name: string; value: number; sales: number }>())
+                        .values()
+                )
+                    .sort((a, b) => b.value - a.value)
+                    .slice(0, 30);
+                const totalTop30 = aggregated.reduce((sum, p) => sum + p.value, 0);
+                return aggregated.map(p => ({
                     ...p,
-                    share: totalQtyForTopProducts > 0 ? (p.value / totalQtyForTopProducts) * 100 : 0
-                }))
-                .sort((a, b) => b.value - a.value)
-                .slice(0, 30)
-            : (outboundTopProducts || [])
-                .map((r: any) => ({
-                    name: String(r?.name || '-'),
-                    value: Number(r?.quantity || 0),
-                    sales: Number(r?.salesAmount ?? r?.supplyAmount ?? 0),
-                    share: totalQty > 0 ? (Number(r?.quantity || 0) / totalQty) * 100 : 0,
-                }))
-                .sort((a: any, b: any) => (b.value || 0) - a.value)
-                .slice(0, 30);
+                    share: totalTop30 > 0 ? (p.value / totalTop30) * 100 : 0,
+                    label: `${NUMBER_FORMATTER.format(p.value)} Box (${(totalTop30 > 0 ? (p.value / totalTop30) * 100 : 0).toFixed(1)}%)`,
+                }));
+            })()
+            : (() => {
+                const sorted = (outboundTopProducts || [])
+                    .map((r: any) => ({
+                        name: String(r?.name || '-'),
+                        value: Number(r?.quantity || 0),
+                        sales: Number(r?.salesAmount ?? r?.supplyAmount ?? 0),
+                    }))
+                    .sort((a: any, b: any) => (b.value || 0) - a.value)
+                    .slice(0, 30);
+                const totalTop30 = sorted.reduce((sum: number, p: any) => sum + (p.value || 0), 0);
+                return sorted.map(p => {
+                    const share = totalTop30 > 0 ? (p.value / totalTop30) * 100 : 0;
+                    return {
+                        ...p,
+                        share,
+                        label: `${NUMBER_FORMATTER.format(p.value)} Box (${share.toFixed(1)}%)`,
+                    };
+                });
+            })();
 
         const createTotalPivot = (groupByKey: (r: OutboundRecordWithBoxes) => string) => {
             const map = new Map();
@@ -2394,15 +2435,7 @@ export default function OutboundDashboardUnified({ dataSource = 'vf', activeTab 
                                             {topProducts.map((entry, index) => (
                                                 <Cell key={`cell-${index}`} fill={entry.name === selectedProduct ? '#2563EB' : COLORS[index % COLORS.length]} />
                                             ))}
-                                            <LabelList dataKey="value" position="right" content={(props: any) => {
-                                                const { x, y, width, height, value, payload } = props;
-                                                const share = payload?.share || 0;
-                                                return (
-                                                    <text x={x + width + 5} y={y + height / 2 + 4} fill="#666" fontSize={11} textAnchor="start">
-                                                        {`${NUMBER_FORMATTER.format(value)} Box (${share.toFixed(1)}%)`}
-                                                    </text>
-                                                );
-                                            }} />
+                                            <LabelList dataKey="label" position="right" fontSize={11} fill="#666" />
                                         </Bar>
                                     </BarChart>
                                 </ResponsiveContainer>

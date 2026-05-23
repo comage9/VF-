@@ -103,7 +103,7 @@ DELETE /api/production-log/<date>    → ✅ 특정 날짜 삭제
 
 ```bash
 # 백엔드
-cd backend && source .venv/bin/activate && python manage.py runserver 0.0.0.0:8000
+cd backend && source .venv/bin/activate && gunicorn config.wsgi:application --bind 0.0.0.0:5176 --workers 2
 
 # 프론트엔드
 cd frontend/client && npm run dev -- --host 0.0.0.0 --port 5174

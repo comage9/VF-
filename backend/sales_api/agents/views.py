@@ -36,10 +36,11 @@ def ai_agent_chat(request):
                 {"answer": "질문을 입력해주세요."}, status=status.HTTP_400_BAD_REQUEST
             )
 
-        from datetime import datetime, timedelta
+        from django.utils import timezone
+        from datetime import timedelta
         from django.db.models import Sum
 
-        today = datetime.now().date()
+        today = timezone.localdate()
         yesterday = today - timedelta(days=1)
 
         # Build context for all domains

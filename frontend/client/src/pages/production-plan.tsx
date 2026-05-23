@@ -567,12 +567,12 @@ export default function ProductionPlan() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [selectedDate, setSelectedDate] = useState<string>('latest');
   const { data: latestData = [], isLoading } = useProductionLog(selectedDate);
   const { data: meta } = useProductionMeta();
   const { data: invData, isLoading: invLoading } = useInventory();
   const updateInventory = useUpdateInventory();
 
-  const [selectedDate, setSelectedDate] = useState<string>('latest');
   const [machineFilter, setMachineFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);

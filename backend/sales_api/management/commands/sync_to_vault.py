@@ -20,10 +20,9 @@ GoClaw Vault DB에 직접 파일을 등록합니다.
 import json
 import csv
 import requests
-from datetime import datetime, date
-from django.core.management.base import BaseCommand
 from django.utils import timezone
-from django.conf import settings
+from datetime import datetime, date, timedelta
+from django.core.management.base import BaseCommand
 import logging
 import os
 import tempfile
@@ -121,7 +120,7 @@ class Command(BaseCommand):
 
     def sync_production(self):
         """생산 계획 동기화"""
-        self.stdout.write(f'\n[{datetime.now().strftime("%H:%M:%S")}] 🔄 생산 계획 동기화 중...')
+        self.stdout.write(f'\n[{timezone.now().strftime("%H:%M:%S")}] 🔄 생산 계획 동기화 중...')
 
         try:
             # VF API에서 생산 데이터 가져오기
@@ -159,7 +158,7 @@ class Command(BaseCommand):
 
     def sync_inventory(self):
         """전산 재고 수량 동기화"""
-        self.stdout.write(f'\n[{datetime.now().strftime("%H:%M:%S")}] 🔄 전산 재고 동기화 중...')
+        self.stdout.write(f'\n[{timezone.now().strftime("%H:%M:%S")}] 🔄 전산 재고 동기화 중...')
 
         try:
             # VF API에서 재고 데이터 가져오기
@@ -191,7 +190,7 @@ class Command(BaseCommand):
 
     def sync_outbound(self, sync_date):
         """출고 현황 & 출고 수량 동기화"""
-        self.stdout.write(f'\n[{datetime.now().strftime("%H:%M:%S")}] 🔄 출고 데이터 동기화 중...')
+        self.stdout.write(f'\n[{timezone.now().strftime("%H:%M:%S")}] 🔄 출고 데이터 동기화 중...')
 
         try:
             results = {}
@@ -310,7 +309,7 @@ class Command(BaseCommand):
 
             # 파일 복사 (타임스탬프로 구분)
             ext = os.path.splitext(filepath)[1]
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
             vault_filename = f'{timestamp}_{uuid.uuid4().hex[:8]}{ext}'
             vault_path = os.path.join(self.vault_dir, vault_filename)
 

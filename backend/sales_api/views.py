@@ -10,6 +10,7 @@ from django.http import HttpResponse
 from django.http import JsonResponse
 from django.utils import timezone
 from django.db import transaction
+from django.db import connection
 from .models import (
     OutboundRecord,
     InventoryItem,
@@ -1972,7 +1973,7 @@ def production_log_move_pending_to_today(request):
     from django.db import transaction
     from django.db.models import Q
 
-    today = datetime.now().date()
+    today = timezone.localdate()
     payload = request.data if isinstance(request.data, dict) else {}
     from_date_str = payload.get("from_date")
 
@@ -2382,7 +2383,7 @@ def production_copy_day(request):
         )
 
     if not to_date:
-        to_date = (datetime.now() + timedelta(days=1)).date().isoformat()
+        to_date = (timezone.now() + timedelta(days=1)).date().isoformat()
 
     # 前一天 计划查询
     plans = MachinePlan.objects.filter(date=from_date)
@@ -2441,7 +2442,7 @@ def machine_plan_list(request):
 
     if not date:
         # 기본: 내일
-        tomorrow = (datetime.now() + timedelta(days=1)).date()
+        tomorrow = (timezone.now() + timedelta(days=1)).date()
         date = tomorrow.isoformat()
 
     queryset = MachinePlan.objects.filter(date=date)
@@ -2654,12 +2655,12 @@ def ai_production_recommend(request):
         )
 
     if not target_date:
-        target_date = (datetime.now() + timedelta(days=1)).date().isoformat()
+        target_date = (timezone.now() + timedelta(days=1)).date().isoformat()
 
     try:
         target_dt = datetime.fromisoformat(target_date)
     except Exception:
-        target_dt = datetime.now() + timedelta(days=1)
+        target_dt = timezone.now() + timedelta(days=1)
 
     # 1. MasterSpec에서 제품 스펙 조회
     spec = MasterSpec.objects.filter(product_name=product_name).first()
@@ -2731,7 +2732,7 @@ def ai_production_recommend(request):
     reason += f". 평균 생산량 {avg_production:.0f}개 기준 권장 {recommended_qty}박스."
 
     # 6. MachinePlan에 저장 (recommended 상태)
-    tomorrow = (datetime.now() + timedelta(days=1)).date()
+    tomorrow = (timezone.now() + timedelta(days=1)).date()
     plan = MachinePlan.objects.create(
         date=tomorrow,
         machine_number=machine_number,
@@ -2800,12 +2801,12 @@ def ai_production_chat(request):
 
     # 기본 날짜: 내일
     if not target_date:
-        target_date = (datetime.now() + timedelta(days=1)).date().isoformat()
+        target_date = (timezone.now() + timedelta(days=1)).date().isoformat()
 
     # 완료 안 된 계획 자동 이동
     # 이전 날짜 계획 중 미완료 → 오늘로
     # 오늘 계획 중 미완료 → 내일(다음 작업일)로
-    today = datetime.now().date()
+    today = timezone.localdate()
     tomorrow_date = today + timedelta(days=1)
     # 주말이면 다음 평일
     while tomorrow_date.weekday() >= 5:
@@ -3035,7 +3036,7 @@ def ai_production_chat(request):
         outbound_qty = (
             OutboundRecord.objects.filter(
                 product_name__icontains=product_name,
-                outbound_date__gte=datetime.now().date() - timedelta(days=7),
+                outbound_date__gte=timezone.localdate() - timedelta(days=7),
             ).aggregate(total=Coalesce(Sum("box_quantity"), 0))["total"]
             or 0
         )
@@ -3543,9 +3544,9 @@ def outbound_sync(request):
 
     # No date range? Use filter dates
     if not start:
-        start = filter_start if filter_start else (datetime.now().date() - timedelta(days=30))
+        start = filter_start if filter_start else (timezone.localdate() - timedelta(days=30))
     if not end:
-        end = filter_end if filter_end else datetime.now().date()
+        end = filter_end if filter_end else timezone.localdate()
 
     from django.db import transaction
 
@@ -4374,7 +4375,7 @@ def ai_chat(request):
     # Get current data context
     from datetime import datetime, timedelta
 
-    today = datetime.now().date()
+    today = timezone.localdate()
     yesterday = today - timedelta(days=1)
 
     # Fetch ALL data sources regardless of page type
@@ -9118,7 +9119,7 @@ def outbound_upload_excel(request):
 
     if not target_date_str:
         # 최후의 보루: 어제 날짜
-        target_date_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        target_date_str = (timezone.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     try:
         df = pd.read_excel(file_obj)
@@ -9227,7 +9228,7 @@ def move_incomplete_production_logs():
     """
     from datetime import datetime
 
-    today = datetime.now().date()
+    today = timezone.localdate()
     next_workday = _get_next_workday(today)
 
     # 이전 날짜 미완료만 조회 (오늘 것은 제외)
@@ -9435,3 +9436,84 @@ def outbound_analytics_summary(request):
             'trend': 'up' if len(daily_list) >= 2 and daily_list[0].summary.get('total', 0) > daily_list[1].summary.get('total', 0) else 'down',
         }
     })
+
+
+# =============================================================================
+# Prophet 예측 API
+# =============================================================================
+
+@csrf_exempt
+def ai_production_forecast(request):
+    """
+    Prophet 기반 생산 예측 API
+    
+    POST /api/ai/production-forecast
+    Body: {"product_name": "보노하우스 칵투스 커버형 비누 받침대", "horizon": 7}
+    
+    Response:
+    {
+        "success": true,
+        "product_name": "보노하우스 칵투스 커버형 비누 받침대",
+        "source": "prophet",
+        "forecast": [{"date": "2026-05-20", "predicted": 40, "lower": 30, "upper": 55}, ...],
+        "confidence_interval": {"lower_95": 30, "upper_95": 55, "avg_range": 20},
+        "trend": "stable",
+        "trend_percentage": 2.5,
+        "safety_stock": 10,
+        "weekly_seasonality": "confirmed"
+    }
+    """
+    from sales_api.services.prophet_service import get_prophet_service
+    
+    if request.method == 'GET':
+        # GET: 제품명 목록 또는 기본 예측
+        cursor = connection.cursor()
+        cursor.execute("""
+            SELECT product_name, SUM(box_quantity) as total
+            FROM outbound_records
+            WHERE outbound_date > '2026-01-01'
+            GROUP BY product_name
+            ORDER BY total DESC
+            LIMIT 20
+        """)
+        products = [{'name': row[0], 'total': row[1]} for row in cursor.fetchall()]
+        return JsonResponse({'success': True, 'products': products})
+    
+    if request.method == 'POST':
+        import json
+        try:
+            body = json.loads(request.body)
+        except:
+            body = request.data
+        
+        product_name = body.get('product_name', '')
+        horizon = body.get('horizon', 7)
+        
+        if not product_name:
+            return JsonResponse({
+                'success': False,
+                'message': 'product_name이 필요합니다.'
+            }, status=400)
+        
+        service = get_prophet_service()
+        result = service.get_prediction_summary(product_name, horizon=horizon)
+        
+        return JsonResponse(result)
+
+
+@csrf_exempt
+def ai_production_forecast_by_product(request, product_name):
+    """
+    특정 제품의 Prophet 예측 API
+    
+    GET /api/ai/production-forecast/<product_name>
+    Query params: ?horizon=7
+    """
+    from sales_api.services.prophet_service import get_prophet_service
+    
+    horizon = request.GET.get('horizon', 7)
+    
+    service = get_prophet_service()
+    result = service.get_prediction_summary(product_name, horizon=int(horizon))
+    
+    return JsonResponse(result)

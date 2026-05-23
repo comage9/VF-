@@ -218,6 +218,9 @@ urlpatterns = [
         name="ai-production-recommend",
     ),
     path("ai/production-chat", views.ai_production_chat, name="ai-production-chat"),
+    # Prophet 예측 API
+    path("ai/production-forecast", views.ai_production_forecast, name="ai-production-forecast"),
+    path("ai/production-forecast/<str:product_name>", views.ai_production_forecast_by_product, name="ai-production-forecast-by-product"),
     path("master/specs", views.master_specs, name="master-specs"),
     path(
         "master/specs/<int:id>", views.master_specs_detail, name="master-specs-detail"
