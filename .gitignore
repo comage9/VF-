@@ -120,3 +120,4 @@ docker-compose.override.yml
 htmlcov/
 .tox/
 VF/
+test-results/

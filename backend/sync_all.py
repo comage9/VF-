@@ -79,25 +79,32 @@ def sync_outbound():
         print(f"  로컬 DB 총 레코드: {OutboundRecord.objects.count()}")
         return
         
+    from datetime import date, timedelta
+    start_date = (date.today() - timedelta(days=30)).strftime('%Y-%m-%d')
+    print(f"  최근 30일 데이터를 기준으로 동기화합니다 (시작일: {start_date})")
+    
     all_items = []
-    url = f"{REMOTE}/api/outbound?limit=100&offset=0"
-    data = fetch_remote(url)
-    if not data:
-        print("  [FALLBACK] 원격 연결 실패")
-        return
-        
-    if isinstance(data, list):
-        all_items = data
-    else:
-        all_items.extend(data.get("results", []))
-        next_url = data.get("next")
-        while next_url:
-            data = fetch_remote(next_url)
-            if data:
-                all_items.extend(data.get("results", []))
-                next_url = data.get("next")
-            else:
+    limit = 1000
+    offset = 0
+    while True:
+        url = f"{REMOTE}/api/outbound?start={start_date}&limit={limit}&offset={offset}"
+        print(f"  원격 데이터 요청 중... (offset={offset})")
+        data = fetch_remote(url)
+        if not data:
+            break
+            
+        if isinstance(data, list):
+            all_items.extend(data)
+            if len(data) < limit:
                 break
+            offset += limit
+        else:
+            results = data.get("results", [])
+            all_items.extend(results)
+            next_url = data.get("next")
+            if not next_url or len(results) < limit:
+                break
+            offset += limit
                 
     created, updated = 0, 0
     for item in all_items:
@@ -213,14 +220,19 @@ def sync_fc_inbound():
         print(f"  로컬 DB 총 레코드: {FCInboundRecord.objects.count()}")
         return
         
-    data = fetch_remote(f"{REMOTE}/api/fc-inbound?limit=100&offset=0")
-    if not data:
-        print("  [FALLBACK] 원격 연결 실패")
+    url = f"{REMOTE}/api/fc-inbound?limit=10000"
+    print("  원격 데이터 요청 중...")
+    all_items = fetch_remote(url)
+    if not all_items:
+        print("  [FALLBACK] 원격 연결 실패 또는 데이터 없음")
         return
         
-    items = data if isinstance(data, list) else data.get("results", [])
+    if not isinstance(all_items, list):
+        print("  [ERROR] 데이터 형식 오류")
+        return
+        
     created, updated = 0, 0
-    for item in items:
+    for item in all_items:
         fields = {
             "id": item.get("id"),
             "inbound_date": item.get("inbound_date"),

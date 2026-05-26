@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from django.db import models
 from django.db.models import Sum, Count, Min, Max, Value, DecimalField
 from django.db.models.functions import Coalesce
-from django.db.models.functions import TruncDay, TruncMonth, TruncWeek
+from django.db.models.functions import TruncDay, TruncMonth, TruncWeek, TruncYear
 from django.http import HttpResponse
 from django.http import JsonResponse
 from django.utils import timezone
@@ -3550,106 +3550,26 @@ def outbound_sync(request):
 
     from django.db import transaction
 
-    # Batch processing: 10,000 records per batch
-    batch_size = 10000
-    total_created = 0
+    total_created = len(records)
     total_updated = 0
     total_deleted = 0
 
-    for batch_start in range(0, len(records), batch_size):
-        batch_end = min(batch_start + batch_size, len(records))
-        batch_records = records[batch_start:batch_end]
+    try:
+        with transaction.atomic():
+            # Delete all existing outbound records within the date range of the current sheet
+            deleted_count, _ = OutboundRecord.objects.filter(
+                outbound_date__range=[start, end]
+            ).delete()
+            total_deleted = deleted_count
 
-        batch_start_date = min(r.outbound_date for r in batch_records) if batch_records else start
-        batch_end_date = max(r.outbound_date for r in batch_records) if batch_records else end
-
-        try:
-            with transaction.atomic():
-                existing_records = OutboundRecord.objects.filter(
-                    outbound_date__range=[batch_start_date, batch_end_date]
-                ).values(
-                    "id",
-                    "outbound_date",
-                    "product_name",
-                    "quantity",
-                    "sales_amount",
-                    "category",
-                    "barcode",
-                )
-
-                existing_map = {
-                    (str(r["outbound_date"]), r["product_name"]): r
-                    for r in existing_records
-                }
-
-                new_keys = {(str(r.outbound_date), r.product_name) for r in batch_records}
-
-                to_delete_ids = [
-                    r["id"]
-                    for r in existing_records
-                    if (str(r["outbound_date"]), r["product_name"]) not in new_keys
-                ]
-
-                if to_delete_ids:
-                    deleted, _ = OutboundRecord.objects.filter(
-                        id__in=to_delete_ids
-                    ).delete()
-                    total_deleted += deleted
-
-                to_create = []
-                to_update = []
-
-                for record in batch_records:
-                    key = (str(record.outbound_date), record.product_name)
-                    if key in existing_map:
-                        existing = existing_map[key]
-                        needs_update = (
-                            existing["quantity"] != record.quantity
-                            or existing["sales_amount"] != record.sales_amount
-                            or existing["category"] != record.category
-                            or existing["barcode"] != record.barcode
-                        )
-
-                        if needs_update:
-                            obj = OutboundRecord.objects.get(id=existing["id"])
-                            obj.quantity = record.quantity
-                            obj.box_quantity = record.box_quantity
-                            obj.unit_count = record.unit_count
-                            obj.sales_amount = record.sales_amount
-                            obj.category = record.category
-                            obj.barcode = record.barcode
-                            obj.client = record.client
-                            obj.notes = record.notes
-                            obj.updated_at = now
-                            to_update.append(obj)
-                    else:
-                        to_create.append(record)
-
-                if to_create:
-                    OutboundRecord.objects.bulk_create(to_create, batch_size=5000)
-                    total_created += len(to_create)
-
-                if to_update:
-                    OutboundRecord.objects.bulk_update(
-                        to_update,
-                        [
-                            "quantity",
-                            "box_quantity",
-                            "unit_count",
-                            "sales_amount",
-                            "category",
-                            "barcode",
-                            "client",
-                            "notes",
-                            "updated_at",
-                        ],
-                        batch_size=5000,
-                    )
-                    total_updated += len(to_update)
-
-        except Exception as e:
-            logger.error(f"Batch sync error (batch {batch_start}-{batch_end}): {e}")
-            continue
+            # Bulk create all parsed records in batches of 5000
+            OutboundRecord.objects.bulk_create(records, batch_size=5000)
+    except Exception as e:
+        logger.error(f"Sync error: {e}")
+        return Response(
+            {"error": f"Database sync failed: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
     created = total_created
     updated = total_updated
@@ -4284,27 +4204,129 @@ def outbound_ai_analysis(request):
             }
         )
 
+    # 1. Django ORM을 이용한 실시간 다차원 정량 통계 집계
+    queryset = OutboundRecord.objects.all()
+    if start_date:
+        queryset = queryset.filter(outbound_date__gte=start_date)
+    if end_date:
+        queryset = queryset.filter(outbound_date__lte=end_date)
+    if category and category != "all":
+        queryset = queryset.filter(category=category)
+    if search_query:
+        queryset = queryset.filter(product_name__icontains=search_query)
+    if product:
+        queryset = queryset.filter(product_name=product)
+
+    # 품목별 실적 (출고량 기준 TOP 5)
+    top_products_qs = (
+        queryset.values("product_name")
+        .annotate(
+            total_qty=Coalesce(Sum("box_quantity"), 0),
+            total_sales=Coalesce(Sum("sales_amount"), Decimal("0")),
+        )
+        .order_by("-total_qty")[:5]
+    )
+    
+    top_products_text = ""
+    for idx, p in enumerate(top_products_qs, 1):
+        p_name = p["product_name"] or "-"
+        p_qty = p["total_qty"] or 0
+        p_sales = float(p["total_sales"] or 0)
+        p_share = (p_sales / total_sales * 100) if total_sales > 0 else 0
+        top_products_text += f"{idx}. {p_name}: 출고량 {p_qty:,} Box, 매출액 {p_sales:,.0f}원 (매출 비중 {p_share:.1f}%)\n"
+
+    # 카테고리별 실적 (매출 기준 TOP 3)
+    top_categories_qs = (
+        queryset.values("category")
+        .annotate(
+            total_qty=Coalesce(Sum("box_quantity"), 0),
+            total_sales=Coalesce(Sum("sales_amount"), Decimal("0")),
+        )
+        .order_by("-total_sales")[:3]
+    )
+    
+    top_categories_text = ""
+    for idx, c in enumerate(top_categories_qs, 1):
+        c_name = c["category"] or "-"
+        c_qty = c["total_qty"] or 0
+        c_sales = float(c["total_sales"] or 0)
+        c_share = (c_sales / total_sales * 100) if total_sales > 0 else 0
+        top_categories_text += f"{idx}. {c_name}: 출고량 {c_qty:,} Box, 매출액 {c_sales:,.0f}원 (매출 비중 {c_share:.1f}%)\n"
+
+    # 최고 매출 피크일 (Peak Day)
+    peak_day_qs = (
+        queryset.values("outbound_date")
+        .annotate(
+            daily_sales=Coalesce(Sum("sales_amount"), Decimal("0")),
+            daily_qty=Coalesce(Sum("box_quantity"), 0),
+        )
+        .order_by("-daily_sales")
+        .first()
+    )
+    
+    peak_day_text = "-"
+    if peak_day_qs and peak_day_qs["outbound_date"]:
+        pk_date = peak_day_qs["outbound_date"].strftime("%Y-%m-%d")
+        pk_sales = float(peak_day_qs["daily_sales"] or 0)
+        pk_qty = peak_day_qs["daily_qty"] or 0
+        
+        # 피크일 당일 최고 매출 기여 품목
+        pk_product_qs = (
+            queryset.filter(outbound_date=peak_day_qs["outbound_date"])
+            .values("product_name")
+            .annotate(p_sales=Coalesce(Sum("sales_amount"), Decimal("0")))
+            .order_by("-p_sales")
+            .first()
+        )
+        pk_prod_name = pk_product_qs["product_name"] if pk_product_qs else "-"
+        peak_day_text = f"{pk_date} (당일 매출: {pk_sales:,.0f}원, 출고량: {pk_qty:,} Box, 최고 공헌 품목: {pk_prod_name})"
+
+    # 일자별 집계 통계
+    daily_stats = (
+        queryset.values("outbound_date")
+        .annotate(
+            daily_sales=Coalesce(Sum("sales_amount"), Decimal("0")),
+            daily_qty=Coalesce(Sum("box_quantity"), 0),
+        )
+        .order_by("outbound_date")
+    )
+    
+    days_count = len(daily_stats)
+    avg_sales = (total_sales / days_count) if days_count > 0 else 0
+    avg_qty = (float((summary_stats or {}).get("totalQty") or 0) / days_count) if days_count > 0 else 0
+
     system_prompt = (
-        "당신은 출고/매출 데이터 분석 전문가입니다. 한국어로만 답변하세요. "
-        "답변은 마크다운 형식으로 작성하세요. "
-        "데이터에 없는 내용은 추측하지 말고 '추가 데이터 필요'라고 명시하세요."
+        "당신은 보노하우스(BONOHOUSE)의 출고 및 매출 데이터를 분석하는 비즈니스 데이터 과학자이자 물류 전략 컨설턴트입니다. "
+        "전달된 실데이터 수치(원화 매출액, 제품명, 출고량 등)를 마크다운 형식으로 매우 상세하고 정량적으로 분석하여 보고서를 작성하세요. "
+        "추측성 표현은 지양하고, 반드시 전달된 데이터에 기재된 정확한 이름과 수치들을 인용하여 비즈니스 분석 의견을 제공해야 합니다."
+        "한국어로만 정중하고 전문적인 어조로 답변하세요."
     )
 
     user_prompt = (
-        "다음 조건의 출고 데이터를 요약 분석해 주세요.\n\n"
-        f"- 기간: {start_date or '-'} ~ {end_date or '-'}\n"
-        f"- 카테고리 필터: {category or 'all'}\n"
-        f"- 검색어: {search_query or '-'}\n"
-        f"- 선택 품목: {product or '-'}\n\n"
-        "요약 지표:\n"
-        f"- 총 매출: {total_sales:,.0f}원\n"
-        f"- 총 박스수량: {float((summary_stats or {}).get('totalQty') or 0):,.0f}\n"
-        f"- 주요 카테고리(추정): {((summary_stats or {}).get('topCategory') or '-')}\n\n"
-        "아래 형식으로 작성하세요:\n"
-        "1) 핵심 요약(3줄)\n"
-        "2) 주요 인사이트(불릿 3~6개)\n"
-        "3) 리스크/주의사항(있으면)\n"
-        "4) 다음 액션 제안(2~4개)\n"
+        "다음 조건의 출고 및 매출 실데이터 통계를 바탕으로 상세 분석 보고서를 작성해 주세요.\n\n"
+        "### 1. 분석 기본 조건\n"
+        f"- 분석 기간: {start_date or '-'} ~ {end_date or '-'}\n"
+        f"- 카테고리 필터: {category or '전체(all)'}\n"
+        f"- 상세 검색어: {search_query or '없음(-)'}\n"
+        f"- 특정 품목 필터: {product or '없음(-)'}\n\n"
+        "### 2. 핵심 종합 지표\n"
+        f"- 총 매출액: {total_sales:,.0f}원\n"
+        f"- 총 출고량: {float((summary_stats or {}).get('totalQty') or 0):,.0f} Box\n"
+        f"- 데이터 수집 일수: {days_count}일\n"
+        f"- 일평균 매출액: {avg_sales:,.0f}원\n"
+        f"- 일평균 출고량: {avg_qty:,.1f} Box\n\n"
+        "### 3. 카테고리별 실적 (매출 기준 TOP 3)\n"
+        f"{top_categories_text or '자료 없음'}\n"
+        "### 4. 제품별 실적 (출고량 기준 TOP 5)\n"
+        f"{top_products_text or '자료 없음'}\n"
+        "### 5. 최고 매출 피크일 (Peak Day)\n"
+        f"- {peak_day_text}\n\n"
+        "### [작성 가이드라인 및 형식]\n"
+        "아래 4개 대주제로 구분하여 각 주제별로 2~3문단 이상 매우 풍부하고 구체적인 수치 분석과 실무 전략 제안을 작성하세요:\n"
+        "1. **출고 및 매출 종합 성과 진단** (총 성과, 일평균 추이 분석 및 실적 평가)\n"
+        "2. **품목 및 카테고리 기여도 상세 분석** (어떤 제품/분류가 매출과 수량을 견인했는지 실데이터 기반 정량 평가)\n"
+        "3. **판매 안정성 및 리스크 조기 진단** (최고 피크일 특이사항, 매출 쏠림 현상 또는 공급 지연 위험성 진단)\n"
+        "4. **물류 효율성 제고 및 차기 액션 제안** (재고 회전율 개선, 베스트셀러 배치 최적화, 출고 예측 기반의 3~4가지 실무 제안)\n"
     )
 
     try:
@@ -5598,6 +5620,8 @@ def get_outbound_stats(request):
         trunc_func = TruncWeek
     elif group_by == "month":
         trunc_func = TruncMonth
+    elif group_by == "year":
+        trunc_func = TruncYear
 
     daily_trend = (
         queryset.annotate(date=trunc_func("outbound_date"))
@@ -5720,9 +5744,9 @@ def get_outbound_pivot(request):
             {"message": "row must be category or product"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    if group_by not in ["day", "week", "month"]:
+    if group_by not in ["day", "week", "month", "year"]:
         return Response(
-            {"message": "groupBy must be day, week, or month"},
+            {"message": "groupBy must be day, week, month, or year"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -5753,6 +5777,8 @@ def get_outbound_pivot(request):
         trunc_func = TruncWeek
     elif group_by == "month":
         trunc_func = TruncMonth
+    elif group_by == "year":
+        trunc_func = TruncYear
 
     row_field = "category" if row == "category" else "product_name"
 
