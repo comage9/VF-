@@ -25,6 +25,8 @@ export default defineConfig({
   server: {
     port: 5174,
     host: '0.0.0.0',
+    // 허용할 호스트 주소 추가
+    allowedHosts: ['bonohouse.p-e.kr'],
     proxy: {
       '/api': {
         target: 'http://localhost:5176',

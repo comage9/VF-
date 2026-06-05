@@ -10,6 +10,7 @@ export interface SidebarItem {
   label: string;
   icon: string;
   description?: string;
+  externalUrl?: string;
 }
 
 interface SidebarProps {
@@ -25,23 +26,38 @@ function NavContent({ items, activeKey, onItemClick }: SidebarProps & { onItemCl
       // Toss Design Language: single accent #721FE5 for active state only
       return `${baseClass} bg-[#721FE5] text-white`;
     }
-    // Grayscale for inactive — never use color
-    return `${baseClass} text-[#3C3C3C] hover:bg-[#F4F4F5]`;
+    // Use CSS variables for automatic dark mode support
+    return `${baseClass} text-[color:var(--sidebar-foreground)] hover:bg-[color:var(--secondary-hover)]`;
   };
 
   return (
     <div className="flex flex-col h-full bg-[#FAFAFA]">
       {/* Header — clean, no gradient */}
-      <div className="p-6 border-b border-[#E8E8EA]">
-        <h1 className="text-xl font-bold text-[#2A2A2A] mb-1">
+      <div className="p-6 border-b border-[color:var(--sidebar-border)]">
+        <h1 className="text-xl font-bold text-[color:var(--sidebar-foreground)] mb-1">
           VF 보노하우스
         </h1>
-        <p className="text-sm text-[#717182]">실시간 생산 인사이트</p>
+        <p className="text-sm text-[color:var(--muted-foreground)]">실시간 생산 인사이트</p>
       </div>
 
       {/* Nav items */}
       <div className="flex flex-col p-4 space-y-1 flex-1 overflow-y-auto">
         {items.map((item) => (
+          item.externalUrl ? (
+            <a
+              key={item.key}
+              href={item.externalUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={onItemClick}
+              className={getButtonClass(item.key)}
+              data-testid={`nav-${item.key}`}
+            >
+              <i className={`fas ${item.icon} mr-3 w-5 text-center`}></i>
+              <span className="flex-1">{item.label}</span>
+              <i className="fas fa-external-link-alt ml-2 text-xs opacity-50"></i>
+            </a>
+          ) : (
           <Link
             key={item.key}
             href={item.path}
@@ -55,6 +71,7 @@ function NavContent({ items, activeKey, onItemClick }: SidebarProps & { onItemCl
               <i className="fas fa-chevron-right ml-2 text-xs opacity-70"></i>
             )}
           </Link>
+          )
         ))}
       </div>
     </div>
@@ -63,7 +80,7 @@ function NavContent({ items, activeKey, onItemClick }: SidebarProps & { onItemCl
 
 export default function Sidebar({ items, activeKey, className }: SidebarProps) {
   return (
-    <div className={`w-64 bg-[#FAFAFA] border-r border-[#E8E8EA] flex-col hidden md:flex ${className}`}>
+    <div className={`w-64 bg-[color:var(--sidebar)] border-r border-[color:var(--sidebar-border)] flex-col hidden md:flex ${className}`}>
       <NavContent items={items} activeKey={activeKey} />
     </div>
   );
@@ -79,7 +96,7 @@ export function MobileNav({ items, activeKey }: SidebarProps) {
           <Menu className="h-6 w-6" />
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="p-0 w-64 bg-[#FAFAFA] border-r border-[#E8E8EA]">
+      <SheetContent side="left" className="p-0 w-64 bg-[color:var(--sidebar)] border-r border-[color:var(--sidebar-border)]">
         <NavContent items={items} activeKey={activeKey} onItemClick={() => setOpen(false)} />
       </SheetContent>
     </Sheet>
