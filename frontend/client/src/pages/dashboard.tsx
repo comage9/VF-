@@ -8,6 +8,7 @@ import DeliveryOverview from "@/pages/delivery-overview";
 import ProductionPlan from "@/pages/production-plan";
 
 import ProductMaster from "@/pages/product-master";
+import BarcodeGeneration from "@/pages/barcode-generation";
 import NotFound from "@/pages/not-found";
 import { AIChatWidget } from "@/components/ai-chatbot";
 
@@ -55,6 +56,13 @@ const NAV_ITEMS: SidebarItem[] = [
     icon: "fa-database",
     description: "제품명, 바코드, 색상 등 제품 사양 데이터를 관리합니다.",
   },
+  {
+    key: "barcode",
+    path: "/barcode",
+    label: "바코드 생성",
+    icon: "fa-qrcode",
+    description: "송장번호/제품 바코드 생성 및 시간대별 출고 데이터 전송",
+  },
 ];
 
 const PAGE_META: Record<string, PageMeta> = {
@@ -86,7 +94,11 @@ const PAGE_META: Record<string, PageMeta> = {
     title: "제품 마스터 관리",
     description: "제품 사양 데이터베이스를 관리하고 자동완성 데이터를 설정합니다.",
   },
-
+  barcode: {
+    key: "barcode",
+    title: "바코드 생성",
+    description: "송장번호/제품 바코드 생성 및 시간대별 출고 데이터 전송",
+  },
 };
 
 function normalizePath(location: string | undefined): string {
@@ -117,6 +129,8 @@ function resolveActiveKey(pathname: string): string {
 
     case "/master":
       return "master";
+    case "/barcode":
+      return "barcode";
     default:
       return "unknown";
   }
@@ -185,6 +199,8 @@ export default function Dashboard() {
 
       case "/master":
         return <ProductMaster />;
+      case "/barcode":
+        return <BarcodeGeneration />;
       default:
         return <NotFound />;
     }
