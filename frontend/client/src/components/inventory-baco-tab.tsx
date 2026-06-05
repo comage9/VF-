@@ -46,17 +46,15 @@ const InventoryBacoTab: React.FC = () => {
   // 통계 로드
   const loadStats = async () => {
     try {
-      console.log('Loading baco stats...');
       const response = await fetch(`${API_BASE}/stats`);
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Stats API Error:', response.status, errorText);
         throw new Error(`통계 로드 실패: ${response.status} - ${errorText}`);
       }
-      
+
       const statsData = await response.json();
-      console.log('Stats data received:', statsData);
       setStats(statsData);
       log('통계가 성공적으로 로드되었습니다.');
     } catch (error) {

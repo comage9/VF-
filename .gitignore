@@ -119,3 +119,5 @@ docker-compose.override.yml
 .coverage
 htmlcov/
 .tox/
+VF/
+test-results/

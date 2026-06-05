@@ -30,7 +30,7 @@ function NavContent({ items, activeKey, onItemClick }: SidebarProps & { onItemCl
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-[#FAFAFA]">
       {/* Header — clean, no gradient */}
       <div className="p-6 border-b border-[#E8E8EA]">
         <h1 className="text-xl font-bold text-[#2A2A2A] mb-1">
@@ -79,7 +79,7 @@ export function MobileNav({ items, activeKey }: SidebarProps) {
           <Menu className="h-6 w-6" />
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="p-0 w-64">
+      <SheetContent side="left" className="p-0 w-64 bg-[#FAFAFA] border-r border-[#E8E8EA]">
         <NavContent items={items} activeKey={activeKey} onItemClick={() => setOpen(false)} />
       </SheetContent>
     </Sheet>

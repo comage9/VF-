@@ -16,7 +16,6 @@ interface OutboundTabsProps {
 }
 
 export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, initialDataSource = 'vf' }: OutboundTabsProps = {}) {
-  console.log('🔥🔥🔥 OutboundTabs RENDERING!!!', { initialTab, initialDataSource });
   const [location] = useLocation();
 
   // URL 파라미터에서 초기 탭 상태 읽기
@@ -52,6 +51,7 @@ export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, 
   const [activeTab, setActiveTab] = useState<OutboundTabKey>(getInitialTabFromUrl());
   const [isSyncing, setIsSyncing] = useState(false);
   const [uploadDate, setUploadDate] = useState(() => {
+    // VF 출고 데이터는 어제까지가 최신, 오늘 데이터는 출고 완료 후 업로드
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     return yesterday.toISOString().split('T')[0];
@@ -101,303 +101,201 @@ export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, 
 
     const formData = new FormData();
     formData.append('file', file);
-    // 사용자가 선택한 날짜
     formData.append('date', uploadDate);
 
     setIsSyncing(true);
     try {
-      // 탭에 따라 다른 API 엔드포인트 사용
-      const apiEndpoint = activeTab === 'fc-inbound'
-        ? '/api/fc-inbound/upload'
-        : '/api/outbound/upload-excel';
-
-      const response = await fetch(apiEndpoint, {
+      const response = await fetch('/api/outbound/upload-excel', {
         method: 'POST',
         body: formData,
       });
-      
+
       if (!response.ok) {
-        throw new Error('업로드 실패');
+        throw new Error(`업로드 실패: ${response.status}`);
       }
-      
+
       const result = await response.json();
+
       toast({
-        title: '업로드 완료',
-        description: `${result.created}개 데이터가 저장되었습니다.`,
+        title: '업로드 성공',
+        description: `총 ${result.count}개 레코드가 처리되었습니다.`,
       });
 
-      // 데이터 새로고침 - 탭에 따라 다른 쿼리 invalidate
-      if (activeTab === 'fc-inbound') {
-        queryClient.invalidateQueries({ predicate: (q: any) => {
-          const key = q?.queryKey;
-          return Array.isArray(key) && typeof key[0] === 'string' && key[0].startsWith('/api/fc-inbound');
-        }});
-      } else {
-        queryClient.invalidateQueries({ queryKey: ['/api/outbound'] });
-      }
-      queryClient.invalidateQueries({ queryKey: ['/api/delivery'] });
+      // 관련 쿼리 무효화
+      queryClient.invalidateQueries({ predicate: outboundQueryPredicate });
     } catch (error) {
+      console.error('파일 업로드 오류:', error);
       toast({
-        title: '오류',
-        description: error instanceof Error ? error.message : '업로드 실패',
+        title: '업로드 실패',
+        description: error instanceof Error ? error.message : '알 수 없는 오류',
         variant: 'destructive',
       });
     } finally {
       setIsSyncing(false);
+      // 파일 입력 초기화
       event.target.value = '';
     }
   };
 
   const handleSync = async () => {
-    if (isSyncing) return;
     setIsSyncing(true);
     try {
-      let result: any = null;
-      let refreshWarning: string | null = null;
-      let dsUrl: string | null = null;
-
-      // FC 입고 탭인 경우: 마스터 데이터 동기화 후 FC 입고 데이터 동기화
-      if (activeTab === 'fc-inbound') {
-        // 1. 마스터 데이터 동기화 (카테고리 정보)
-        try {
-          const masterRes = await fetch('/api/master/sync-from-sheet', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({}),
-          });
-          const masterJson = await masterRes.json().catch(() => ({}));
-          if (!masterRes.ok) {
-            refreshWarning = `마스터 데이터 동기화 실패: ${masterJson?.error || masterJson?.message || '알 수 없는 오류'}`;
-          }
-        } catch (e) {
-          refreshWarning = `마스터 데이터 동기화 오류: ${(e as Error)?.message || '알 수 없는 오류'}`;
-        }
-
-        // 2. FC 입고 데이터 동기화
-        const fcRes = await fetch('/api/fc-inbound/sync-from-sheet', {
-          method: 'POST',
-        });
-        const fcJson = await fcRes.json().catch(() => ({}));
-        if (!fcRes.ok) {
-          throw new Error(fcJson?.error || fcJson?.message || 'FC 입고 동기화 실패');
-        }
-        result = fcJson;
-
-        // FC 관련 쿼리 invalidate
-        await queryClient.invalidateQueries({ predicate: (q: any) => {
-          const key = q?.queryKey;
-          return Array.isArray(key) && typeof key[0] === 'string' && key[0].startsWith('/api/fc-inbound');
-        }});
-        await queryClient.refetchQueries({ predicate: (q: any) => {
-          const key = q?.queryKey;
-          return Array.isArray(key) && typeof key[0] === 'string' && key[0].startsWith('/api/fc-inbound');
-        } });
-
-        const created = result?.created ?? 0;
-        const updated = result?.updated ?? 0;
-        toast({
-          title: "FC 입고 데이터 동기화 완료",
-          description: refreshWarning
-            ? `${created}건 생성, ${updated}건 업데이트\n(${refreshWarning})`
-            : `${created}건 생성, ${updated}건 업데이트`,
-        });
-        return;
-      }
-
-      // VF 출고 탭인 경우: 기존 VF 출고 데이터 동기화 로직
-      try {
-        const dsRes = await fetch('/api/data-sources');
-        if (dsRes.ok) {
-          const dataSources = await dsRes.json();
-          const outboundGoogleSheets = Array.isArray(dataSources)
-            ? dataSources.find((ds: any) => {
-                const name = String(ds?.name || '').toLowerCase();
-                const isActive = Boolean(ds?.isActive ?? ds?.is_active);
-                return ds?.type === 'google_sheets' && isActive && name.includes('outbound');
-              })
-            : null;
-
-          const dsId = outboundGoogleSheets?.id;
-          dsUrl = outboundGoogleSheets?.url ? String(outboundGoogleSheets.url) : null;
-
-          // Try refresh first (requires GOOGLE_SHEETS_API_KEY). Even if it fails,
-          // we should still attempt CSV sync using ds.url.
-          if (dsId) {
-            const refreshRes = await fetch(`/api/google-sheets/refresh/${dsId}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({}),
-            });
-            const refreshJson = await refreshRes.json().catch(() => ({}));
-            if (!refreshRes.ok) {
-              refreshWarning = String(refreshJson?.message || refreshJson?.error || 'Google Sheets refresh failed');
-            } else {
-              result = refreshJson;
-            }
-          }
-
-          // Always try outbound sync when we have a URL (works without API key)
-          if (!result && dsUrl) {
-            const url = normalizeGoogleSheetUrlToCsv(dsUrl);
-            const res = await fetch('/api/outbound/sync', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ url }),
-            });
-            const json = await res.json().catch(() => ({}));
-            if (!res.ok) {
-              throw new Error(json?.error || json?.message || 'Sync failed');
-            }
-            result = json;
-          }
-        }
-      } catch (e) {
-        // If we had a data source URL, do NOT fall back to env-based sync.
-        // Surface the real error instead of confusing "OUTBOUND_GOOGLE_SHEET_URL is not set".
-        if (dsUrl) throw e;
-        // Otherwise, fall through to legacy sync endpoint below
-      }
-
-      if (!result) {
-        // As a safe fallback, try syncing using server-side OUTBOUND_GOOGLE_SHEET_URL.
-        // Do NOT use browser-native prompt/alert, because it breaks refresh UX.
-        const res = await fetch('/api/outbound/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          const message = json?.error || json?.message || 'Sync failed';
-          throw new Error(
-            `${message}\n(구글 시트 연결이 필요합니다: 데이터 소스에서 outbound Google Sheets를 연결하거나 서버 환경변수 OUTBOUND_GOOGLE_SHEET_URL을 설정하세요.)`
-          );
-        }
-        result = json;
-      }
-
-      // Invalidate ALL outbound-related queries so charts/tables update without a hard refresh.
-      // Many components use keys like ['/api/outbound/stats', ...], ['/api/outbound/pivot', ...], etc.
-      await queryClient.invalidateQueries({ predicate: outboundQueryPredicate });
-      await queryClient.refetchQueries({ predicate: outboundQueryPredicate, type: 'active' as any });
-      const updated = result?.updated ?? result?.rowsProcessed ?? result?.synced ?? 0;
-      toast({
-        title: "성공",
-        description: refreshWarning
-          ? `데이터가 성공적으로 갱신되었습니다. (${updated}건)\n(Google Sheets 새로고침 실패: ${refreshWarning})`
-          : `데이터가 성공적으로 갱신되었습니다. (${updated}건)`,
+      const response = await fetch('/api/outbound/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          date: uploadDate,
+          url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQwqI0BG-d2aMrql7DK4fQQTjvu57VtToSLAkY_nq92a4Cg5GFVbIn6_IR7Fq6_O-2TloFSNlXT8ZWC/pub?gid=1152588885&single=true&output=csv'
+        }),
       });
-    } catch (error) {
-      console.error('Sync error:', error);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ 동기화 실패 상세:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorText: errorText
+        });
+        throw new Error(`동기화 실패: ${response.status} - ${errorText.substring(0, 100)}`);
+      }
+
+      const result = await response.json();
+
       toast({
-        title: "오류",
-        description: `데이터 갱신에 실패했습니다. ${(error as Error)?.message || ''}`.trim(),
-        variant: "destructive",
+        title: '동기화 성공',
+        description: `총 ${result.synced}개 레코드가 동기화되었습니다.`,
+      });
+
+      // 관련 쿼리 무효화
+      queryClient.invalidateQueries({ predicate: outboundQueryPredicate });
+    } catch (error) {
+      console.error('동기화 오류:', error);
+      toast({
+        title: '동기화 실패',
+        description: error instanceof Error ? error.message : '알 수 없는 오류',
+        variant: 'destructive',
       });
     } finally {
       setIsSyncing(false);
     }
   };
 
-  // URL 변경 시 탭 상태 동기화
-  useEffect(() => {
-    const urlTab = getInitialTabFromUrl();
-    if (urlTab !== activeTab) {
-      setActiveTab(urlTab);
-      setDataSource(urlTab === 'fc-inbound' ? 'fc' : 'vf');
-    }
-  }, [location, activeTab]);
-
   const handleTabChange = (tab: OutboundTabKey) => {
     setActiveTab(tab);
+    updateDataSourceBasedOnTab(tab);
     onTabChange?.(tab);
 
-    updateDataSourceBasedOnTab(tab);
-
+    // URL 업데이트
     const url = new URL(window.location.href);
     url.searchParams.set('tab', tab);
-    window.history.pushState(null, '', url.toString());
+    window.history.replaceState({}, '', url.toString());
   };
 
+  // URL 변경 감지
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const newTab = getInitialTabFromUrl();
+      if (newTab !== activeTab) {
+        setActiveTab(newTab);
+        updateDataSourceBasedOnTab(newTab);
+      }
+    };
 
+    // 초기 로드 시 URL 확인
+    handleUrlChange();
 
-  const tabs = [
-    {
-      key: 'vf-outbound' as OutboundTabKey,
-      label: 'VF 출고',
-      icon: Package,
-      description: 'VF 출고 데이터 분석 대시보드'
-    },
-    {
-      key: 'fc-inbound' as OutboundTabKey,
-      label: 'FC 입고',
-      icon: ArrowDownToLine,
-      description: 'FC 입고 데이터 분석 대시보드'
-    }
-  ];
-
-  const renderContent = () => {
-    return <OutboundDashboardUnified dataSource={dataSource} activeTab={activeTab} />;
-  };
+    // URL 변경 감지 (간단한 폴링)
+    const interval = setInterval(handleUrlChange, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
-    <div className="flex h-full flex-col gap-4">
-      {/* 탭 네비게이션 */}
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between bg-white p-4 rounded-lg border shadow-sm">
-        <div className="flex flex-wrap gap-2">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <Button
-                key={tab.key}
-                variant={activeTab === tab.key ? 'default' : 'outline'}
-                onClick={() => handleTabChange(tab.key)}
-                className="flex items-center gap-2"
-              >
-                <Icon className="w-4 h-4" />
-                {tab.label}
-              </Button>
-            );
-          })}
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">
+            {activeTab === 'vf-outbound' ? 'VF 출고 대시보드' : 'FC 입고 대시보드'}
+          </h1>
+          <p className="text-muted-foreground">
+            {activeTab === 'vf-outbound' 
+              ? 'Google Sheets에서 VF 출고 데이터를 실시간으로 확인하고 분석합니다.' 
+              : 'FC 입고 데이터를 확인하고 관리합니다.'}
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="text-sm text-gray-600 hidden md:block">
-            {tabs.find(tab => tab.key === activeTab)?.description}
+
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            <label htmlFor="uploadDate" className="text-sm font-medium">
+              데이터 날짜:
+            </label>
+            <input
+              id="uploadDate"
+              type="date"
+              value={uploadDate}
+              onChange={(e) => setUploadDate(e.target.value)}
+              className="px-3 py-1 border rounded-md text-sm"
+            />
           </div>
-          <input
-            type="file"
-            id="excel-upload"
-            accept=".csv,.xlsx,.xls"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
+
           <Button
             variant="outline"
+            size="sm"
             onClick={handleSync}
             disabled={isSyncing}
-            className="flex items-center gap-2"
           >
-            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-            {isSyncing ? '동기화 중...' : '데이터 동기화'}
+            <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? '동기화 중...' : '동기화'}
           </Button>
 
-          <label htmlFor="excel-upload" className="cursor-pointer flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg hover:bg-muted transition bg-background">
-            <ArrowDownToLine className="w-4 h-4" />
-            엑셀 업로드
-          </label>
-          <input
-            type="date"
-            value={uploadDate}
-            onChange={(e) => setUploadDate(e.target.value)}
-            className="text-sm border border-border rounded-lg px-2 py-2 bg-background"
-          />
+          <Button
+            variant="outline"
+            size="sm"
+            asChild
+          >
+            <label htmlFor="file-upload" className="cursor-pointer">
+              <Package className="h-4 w-4 mr-2" />
+              파일 업로드
+              <input
+                id="file-upload"
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                className="hidden"
+                onChange={handleFileUpload}
+                disabled={isSyncing}
+              />
+            </label>
+          </Button>
         </div>
       </div>
 
-      {/* 탭 컨텐츠 */}
-      <div className="flex-1 min-h-0">
-        {renderContent()}
+      <div className="border-b">
+        <nav className="flex space-x-4">
+          <button
+            onClick={() => handleTabChange('vf-outbound')}
+            className={`px-3 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+              activeTab === 'vf-outbound'
+                ? 'border-b-2 border-primary text-primary'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            VF 출고
+          </button>
+          <button
+            onClick={() => handleTabChange('fc-inbound')}
+            className={`px-3 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+              activeTab === 'fc-inbound'
+                ? 'border-b-2 border-primary text-primary'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            FC 입고
+          </button>
+        </nav>
       </div>
+
+      <OutboundDashboardUnified dataSource={dataSource} />
     </div>
   );
 }

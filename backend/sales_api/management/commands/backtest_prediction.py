@@ -6,7 +6,8 @@
 """
 
 from django.core.management.base import BaseCommand
-from datetime import datetime
+from django.utils import timezone
+from datetime import timedelta
 import statistics
 from collections import defaultdict
 from sales_api.models import DeliveryDailyRecord
@@ -92,7 +93,7 @@ class ImprovedWeightedModel(PredictionModel):
             same_day_records = past_data
         
         # 최근 데이터에 가중치 부여
-        today = datetime.now().date()
+        today = timezone.localdate()
         for record in same_day_records:
             hourly = record.hourly or {}
             current_hour_key = f'hour_{current_hour:02d}'
@@ -152,7 +153,7 @@ class ImprovedEnsembleModel(PredictionModel):
         if len(same_day_records) < 3:
             same_day_records = past_data
         
-        today = datetime.now().date()
+        today = timezone.localdate()
         for record in same_day_records:
             hourly = record.hourly or {}
             current_hour_key = f'hour_{current_hour:02d}'

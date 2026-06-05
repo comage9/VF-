@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { format, subDays, subMonths, subYears, eachDayOfInterval, parseISO, isSameDay, isValid, startOfWeek, startOfMonth, endOfMonth, eachWeekOfInterval, getWeek, addDays, differenceInDays, differenceInWeeks } from "date-fns";
+import { format, subDays, subMonths, subYears, eachDayOfInterval, parseISO, isSameDay, isValid, startOfWeek, startOfMonth, endOfMonth, eachWeekOfInterval, getWeek, addDays, differenceInDays, differenceInWeeks, startOfYear, addYears } from "date-fns";
 import FCInboundUpload from "./fc-inbound-upload";
 import {
     ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
@@ -8,7 +8,7 @@ import {
 } from "recharts";
 import {
     Loader2, Search, TrendingUp, Package, DollarSign, Calendar,
-    Filter, Download, Sparkles, HelpCircle, Award
+    Filter, Download, Sparkles, HelpCircle, Award, Info, ArrowUpDown
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -399,19 +399,55 @@ const IntegratedPivotTable = ({
     selectedCategory,
     onCategorySelect,
     serverPivotData,
+    productNumberMap = new Map(),
 }: {
     filteredRecords: OutboundRecordWithBoxes[];
     startDate: string;
     endDate: string;
-    groupBy: 'day' | 'week' | 'month';
+    groupBy: 'day' | 'week' | 'month' | 'year';
     quantityLabel?: string;
     quantityUnit?: string;
     salesLabel?: string;
     selectedCategory?: string;
     onCategorySelect?: (category: string) => void;
     serverPivotData?: ServerPivotItem[];
+    productNumberMap?: Map<string, string>;
 }) => {
     const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+    const [tableSearch, setTableSearch] = useState('');
+    const [tableSortBy, setTableSortBy] = useState<'sales' | 'quantity'>('sales');
+
+    // 한글 초성 추출 유틸리티
+    const getChosung = (str: string) => {
+        const cho = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
+        let result = "";
+        for(let i=0; i<str.length; i++) {
+            const code = str.charCodeAt(i) - 44032;
+            if(code > -1 && code < 11172) result += cho[Math.floor(code / 588)];
+            else result += str.charAt(i);
+        }
+        return result;
+    };
+
+    // 검색어 매칭 여부 판별 함수
+    const isProductMatch = (productName: string) => {
+        if (!tableSearch.trim()) return true;
+        const term = tableSearch.toLowerCase().trim();
+        const termChosung = getChosung(term);
+        
+        const prodNo = productNumberMap.get(productName) || '';
+        const matchName = productName.toLowerCase().includes(term) || getChosung(productName).includes(termChosung);
+        const matchNo = prodNo.toLowerCase().includes(term);
+        return matchName || matchNo;
+    };
+
+    // 날짜 간격 계산
+    const diffDays = useMemo(() => {
+        const start = parseISO(startDate);
+        const end = parseISO(endDate);
+        if (!isValid(start) || !isValid(end)) return 0;
+        return Math.ceil(Math.abs(end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+    }, [startDate, endDate]);
 
     // Generate date columns based on groupBy
     const dateColumns = useMemo(() => {
@@ -457,9 +493,21 @@ const IntegratedPivotTable = ({
                 current = endOfMonth(addDays(current, 32)); // Next month
                 current = startOfMonth(current);
             }
+        } else if (groupBy === 'year') {
+            // 년별: 각 년도
+            let current = startOfYear(start);
+            const endYear = startOfYear(end);
+            while (current <= endYear) {
+                columns.push({
+                    key: format(current, 'yyyy'),
+                    label: format(current, 'yyyy년'),
+                    date: current
+                });
+                current = startOfYear(addYears(current, 1));
+            }
         }
 
-        return columns;
+        return [...columns].reverse();
     }, [startDate, endDate, groupBy]);
 
     // Aggregate data by category and date column
@@ -561,6 +609,8 @@ const IntegratedPivotTable = ({
                                 dateKey = format(weekStart, 'yyyy-MM-dd');
                             } else if (groupBy === 'month') {
                                 dateKey = format(recordDate, 'yyyy-MM');
+                            } else if (groupBy === 'year') {
+                                dateKey = format(recordDate, 'yyyy');
                             }
 
                             // Update product cell data
@@ -635,6 +685,8 @@ const IntegratedPivotTable = ({
                 dateKey = format(weekStart, 'yyyy-MM-dd');
             } else if (groupBy === 'month') {
                 dateKey = format(recordDate, 'yyyy-MM');
+            } else if (groupBy === 'year') {
+                dateKey = format(recordDate, 'yyyy');
             }
 
             // Aggregate at category level
@@ -706,6 +758,20 @@ const IntegratedPivotTable = ({
         return { categoryData, productData, columnTotals, categoryTotals, productTotals };
     }, [filteredRecords, dateColumns, groupBy, serverPivotData]);
 
+    // 검색어 입력 시, 검색 결과가 있는 카테고리는 자동으로 펼쳐주기
+    useEffect(() => {
+        if (tableSearch.trim() && pivotData?.productTotals) {
+            const autoExpand = new Set<string>();
+            pivotData.productTotals.forEach((prodMap, category) => {
+                const hasMatch = Array.from(prodMap.keys()).some(isProductMatch);
+                if (hasMatch) {
+                    autoExpand.add(category);
+                }
+            });
+            setExpandedCategories(autoExpand);
+        }
+    }, [tableSearch, pivotData?.productTotals]);
+
     const toggleCategory = (category: string) => {
         setExpandedCategories(prev => {
             const next = new Set(prev);
@@ -722,21 +788,95 @@ const IntegratedPivotTable = ({
     const grandTotalQuantity = Array.from(pivotData.columnTotals.values()).reduce((sum, v) => sum + v.quantity, 0);
     const grandTotalSales = Array.from(pivotData.columnTotals.values()).reduce((sum, v) => sum + v.salesAmount, 0);
 
-    // Sort categories by total sales
-    const sortedCategories = Array.from(pivotData.categoryTotals.entries())
-        .sort((a, b) => b[1].salesAmount - a[1].salesAmount);
+    // Sort categories by sales or quantity
+    const sortedCategories = useMemo(() => {
+        const categories = Array.from(pivotData.categoryTotals.entries());
+        categories.sort((a, b) => {
+            if (tableSortBy === 'sales') {
+                return b[1].salesAmount - a[1].salesAmount;
+            } else {
+                return b[1].quantity - a[1].quantity;
+            }
+        });
+        return categories;
+    }, [pivotData.categoryTotals, tableSortBy]);
+
+    // 검색어 필터링을 반영한 카테고리 목록
+    const filteredSortedCategories = useMemo(() => {
+        if (!tableSearch.trim()) return sortedCategories;
+        return sortedCategories.filter(([category, _]) => {
+            const prodMap = pivotData.productTotals.get(category);
+            if (!prodMap) return false;
+            return Array.from(prodMap.keys()).some(isProductMatch);
+        });
+    }, [sortedCategories, pivotData.productTotals, tableSearch]);
+
+    // 각 카테고리별 매칭된 품목 목록 가공 및 정렬
+    const matchedProducts = useMemo(() => {
+        const productsMap = new Map<string, Array<[string, { quantity: number; salesAmount: number }]>>();
+        
+        pivotData.productTotals.forEach((prodMap, category) => {
+            let prods = Array.from(prodMap.entries());
+            
+            if (tableSearch.trim()) {
+                prods = prods.filter(([productName, _]) => isProductMatch(productName));
+            }
+            
+            // 품목 정렬 적용
+            prods.sort((a, b) => {
+                if (tableSortBy === 'sales') {
+                    return b[1].salesAmount - a[1].salesAmount;
+                } else {
+                    return b[1].quantity - a[1].quantity;
+                }
+            });
+            
+            productsMap.set(category, prods);
+        });
+        
+        return productsMap;
+    }, [pivotData.productTotals, tableSearch, tableSortBy]);
 
     return (
         <Card className="h-full flex flex-col">
-            <CardHeader className="py-3 px-4 border-b bg-gray-50/50">
+            <CardHeader className="py-3 px-4 border-b bg-gray-50/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <CardTitle className="text-base font-medium flex items-center gap-2">
                     <Filter className="w-4 h-4 text-gray-500" />
                     📦 통합 기간 합계 테이블
                     <span className="text-xs font-normal text-gray-500">
-                        ({groupBy === 'day' ? '일별' : groupBy === 'week' ? '주별' : '월별'})
+                        ({groupBy === 'day' ? '일별' : groupBy === 'week' ? '주별' : groupBy === 'month' ? '월별' : groupBy === 'year' ? '년별' : '월별'})
                     </span>
                 </CardTitle>
+                
+                {/* 실시간 초성/품목번호 매칭 상세 품목 검색바 */}
+                <div className="relative w-full sm:w-[220px]">
+                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-gray-400" />
+                    <input
+                        type="text"
+                        placeholder="품목명, 초성 또는 품목번호 검색"
+                        value={tableSearch}
+                        onChange={(e) => setTableSearch(e.target.value)}
+                        className="w-full pl-8 pr-8 py-1.5 bg-white border border-gray-200 rounded-lg text-[11px] focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-gray-400 shadow-xs"
+                    />
+                    {tableSearch && (
+                        <button
+                            onClick={() => setTableSearch('')}
+                            className="absolute right-2 top-2 text-gray-400 hover:text-gray-600 text-xs font-bold px-1"
+                        >
+                            ✕
+                        </button>
+                    )}
+                </div>
             </CardHeader>
+            
+            {/* 60일 초과 자동 변환 안내 배너 */}
+            {diffDays > 60 && (
+                <div className="bg-blue-50 border-b border-blue-100 px-4 py-2 text-[11px] text-blue-700 flex items-center gap-1.5 font-medium">
+                    <Info className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                    <span>선택한 기간이 {diffDays}일로 길어 원활한 화면 표시를 위해 **[{groupBy === 'week' ? '주별' : '월별'}]** 집계로 자동 전환되었습니다.</span>
+                </div>
+            )}
+            
             <div className="flex-1 overflow-hidden flex flex-col">
                 <div className="overflow-x-auto">
                     <div className="inline-block min-w-full align-middle">
@@ -747,8 +887,15 @@ const IntegratedPivotTable = ({
                                         <th className="px-2 py-2 text-left font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 border-r min-w-[150px] z-20">
                                             분류
                                         </th>
-                                        <th className="px-2 py-2 text-right font-medium text-gray-500 min-w-[100px] bg-gray-50">
-                                            합계
+                                        <th 
+                                            className="px-2 py-2 text-right font-medium text-gray-500 min-w-[110px] bg-gray-50 cursor-pointer hover:bg-gray-100 select-none transition-colors"
+                                            onClick={() => setTableSortBy(prev => prev === 'sales' ? 'quantity' : 'sales')}
+                                            title="클릭 시 정렬 기준 변경 (매출액 / 출고량)"
+                                        >
+                                            <div className="flex items-center justify-end gap-1">
+                                                <span>합계 ({tableSortBy === 'sales' ? '매출액순' : '출고량순'})</span>
+                                                <ArrowUpDown className="w-3 h-3 text-gray-400" />
+                                            </div>
                                         </th>
                                         {dateColumns.map(col => (
                                             <th key={col.key} className="px-2 py-2 text-center font-medium text-gray-500 min-w-[80px] whitespace-nowrap">
@@ -783,17 +930,13 @@ const IntegratedPivotTable = ({
                                     </tr>
 
                                     {/* Category Rows */}
-                                    {sortedCategories.map(([category, totals]) => {
+                                    {filteredSortedCategories.map(([category, totals]) => {
                                         const isExpanded = expandedCategories.has(category);
                                         const isSelected = selectedCategory === category;
                                         const share = grandTotalSales > 0 ? (totals.salesAmount / grandTotalSales) * 100 : 0;
 
-                                        // Get sorted products for this category
-                                        const categoryProducts = pivotData.productTotals.get(category);
-                                        const sortedProducts = categoryProducts
-                                            ? Array.from(categoryProducts.entries())
-                                                .sort((a, b) => b[1].salesAmount - a[1].salesAmount)
-                                            : [];
+                                        // Get matched and sorted products for this category
+                                        const sortedProducts = matchedProducts.get(category) || [];
 
                                         return (
                                             <React.Fragment key={`cat-${category}`}>
@@ -848,9 +991,19 @@ const IntegratedPivotTable = ({
                                                     return (
                                                         <tr key={`prod-${category}-${productName}`} className="hover:bg-blue-50 bg-gray-50/50">
                                                             <td className="px-2 py-1 whitespace-nowrap sticky left-0 bg-gray-50/80 border-r z-10 pl-6">
-                                                                <span className="text-gray-500">📦</span>
-                                                                <span className="ml-1 text-gray-700">{productName}</span>
-                                                                <span className="text-gray-400 text-[9px] ml-1">({prodShare.toFixed(1)}%)</span>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-gray-400 text-[10px]">📦</span>
+                                                                    {/* 제품 번호: 가독성 높은 모노스페이스 그레이 배지 스타일 */}
+                                                                    <span className="inline-flex items-center bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold border border-gray-200/80 shadow-xs">
+                                                                        {productNumberMap.get(productName) || "미지정"}
+                                                                    </span>
+                                                                    {/* 제품명: 진한 글씨로 확실히 강조 및 줄바꿈 차단 */}
+                                                                    <span className="text-gray-800 font-semibold text-[11px] truncate max-w-[200px]" title={productName}>
+                                                                        {productName}
+                                                                    </span>
+                                                                    {/* 비중(점유율) 표시 */}
+                                                                    <span className="text-gray-400 text-[9px] font-normal">({prodShare.toFixed(1)}%)</span>
+                                                                </div>
                                                             </td>
                                                             <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700 bg-gray-50/80">
                                                                 <div className="text-[9px]">{NUMBER_FORMATTER.format(prodTotals.quantity)}</div>
@@ -1039,10 +1192,35 @@ export default function OutboundDashboardUnified({ dataSource = 'vf', activeTab 
     const [showAutocomplete, setShowAutocomplete] = useState(false);
     const [highlightedIndex, setHighlightedIndex] = useState(-1);
     // FC: month mode, VF: day mode (auto switches based on period)
-    const [groupByMode, setGroupByMode] = useState<'auto' | 'day' | 'week' | 'month'>(() => isFC ? 'month' : 'day');
+    const [groupByMode, setGroupByMode] = useState<'auto' | 'day' | 'week' | 'month' | 'year'>(() => isFC ? 'month' : 'day');
     const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
     const [selectedLogisticsCenter, setSelectedLogisticsCenter] = useState<string[]>([]);  // 다중 선택
     const [selectedRangePreset, setSelectedRangePreset] = useState<string>('');  // 선택된 기간 프리셋
+    const [productNumberMap, setProductNumberMap] = useState<Map<string, string>>(new Map());
+
+    useEffect(() => {
+        const fetchProductNumbers = async () => {
+            try {
+                const res = await fetch("https://docs.google.com/spreadsheets/d/e/2PACX-1vRPjO9qxLlACh8vfMLlrSoRZlVMtkuuKLxd7HH-XAZFW-f9QGrSsdckK5p_pmHDss4CVgLbZDqQjgFh/pub?gid=626478017&single=true&output=csv");
+                const text = await res.text();
+                const lines = text.split("\n");
+                if (lines.length < 2) return;
+                const map = new Map<string, string>();
+                for (let i = 1; i < lines.length; i++) {
+                    const cols = lines[i].split(",");
+                    if (cols.length >= 7) {
+                        const productNumber = cols[1].trim();
+                        const productName = cols[5].trim();
+                        if (productName && productNumber) map.set(productName, productNumber);
+                    }
+                }
+                setProductNumberMap(map);
+            } catch (err) {
+                console.error("Failed to load product number CSV:", err);
+            }
+        };
+        fetchProductNumbers();
+    }, []);
 
     // dataSource가 변경될 때 필터 초기화 (VF/FC 독립적인 필터링)
     useEffect(() => {
@@ -1170,14 +1348,20 @@ export default function OutboundDashboardUnified({ dataSource = 'vf', activeTab 
 
     // Calculate date difference to determine grouping
     const groupBy = useMemo(() => {
-        if (groupByMode !== 'auto') return groupByMode;
         const start = parseISO(startDate);
         const end = parseISO(endDate);
         const diffTime = Math.abs(end.getTime() - start.getTime());
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-        if (diffDays > 180) return 'week';
-        if (diffDays > 90) return 'week';
+        if (groupByMode !== 'auto') {
+            if (groupByMode === 'day' && diffDays > 60) {
+                return diffDays > 180 ? 'month' : 'week';
+            }
+            return groupByMode;
+        }
+
+        if (diffDays > 180) return 'month';
+        if (diffDays > 60) return 'week';
         return 'day';
     }, [startDate, endDate, groupByMode]);
 
@@ -1596,34 +1780,50 @@ export default function OutboundDashboardUnified({ dataSource = 'vf', activeTab 
             categoryShareFull = serverCats;
         }
 
-        // Calculate total quantity for share percentage in top products
-        const totalQtyForTopProducts = filtered.reduce((sum, r) => sum + Number(r.boxQuantity ?? r.quantity ?? 0), 0);
+// Calculate total quantity for share percentage in top products
+        // Note: share uses TOP 30's own total as denominator, not ALL records
 
         const topProducts = hasMultiCategorySelection
-            ? Array.from(filtered.reduce((acc, r) => {
-                const name = String(r.productName || '-');
-                const entry = acc.get(name) || { name, value: 0, sales: 0, share: 0 };
-                entry.value += Number(r.boxQuantity ?? r.quantity ?? 0);
-                entry.sales += Number(r.salesAmount ?? 0);
-                acc.set(name, entry);
-                return acc;
-            }, new Map<string, { name: string; value: number; sales: number; share: number }>())
-                .values())
-                .map(p => ({
+            ? (() => {
+                const aggregated = Array.from(
+                    filtered.reduce((acc, r) => {
+                        const name = String(r.productName || '-');
+                        const entry = acc.get(name) || { name, value: 0, sales: 0 };
+                        entry.value += Number(r.boxQuantity ?? r.quantity ?? 0);
+                        entry.sales += Number(r.salesAmount ?? 0);
+                        acc.set(name, entry);
+                        return acc;
+                    }, new Map<string, { name: string; value: number; sales: number }>())
+                        .values()
+                )
+                    .sort((a, b) => b.value - a.value)
+                    .slice(0, 30);
+                const totalTop30 = aggregated.reduce((sum, p) => sum + p.value, 0);
+                return aggregated.map(p => ({
                     ...p,
-                    share: totalQtyForTopProducts > 0 ? (p.value / totalQtyForTopProducts) * 100 : 0
-                }))
-                .sort((a, b) => b.value - a.value)
-                .slice(0, 30)
-            : (outboundTopProducts || [])
-                .map((r: any) => ({
-                    name: String(r?.name || '-'),
-                    value: Number(r?.quantity || 0),
-                    sales: Number(r?.salesAmount ?? r?.supplyAmount ?? 0),
-                    share: totalQty > 0 ? (Number(r?.quantity || 0) / totalQty) * 100 : 0,
-                }))
-                .sort((a: any, b: any) => (b.value || 0) - a.value)
-                .slice(0, 30);
+                    share: totalTop30 > 0 ? (p.value / totalTop30) * 100 : 0,
+                    label: `${NUMBER_FORMATTER.format(p.value)} Box (${(totalTop30 > 0 ? (p.value / totalTop30) * 100 : 0).toFixed(1)}%)`,
+                }));
+            })()
+            : (() => {
+                const sorted = (outboundTopProducts || [])
+                    .map((r: any) => ({
+                        name: String(r?.name || '-'),
+                        value: Number(r?.quantity || 0),
+                        sales: Number(r?.salesAmount ?? r?.supplyAmount ?? 0),
+                    }))
+                    .sort((a: any, b: any) => (b.value || 0) - a.value)
+                    .slice(0, 30);
+                const totalTop30 = sorted.reduce((sum: number, p: any) => sum + (p.value || 0), 0);
+                return sorted.map(p => {
+                    const share = totalTop30 > 0 ? (p.value / totalTop30) * 100 : 0;
+                    return {
+                        ...p,
+                        share,
+                        label: `${NUMBER_FORMATTER.format(p.value)} Box (${share.toFixed(1)}%)`,
+                    };
+                });
+            })();
 
         const createTotalPivot = (groupByKey: (r: OutboundRecordWithBoxes) => string) => {
             const map = new Map();
@@ -1767,6 +1967,35 @@ export default function OutboundDashboardUnified({ dataSource = 'vf', activeTab 
         URL.revokeObjectURL(url);
     };
 
+    // React Rules of Hooks 준수를 위해 모든 조건부 리턴(return)보다 위에 useMemo 정의
+    const statsSummary = useMemo(() => {
+        const dailyTrend = processedData?.dailyTrend;
+        if (!dailyTrend || dailyTrend.length === 0) return { peakDay: null, minDay: null, avgSales: 0 };
+        
+        let peakDay = dailyTrend[0];
+        let minDay = null;
+        let totalSalesSum = 0;
+        let validDays = 0;
+        
+        dailyTrend.forEach(item => {
+            const s = Number(item.sales || 0);
+            totalSalesSum += s;
+            if (s > 0) {
+                validDays++;
+                if (!peakDay || s > Number(peakDay.sales || 0)) {
+                    peakDay = item;
+                }
+                if (!minDay || s < Number(minDay.sales || 0)) {
+                    minDay = item;
+                }
+            }
+        });
+
+        const avgSales = validDays > 0 ? totalSalesSum / validDays : 0;
+        
+        return { peakDay, minDay, avgSales };
+    }, [processedData?.dailyTrend]);
+
     if (isLoading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin w-8 h-8 text-gray-400" /></div>;
     if (isStatsError) {
         return (
@@ -1822,17 +2051,28 @@ export default function OutboundDashboardUnified({ dataSource = 'vf', activeTab 
 
                         <div className="flex items-center gap-2">
                             <TrendingUp className="w-4 h-4 text-gray-500" />
-                            <Select value={groupByMode} onValueChange={(v) => setGroupByMode(v as any)}>
-                                <SelectTrigger className="w-[160px]">
-                                    <SelectValue placeholder="집계 단위" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="auto">자동</SelectItem>
-                                    <SelectItem value="day">일별</SelectItem>
-                                    <SelectItem value="week">주별</SelectItem>
-                                    <SelectItem value="month">월별</SelectItem>
-                                </SelectContent>
-                            </Select>
+                            <div className="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
+                                {[
+                                    { value: 'auto', label: '자동' },
+                                    { value: 'day', label: '일별' },
+                                    { value: 'week', label: '주별' },
+                                    { value: 'month', label: '월별' },
+                                    { value: 'year', label: '년별' }
+                                ].map(opt => (
+                                    <button
+                                        key={opt.value}
+                                        type="button"
+                                        onClick={() => setGroupByMode(opt.value as any)}
+                                        className={`px-2 py-1.5 md:px-3 md:py-1 text-xs rounded-md font-medium transition-all ${
+                                            groupByMode === opt.value
+                                                ? 'bg-white text-blue-600 shadow-sm font-semibold'
+                                                : 'text-gray-500 hover:text-gray-800'
+                                        }`}
+                                    >
+                                        {opt.label}
+                                    </button>
+                                ))}
+                            </div>
 
                             {rangeDays > 180 && (
                                 <Tooltip>
@@ -2089,13 +2329,35 @@ export default function OutboundDashboardUnified({ dataSource = 'vf', activeTab 
             <div className="flex flex-col lg:flex-row gap-4 h-[500px]">
                 {/* Trend Chart */}
                 <Card className="flex-[0.6] h-full flex flex-col">
-                    <CardHeader className="pb-2">
-                        <CardTitle>
-                            {trendTitle}
-                            {selectedProduct && <span className="text-sm font-normal text-blue-600 ml-2">({selectedProduct})</span>}
+                    <CardHeader className="pb-2 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                        <CardTitle className="text-base font-bold flex items-center gap-1.5">
+                            <span>📈 {trendTitle}</span>
+                            {selectedProduct && <span className="text-sm font-normal text-blue-600 ml-1">({selectedProduct})</span>}
                         </CardTitle>
+                        
+                        {/* 최고/최저/일평균 매출 실시간 요약 배지 */}
+                        <div className="flex flex-wrap gap-1.5 text-[10px] md:text-[11px] font-medium">
+                            {statsSummary.peakDay && (
+                                <span className="inline-flex items-center gap-1 py-0.5 px-2 rounded bg-orange-50 text-orange-700 border border-orange-100 shadow-xs">
+                                    <span className="font-semibold text-orange-800">최고:</span>
+                                    <span>{statsSummary.peakDay.date}</span>
+                                    <span className="font-bold">({Math.round(Number(statsSummary.peakDay.sales || 0) / 10000).toLocaleString()}만)</span>
+                                </span>
+                            )}
+                            {statsSummary.minDay && (
+                                <span className="inline-flex items-center gap-1 py-0.5 px-2 rounded bg-blue-50 text-blue-700 border border-blue-100 shadow-xs">
+                                    <span className="font-semibold text-blue-800">최저:</span>
+                                    <span>{statsSummary.minDay.date}</span>
+                                    <span className="font-bold">({Math.round(Number(statsSummary.minDay.sales || 0) / 10000).toLocaleString()}만)</span>
+                                </span>
+                            )}
+                            <span className="inline-flex items-center gap-1 py-0.5 px-2 rounded bg-gray-50 text-gray-700 border border-gray-100 shadow-xs">
+                                <span className="font-semibold text-gray-800">평균:</span>
+                                <span className="font-bold">{Math.round(statsSummary.avgSales / 10000).toLocaleString()}만</span>
+                            </span>
+                        </div>
                     </CardHeader>
-                    <CardContent className="flex-1 p-2">
+                    <CardContent className="flex-1 p-2 flex flex-col justify-between">
                         <ResponsiveContainer width="100%" height="100%">
                             <ComposedChart
                                 data={dailyTrend}
@@ -2190,6 +2452,11 @@ export default function OutboundDashboardUnified({ dataSource = 'vf', activeTab 
                                 />
                             </ComposedChart>
                         </ResponsiveContainer>
+                        
+                        {/* 차트 동기화 클릭 팁 문구 */}
+                        <div className="text-[10px] text-gray-400 mt-2 flex items-center justify-center gap-1 bg-gray-50/50 py-1.5 rounded-lg border border-gray-100/50 select-none">
+                            <span>💡 차트의 특정 날짜 막대나 노드를 클릭하면 하단 상세 테이블의 조회 기간이 즉시 해당 날짜로 동기화됩니다.</span>
+                        </div>
                     </CardContent>
                 </Card>
 
@@ -2347,6 +2614,7 @@ export default function OutboundDashboardUnified({ dataSource = 'vf', activeTab 
                                 setSelectedProduct(null);
                             }}
                             serverPivotData={categoryPivotServer}
+                            productNumberMap={productNumberMap}
                         />
                     )}
                 </div>
@@ -2394,15 +2662,7 @@ export default function OutboundDashboardUnified({ dataSource = 'vf', activeTab 
                                             {topProducts.map((entry, index) => (
                                                 <Cell key={`cell-${index}`} fill={entry.name === selectedProduct ? '#2563EB' : COLORS[index % COLORS.length]} />
                                             ))}
-                                            <LabelList dataKey="value" position="right" content={(props: any) => {
-                                                const { x, y, width, height, value, payload } = props;
-                                                const share = payload?.share || 0;
-                                                return (
-                                                    <text x={x + width + 5} y={y + height / 2 + 4} fill="#666" fontSize={11} textAnchor="start">
-                                                        {`${NUMBER_FORMATTER.format(value)} Box (${share.toFixed(1)}%)`}
-                                                    </text>
-                                                );
-                                            }} />
+                                            <LabelList dataKey="label" position="right" fontSize={11} fill="#666" />
                                         </Bar>
                                     </BarChart>
                                 </ResponsiveContainer>

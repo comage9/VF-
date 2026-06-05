@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { MessageCircle, X, Send, Loader2 } from 'lucide-react';
+import { MessageCircle, X, Send, Loader2, Square } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,6 +33,8 @@ export default function AIChatWidget({ pageContext, filters }: AIChatWidgetProps
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when messages change
@@ -45,9 +47,31 @@ export default function AIChatWidget({ pageContext, filters }: AIChatWidgetProps
     handleSendMessage(query);
   };
 
+  // Stop button handler
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      setIsLoading(false);
+      setIsStreaming(false);
+      // Add cancelled message
+      const cancelMsg: ChatMessage = {
+        id: `msg-${Date.now()}-cancelled`,
+        role: 'assistant',
+        content: '분석이 취소되었습니다.',
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, cancelMsg]);
+    }
+  };
+
   // Send message handler
   const handleSendMessage = async (content: string) => {
     if (!content.trim()) return;
+
+    // Cancel any existing request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
 
     const userMessage: ChatMessage = {
       id: `msg-${Date.now()}-user`,
@@ -58,6 +82,9 @@ export default function AIChatWidget({ pageContext, filters }: AIChatWidgetProps
 
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
+    setIsStreaming(true);
+
+    abortControllerRef.current = new AbortController();
 
     try {
       const response = await fetch('/api/ai/chat', {
@@ -68,6 +95,7 @@ export default function AIChatWidget({ pageContext, filters }: AIChatWidgetProps
           pageContext,
           filters,
         }),
+        signal: abortControllerRef.current.signal,
       });
 
       if (!response.ok) throw new Error('Failed to get AI response');
@@ -82,7 +110,11 @@ export default function AIChatWidget({ pageContext, filters }: AIChatWidgetProps
       };
 
       setMessages(prev => [...prev, assistantMessage]);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        // Already handled by cancel
+        return;
+      }
       const errorMessage: ChatMessage = {
         id: `msg-${Date.now()}-error`,
         role: 'assistant',
@@ -92,6 +124,8 @@ export default function AIChatWidget({ pageContext, filters }: AIChatWidgetProps
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
+      setIsStreaming(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -144,10 +178,23 @@ export default function AIChatWidget({ pageContext, filters }: AIChatWidgetProps
                   {messages.map(msg => (
                     <ChatMessage key={msg.id} message={msg} />
                   ))}
-                  {isLoading && (
+                  {isLoading && !isStreaming && (
                     <div className="flex items-center gap-2 text-gray-500">
                       <Loader2 className="w-4 h-4 animate-spin" />
                       <span className="text-sm">분석 중...</span>
+                    </div>
+                  )}
+                  {isStreaming && (
+                    <div className="flex items-center gap-2 text-purple-600">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleStop}
+                        className="h-7 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Square className="w-4 h-4 mr-1" />
+                        중지
+                      </Button>
                     </div>
                   )}
                   <div ref={messagesEndRef} />

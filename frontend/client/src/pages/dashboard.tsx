@@ -169,16 +169,13 @@ export default function Dashboard() {
   }, [activeKey, normalizedPath]);
 
   const renderContent = () => {
-    console.log('🎯🎯🎯 DASHBOARD renderContent called with:', normalizedPath);
     switch (normalizedPath) {
       case "/":
       case "/delivery":
-        console.log('📦 Rendering DeliveryOverview');
         return <DeliveryOverview />;
       case "/outbound":
       case "/outbound/records":
       case "/outbound/analysis":
-        console.log('🚚🚚🚚 Rendering OutboundTabs for /outbound');
         return (
           <OutboundTabs />
         );
@@ -241,6 +238,7 @@ export default function Dashboard() {
                    activeKey === "production" ? "생산 계획" :
                    activeKey === "master" ? "제품 마스터" : "대시보드",
             type: activeKey === "outbound" ? "vf-outbound" :
+                   activeKey === "production" ? "production" :
                    activeKey === "inventory" ? "inventory" : "dashboard"
           }}
         />

@@ -47,7 +47,7 @@ import { Check, ChevronDown, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 import { MobileFilterDrawer } from "@/components/MobileFilterDrawer";
-import { useProductionPlans, useCreateProduction, useUpdateProduction, useDeleteProduction, useInventory, useUpdateInventory } from '@/components/shared/api';
+import { useInventory, useUpdateInventory } from '@/components/shared/api';
 import type { ProductionItem as SharedProductionItem, ProductionDraft as SharedProductionDraft, OutboundData } from '@/components/shared/types';
 import { OutboundStatsPanel } from '@/components/shared/outbound-stats-panel';
 
@@ -220,6 +220,7 @@ const STATUS_OPTIONS: Array<{ value: ProductionStatus; label: string }> = [
 // SortableRow component for drag and drop
 interface SortableRowProps {
   row: ProductionItem;
+  index: number;
   isSelected: boolean;
   onToggleSelect: (id: number, checked: boolean) => void;
   onStatusChange: (item: ProductionItem, newStatus: ProductionItem['status']) => void;
@@ -233,6 +234,7 @@ interface SortableRowProps {
 
 const SortableRow = React.memo(function SortableRow({
   row,
+  index,
   isSelected,
   onToggleSelect,
   onStatusChange,
@@ -285,6 +287,7 @@ const SortableRow = React.memo(function SortableRow({
           />
         </div>
       </td>
+      <td className="py-3 px-4 text-center text-red-600 text-xl font-bold">{index}</td>
       <td className="py-3 px-4">{getStatusBadge(row.status)}</td>
       <td className="py-3 px-4">{row.date}</td>
       <td className="py-3 px-4">
@@ -296,7 +299,6 @@ const SortableRow = React.memo(function SortableRow({
               setIsEditingMachine(false);
             }}
             onOpenChange={(open) => !open && setIsEditingMachine(false)}
-            autoFocus
           >
             <SelectTrigger className="h-8 w-20">
               <SelectValue />
@@ -362,16 +364,28 @@ const SortableRow = React.memo(function SortableRow({
   );
 });
 
-function useProductionLog() {
+function useProductionLog(selectedDate: string = 'latest') {
+  const queryKey = selectedDate === 'latest'
+    ? ["/api/production"]
+    : selectedDate === 'all'
+      ? ["/api/production", "all"]
+      : ["/api/production", selectedDate];
+
+  const url = selectedDate === 'latest'
+    ? '/api/production'
+    : selectedDate === 'all'
+      ? '/api/production?all=true'
+      : `/api/production?date=${selectedDate}`;
+
   return useQuery<ProductionItem[]>({
-    queryKey: ["/api/production"],
+    queryKey,
     queryFn: async () => {
-      const response = await fetch('/api/production');
+      const response = await fetch(url);
       if (!response.ok) {
         throw new Error('생산 계획 데이터를 불러오지 못했습니다.');
       }
       const json = await response.json();
-      return json.results.latestData; // unwrap results object and return latestData
+      return json.results.data; // Use data field (not latestData)
     },
     retry: 2,
     staleTime: 5 * 60 * 1000,
@@ -380,6 +394,7 @@ function useProductionLog() {
 
 interface SortableMobileCardProps {
   row: ProductionItem;
+  index: number;
   selectedIds: number[];
   onToggleSelect: (id: number, checked: boolean) => void;
   onStatusChange: (row: ProductionItem, status: ProductionStatus) => void;
@@ -393,6 +408,7 @@ interface SortableMobileCardProps {
 
 const SortableMobileCard = React.memo(function SortableMobileCard({
   row,
+  index,
   selectedIds,
   onToggleSelect,
   onStatusChange,
@@ -448,6 +464,7 @@ const SortableMobileCard = React.memo(function SortableMobileCard({
           />
           <Badge variant="outline">{row.machineNumber}</Badge>
           <span className="font-medium text-sm">{row.date}</span>
+          <span className="text-red-600 text-lg font-bold">№ {index}</span>
         </div>
         {getStatusBadge(row.status)}
       </CardHeader>
@@ -550,12 +567,12 @@ export default function ProductionPlan() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: latestData = [], isLoading } = useProductionLog();
+  const [selectedDate, setSelectedDate] = useState<string>('latest');
+  const { data: latestData = [], isLoading } = useProductionLog(selectedDate);
   const { data: meta } = useProductionMeta();
   const { data: invData, isLoading: invLoading } = useInventory();
   const updateInventory = useUpdateInventory();
 
-  const [selectedDate, setSelectedDate] = useState<string>('latest');
   const [machineFilter, setMachineFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -576,6 +593,7 @@ export default function ProductionPlan() {
   const [editingInventory, setEditingInventory] = useState<string | null>(null);
   const [editStockValue, setEditStockValue] = useState<string>('');
   const [activeId, setActiveId] = useState<number | null>(null);
+  const [moveConfirmDate, setMoveConfirmDate] = useState<string | null>(null);
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -886,16 +904,17 @@ export default function ProductionPlan() {
 
   const deleteSelectedMutation = useMutation({
     mutationFn: async (ids: number[]) => {
-      const response = await fetch('/api/production-log', {
+      const response = await fetch('/api/production-log/bulk-delete', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'ids', ids })
+        body: JSON.stringify({ ids })
       });
       if (!response.ok) throw new Error('선택 삭제 실패');
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/production"] });
+      queryClient.invalidateQueries({ queryKey: ["production-meta"] });
       setSelectedIds([]);
       toast({ title: '삭제 완료', description: '선택된 데이터가 삭제되었습니다.' });
     },
@@ -921,6 +940,8 @@ export default function ProductionPlan() {
       }
 
       await queryClient.invalidateQueries({ queryKey: ["/api/production"] });
+      await queryClient.invalidateQueries({ queryKey: ["production-meta"] });
+      setSelectedDate('latest');
       toast({ title: '삭제 완료', description: `${selectedDate} 데이터가 삭제되었습니다.` });
     } catch (error) {
       toast({ title: '삭제 실패', description: `삭제 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`, variant: 'destructive' });
@@ -1007,6 +1028,27 @@ export default function ProductionPlan() {
     },
     onError: (error) => {
       toast({ title: '순서 변경 실패', description: `순서 변경 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`, variant: 'destructive' });
+    }
+  });
+
+  const movePendingToTodayMutation = useMutation({
+    mutationFn: async (fromDate: string) => {
+      const response = await fetch('/api/production-log/move-pending-to-today', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from_date: fromDate }),
+      });
+      if (!response.ok) throw new Error('이동 실패');
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: '이동 완료', description: data.message });
+      queryClient.invalidateQueries({ queryKey: ["/api/production"] });
+      setMoveConfirmDate(null);
+    },
+    onError: (error) => {
+      toast({ title: '이동 실패', description: `이동 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`, variant: 'destructive' });
+      setMoveConfirmDate(null);
     }
   });
 
@@ -1186,7 +1228,19 @@ export default function ProductionPlan() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="flex flex-col space-y-1.5">
             <Label htmlFor="date-filter">날짜 선택</Label>
-            <Select value={selectedDate} onValueChange={setSelectedDate}>
+            <Select value={selectedDate} onValueChange={(value) => {
+              // Check if selected date is a past date with pending records
+              const today = new Date().toISOString().split('T')[0];
+              if (value !== 'latest' && value !== 'all' && value < today) {
+                // Check if there are pending records for this date
+                const pendingForDate = normalizedRows.filter(r => r.date === value && r.status === 'pending');
+                if (pendingForDate.length > 0) {
+                  setMoveConfirmDate(value);
+                  return;
+                }
+              }
+              setSelectedDate(value);
+            }}>
               <SelectTrigger id="date-filter">
                 <SelectValue placeholder="날짜 선택" />
               </SelectTrigger>
@@ -1276,7 +1330,67 @@ export default function ProductionPlan() {
                   </div>
                   <div className="space-y-2">
                     <Label>기계번호 *</Label>
-                    <Input value={newRecord.machineNumber} onChange={(e) => setNewRecord({ ...newRecord, machineNumber: e.target.value })} placeholder="M001" />
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          className={cn(
+                            "w-full justify-between",
+                            !newRecord.machineNumber && "text-muted-foreground"
+                          )}
+                        >
+                          {newRecord.machineNumber || "기계번호 선택"}
+                          <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[200px] p-0">
+                        <Command>
+                          <CommandInput placeholder="기계번호 검색..." />
+                          <CommandList>
+                            <CommandEmpty>기계를 찾을 수 없습니다.</CommandEmpty>
+                            <CommandGroup>
+                              <CommandItem
+                                value="생산대기"
+                                key="생산대기"
+                                onSelect={() => {
+                                  setNewRecord((prev) => ({ ...prev, machineNumber: "생산대기" }));
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    newRecord.machineNumber === "생산대기" ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                생산대기
+                              </CommandItem>
+                              {[...Array(14)].map((_, i) => {
+                                const num = String(i + 1);
+                                const label = `M${num}`;
+                                return (
+                                  <CommandItem
+                                    value={label}
+                                    key={label}
+                                    onSelect={() => {
+                                      setNewRecord((prev) => ({ ...prev, machineNumber: label }));
+                                    }}
+                                  >
+                                    <Check
+                                      className={cn(
+                                        "mr-2 h-4 w-4",
+                                        newRecord.machineNumber === label ? "opacity-100" : "opacity-0"
+                                      )}
+                                    />
+                                    {label}
+                                  </CommandItem>
+                                );
+                              })}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -1489,7 +1603,7 @@ export default function ProductionPlan() {
                             <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-[200px] p-0">
+                      <PopoverContent className="w-[200px] p-0 max-h-[300px] overflow-y-auto">
                           <Command>
                             <CommandInput placeholder="색상2 검색..." />
                             <CommandList>
@@ -1621,6 +1735,42 @@ export default function ProductionPlan() {
             {isDeletingDate ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
             일자 삭제
           </Button>
+
+          {/* 이동 확인 대화상자 */}
+          <Dialog open={moveConfirmDate !== null} onOpenChange={(open) => !open && setMoveConfirmDate(null)}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>미완료 생산계획 이동</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  {moveConfirmDate}에 미완료(pending) 생산계획이 있습니다.
+                  오늘({new Date().toISOString().split('T')[0]})로 이동하시겠습니까?
+                </p>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => {
+                    setMoveConfirmDate(null);
+                    setSelectedDate('latest');
+                  }}>
+                    취소
+                  </Button>
+                  <Button
+                    variant="default"
+                    onClick={() => {
+                      if (moveConfirmDate) {
+                        movePendingToTodayMutation.mutate(moveConfirmDate);
+                        setSelectedDate(new Date().toISOString().split('T')[0]);
+                      }
+                    }}
+                    disabled={movePendingToTodayMutation.isPending}
+                  >
+                    {movePendingToTodayMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                    이동
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           {selectedIds.length > 0 && (
             <Button
@@ -1960,30 +2110,25 @@ export default function ProductionPlan() {
             return Array.isArray(oldData) ? updatedItems : { ...oldData, results: { ...oldData.results, latestData: updatedItems } };
           });
 
-          // API 호출
-          fetch('/api/production-log/bulk-reorder', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orders }),
-          }).then(res => res.json()).then(data => {
-            if (!data.success) {
+// Use mutation to persist order change
+          bulkReorderMutation.mutate(orders, {
+            onSuccess: () => {
+              toast({ title: '순서 변경 완료' });
+            },
+            onError: () => {
               queryClient.invalidateQueries({ queryKey: ["/api/production"] });
               toast({ title: '순서 변경 실패', variant: 'destructive' });
-            } else {
-              toast({ title: '순서 변경 완료' });
-            }
-          }).catch(() => {
-            queryClient.invalidateQueries({ queryKey: ["/api/production"] });
-            toast({ title: '순서 변경 실패', variant: 'destructive' });
+            },
           });
         }}
       >
         <SortableContext items={displayRows.map(r => r.id)} strategy={verticalListSortingStrategy}>
-          <div className="md:hidden space-y-4">
-            {displayRows.map((row) => (
+          <div className="md:hidden space-y-4 flex-1 overflow-y-auto px-3 pb-24">
+            {displayRows.map((row, index) => (
               <SortableMobileCard
                 key={row.id}
                 row={row}
+                index={index}
                 selectedIds={selectedIds}
                 onToggleSelect={(id, checked) => {
                   if (checked) {
@@ -2102,6 +2247,7 @@ export default function ProductionPlan() {
                       }}
                     />
                   </th>
+                  <th className="py-3 px-4 w-12 text-center">순번</th>
                   <th className="py-3 px-4">상태</th>
                   <th className="py-3 px-4">일자</th>
                   <th className="py-3 px-4">기계</th>
@@ -2117,23 +2263,28 @@ export default function ProductionPlan() {
               <tbody>
                 {displayRows.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="text-center py-10 text-muted-foreground">
+                    <td colSpan={12} className="text-center py-10 text-muted-foreground">
                       데이터가 없습니다.
                     </td>
                   </tr>
                 ) : (
                   <SortableContext items={sortableItems} strategy={verticalListSortingStrategy}>
-                    {machineGroupEntries.map(([machineNumber, rows]) => (
-                      <React.Fragment key={machineNumber}>
-                        <tr className={cn("border-t-2 border-border/80", getMachineAccent(machineNumber).headerBg)}>
-                          <td colSpan={11} className="py-2 px-4 font-semibold text-sm">
-                            기계번호: {machineNumber} ({rows.length}건)
-                          </td>
-                        </tr>
-                        {rows.map((row) => (
+                    {(() => {
+                      let globalIndex = 0;
+                      return machineGroupEntries.map(([machineNumber, rows]) => (
+                        <React.Fragment key={machineNumber}>
+                          <tr className={cn("border-t-2 border-border/80", getMachineAccent(machineNumber).headerBg)}>
+                            <td colSpan={12} className="py-2 px-4 font-semibold text-sm">
+                              기계번호: {machineNumber} ({rows.length}건)
+                            </td>
+                          </tr>
+                          {rows.map((row) => {
+                            const displayIndex = displayRows.findIndex(r => r.id === row.id) + 1;
+                            return (
                             <SortableRow
                               key={row.id}
                               row={row}
+                              index={displayIndex}
                               isSelected={selectedIds.includes(row.id)}
                               onToggleSelect={(id, checked) => {
                                 if (checked) {
@@ -2150,9 +2301,11 @@ export default function ProductionPlan() {
                               getStatusBadge={getStatusBadge}
                               getMachineAccent={getMachineAccent}
                             />
-                        ))}
-                      </React.Fragment>
-                    ))}
+                            );
+                          })}
+                        </React.Fragment>
+                      ));
+                    })()}
                   </SortableContext>
                 )}
               </tbody>

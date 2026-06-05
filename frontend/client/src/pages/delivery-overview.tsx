@@ -490,7 +490,6 @@ function DeliveryOverview() {
             { date: "2025-02-07", dayOfWeek: "금", total: 145, hour_00: 0, hour_01: 0, hour_02: 0, hour_03: 0, hour_04: 0, hour_05: 0, hour_06: 2, hour_07: 5, hour_08: 12, hour_09: 18, hour_10: 15, hour_11: 14, hour_12: 16, hour_13: 13, hour_14: 11, hour_15: 9, hour_16: 8, hour_17: 7, hour_18: 6, hour_19: 5, hour_20: 4, hour_21: 3, hour_22: 2, hour_23: 1 },
             { date: "2025-02-06", dayOfWeek: "목", total: 132, hour_00: 0, hour_01: 0, hour_02: 0, hour_03: 0, hour_04: 0, hour_05: 0, hour_06: 1, hour_07: 4, hour_08: 10, hour_09: 16, hour_10: 14, hour_11: 13, hour_12: 15, hour_13: 12, hour_14: 10, hour_15: 8, hour_16: 7, hour_17: 6, hour_18: 5, hour_19: 4, hour_20: 3, hour_21: 2, hour_22: 1, hour_23: 0 }
           ];
-          console.log("테스트 데이터 설정 완료");
         }
 
         if (!mounted) return;
@@ -503,7 +502,6 @@ function DeliveryOverview() {
         dashboardRef.current = dashboard;
         await dashboard.init();
         dashboard.startAutoRefresh(600000);
-        console.log("Dashboard initialized for /sales/delivery", apiBase || "(same origin)");
       } catch (error) {
         console.error("대시보드 초기화 실패:", error);
         alert("대시보드 초기화에 실패했습니다: " + (error as Error).message);

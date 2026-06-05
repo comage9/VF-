@@ -1,0 +1,239 @@
+[
+  {
+    "product_name": "로코스 L",
+    "mold_numbers": [
+      "40"
+    ],
+    "machines": [
+      "14"
+    ],
+    "units": [
+      "4",
+      "8"
+    ]
+  },
+  {
+    "product_name": "로코스 M",
+    "mold_numbers": [
+      "41",
+      "56"
+    ],
+    "machines": [
+      "1",
+      "14"
+    ],
+    "units": [
+      "200",
+      "4",
+      "8"
+    ]
+  },
+  {
+    "product_name": "로코스 XS",
+    "mold_numbers": [
+      "107"
+    ],
+    "machines": [
+      "2"
+    ],
+    "units": [
+      "50",
+      "6"
+    ]
+  },
+  {
+    "product_name": "모던플러스 블랑",
+    "mold_numbers": [
+      "3"
+    ],
+    "machines": [
+      "3"
+    ],
+    "units": [
+      "11"
+    ]
+  },
+  {
+    "product_name": "모던플러스 서랍",
+    "mold_numbers": [
+      "2"
+    ],
+    "machines": [
+      "4"
+    ],
+    "units": [
+      "125"
+    ]
+  },
+  {
+    "product_name": "모던플러스 앞판",
+    "mold_numbers": [
+      "5"
+    ],
+    "machines": [
+      "6"
+    ],
+    "units": [
+      "125"
+    ]
+  },
+  {
+    "product_name": "바퀴",
+    "mold_numbers": [
+      "56"
+    ],
+    "machines": [
+      "1"
+    ],
+    "units": [
+      "200"
+    ]
+  },
+  {
+    "product_name": "슬라이딩 스텝 L",
+    "mold_numbers": [
+      "84"
+    ],
+    "machines": [
+      "생산 대기"
+    ],
+    "units": [
+      "5"
+    ]
+  },
+  {
+    "product_name": "슬림 서랍장 서랍 신규",
+    "mold_numbers": [
+      "801"
+    ],
+    "machines": [
+      "8"
+    ],
+    "units": [
+      "1"
+    ]
+  },
+  {
+    "product_name": "슬림 서랍장 프레임 신규",
+    "mold_numbers": [
+      "901"
+    ],
+    "machines": [
+      "7"
+    ],
+    "units": [
+      "1"
+    ]
+  },
+  {
+    "product_name": "슬림형 상판",
+    "mold_numbers": [
+      "33"
+    ],
+    "machines": [
+      "9"
+    ],
+    "units": [
+      "14"
+    ]
+  },
+  {
+    "product_name": "신규 모던플러스 프레임",
+    "mold_numbers": [
+      "101"
+    ],
+    "machines": [
+      "5"
+    ],
+    "units": [
+      "125"
+    ]
+  },
+  {
+    "product_name": "어반 옷걸이 신규 금형",
+    "mold_numbers": [
+      "111"
+    ],
+    "machines": [
+      "10"
+    ],
+    "units": [
+      "30",
+      "50"
+    ]
+  },
+  {
+    "product_name": "에센셜 상판",
+    "mold_numbers": [
+      "22"
+    ],
+    "machines": [
+      "9"
+    ],
+    "units": [
+      "11"
+    ]
+  },
+  {
+    "product_name": "오픈 바스켓",
+    "mold_numbers": [
+      "20"
+    ],
+    "machines": [
+      "13"
+    ],
+    "units": [
+      "25"
+    ]
+  },
+  {
+    "product_name": "와이드 앞판",
+    "mold_numbers": [
+      "30"
+    ],
+    "machines": [
+      "생산 대기"
+    ],
+    "units": [
+      "70"
+    ]
+  },
+  {
+    "product_name": "이유",
+    "mold_numbers": [
+      "135"
+    ],
+    "machines": [
+      "11"
+    ],
+    "units": [
+      "4",
+      "9"
+    ]
+  },
+  {
+    "product_name": "탑백 72L,52L 캡",
+    "mold_numbers": [
+      "124"
+    ],
+    "machines": [
+      "9"
+    ],
+    "units": [
+      "40"
+    ]
+  },
+  {
+    "product_name": "해피 바디",
+    "mold_numbers": [
+      "14"
+    ],
+    "machines": [
+      "13"
+    ],
+    "units": [
+      "270",
+      "30"
+    ]
+  }
+]
