@@ -1,0 +1,2020 @@
+[
+  {
+    "plate": "강원80바4649",
+    "name": "4649.0",
+    "phone": "010-2819-7855",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "강원80바7494",
+    "name": "7494.0",
+    "phone": "010-3384-3529",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "강원81바2377",
+    "name": "2377.0",
+    "phone": "010-2737-7633",
+    "barcode": "",
+    "ton": "11T",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기8026바7890",
+    "name": "7890.0",
+    "phone": "010-8547-3208",
+    "barcode": "0100617550",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기80바8082",
+    "name": "",
+    "phone": "010-2078-8556",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기80바9328",
+    "name": "9328.0",
+    "phone": "010-8448-1271",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기80아6329",
+    "name": "6329.0",
+    "phone": "010-9473-9813",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-05-27",
+        "lastSeen": "2026-05-27",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "경기80자1558",
+    "name": "1558.0",
+    "phone": "010-8451-1541",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기81바6087",
+    "name": "6087.0",
+    "phone": "010-2501-2733",
+    "barcode": "0100151875",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기81바6350",
+    "name": "6350.0",
+    "phone": "010-8239-5988",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기82바3167",
+    "name": "3167.0",
+    "phone": "010-5216-6253",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "고민석",
+    "ls_phone": "010-5216-6253",
+    "ls_history": [
+      {
+        "driverName": "고민석",
+        "driverPhone": "010-5216-6253",
+        "firstSeen": "2026-06-02",
+        "lastSeen": "2026-06-02",
+        "totalOrders": 1
+      },
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-05-02",
+        "lastSeen": "2026-05-24",
+        "totalOrders": 4
+      }
+    ]
+  },
+  {
+    "plate": "경기82바8947",
+    "name": "8947.0",
+    "phone": "010-2838-2447",
+    "barcode": "0100041480",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기82사2016",
+    "name": "2016.0",
+    "phone": "010-5344-6379",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "엄태영",
+    "ls_phone": "010-5344-6379",
+    "ls_history": [
+      {
+        "driverName": "엄태영",
+        "driverPhone": "010-5344-6379",
+        "firstSeen": "2026-06-05",
+        "lastSeen": "2026-06-05",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "경기83바2075",
+    "name": "2075.0",
+    "phone": "010-5344-6379",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기83사9064",
+    "name": "9064.0",
+    "phone": "010-3736-7255",
+    "barcode": "",
+    "ton": "14T",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기84바3017",
+    "name": "3017.0",
+    "phone": "010-5858-1345",
+    "barcode": "0100180035",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기84바5103",
+    "name": "5103.0",
+    "phone": "010-9532-9709",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-14",
+        "lastSeen": "2026-03-14",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "경기84아1512",
+    "name": "1512.0",
+    "phone": "010-9950-2837",
+    "barcode": "",
+    "ton": "14T",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기84아1536",
+    "name": "1536.0",
+    "phone": "010-8766-8134",
+    "barcode": "0100841536",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기86바1355",
+    "name": "1355.0",
+    "phone": "010-7742-5688",
+    "barcode": "0100039859",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기86바4631",
+    "name": "4631.0",
+    "phone": "010-4167-5889",
+    "barcode": "",
+    "ton": "14T",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-04-27",
+        "lastSeen": "2026-04-27",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "경기87바9681",
+    "name": "9681.0",
+    "phone": "010-3778-0066",
+    "barcode": "0100387489",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기87바9799",
+    "name": "9799.0",
+    "phone": "010-9050-2620",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기89바1165",
+    "name": "1165.0",
+    "phone": "010-4116-2663",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기89바1454",
+    "name": "1454.0",
+    "phone": "010-3940-9811",
+    "barcode": "0100749745",
+    "ton": "14t",
+    "ls_driver": "김동수",
+    "ls_phone": "010-3940-9811",
+    "ls_history": [
+      {
+        "driverName": "김동수",
+        "driverPhone": "010-3940-9811",
+        "firstSeen": "2026-06-02",
+        "lastSeen": "2026-06-07",
+        "totalOrders": 6
+      },
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-09",
+        "lastSeen": "2026-06-01",
+        "totalOrders": 83
+      }
+    ]
+  },
+  {
+    "plate": "경기89바2992",
+    "name": "2992.0",
+    "phone": "010-5443-1592",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기89바5309",
+    "name": "5309.0",
+    "phone": "010-3100-9060",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-04-19",
+        "lastSeen": "2026-04-29",
+        "totalOrders": 2
+      }
+    ]
+  },
+  {
+    "plate": "경기89바6845",
+    "name": "6845.0",
+    "phone": "010-5622-8148",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "최규익",
+    "ls_phone": "010-5622-8148",
+    "ls_history": [
+      {
+        "driverName": "최규익",
+        "driverPhone": "010-5622-8148",
+        "firstSeen": "2026-06-04",
+        "lastSeen": "2026-06-04",
+        "totalOrders": 1
+      },
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-30",
+        "lastSeen": "2026-06-01",
+        "totalOrders": 3
+      }
+    ]
+  },
+  {
+    "plate": "경기89사3944",
+    "name": "3944.0",
+    "phone": "010-9046-8146",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-05-21",
+        "lastSeen": "2026-05-21",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "경기89자1139",
+    "name": "1139.0",
+    "phone": "010-8856-6247",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기89자3292",
+    "name": "3292.0",
+    "phone": "010-6245-6985",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기89자3822",
+    "name": "",
+    "phone": "010-3578-4363",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "유원석",
+    "ls_phone": "010-3578-4363",
+    "ls_history": [
+      {
+        "driverName": "유원석",
+        "driverPhone": "010-3578-4363",
+        "firstSeen": "2026-06-02",
+        "lastSeen": "2026-06-02",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "경기90사3147",
+    "name": "3147.0",
+    "phone": "010-9268-3435",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기90사3438",
+    "name": "3438.0",
+    "phone": "010-3689-3615",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기90사3891",
+    "name": "3891.0",
+    "phone": "010-3890-8802",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기90아3488",
+    "name": "3488.0",
+    "phone": "010-2468-5021",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기90아3527",
+    "name": "3527.0",
+    "phone": "010-6439-8714",
+    "barcode": "0100779540",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기90아5839",
+    "name": "5839.0",
+    "phone": "010-5270-9459",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-29",
+        "lastSeen": "2026-04-11",
+        "totalOrders": 2
+      }
+    ]
+  },
+  {
+    "plate": "경기90자1752",
+    "name": "1752.0",
+    "phone": "010-2308-8199",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기91바4722",
+    "name": "4722.0",
+    "phone": "010-7153-7766",
+    "barcode": "0100749280",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기91사3204",
+    "name": "3204.0",
+    "phone": "010-5250-0411",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-05-20",
+        "lastSeen": "2026-05-20",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "경기91아7091",
+    "name": "7091.0",
+    "phone": "010-4734-3748",
+    "barcode": "0100111481",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기91아7108",
+    "name": "7108.0",
+    "phone": "010-9025-7638",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기91자5841",
+    "name": "5841.0",
+    "phone": "010-7365-5248",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-11",
+        "lastSeen": "2026-05-12",
+        "totalOrders": 5
+      }
+    ]
+  },
+  {
+    "plate": "경기92바7748",
+    "name": "7748.0",
+    "phone": "010-8725-2113",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기92사2983",
+    "name": "2983.0",
+    "phone": "010-2798-3271",
+    "barcode": "0100012983",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기92사3916",
+    "name": "3916.0",
+    "phone": "010-5729-5818",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-04-15",
+        "lastSeen": "2026-04-15",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "경기92아4997",
+    "name": "4997.0",
+    "phone": "010-4128-3050",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기92아6231",
+    "name": "6231.0",
+    "phone": "010-4203-5778",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기92아8794",
+    "name": "8794.0",
+    "phone": "010-7338-8676",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "윤문한",
+    "ls_phone": "010-7338-8676",
+    "ls_history": [
+      {
+        "driverName": "윤문한",
+        "driverPhone": "010-7338-8676",
+        "firstSeen": "2026-06-06",
+        "lastSeen": "2026-06-06",
+        "totalOrders": 1
+      },
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-24",
+        "lastSeen": "2026-05-17",
+        "totalOrders": 3
+      }
+    ]
+  },
+  {
+    "plate": "경기92자3088",
+    "name": "3088.0",
+    "phone": "010-5307-1031",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기92자7410",
+    "name": "7410.0",
+    "phone": "010-4053-2217",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기93아3606",
+    "name": "3606.0",
+    "phone": "010-4646-4437",
+    "barcode": "0100235478",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기93아6033",
+    "name": "6033.0",
+    "phone": "010-4576-9535",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-05-22",
+        "lastSeen": "2026-05-22",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "경기93아6060",
+    "name": "6060.0",
+    "phone": "010-7460-3377",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기93아6068",
+    "name": "6068.0",
+    "phone": "010-5451-8741",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-19",
+        "lastSeen": "2026-05-28",
+        "totalOrders": 2
+      }
+    ]
+  },
+  {
+    "plate": "경기93아8802",
+    "name": "8802.0",
+    "phone": "010-5180-4212",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "박명한",
+    "ls_phone": "010-5180-4212",
+    "ls_history": [
+      {
+        "driverName": "박명한",
+        "driverPhone": "010-5180-4212",
+        "firstSeen": "2026-06-04",
+        "lastSeen": "2026-06-04",
+        "totalOrders": 1
+      },
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-04-28",
+        "lastSeen": "2026-05-06",
+        "totalOrders": 2
+      }
+    ]
+  },
+  {
+    "plate": "경기93자5879",
+    "name": "5879.0",
+    "phone": "010-9176-6915",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기93자8107",
+    "name": "8107.0",
+    "phone": "010-8757-8010",
+    "barcode": "100218146.0",
+    "ton": "",
+    "ls_driver": "조승현",
+    "ls_phone": "010-8757-8010",
+    "ls_history": [
+      {
+        "driverName": "조승현",
+        "driverPhone": "010-8757-8010",
+        "firstSeen": "2026-06-05",
+        "lastSeen": "2026-06-05",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "경기94바7122",
+    "name": "7122.0",
+    "phone": "010-5811-1588",
+    "barcode": "0100007122",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-20",
+        "lastSeen": "2026-04-20",
+        "totalOrders": 3
+      }
+    ]
+  },
+  {
+    "plate": "경기94사2055",
+    "name": "2055.0",
+    "phone": "010-5341-1251",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-04-12",
+        "lastSeen": "2026-04-12",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "경기94사2654",
+    "name": "2654.0",
+    "phone": "010-5886-5970",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-05-26",
+        "lastSeen": "2026-05-26",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "경기94사3207",
+    "name": "3207.0",
+    "phone": "010-7592-5773",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기94아5794",
+    "name": "5794.0",
+    "phone": "010-4686-0543",
+    "barcode": "0100453078",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-05-25",
+        "lastSeen": "2026-05-25",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "경기95사1634",
+    "name": "1634.0",
+    "phone": "010-8652-3174",
+    "barcode": "",
+    "ton": "14t",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-15",
+        "lastSeen": "2026-03-15",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "경기95자6080",
+    "name": "6080.0",
+    "phone": "010-7204-3729",
+    "barcode": "0100956080",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기95자6464",
+    "name": "6464.0",
+    "phone": "010-3910-0850",
+    "barcode": "",
+    "ton": "14T",
+    "ls_driver": "손경준",
+    "ls_phone": "010-3910-0850",
+    "ls_history": [
+      {
+        "driverName": "손경준",
+        "driverPhone": "010-3910-0850",
+        "firstSeen": "2026-06-03",
+        "lastSeen": "2026-06-06",
+        "totalOrders": 2
+      },
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-09",
+        "lastSeen": "2026-05-05",
+        "totalOrders": 9
+      }
+    ]
+  },
+  {
+    "plate": "경기96사1258",
+    "name": "1258.0",
+    "phone": "010-7610-5922",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "경기96사1259",
+    "name": "1259.0",
+    "phone": "010-9950-2837",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-05-11",
+        "lastSeen": "2026-05-11",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "경남82사4402",
+    "name": "4402.0",
+    "phone": "010-8070-5783",
+    "barcode": "0113799775",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "광주82바2831",
+    "name": "2831.0",
+    "phone": "010-7177-7381",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "광주85사1605",
+    "name": "1605.0",
+    "phone": "010-3077-6151",
+    "barcode": "0100852935",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "광주86바8972",
+    "name": "8972.0",
+    "phone": "010-6282-1008",
+    "barcode": "",
+    "ton": "14T",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "광주88바7203",
+    "name": "7203.0",
+    "phone": "010-4010-2338",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-05-09",
+        "lastSeen": "2026-05-09",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "광주89바9528",
+    "name": "9528.0",
+    "phone": "010-6661-2797",
+    "barcode": "",
+    "ton": "11T",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "광주90바1703",
+    "name": "1703.0",
+    "phone": "010-2078-8556",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-09",
+        "lastSeen": "2026-05-31",
+        "totalOrders": 81
+      }
+    ]
+  },
+  {
+    "plate": "광주90바2025",
+    "name": "2025.0",
+    "phone": "010-8412-1252",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "광주90바7165",
+    "name": "7165.0",
+    "phone": "010-2366-1872",
+    "barcode": "100907165.0",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "대구86아5150",
+    "name": "5150.0",
+    "phone": "010-8372-8897",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "대전87아3533",
+    "name": "3533.0",
+    "phone": "010-5139-1479",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-05-03",
+        "lastSeen": "2026-05-10",
+        "totalOrders": 2
+      }
+    ]
+  },
+  {
+    "plate": "대전87아3570",
+    "name": "3570.0",
+    "phone": "010-5561-8414",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "대전88아9038",
+    "name": "9038.0",
+    "phone": "010-4749-4991",
+    "barcode": "0113799300",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "대전89아3457",
+    "name": "3457.0",
+    "phone": "010-7774-5560",
+    "barcode": "0100003457",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "부산91아6208",
+    "name": "6208.0",
+    "phone": "010-5499-7537",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-13",
+        "lastSeen": "2026-03-13",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "부산92아1615",
+    "name": "1615.0",
+    "phone": "010-3713-7773",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "부산95아2159",
+    "name": "2159.0",
+    "phone": "010-4288-3224",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-16",
+        "lastSeen": "2026-05-04",
+        "totalOrders": 2
+      }
+    ]
+  },
+  {
+    "plate": "부산95아6997",
+    "name": "6997.0",
+    "phone": "010-7141-3729",
+    "barcode": "0100167175",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "서울80바4103",
+    "name": "4103.0",
+    "phone": "010-3983-1110",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "서울80바8082",
+    "name": "8082.0",
+    "phone": "010-6357-5629",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "서울81사2268",
+    "name": "2268.0",
+    "phone": "010-8766-8716",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "서울82바1381",
+    "name": "1381.0",
+    "phone": "010-3974-0620",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "서울82바2794",
+    "name": "2794.0",
+    "phone": "010-6726-1655",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "서울82바3328",
+    "name": "3328.0",
+    "phone": "010-3905-0130",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "박해성",
+    "ls_phone": "010-3905-0130",
+    "ls_history": [
+      {
+        "driverName": "박해성",
+        "driverPhone": "010-3905-0130",
+        "firstSeen": "2026-06-07",
+        "lastSeen": "2026-06-07",
+        "totalOrders": 1
+      },
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-04-16",
+        "lastSeen": "2026-04-16",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "서울82바4931",
+    "name": "4931.0",
+    "phone": "010-2819-7855",
+    "barcode": "",
+    "ton": "14t",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-17",
+        "lastSeen": "2026-03-17",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "서울82바5954",
+    "name": "5954.0",
+    "phone": "010-9388-9920",
+    "barcode": "0100825954",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "서울83바5672",
+    "name": "5672.0",
+    "phone": "010-8422-3521",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "서울83사7334",
+    "name": "7334.0",
+    "phone": "010-9177-4528",
+    "barcode": "0100614575",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "서울84사1283",
+    "name": "1283.0",
+    "phone": "010-4748-8372",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "서울84사2066",
+    "name": "2066.0",
+    "phone": "010-3689-3615",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "서울84사6518",
+    "name": "6518.0",
+    "phone": "010-8749-1607",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "서울84사8255",
+    "name": "8255.0",
+    "phone": "010-7504-1794",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-12",
+        "lastSeen": "2026-04-21",
+        "totalOrders": 2
+      }
+    ]
+  },
+  {
+    "plate": "서울86바2540",
+    "name": "2540.0",
+    "phone": "010-5625-1055",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-04-01",
+        "lastSeen": "2026-05-19",
+        "totalOrders": 2
+      }
+    ]
+  },
+  {
+    "plate": "서울86바5115",
+    "name": "5115.0",
+    "phone": "010-4922-7895",
+    "barcode": "0100680870",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "서울86아6359",
+    "name": "6359.0",
+    "phone": "010-9068-6608",
+    "barcode": "0113800891",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "서울87아6558",
+    "name": "6558.0",
+    "phone": "010-4448-5514",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-18",
+        "lastSeen": "2026-03-18",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "서울87아7221",
+    "name": "7221.0",
+    "phone": "010-4688-8606",
+    "barcode": "0113769180",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "서울88바5846",
+    "name": "5846.0",
+    "phone": "010-4277-2267",
+    "barcode": "0100596500",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "서울88아2163",
+    "name": "2163.0",
+    "phone": "010--7134-2758",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "서울88아2524",
+    "name": "2524.0",
+    "phone": "010-5623-7227",
+    "barcode": "",
+    "ton": "14T",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-05-07",
+        "lastSeen": "2026-05-07",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "서울88아6043",
+    "name": "6043.0",
+    "phone": "010-5558-5781",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-04-18",
+        "lastSeen": "2026-05-14",
+        "totalOrders": 2
+      }
+    ]
+  },
+  {
+    "plate": "서울88아8047",
+    "name": "8047.0",
+    "phone": "010-3983-1110",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-04-14",
+        "lastSeen": "2026-04-17",
+        "totalOrders": 2
+      }
+    ]
+  },
+  {
+    "plate": "서울89자5916",
+    "name": "5916.0",
+    "phone": "010-9927-7778",
+    "barcode": "0100748447",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "서울89자7064",
+    "name": "7064.0",
+    "phone": "010-4288-4568",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "서울90바6811",
+    "name": "6811.0",
+    "phone": "010-6218-3668",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "인천80바9606",
+    "name": "9606.0",
+    "phone": "010-9920-0721",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "인천80사2457",
+    "name": "2457.0",
+    "phone": "010-8288-5259",
+    "barcode": "0113798093",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "인천85아2549",
+    "name": "2549.0",
+    "phone": "010-5240-1123",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "인천85아4662",
+    "name": "4662.0",
+    "phone": "010-9410-1907",
+    "barcode": "",
+    "ton": "11T",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-05-01",
+        "lastSeen": "2026-05-01",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "인천85아7248",
+    "name": "7248.0",
+    "phone": "010-4081-5900",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "전남80바3388",
+    "name": "3388.0",
+    "phone": "010-5096-1169",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "전남80바7112",
+    "name": "7112.0",
+    "phone": "010-7774-9056",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "전남82바1009",
+    "name": "1009.0",
+    "phone": "010-3168-5409",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "전남82바1251",
+    "name": "1251.0",
+    "phone": "010-2425-5785",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-05-17",
+        "lastSeen": "2026-05-17",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "전남86바6225",
+    "name": "6225.0",
+    "phone": "010-2720-7454",
+    "barcode": "0113729682",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "전남86바6239",
+    "name": "",
+    "phone": "010-2229-4794",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "권윤기",
+    "ls_phone": "010-2229-4794",
+    "ls_history": [
+      {
+        "driverName": "권윤기",
+        "driverPhone": "010-2229-4794",
+        "firstSeen": "2026-06-07",
+        "lastSeen": "2026-06-07",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "전남89바9005",
+    "name": "9005.0",
+    "phone": "010-9626-2661",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "전남91바5575",
+    "name": "5575.0",
+    "phone": "010-3605-8181",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-04-15",
+        "lastSeen": "2026-04-15",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "전남91바5952",
+    "name": "5952.0",
+    "phone": "010-9178-2398",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-21",
+        "lastSeen": "2026-05-16",
+        "totalOrders": 2
+      }
+    ]
+  },
+  {
+    "plate": "전북85사1781",
+    "name": "1781.0",
+    "phone": "010-8850-6337",
+    "barcode": "0100073853",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "충남80바2239",
+    "name": "2239.0",
+    "phone": "010-9095-5824",
+    "barcode": "0100700950",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "충남83바1666",
+    "name": "1666.0",
+    "phone": "010-8258-4172",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-10",
+        "lastSeen": "2026-03-10",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "충북80아3912",
+    "name": "3912.0",
+    "phone": "010-7774-8114",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-23",
+        "lastSeen": "2026-04-02",
+        "totalOrders": 2
+      }
+    ]
+  },
+  {
+    "plate": "충북83아5281",
+    "name": "5281.0",
+    "phone": "010-3324-1237",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-05-18",
+        "lastSeen": "2026-05-18",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "충북90아6142",
+    "name": "6142.0",
+    "phone": "010-2188-7039",
+    "barcode": "",
+    "ton": "11T",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "충북90아6169",
+    "name": "6169.0",
+    "phone": "010-5342-6631",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "최문수",
+    "ls_phone": "010-5342-6631",
+    "ls_history": [
+      {
+        "driverName": "최문수",
+        "driverPhone": "010-5342-6631",
+        "firstSeen": "2026-06-03",
+        "lastSeen": "2026-06-03",
+        "totalOrders": 1
+      },
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-04-26",
+        "lastSeen": "2026-04-26",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "충북90아6170",
+    "name": "6170.0",
+    "phone": "010-5622-8148",
+    "barcode": "0100026170",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "충북90아6171",
+    "name": "6171.0",
+    "phone": "010-9100-9914",
+    "barcode": "0113780258",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "충북91아5019",
+    "name": "5019.0",
+    "phone": "010-8919-7949",
+    "barcode": "",
+    "ton": "",
+    "ls_driver": "",
+    "ls_phone": "",
+    "ls_history": []
+  },
+  {
+    "plate": "[보관기간에 따른 정보삭제] / [deleted due to policy]",
+    "name": "[DELETED]",
+    "phone": "[DELETED]",
+    "barcode": "",
+    "ton": "5T",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-01-01",
+        "lastSeen": "2026-03-08",
+        "totalOrders": 208
+      }
+    ]
+  },
+  {
+    "plate": "서울86바3441",
+    "name": "[DELETED]",
+    "phone": "[DELETED]",
+    "barcode": "",
+    "ton": "11T",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-22",
+        "lastSeen": "2026-03-22",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "경기86바2841",
+    "name": "[DELETED]",
+    "phone": "[DELETED]",
+    "barcode": "",
+    "ton": "11T",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-03-28",
+        "lastSeen": "2026-04-04",
+        "totalOrders": 2
+      }
+    ]
+  },
+  {
+    "plate": "경기86자4763",
+    "name": "[DELETED]",
+    "phone": "[DELETED]",
+    "barcode": "",
+    "ton": "11T",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-04-03",
+        "lastSeen": "2026-04-03",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "경기90아3455",
+    "name": "[DELETED]",
+    "phone": "[DELETED]",
+    "barcode": "",
+    "ton": "11T",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-04-05",
+        "lastSeen": "2026-04-05",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "전남80바3269",
+    "name": "[DELETED]",
+    "phone": "[DELETED]",
+    "barcode": "",
+    "ton": "11T",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-04-06",
+        "lastSeen": "2026-04-06",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "전남88바8215",
+    "name": "[DELETED]",
+    "phone": "[DELETED]",
+    "barcode": "",
+    "ton": "11T",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-04-07",
+        "lastSeen": "2026-04-07",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "인천85바2353",
+    "name": "[DELETED]",
+    "phone": "[DELETED]",
+    "barcode": "",
+    "ton": "5T",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-04-22",
+        "lastSeen": "2026-04-22",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "경기90자3674",
+    "name": "[DELETED]",
+    "phone": "[DELETED]",
+    "barcode": "",
+    "ton": "5T",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-05-29",
+        "lastSeen": "2026-05-29",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "광주90바5254",
+    "name": "[DELETED]",
+    "phone": "[DELETED]",
+    "barcode": "",
+    "ton": "5T",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-05-30",
+        "lastSeen": "2026-05-30",
+        "totalOrders": 1
+      }
+    ]
+  },
+  {
+    "plate": "경기93아1158",
+    "name": "[DELETED]",
+    "phone": "[DELETED]",
+    "barcode": "",
+    "ton": "11T",
+    "ls_driver": "[DELETED]",
+    "ls_phone": "[DELETED]",
+    "ls_history": [
+      {
+        "driverName": "[DELETED]",
+        "driverPhone": "[DELETED]",
+        "firstSeen": "2026-06-01",
+        "lastSeen": "2026-06-01",
+        "totalOrders": 1
+      }
+    ]
+  }
+]

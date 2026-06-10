@@ -9,6 +9,7 @@ import ProductionPlan from "@/pages/production-plan";
 
 import ProductMaster from "@/pages/product-master";
 import BarcodeGeneration from "@/pages/barcode-generation";
+import DepartureDashboard from "@/pages/departure-dashboard";
 import NotFound from "@/pages/not-found";
 import { AIChatWidget } from "@/components/ai-chatbot";
 
@@ -63,6 +64,13 @@ const NAV_ITEMS: SidebarItem[] = [
     icon: "fa-qrcode",
     description: "송장번호/제품 바코드 생성 및 시간대별 출고 데이터 전송",
   },
+  {
+    key: "departure",
+    path: "/departure",
+    label: "출차 관리",
+    icon: "fa-truck-fast",
+    description: "VF 출차 관리 대시보드 — 차량 배차, 시간/톤수/PLT 관리",
+  },
 ];
 
 const PAGE_META: Record<string, PageMeta> = {
@@ -99,6 +107,11 @@ const PAGE_META: Record<string, PageMeta> = {
     title: "바코드 생성",
     description: "송장번호/제품 바코드 생성 및 시간대별 출고 데이터 전송",
   },
+  departure: {
+    key: "departure",
+    title: "출차 관리",
+    description: "VF 출차 관리 — 차량 배차, 시간/톤수/PLT 관리",
+  },
 };
 
 function normalizePath(location: string | undefined): string {
@@ -131,6 +144,8 @@ function resolveActiveKey(pathname: string): string {
       return "master";
     case "/barcode":
       return "barcode";
+    case "/departure":
+      return "departure";
     default:
       return "unknown";
   }
@@ -198,6 +213,8 @@ export default function Dashboard() {
         return <ProductMaster />;
       case "/barcode":
         return <BarcodeGeneration />;
+      case "/departure":
+        return <DepartureDashboard />;
       default:
         return <NotFound />;
     }

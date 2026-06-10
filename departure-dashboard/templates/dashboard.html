@@ -1,0 +1,1577 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VF 출차 관리 대시보드</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI','Noto Sans KR',sans-serif;background:#f0f2f5;color:#1f2937;padding:20px;font-size:14px}
+
+/* ── HEADER ── */
+.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #e5e7eb}
+.header h1{font-size:22px;color:#2563eb;font-weight:700}
+.header .badge{background:#2563eb;color:#fff;padding:3px 12px;border-radius:12px;font-size:11px;font-weight:600}
+
+/* ── DATE NAV ── */
+.date-nav{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.date-nav .date-display{font-size:18px;font-weight:700;color:#1f2937}
+.date-nav-btn{padding:4px 14px;font-size:13px;font-weight:600;border-radius:6px;cursor:pointer;background:#e5e7eb;color:#6b7280;border:none;transition:all 0.15s}
+.date-nav-btn:hover{background:#d1d5db}
+.date-nav-btn.active{background:#2563eb;color:#fff}
+.date-nav input[type=date]{padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px}
+
+/* ── CARDS ── */
+.card{background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;padding:16px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,0.05)}
+.card-title{color:#6b7280;font-size:12px;font-weight:600;letter-spacing:0.5px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
+
+/* ── INFO + CLOSEOUT WRAPPER (side by side) ── */
+.info-closeout-wrapper{display:flex;gap:16px;margin-bottom:16px}
+.info-closeout-wrapper .card{flex:1;margin-bottom:0}
+.info-closeout-wrapper .summary-section{flex:3;min-width:0}
+.info-closeout-wrapper .closeout-section{flex:2;min-width:260px;max-width:320px}
+
+/* ── VEHICLE SUMMARY TABLE ── */
+.summary-table{width:100%;border-collapse:collapse;font-size:15px;border:1px solid #e5e7eb}
+.summary-table th{background:#dbeafe;color:#1f2937;font-weight:700;font-size:15px;padding:8px 10px;text-align:center;border:1px solid #e5e7eb;white-space:nowrap}
+.summary-table td{padding:8px 10px;border:1px solid #e5e7eb;text-align:center;vertical-align:middle}
+.summary-table td select, .summary-table td input{display:inline-block;margin:0 auto;vertical-align:middle}
+.summary-table .inp-xs{width:80px;text-align:center;font-size:14px}
+.summary-table td select.time-select{text-align:center;text-align-last:center;-moz-text-align-last:center;font-size:16px;font-weight:600;padding:2px}
+
+/* ── BADGE (신규/기존) ── */
+.badge-new{display:inline-block;background:#ef4444;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700}
+.badge-old{display:inline-block;background:#10b981;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700}
+
+/* ── CLOSEOUT STATUS TABLE ── */
+.closeout-table{width:100%;border-collapse:collapse;font-size:14px}
+.closeout-table td{padding:8px 10px;border-bottom:1px solid #f3f4f6}
+.closeout-table .label{color:#6b7280;font-weight:500;width:100px;white-space:nowrap}
+.closeout-table .value{color:#1f2937;font-weight:600}
+.closeout-table .big-num{font-size:22px;font-weight:700;color:#2563eb}
+
+/* ── INPUTS ── */
+.inp{background:#ffffff;border:1px solid #d1d5db;color:#1f2937;padding:6px 8px;border-radius:6px;font-size:14px;width:100%;transition:border-color 0.15s}
+.inp:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,0.1)}
+.inp-sm{width:70px}
+.inp-xs{width:80px;font-size:14px}
+
+/* ── BUTTONS ── */
+.btn{background:#ffffff;border:1px solid #d1d5db;color:#374151;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;transition:all 0.15s}
+.btn:hover{background:#f3f4f6;border-color:#9ca3af}
+.btn-primary{background:#2563eb;border-color:#2563eb;color:#fff}
+.btn-primary:hover{background:#1d4ed8}
+.btn-sm{padding:4px 10px;font-size:12px}
+.btn-success{background:#10b981;border-color:#10b981;color:#fff}
+.btn-success:hover{background:#059669}
+
+/* ── VF67 CARDS ── */
+#vf67Container{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+#vf67Container.many-cards{grid-template-columns:1fr;max-width:600px;margin:0 auto}
+.vf67-card-wrap.hidden-by-time{display:none}
+.vf67-hidden-banner{margin-bottom:16px}
+.vf67-hidden-banner .hdr{color:#6b7280;font-size:12px;font-weight:600;margin-bottom:8px}
+.vf67-hidden-banner .chips{display:flex;gap:6px;flex-wrap:wrap}
+.vf67-hidden-chip{padding:4px 14px;border-radius:14px;font-size:13px;font-weight:600;cursor:pointer;background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb}
+.vf67-hidden-chip:hover{background:#dbeafe;color:#2563eb;border-color:#2563eb}
+#vf67TabBar{display:none;gap:4px;margin-bottom:12px;flex-wrap:wrap}
+#vf67TabBar.visible{display:flex}
+.vf67-tab{padding:6px 18px;font-size:13px;font-weight:600;border-radius:6px;cursor:pointer;background:#e5e7eb;color:#6b7280;transition:all 0.15s;border:none}
+.vf67-tab:hover{background:#d1d5db}
+.vf67-tab.active{background:#2563eb;color:#fff}
+.vf67-tab.expired{opacity:0.5;text-decoration:line-through}
+.vf67-table{width:100%;border-collapse:collapse;font-size:14px}
+.vf67-table th{background:#1e3a5f;color:#ffffff;font-weight:700;font-size:14px;padding:8px 14px;text-align:left}
+.vf67-table th .th-inner{display:flex;justify-content:space-between;align-items:center}
+.vf67-table td{padding:6px 10px;border:1px solid #d1d5db;vertical-align:middle}
+.vf67-table .vf67-label{width:110px;min-width:110px;color:#374151;font-weight:500;white-space:nowrap}
+.vf67-table .vf67-value{color:#1f2937}
+.vf67-table .inp-sm{width:70px}
+.inp-region{width:55px;background:#fff3cd;border:1px solid #d1d5db;color:#1f2937;padding:4px 6px;border-radius:4px;font-size:13px;text-align:center}
+.inp-region:focus{outline:none;border-color:#2563eb}
+.vf67-region-label{font-weight:700;color:#374151;text-transform:uppercase;font-size:13px}
+.vf67-total-label{color:#374151;font-weight:700}
+.vf67-total-value{color:#dc2626;font-weight:700;text-align:left}
+
+/* ── SEAL ── */
+.seal-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;margin-top:8px}
+.seal-item{display:flex;align-items:center;gap:6px;font-size:13px}
+.seal-item label{color:#6b7280;width:90px}
+
+/* ── RESPONSIVE ── */
+@media(max-width:900px){.info-closeout-wrapper{flex-direction:column}.info-closeout-wrapper .closeout-section{max-width:none}#vf67Container{grid-template-columns:1fr}}
+@media print{body{background:#fff;color:#000}.card{background:#fff;border:1px solid #ccc}.inp,.inp-region{border:1px solid #ccc;background:#fff;color:#000}}
+
+/* ── MODAL ── */
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center}
+.modal-box{background:#fff;border-radius:12px;padding:0;max-width:500px;width:90%;box-shadow:0 8px 30px rgba(0,0,0,0.3);overflow:hidden}
+.modal-header{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;background:#f8f9fa;border-bottom:1px solid #e5e7eb;font-weight:700;font-size:15px}
+.modal-body{padding:20px}
+.modal-footer{display:flex;gap:8px;padding:12px 20px;border-top:1px solid #e5e7eb;justify-content:flex-end}
+
+/* ── TOAST NOTIFICATIONS ── */
+#toastContainer{position:fixed;top:20px;right:20px;z-index:99999;display:flex;flex-direction:column;gap:8px;max-width:480px;pointer-events:none}
+.toast{padding:14px 20px;border-radius:8px;font-size:14px;font-weight:500;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,0.18);animation:toastSlideIn 0.3s ease;color:#fff;pointer-events:auto;white-space:pre-wrap;word-break:break-word}
+.toast-success{background:#059669}
+.toast-error{background:#dc2626}
+.toast-warning{background:#d97706}
+.toast-info{background:#1f2937}
+@keyframes toastSlideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* ── PRINT CONFIRM MODAL ── */
+#printConfirmBody{font-size:15px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0}
+/* ── ADD VEHICLE MODAL ── */
+.add-v-row{display:flex;align-items:center;margin-bottom:14px}
+.add-v-label{width:80px;font-weight:600;color:#374151;font-size:14px;flex-shrink:0}
+.add-v-label:after{content:' :'}
+.add-v-value{font-size:18px;font-weight:700;color:#2563eb}
+.add-v-select{padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:15px;font-weight:500;width:140px;background:#fff;cursor:pointer}
+.add-v-select:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,0.1)}
+</style>
+</head>
+<body>
+
+<!-- ═══════ 1. HEADER ═══════ -->
+<div class="header">
+  <div style="display:flex;align-items:center;gap:12px">
+    <h1>🚛 VF 출차 관리</h1>
+    <span class="badge">실시간</span>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <button class="btn btn-success btn-sm" onclick="sendDispatchRequest()" id="dispatchBtn">🚛 배차 요청</button>
+    <button class="btn btn-sm" onclick="sendExtraDispatchRequest()" id="extraDispatchBtn" style="background:#f97316;border-color:#f97316;color:#fff">📤 추가 배차 요청</button>
+    <button class="btn btn-primary btn-sm" onclick="location.reload()">🔄 새로고침</button>
+  </div>
+</div>
+
+<!-- ═══════ 2. DATE NAV ═══════ -->
+<div class="date-nav">
+  <span class="date-display" id="dateDisplay"></span>
+  <button class="date-nav-btn" id="dateBtnPrev" onclick="shiftDate(-1)">◀ 어제</button>
+  <button class="date-nav-btn active" id="dateBtnToday" onclick="goToday()">오늘</button>
+  <button class="date-nav-btn" id="dateBtnNext" onclick="shiftDate(1)">내일 ▶</button>
+  <input type="date" id="datePicker" onchange="onDatePick()">
+</div>
+
+<!-- ═══════ 3. INFO + CLOSEOUT (side by side) ═══════ -->
+<div class="info-closeout-wrapper" id="infoCloseoutWrapper" style="display:none">
+
+  <!-- ── VEHICLE SUMMARY TABLE ── -->
+  <div class="card summary-section" id="vehicleSummarySection">
+    <div class="card-title">📋 차량 정보<div style="display:flex;gap:6px;margin-left:auto"><button class="btn btn-sm btn-warning" onclick="resetTodayDispatch()" style="background:#f59e0b;border-color:#f59e0b;color:#fff">🔄 초기화</button><button class="btn btn-sm btn-success" onclick="showAddVehicle()">➕ 추가 배차</button></div></div>
+    <table class="summary-table">
+      <thead>
+        <tr>
+          <th>호차</th>
+          <th>시간</th>
+          <th>차량번호</th>
+          <th>기사님</th>
+          <th>연락처</th>
+          <th>구분</th>
+          <th>파렛트</th>
+          <th>🖨️</th>
+          <th>출고시간</th>
+          <th>톤수</th>
+          <th>관리</th>
+        </tr>
+      </thead>
+      <tbody id="vehicleSummaryBody"></tbody>
+    </table>
+  </div>
+
+  <!-- ── CLOSEOUT STATUS ── -->
+  <div class="card closeout-section" id="closeoutSection">
+    <div class="card-title">
+      <span id="closeoutTitle" style="font-size: 16px; font-weight: 800; color: #1e3a5f;">VF67 마감출차현황</span>
+      <button class="btn btn-sm btn-primary" onclick="copyCloseout()">📋 복사</button>
+    </div>
+    <table class="closeout-table">
+      <tr><td class="label">착지 허브</td><td class="value" id="coHub">부천1 HUB</td></tr>
+      <tr><td class="label">총 출차 대수</td><td class="value"><span class="big-num" id="coCount">0</span>대</td></tr>
+      <tr><td class="label">마감 출차 시간</td><td class="value" id="coTime">--:--</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════ 4. VF67 TAB BAR ═══════ -->
+<div id="vf67TabBar"></div>
+
+<!-- ═══════ 5. VF67 CARDS ═══════ -->
+<div class="card vf67-section" id="vf67Section" style="display:none">
+  <div class="card-title"><span>📄 VF67 출차 카드</span></div>
+  <div id="vf67Container"></div>
+  <div class="vf67-hidden-banner" id="vf67HiddenBanner" style="display:none">
+    <div class="hdr">⏳ 출고 완료 (재선택)</div>
+    <div class="chips" id="vf67HiddenChips"></div>
+  </div>
+</div>
+
+<!-- ═══════ 6. SEAL ═══════ -->
+<div class="card">
+  <div class="card-title">🔒 봉인씰</div>
+  <div class="seal-grid" id="sealGrid"></div>
+</div>
+
+<!-- ═══════ 7. DISPATCH MODAL ═══════ -->
+<div id="dispatchModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span id="dispatchModalTitle">📤 배차 요청 내용</span>
+      <button onclick="closeDispatchModal()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#6b7280">✕</button>
+    </div>
+    <div class="modal-body">
+      <pre id="dispatchTextDisplay" style="background:#f3f4f6;padding:14px;border-radius:8px;font-family:Courier New,monospace;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-all;margin:0"></pre>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:8px;padding:12px 20px;border-top:1px solid #e5e7eb;justify-content:flex-end">
+      <button class="btn btn-primary" onclick="copyDispatchText()">📋 복사</button>
+      <button class="btn" onclick="closeDispatchModal()">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ ADD VEHICLE MODAL ═══════ -->
+<div id="addVehicleModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span>➕ 추가 배차</span>
+      <button onclick="closeAddVehicleModal()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#6b7280">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="add-v-row">
+        <div class="add-v-label">호차</div>
+        <div class="add-v-value" id="addVHoche"></div>
+      </div>
+      <div class="add-v-row">
+        <div class="add-v-label">시간</div>
+        <input class="add-v-select" id="addVTime" list="addVTimeList" placeholder="선택 또는 직접입력" value="13:00">
+        <datalist id="addVTimeList">
+          <option value="13:00">
+          <option value="13:30">
+          <option value="14:00">
+          <option value="14:30">
+          <option value="15:00">
+          <option value="15:30">
+          <option value="16:00">
+          <option value="16:30">
+          <option value="17:00">
+          <option value="17:30">
+          <option value="18:00">
+          <option value="20:00">
+          <option value="22:00">
+          <option value="23:50">
+        </datalist>
+      </div>
+      <div class="add-v-row">
+        <div class="add-v-label">톤수</div>
+        <select class="add-v-select" id="addVTon">
+          <option value="5T">5T</option>
+          <option value="11T" selected>11T</option>
+          <option value="14T">14T</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="confirmAddVehicle()">✅ 확인</button>
+      <button class="btn" onclick="closeAddVehicleModal()">취소</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ PRINT CONFIRM MODAL ═══════ -->
+<div id="printConfirmModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span>🖨️ 출력 확인</span>
+      <button onclick="closePrintConfirmModal()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#6b7280">✕</button>
+    </div>
+    <div class="modal-body">
+      <pre id="printConfirmBody" style="font-size:15px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0">...</pre>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="executePrint()">✅ 출력</button>
+      <button class="btn" onclick="closePrintConfirmModal()">취소</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ TOAST CONTAINER ═══════ -->
+<div id="toastContainer"></div>
+
+<script>
+// ── 서버 주입 데이터 ──
+var LS_DATA = __LS_DATA__;
+var KPP_DATA = __KPP_DATA__;
+
+// ── 상태 관리 ──
+var MAX_VISIBLE = 4;
+var pltTimestamps = {};
+var pltQtyValues = {};
+var selectedTab = null;
+var regionNames = ['EAST','WEST','MIDDLE','GMH','DGU','GWJ','TW_YAMATO'];
+var currentDate = new Date();  // 조회 중인 날짜
+
+// ── 날짜 관리 ──
+function formatDate(d) {
+  var y = d.getFullYear();
+  var m = ('0'+(d.getMonth()+1)).slice(-2);
+  var day = ('0'+d.getDate()).slice(-2);
+  return y+'-'+m+'-'+day;
+}
+function formatDateShort(d) {
+  var m = d.getMonth()+1;
+  var day = d.getDate();
+  var w = ['일','월','화','수','목','금','토'][d.getDay()];
+  return m+'/'+day+' ('+w+')';
+}
+function updateDateDisplay() {
+  var today = new Date();
+  var isToday = formatDate(currentDate) === formatDate(today);
+  document.getElementById('dateDisplay').textContent = formatDateShort(currentDate) + (isToday?' (오늘)':'');
+  document.getElementById('datePicker').value = formatDate(currentDate);
+  document.getElementById('dateBtnPrev').textContent = '◀ ' + (formatDate(new Date(currentDate.getTime()-86400000))===formatDate(today)?'어제':'이전');
+  document.getElementById('dateBtnNext').textContent = (formatDate(new Date(currentDate.getTime()+86400000))===formatDate(today)?'내일 ':'다음 ')+'▶';
+  document.getElementById('dateBtnToday').classList.toggle('active', isToday);
+}
+function shiftDate(delta) {
+  currentDate = new Date(currentDate.getTime() + delta*86400000);
+  updateDateDisplay();
+  loadDeletedPlaceholders(function(){ loadDateData(); });
+}
+function goToday() {
+  currentDate = new Date();
+  updateDateDisplay();
+  loadDeletedPlaceholders(function(){ loadDateData(); });
+}
+function onDatePick() {
+  var val = document.getElementById('datePicker').value;
+  if (val) { currentDate = new Date(val+'T00:00:00'); updateDateDisplay(); loadDeletedPlaceholders(function(){ loadDateData(); }); }
+}
+
+// ── 날짜별 데이터 로드 ──
+function loadDateData() {
+  var sel = formatDate(currentDate);
+  var filtered = LS_DATA.filter(function(v){ return v.date === sel; });
+  renderAllWithData(filtered);
+}
+
+function renderAllWithData(data) {
+  window._filteredData = data;
+  renderSummaryTableWithData(data);
+  renderClosingStatusWithData(data);
+  renderVF67CardsWithData(data);
+  renderSeal(data);
+}
+
+// ── 전체 렌더링 (기존 호환) ──
+function renderAll() {
+  loadDateData();
+}
+
+// ── 봉인씰 ──
+function renderSeal(data) {
+  var grid = document.getElementById('sealGrid');
+  grid.innerHTML = '';
+  if (!data || data.length === 0) {
+    var sec = grid.closest('.card');
+    if (sec) sec.style.display = 'none';
+    return;
+  }
+  var sec = grid.closest('.card');
+  if (sec) sec.style.display = '';
+  var sides = ['좌측윙','우측윙','후면도어'];
+  for (var i = 1; i <= data.length; i++) {
+    sides.forEach(function(s){
+      var div = document.createElement('div');
+      div.className = 'seal-item';
+      div.innerHTML = '<label>' + i + '호차' + s + ':</label><input class="inp inp-xs" placeholder="">';
+      grid.appendChild(div);
+    });
+  }
+}
+
+// ── 차량 요약 테이블 ──
+function renderSummaryTableWithData(data) {
+  var container = document.getElementById('vehicleSummaryBody');
+  container.innerHTML = '';
+  document.getElementById('infoCloseoutWrapper').style.display = 'flex';
+  
+  // 1) 기본 플레이스홀더 호차 (1~3, 삭제 제외)
+  //    단, LS_DATA에 해당 hoche가 있으면 삭제됐어도 다시 표시
+  var phList = [];
+  for (var ph = 1; ph <= 3; ph++) {
+    var hasData = false;
+    if (data) {
+      for (var k = 0; k < data.length; k++) {
+        if (data[k].hoche === ph) { hasData = true; break; }
+      }
+    }
+    if (hasData) {
+      phList.push(ph); // LS_DATA에 있으면 무조건 표시
+    } else if (!(window._deletedPlaceholders && window._deletedPlaceholders[ph])) {
+      phList.push(ph); // 플레이스홀더 중 삭제되지 않은 것만
+    }
+  }
+  // 2) 추가 배차 데이터 (기본 3호차 외 데이터)
+  var extraData = (data || []).filter(function(d){ return d.hoche > 3; });
+  
+  // 아무것도 없으면 숨김
+  if (phList.length === 0 && extraData.length === 0) {
+    document.getElementById('infoCloseoutWrapper').style.display = 'none';
+    return;
+  }
+  
+  // 3) 플레이스홀더 호차 렌더링
+  //    → LS_DATA에 같은 hoche가 있으면 데이터 행, 없으면 플레이스홀더 행
+  phList.forEach(function(ph){
+    var existing = null;
+    if (data) {
+      for (var k = 0; k < data.length; k++) {
+        if (data[k].hoche === ph) { existing = data[k]; break; }
+      }
+    }
+    if (existing && existing.plate && existing.plate.trim() !== '') {
+      renderDataRow(container, existing);
+    } else if (existing) {
+      // LS_DATA에 hoche는 있지만 plate 미입력 → 플레이스홀더 행 (시간/톤수는 데이터 유지)
+      renderPlaceholderRow(container, ph, existing.time, existing.ton);
+    } else {
+      renderPlaceholderRow(container, ph);
+    }
+  });
+  
+  // 4) 추가 배차 데이터 렌더링
+  extraData.forEach(function(d){
+    if (d.plate && d.plate.trim() !== '') {
+      renderDataRow(container, d);
+    } else {
+      // plate 미입력 = 대기중 → 플레이스홀더 형태 (시간/톤수 드롭다운 + 입력 필드)
+      renderPlaceholderRow(container, d.hoche, d.time, d.ton);
+    }
+  });
+}
+
+// ── 플레이스홀더 단일 행 ──
+function renderPlaceholderRow(container, ph, optTime, optTon) {
+  var timeOpts = ['13:00','13:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','20:00','22:00','23:50'];
+  var timeVal = optTime || [,'20:00','22:00','23:50'][ph] || '13:00';
+  var defaultTon = optTon || (ph===1?'5T':ph===2?'5T':'11T');
+  var optsHtml = '';
+  timeOpts.forEach(function(t){
+    optsHtml += '<option value="'+t+'"'+(timeVal===t?' selected':'')+'>'+t+'</option>';
+  });
+  var tonHtml = '<select class="inp inp-xs" id="ton_select_'+ph+'" onchange="onTonnageChange('+ph+')">'
+    + '<option value="5T"'+(defaultTon==='5T'?' selected':'')+'>5T</option>'
+    + '<option value="11T"'+(defaultTon==='11T'?' selected':'')+'>11T</option>'
+    + '<option value="14T"'+(defaultTon==='14T'?' selected':'')+'>14T</option>'
+    + '</select>';
+  var tr = document.createElement('tr');
+  tr.innerHTML =
+    '<td>'+ph+'호차</td>' +
+    '<td><select class="inp inp-xs time-select" id="time_select_'+ph+'" onchange="onTimeChange('+ph+')">'+optsHtml+'</select></td>' +
+    '<td><input class="inp inp-xs" id="plate_input_'+ph+'" onchange="savePlaceholderVehicle('+ph+')"></td>' +
+    '<td><input class="inp inp-xs" id="driver_input_'+ph+'" onchange="savePlaceholderVehicle('+ph+')"></td>' +
+    '<td><input class="inp inp-xs" id="phone_input_'+ph+'" onchange="savePlaceholderVehicle('+ph+')"></td>' +
+    '<td><span class="badge-new">🆕 신규</span></td>' +
+    '<td><input class="inp inp-xs" value="0" id="plt_input_'+ph+'"></td>' +
+    '<td><button class="btn btn-sm" onclick="printVehicle('+ph+')" style="opacity:0.4;cursor:not-allowed" disabled title="차량 정보 입력 필요">🖨️</button></td>' +
+    '<td></td>' +
+    '<td>' + tonHtml + '</td>' +
+    '<td><button class="btn btn-sm" onclick="deleteRow('+ph+')" style="color:#ef4444">🗑️</button></td>';
+  container.appendChild(tr);
+}
+
+// ── 데이터 단일 행 ──
+function renderDataRow(container, d) {
+  var i = d.hoche;
+  var plate = d.plate || '';
+  var driver = d.driver || d.name || '';
+  var phone = d.phone || '';
+  var ton = d.ton || '';
+  var isNew = d.isNew;
+  var savedPlt = (pltQtyValues[i] !== undefined) ? pltQtyValues[i] : (d.plt || 0);
+  // 저장된 plt를 pltQtyValues에도 반영 (새로고침 후에도 유지)
+  if (pltQtyValues[i] === undefined && d.plt > 0) { pltQtyValues[i] = d.plt; }
+  var savedTime = (pltTimestamps[i]) ? ('0'+pltTimestamps[i].getHours()).slice(-2)+':'+('0'+pltTimestamps[i].getMinutes()).slice(-2) : (d.departTime||'');
+  var badge = isNew ? '<span class="badge-new">🆕 신규</span>' : '<span class="badge-old">✅ 기존</span>';
+  
+  // 최근 접안일 및 총 접안 횟수 추가 표기
+  var lastSeen = d.lastSeen || '-';
+  var totalOrders = d.totalOrders || 0;
+  badge += '<div style="font-size: 11px; color: #555; margin-top: 4px; line-height: 1.3;">'
+         + '최근: ' + lastSeen + '<br>'
+         + '접안: ' + totalOrders + '회</div>';
+
+  var tr = document.createElement('tr');
+  var timeVal = d.time || '13:00';
+  var timeOpts = ['13:00','13:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','20:00','22:00','23:50'];
+  if (timeOpts.indexOf(timeVal) === -1) { timeOpts.push(timeVal); }
+  var timeHtml = '<select class="inp inp-xs" onchange="onTimeChange('+i+')" id="time_select_'+i+'">';
+  timeOpts.forEach(function(t){ timeHtml += '<option value="'+t+'"'+(timeVal===t?' selected':'')+'>'+t+'</option>'; });
+  timeHtml += '</select>';
+  tr.innerHTML =
+    '<td>' + i + '호차</td>' +
+    timeHtml +
+    '<td>' + plate + '</td>' +
+    '<td>' + driver + '</td>' +
+    '<td>' + phone + '</td>' +
+    '<td>' + badge + '</td>' +
+    '<td><input class="inp inp-xs" value="' + savedPlt + '" onchange="onPalletChange(' + i + ')" id="plt_input_' + i + '"></td>' +
+    '<td><button class="btn btn-sm" onclick="printVehicle('+i+')" title="LS PDF + KPP EDI 출력">🖨️</button></td>' +
+    '<td id="plt_time_' + i + '">' + savedTime + '</td>' +
+    '  <select class="inp inp-xs" id="ton_select_' + i + '" onchange="onTonnageChange(' + i + ')">'
+    + '<option value="5T"' + (ton==='5T'?' selected':'') + '>5T</option>'
+    + '<option value="11T"' + (ton==='11T'?' selected':'') + '>11T</option>'
+    + '<option value="14T"' + (ton==='14T'?' selected':'') + '>14T</option>'
+    + '</select></td>' +
+    '<td><button onclick="deleteRow('+i+')" style="background:none;border:none;cursor:pointer;font-size:16px">🗑️</button></td>';
+  container.appendChild(tr);
+}
+
+// ── 행 삭제 ──
+function deleteRow(hoche) {
+  if (!confirm(hoche+'호차를 삭제하시겠습니까?')) return;
+  delete pltTimestamps[hoche];
+  delete pltQtyValues[hoche];
+  
+  var sel = formatDate(currentDate);
+  var hasDataEntry = LS_DATA.some(function(v){ return v.hoche === hoche && v.date === sel; });
+  
+  if (hasDataEntry) {
+    // LS_DATA에 실제 데이터가 있으면 데이터 삭제
+    LS_DATA = LS_DATA.filter(function(v){ return !(v.hoche === hoche && v.date === sel); });
+    fetch('/api/ls-data', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(LS_DATA)
+    }).then(function(r){ return r.json(); }).then(function(data){
+      if (data.ok) { LS_DATA = data.data; loadDateData(); }
+      else { alert('❌ 삭제 실패: '+(data.error||'')); }
+    }).catch(function(err){
+      alert('❌ 오류: '+err.message);
+    });
+  } else if (hoche <= 3) {
+    // 1~3호차 플레이스홀더 삭제
+    if (!window._deletedPlaceholders) window._deletedPlaceholders = {};
+    window._deletedPlaceholders[hoche] = true;
+    saveDeletedPlaceholders();
+    loadDateData();
+  }
+}
+
+// ── 서버에 삭제 상태 저장 ──
+function saveDeletedPlaceholders() {
+  var sel = formatDate(currentDate);
+  var deleted = window._deletedPlaceholders || {};
+  fetch('/api/deleted-placeholders', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({date: sel, deleted: deleted})
+  }).catch(function(err){
+    console.error('저장 실패:', err);
+  });
+}
+
+// ── 플레이스홀더 차량정보 입력 시 LS_DATA 저장 ──
+function savePlaceholderVehicle(ph) {
+  var plate = document.getElementById('plate_input_'+ph).value.trim();
+  var driver = document.getElementById('driver_input_'+ph).value.trim();
+  var phone = document.getElementById('phone_input_'+ph).value.trim();
+  if (!plate && !driver && !phone) return; // 모두 빈 값이면 저장 안 함
+  
+  var sel = formatDate(currentDate);
+  var timeSelect = document.getElementById('time_select_'+ph);
+  var time = timeSelect ? timeSelect.value : '20:00';
+  var tonSelect = document.getElementById('ton_select_'+ph);
+  var ton = tonSelect ? tonSelect.value : (ph===3?'11T':'5T');
+  
+  // 기존 LS_DATA에 같은 hoche가 있으면 업데이트, 없으면 추가
+  var idx = -1;
+  for (var i = 0; i < LS_DATA.length; i++) {
+    if (LS_DATA[i].hoche === ph && LS_DATA[i].date === sel) { idx = i; break; }
+  }
+  
+  var entry = {
+    hoche: ph,
+    plate: plate,
+    driver: driver,
+    name: driver,
+    phone: phone,
+    ton: ton,
+    time: time,
+    isNew: true,
+    date: sel,
+    plt: 0,
+    hub: '부천1 HUB'
+  };
+  
+  if (idx >= 0) {
+    LS_DATA[idx] = entry;
+  } else {
+    LS_DATA.push(entry);
+  }
+  
+  // 서버 저장 후 리로드
+  fetch('/api/ls-data', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(LS_DATA)
+  }).then(function(r){ return r.json(); }).then(function(data){
+    if (data.ok) { LS_DATA = data.data; loadDateData(); }
+  }).catch(function(err){
+    console.error('저장 실패:', err);
+  });
+}
+
+// ── 당일 배차 초기화 (기본 3대 리셋) ──
+function resetTodayDispatch() {
+  if (!confirm('⚠️ 당일 배차를 초기화하시겠습니까?\n모든 추가 배차 및 입력 정보가 삭제되고 기본 3대(1,2,3호차)로 돌아갑니다.')) return;
+  
+  var sel = formatDate(currentDate);
+  
+  // 1) 오늘 날짜의 LS_DATA 제거
+  LS_DATA = LS_DATA.filter(function(v){ return v.date !== sel; });
+  
+  // 2) 오늘 날짜의 deletedPlaceholders 제거
+  window._deletedPlaceholders = {};
+  
+  // 3) 서버 저장
+  var done = 0;
+  function checkDone() {
+    done++;
+    if (done >= 2) { loadDateData(); }
+  }
+  
+  // LS_DATA 저장
+  fetch('/api/ls-data', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(LS_DATA)
+  }).then(function(r){ return r.json(); }).then(function(data){
+    if (data.ok) { LS_DATA = data.data; checkDone(); }
+    else { alert('❌ 초기화 실패'); }
+  }).catch(function(){
+    alert('❌ 서버 오류');
+  });
+  
+  // deletedPlaceholders 저장 (빈 객체로)
+  fetch('/api/deleted-placeholders', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({date: sel, deleted: {}})
+  }).then(function(r){ return r.json(); }).then(function(data){
+    if (data.ok) checkDone();
+  }).catch(function(){
+    console.error('deleted 초기화 실패');
+    done++;
+  });
+}
+
+// ── 톤수 변경 → 서버 저장 (데이터행 + 플레이스홀더) ──
+function onTonnageChange(hoche) {
+  var tonSelect = document.getElementById('ton_select_'+hoche);
+  if (!tonSelect) return;
+  var newTon = tonSelect.value;
+  
+  var dateKey = formatDate(currentDate);
+  var updated = false;
+  for (var i = 0; i < LS_DATA.length; i++) {
+    if (LS_DATA[i].hoche === hoche && LS_DATA[i].date === dateKey) {
+      LS_DATA[i].ton = newTon;
+      updated = true;
+      break;
+    }
+  }
+  var handleResponse = function(r){ return r.json(); };
+  var handleData = function(data){ if(data.ok){ LS_DATA = data.data; loadDateData(); } };
+  if (updated) {
+    fetch('/api/ls-data', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(LS_DATA)
+    }).then(handleResponse).then(handleData).catch(function(){});
+  } else {
+    // 플레이스홀더: LS_DATA에 저장
+    LS_DATA.push({
+      hoche: hoche, plate: '', driver: '', name: '', phone: '',
+      ton: newTon, time: '', isNew: true, date: dateKey, plt: 0, hub: '부천1 HUB'
+    });
+    fetch('/api/ls-data', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(LS_DATA)
+    }).then(handleResponse).then(handleData).catch(function(){});
+  }
+}
+
+// ── 마감출차현황 ──
+function renderClosingStatusWithData(data) {
+  document.getElementById('closeoutSection').style.display = '';
+  // 타이틀: "6/9 VF67 마감출차현황"
+  var m = currentDate.getMonth()+1;
+  var d = currentDate.getDate();
+  document.getElementById('closeoutTitle').textContent = m+'/'+d+' VF67 마감출차현황';
+  if (!data || data.length === 0) {
+    document.getElementById('coHub').textContent = '부천1 HUB';
+    document.getElementById('coCount').textContent = '0';
+    document.getElementById('coTime').textContent = '--:--';
+    return;
+  }
+  // 착지 허브: 첫 차량의 hub
+  var hub = data[0] ? (data[0].hub||'부천1 HUB') : '부천1 HUB';
+  document.getElementById('coHub').textContent = hub;
+  // 총 출차 대수 (VF67 카드 내용이 하나라도 입력되어 있는 차량의 수로 계산)
+  var activeCount = 0;
+  data.forEach(function(v) {
+    if (v.plt && v.plt > 0) {
+      activeCount++;
+    }
+  });
+  document.getElementById('coCount').textContent = activeCount;
+  // 마감 시간: 가장 늦은 pltTimestamps 또는 '--:--'
+  var latest = '--:--';
+  var latestTs = 0;
+  data.forEach(function(v){
+    var ts = pltTimestamps[v.hoche];
+    if (ts && ts.getTime() > latestTs) { latestTs = ts.getTime(); latest = ('0'+ts.getHours()).slice(-2)+':'+('0'+ts.getMinutes()).slice(-2); }
+  });
+  document.getElementById('coTime').textContent = latest;
+}
+
+// ── 마감출차현황 복사 ──
+function copyCloseout() {
+  var m = currentDate.getMonth()+1;
+  var d = currentDate.getDate();
+  var hub = document.getElementById('coHub').textContent;
+  var count = document.getElementById('coCount').textContent;
+  var time = document.getElementById('coTime').textContent;
+  var text = m+'/'+d+' VF67 마감출차현황\n착지 허브 : '+hub+'\n총 출차 대수 : '+count+'대\n마감 출차 시간 : '+time;
+  // clipboard + fallback
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function(){
+      var btn = document.querySelector('#closeoutSection .btn-primary');
+      var orig = btn.textContent;
+      btn.textContent = '✅ 복사됨';
+      setTimeout(function(){ btn.textContent = orig; }, 1500);
+    }).catch(function(){ fallbackCopySimple(text); });
+  } else { fallbackCopySimple(text); }
+}
+function fallbackCopySimple(text) {
+  var ta = document.createElement('textarea');
+  ta.value = text; ta.style.position='fixed'; ta.style.left='-9999px';
+  document.body.appendChild(ta); ta.select();
+  try {
+    document.execCommand('copy');
+    var btn = document.querySelector('#closeoutSection .btn-primary');
+    var orig = btn.textContent;
+    btn.textContent = '✅ 복사됨';
+    setTimeout(function(){ btn.textContent = orig; }, 1500);
+  } catch(e) { showCopyText(text); }
+  document.body.removeChild(ta);
+}
+
+// ── VF67 카드 렌더링 ──
+function renderVF67CardsWithData(data) {
+  var container = document.getElementById('vf67Container');
+  container.innerHTML = '';
+  if (!data || data.length === 0) {
+    document.getElementById('vf67Section').style.display = 'none';
+    return;
+  }
+  document.getElementById('vf67Section').style.display = '';
+  // VF67 카드는 LS 배차 정보 확인 후 차량번호가 있는 경우만 생성
+  var confirmedData = data.filter(function(d){ return d.plate && d.plate.trim() !== ''; });
+  if (confirmedData.length === 0) {
+    document.getElementById('vf67Section').style.display = 'none';
+    return;
+  }
+  confirmedData.forEach(function(d){
+    var i = d.hoche;
+    var plate = d.plate || '';
+    var center = d.hub || '';
+    var phone = d.phone || '';
+    var time = d.time || '';
+    var savedPlt = (d.plt || 0);
+    if (pltTimestamps[i] === undefined && savedPlt > 0) pltQtyValues[i] = savedPlt;
+    var wrap = document.createElement('div');
+    wrap.className = 'vf67-card-wrap';
+    wrap.id = 'vf67_card_wrap_'+i;
+    wrap.dataset.hoche = i;
+    var card = document.createElement('div');
+    card.className = 'vf67-card';
+    card.id = 'vf67_card_'+i;
+    var html = '<table class="vf67-table">';
+    html += '<thead><tr><th colspan="2"><div class="th-inner"><span>VF67</span><div style="display:flex;gap:4px;"><button class="btn btn-sm" onclick="resetVF67Regions('+i+')" style="background:#ef4444;color:#fff;border-color:#ef4444;padding:2px 8px;font-size:11px;">🔄 초기화</button><button class="btn btn-sm btn-primary" onclick="copyVF67('+i+')">📋 복사</button></div></div></th></tr></thead>';
+    html += '<tbody>';
+    html += '<tr><td class="vf67-label">1.센터 : </td><td class="vf67-value" id="vf67_center_'+i+'">'+center+'</td></tr>';
+    html += '<tr><td class="vf67-label">2.출차 : </td><td class="vf67-value">'+i+'호차</td></tr>';
+    html += '<tr><td class="vf67-label">3.차량 : </td><td class="vf67-value" id="vf67_plate_'+i+'">'+plate+'</td></tr>';
+    html += '<tr><td class="vf67-label">4.수량 : </td><td class="vf67-value"><input class="inp inp-sm" id="vf67_qty_'+i+'" type="number" value="'+savedPlt+'" onchange="onVF67QtyChange('+i+')" onkeydown="handleQtyKeydown(event, '+i+')"></td></tr>';
+    html += '<tr><td class="vf67-label">5.출차시간 : </td><td class="vf67-value" id="vf67_time_'+i+'">'+(time||'--:--')+'</td></tr>';
+    html += '<tr><td class="vf67-label">6.기사정보 : </td><td class="vf67-value" id="vf67_phone_'+i+'">'+(phone||'-')+'</td></tr>';
+    html += '</tbody>';
+    html += '<tbody>';
+    var totalSum = 0;
+    regionNames.forEach(function(r){
+      var savedVal = (d.regions && d.regions[r] !== undefined) ? d.regions[r] : 0;
+      totalSum += savedVal;
+      html += '<tr class="vf67-region-row"><td class="vf67-region-label">'+r+'</td><td><input class="inp-region" type="number" value="'+savedVal+'" min="0" id="vf67_'+r+'_'+i+'" onchange="onVF67RegionChange('+i+')" onkeydown="handleRegionKeydown(event, '+i+', \''+r+'\')"></td></tr>';
+    });
+    html += '</tbody>';
+    html += '<tbody><tr><td class="vf67-total-label">합계</td><td class="vf67-total-value" id="vf67_total_'+i+'">'+totalSum+'P</td></tr></tbody>';
+    html += '</table>';
+    card.innerHTML = html;
+    wrap.appendChild(card);
+    container.appendChild(wrap);
+  });
+  var count = confirmedData.length;
+  if (count <= MAX_VISIBLE) { showAllCards(); hideTabBar(); }
+  else { showTabBar(confirmedData); selectTab(selectedTab || confirmedData[0].hoche); }
+  updateHiddenBanner(confirmedData);
+}
+
+// ── 탭바 ──
+function showTabBar(data) {
+  var bar = document.getElementById('vf67TabBar');
+  bar.innerHTML = '';
+  var cont = document.getElementById('vf67Container');
+  cont.className = 'many-cards';
+  data.forEach(function(d){
+    var i = d.hoche;
+    var shortPlate = (d.plate||'').replace(/[^0-9]/g,'').slice(-4);
+    var btn = document.createElement('button');
+    btn.className = 'vf67-tab'+(selectedTab===i?' active':'');
+    btn.textContent = i+'호차('+shortPlate+')';
+    btn.onclick = function(){ selectTab(i); };
+    btn.id = 'vf67_tab_'+i;
+    bar.appendChild(btn);
+  });
+  bar.className = 'visible';
+}
+function hideTabBar() {
+  var bar = document.getElementById('vf67TabBar');
+  bar.innerHTML = ''; bar.className = '';
+  document.getElementById('vf67Container').className = '';
+}
+function selectTab(n) {
+  selectedTab = n;
+  var wraps = document.querySelectorAll('.vf67-card-wrap');
+  wraps.forEach(function(w){ w.style.display = (parseInt(w.dataset.hoche)===n && !w.classList.contains('hidden-by-time'))?'block':'none'; });
+  var bar = document.getElementById('vf67TabBar');
+  bar.querySelectorAll('.vf67-tab').forEach(function(t){ t.classList.toggle('active', parseInt(t.id.replace('vf67_tab_',''))===n); });
+}
+function showAllCards() {
+  var wraps = document.querySelectorAll('.vf67-card-wrap');
+  wraps.forEach(function(w){ w.style.display = w.classList.contains('hidden-by-time')?'none':'block'; });
+  selectedTab = null;
+}
+
+// ── VF67 수량 변경 ──
+function onVF67QtyChange(idx) {
+  var qty = parseInt(document.getElementById('vf67_qty_'+idx).value)||0;
+  var pltInput = document.getElementById('plt_input_'+idx);
+  if (pltInput) {
+    pltInput.value = qty;
+    onPalletChange(idx); // 시간 저장 및 서버 동기화를 대행 처리
+  } else {
+    var now = new Date();
+    var timeVal = ('0'+now.getHours()).slice(-2)+':'+('0'+now.getMinutes()).slice(-2);
+    if (qty>0) { pltTimestamps[idx]=now; pltQtyValues[idx]=qty; }
+    loadDateData();
+  }
+}
+function onVF67RegionChange(idx) {
+  var total = 0;
+  var regionsData = {};
+  regionNames.forEach(function(r){
+    var val = parseInt(document.getElementById('vf67_'+r+'_'+idx).value)||0;
+    total += val;
+    regionsData[r] = val;
+  });
+  document.getElementById('vf67_total_'+idx).textContent = total+'P';
+
+  // LS_DATA에 권역별 수량 저장 및 서버 동기화 (새로고침 유지)
+  var dateKey = formatDate(currentDate);
+  var updated = false;
+  for (var i = 0; i < LS_DATA.length; i++) {
+    if (LS_DATA[i].hoche === idx && LS_DATA[i].date === dateKey) {
+      LS_DATA[i].regions = regionsData;
+      updated = true;
+      break;
+    }
+  }
+  if (updated) {
+    fetch('/api/ls-data', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(LS_DATA)
+    }).then(function(r){ return r.json(); }).then(function(data){
+      if(data.ok) { LS_DATA = data.data; loadDateData(); }
+    }).catch(function(err){
+      console.error('권역 수량 저장 실패:', err);
+    });
+  }
+}
+
+// ── 카드별 권역 수량 초기화 기능 ──
+function resetVF67Regions(hoche) {
+  if (!confirm(hoche + '호차의 권역별 수량을 모두 초기화하시겠습니까?')) return;
+  regionNames.forEach(function(r) {
+    var inp = document.getElementById('vf67_' + r + '_' + hoche);
+    if (inp) {
+      inp.value = 0;
+    }
+  });
+  onVF67RegionChange(hoche);
+}
+
+// ── 권역별 입력 필드 키보드 조작 (Enter/Tab/Up/Down) ──
+function handleRegionKeydown(event, hoche, region) {
+  var key = event.key;
+  var currentIdx = regionNames.indexOf(region);
+  if (currentIdx === -1) return;
+  var input = event.target;
+  var val = parseInt(input.value) || 0;
+
+  // ↑ ↓ ← → : 수량 조절 (±1) — dispatchEvent 없이 직접 반영
+  if (key === 'ArrowUp') {
+    event.preventDefault();
+    input.value = val + 1;
+    _recalcRegionTotal(hoche);
+    return;
+  }
+  if (key === 'ArrowDown') {
+    event.preventDefault();
+    input.value = Math.max(0, val - 1);
+    _recalcRegionTotal(hoche);
+    return;
+  }
+  if (key === 'ArrowLeft') {
+    event.preventDefault();
+    input.value = Math.max(0, val - 1);
+    _recalcRegionTotal(hoche);
+    return;
+  }
+  if (key === 'ArrowRight') {
+    event.preventDefault();
+    input.value = val + 1;
+    _recalcRegionTotal(hoche);
+    return;
+  }
+
+  // ↵ Enter : 다음 입력창
+  if (key === 'Enter') {
+    event.preventDefault();
+    var nextIdx = currentIdx + 1;
+    if (nextIdx < regionNames.length) {
+      var nextInput = document.getElementById('vf67_' + regionNames[nextIdx] + '_' + hoche);
+      if (nextInput) { nextInput.focus(); nextInput.select(); }
+    } else {
+      var nextCardQty = document.getElementById('vf67_qty_' + (hoche + 1));
+      if (nextCardQty) { nextCardQty.focus(); nextCardQty.select(); }
+    }
+    return;
+  }
+
+  // ⇥ Tab : 기본 Tab 동작
+}
+
+// ── QTY 입력창 키보드 핸들러 ──
+function handleQtyKeydown(event, hoche) {
+  var key = event.key;
+  var input = event.target;
+  var val = parseInt(input.value) || 0;
+
+  // ↑ ↓ ← → : 수량 조절 (±1) — dispatchEvent 없이 직접 반영 (loadDateData 방지)
+  if (key === 'ArrowUp') {
+    event.preventDefault();
+    input.value = val + 1;
+    _syncQtyChange(hoche, input.value);
+    return;
+  }
+  if (key === 'ArrowDown') {
+    event.preventDefault();
+    input.value = Math.max(0, val - 1);
+    _syncQtyChange(hoche, input.value);
+    return;
+  }
+  if (key === 'ArrowLeft') {
+    event.preventDefault();
+    input.value = Math.max(0, val - 1);
+    _syncQtyChange(hoche, input.value);
+    return;
+  }
+  if (key === 'ArrowRight') {
+    event.preventDefault();
+    input.value = val + 1;
+    _syncQtyChange(hoche, input.value);
+    return;
+  }
+
+  // ↵ Enter : 다음 입력창 (EAST)
+  if (key === 'Enter') {
+    event.preventDefault();
+    var eastInput = document.getElementById('vf67_EAST_' + hoche);
+    if (eastInput) { eastInput.focus(); eastInput.select(); }
+    return;
+  }
+
+  // ⇥ Tab : 기본 Tab 동작
+}
+
+// ── QTY 변경 동기화 (reload 없이 시간/PLT/합계만 갱신) ──
+function _syncQtyChange(idx, qty) {
+  qty = parseInt(qty) || 0;
+  var now = new Date();
+  var timeVal = ('0'+now.getHours()).slice(-2)+':'+('0'+now.getMinutes()).slice(-2);
+
+  // 시간 표시
+  var timeEl = document.getElementById('vf67_time_'+idx);
+  if (timeEl) timeEl.textContent = timeVal;
+
+  // PLT 입력칸 동기화
+  var pltInput = document.getElementById('plt_input_'+idx);
+  if (pltInput) { pltInput.value = qty; }
+  var pltTime = document.getElementById('plt_time_'+idx);
+  if (pltTime) pltTime.textContent = timeVal;
+
+  // 메모리 저장
+  if (qty > 0) { pltTimestamps[idx]=now; pltQtyValues[idx]=qty; }
+  else { delete pltTimestamps[idx]; delete pltQtyValues[idx]; }
+
+  // VF67 카드 합계 갱신
+  _recalcRegionTotal(idx);
+}
+
+// ── 권역 합계 재계산 (reload 없이) ──
+function _recalcRegionTotal(idx) {
+  var total = 0;
+  regionNames.forEach(function(r){
+    total += parseInt(document.getElementById('vf67_'+r+'_'+idx).value) || 0;
+  });
+  document.getElementById('vf67_total_'+idx).textContent = total + 'P';
+}
+
+// ── VF67 복사 ──
+function copyVF67(idx) {
+  var center = document.getElementById('vf67_center_'+idx).textContent;
+  var plate = document.getElementById('vf67_plate_'+idx).textContent;
+  var qty = parseInt(document.getElementById('vf67_qty_'+idx).value)||0;
+  var time = document.getElementById('vf67_time_'+idx).textContent;
+  var phone = document.getElementById('vf67_phone_'+idx).textContent;
+  var total = 0;
+  var lines = ['VF67','1.센터 : '+center,'2.출차 : '+idx+'호차','3.차량 : '+plate,'4.수량 : '+qty,'5.출차시간 : '+time,'6.기사정보 : '+phone];
+  regionNames.forEach(function(r){
+    var val = parseInt(document.getElementById('vf67_'+r+'_'+idx).value)||0;
+    total += val;
+    if (val > 0) {
+      lines.push(r+' '+val+'P');
+    }
+  });
+  lines.push('합 계 '+total+'P');
+  var text = lines.join('\n');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function(){ copyBtnDone(idx); }).catch(function(){ fallbackCopy(text, idx); });
+  } else { fallbackCopy(text, idx); }
+}
+function copyBtnDone(idx) {
+  var btn = document.querySelector('#vf67_card_'+idx+' .btn-primary');
+  btn.textContent = '✅ 복사됨'; setTimeout(function(){ btn.textContent = '📋 복사'; }, 1500);
+}
+function fallbackCopy(text, idx) {
+  var ta = document.createElement('textarea');
+  ta.value = text; ta.style.position='fixed'; ta.style.left='-9999px';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); copyBtnDone(idx); }
+  catch(e) { showCopyText(text); }
+  document.body.removeChild(ta);
+}
+function showCopyText(text) {
+  var ed = document.getElementById('vf67CopyOverlay');
+  if (ed) ed.remove();
+  var div = document.createElement('div');
+  div.id = 'vf67CopyOverlay';
+  div.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+  var box = document.createElement('div');
+  box.style.cssText = 'background:#fff;border-radius:10px;padding:20px;max-width:500px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,0.3)';
+  box.innerHTML = '<div style="margin-bottom:10px;font-weight:600">📋 복사할 내용 (Ctrl+A → Ctrl+C)</div>'+
+    '<textarea style="width:100%;height:200px;font-family:monospace;font-size:13px;padding:8px;border:1px solid #d1d5db;border-radius:6px">'+text+'</textarea>'+
+    '<div style="margin-top:10px;text-align:right"><button class="btn btn-primary" onclick="this.closest(\'#vf67CopyOverlay\').remove()">닫기</button></div>';
+  div.appendChild(box);
+  document.body.appendChild(div);
+  setTimeout(function(){ var ta = div.querySelector('textarea'); if(ta){ta.focus();ta.select();} }, 100);
+}
+
+// ── 파렛트 수량 변경 → 시간 + 서버 저장 ──
+function onPalletChange(idx) {
+  var qty = parseInt(document.getElementById('plt_input_'+idx).value)||0;
+  var now = new Date();
+  var timeVal = ('0'+now.getHours()).slice(-2)+':'+('0'+now.getMinutes()).slice(-2);
+  document.getElementById('plt_time_'+idx).textContent = timeVal;
+  var vf67Qty = document.getElementById('vf67_qty_'+idx);
+  if (vf67Qty) { vf67Qty.value = qty; var te = document.getElementById('vf67_time_'+idx); if(te) te.textContent = timeVal; }
+  if (qty>0) { pltTimestamps[idx]=now; pltQtyValues[idx]=qty; }
+  else { delete pltTimestamps[idx]; delete pltQtyValues[idx]; }
+  
+  // LS_DATA에 plt 및 출고시간(departTime) 저장 (새로고침 유지)
+  var dateKey = formatDate(currentDate);
+  var updated = false;
+  for (var i = 0; i < LS_DATA.length; i++) {
+    if (LS_DATA[i].hoche === idx && LS_DATA[i].date === dateKey) {
+      LS_DATA[i].plt = qty;
+      LS_DATA[i].departTime = (qty > 0) ? timeVal : '';
+      updated = true;
+      break;
+    }
+  }
+  if (updated) {
+    fetch('/api/ls-data', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(LS_DATA)
+    }).then(function(r){ return r.json(); }).then(function(data){
+      if(data.ok) { LS_DATA = data.data; loadDateData(); }
+    }).catch(function(){});
+  }
+  // PLT 수량에 따른 적정 톤수 자동 계산 및 변경 (상향/하향 연동)
+  if (qty > 0) {
+    var tonSel = document.getElementById('ton_select_'+idx);
+    if (tonSel) {
+      var targetTon = '5T';
+      if (qty > 16) {
+        targetTon = '14T';
+      } else if (qty > 12) {
+        targetTon = '11T';
+      }
+      
+      if (tonSel.value !== targetTon) {
+        tonSel.value = targetTon;
+        onTonnageChange(idx);
+      }
+    }
+  }
+  loadDateData();
+}
+
+// ── 시간 선택 변경 ──
+function onTimeChange(idx) {
+  var sel = document.getElementById('time_select_'+idx).value;
+  var parts = sel.split(':');
+  var d = new Date();
+  d.setHours(parseInt(parts[0]), parseInt(parts[1]), 0, 0);
+  pltTimestamps[idx] = d;
+  
+  // LS_DATA에 해당 hoche가 있으면 시간 업데이트 후 저장
+  var dateKey = formatDate(currentDate);
+  var updated = false;
+  for (var i = 0; i < LS_DATA.length; i++) {
+    if (LS_DATA[i].hoche === idx && LS_DATA[i].date === dateKey) {
+      LS_DATA[i].time = sel;
+      updated = true;
+      break;
+    }
+  }
+  var handleResponse = function(r){ return r.json(); };
+  var handleData = function(data){ if(data.ok){ LS_DATA = data.data; loadDateData(); } };
+  if (updated) {
+    fetch('/api/ls-data', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(LS_DATA)
+    }).then(handleResponse).then(handleData).catch(function(){});
+  } else {
+    // 플레이스홀더 시간 변경 → LS_DATA에 저장 (재렌더링 시 되돌아오는 것 방지)
+    var tonSelect = document.getElementById('ton_select_'+idx);
+    var ton = tonSelect ? tonSelect.value : (idx===3?'11T':'5T');
+    LS_DATA.push({
+      hoche: idx,
+      plate: '',
+      driver: '',
+      name: '',
+      phone: '',
+      ton: ton,
+      time: sel,
+      isNew: true,
+      date: dateKey,
+      plt: 0,
+      hub: '부천1 HUB'
+    });
+    fetch('/api/ls-data', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(LS_DATA)
+    }).then(handleResponse).then(handleData).catch(function(){});
+  }
+}
+
+// ── Toast Notification ──
+function showToast(message, type, duration) {
+  type = type || 'info';
+  duration = duration || 6000;
+  var container = document.getElementById('toastContainer');
+  if (!container) return;
+  var toast = document.createElement('div');
+  toast.className = 'toast toast-' + type;
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(function() {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.3s';
+    setTimeout(function() { toast.remove(); }, 300);
+  }, duration);
+}
+
+// ── Print Confirm Modal state ──
+var _pendingPrintHoche = null;
+var _pendingPrintBtn = null;
+var _pendingPrintOrigText = null;
+
+function closePrintConfirmModal() {
+  document.getElementById('printConfirmModal').style.display = 'none';
+  _pendingPrintHoche = null;
+  _pendingPrintBtn = null;
+}
+
+function executePrint() {
+  var hoche = _pendingPrintHoche;
+  var btn = _pendingPrintBtn;
+  var origText = _pendingPrintOrigText;
+  closePrintConfirmModal();
+  
+  if (btn) btn.textContent = '⏳';
+  
+  fetch('/api/print/' + hoche + '?plt=' + (document.getElementById('plt_input_' + hoche) ? parseInt(document.getElementById('plt_input_' + hoche).value) || 0 : 0))
+  .then(function(r) {
+    if (!r.ok) {
+      return r.text().then(function(t) {
+        throw new Error('HTTP ' + r.status + ' - ' + (t.slice(0, 100) || '서버 내부 오류'));
+      });
+    }
+    return r.json();
+  })
+  .then(function(data) {
+    var msg = '';
+    if (data.results) {
+      data.results.forEach(function(r) { msg += r + '\n'; });
+    }
+    showToast(msg, data.ok ? 'success' : 'error', 8000);
+    if (btn) btn.textContent = origText;
+    
+    // 출력 완료 후 백엔드로부터 최신 톤수 및 이력 상태 실시간 동기화
+    fetch('/api/ls-data')
+    .then(function(res){ return res.json(); })
+    .then(function(resData){
+      if(resData.data) { LS_DATA = resData.data; }
+      loadDateData();
+    })
+    .catch(function(){
+      loadDateData();
+    });
+  })
+  .catch(function(err) {
+    showToast('❌ 오류: ' + err.message, 'error', 8000);
+    if (btn) btn.textContent = origText;
+  });
+}
+
+// ── LS PDF + KPP EDI 통합 인쇄 (PLT 검증 + 톤수 변경 확인) ──
+function printVehicle(hoche) {
+  var pltInput = document.getElementById('plt_input_' + hoche);
+  var pltQty = pltInput ? parseInt(pltInput.value) || 0 : 0;
+  var tonSelect = document.getElementById('ton_select_' + hoche);
+  var currentTon = tonSelect ? tonSelect.value : '';
+  
+  var tLim = {'5T':12,'11T':16,'14T':18};
+  var tUp = {'5T':'→11T','11T':'→14T'};
+  var limit = tLim[currentTon] || 12;
+  var tonChange = '';
+  if (pltQty > limit && tUp[currentTon]) {
+    tonChange = '\n⚠️ ' + currentTon + ' 한도(' + limit + ') 초과 → ' + tUp[currentTon] + ' 자동 변경';
+  }
+  
+  var msg = '🖨️ ' + hoche + '호차 출력 확인\n'
+    + '파렛트 수량: ' + pltQty + '개\n'
+    + '현재 톤수: ' + currentTon + tonChange
+    + '\n\n출력하시겠습니까?';
+  
+  // Store pending state
+  _pendingPrintHoche = hoche;
+  _pendingPrintBtn = event && event.target ? event.target : null;
+  _pendingPrintOrigText = _pendingPrintBtn ? _pendingPrintBtn.textContent : '🖨️';
+  
+  document.getElementById('printConfirmBody').textContent = msg;
+  document.getElementById('printConfirmModal').style.display = 'flex';
+}
+
+// ── 1시간 경과 체크 ──
+function checkElapsedCards() {
+  var now = new Date();
+  var changed = false;
+  var data = window._filteredData || LS_DATA;
+  if (!data) return;
+  data.forEach(function(d){
+    var i = d.hoche;
+    if (!pltTimestamps[i]) return;
+    var elapsed = (now - pltTimestamps[i])/(1000*60);
+    var wrap = document.getElementById('vf67_card_wrap_'+i);
+    if (!wrap) return;
+    if (elapsed >= 60 && !wrap.classList.contains('hidden-by-time')) {
+      wrap.classList.add('hidden-by-time'); changed = true;
+    }
+  });
+  if (changed) { updateVisibility(); updateHiddenBanner(data); }
+}
+function updateVisibility() {
+  var data = window._filteredData;
+  var count = data ? data.length : 0;
+  if (count <= MAX_VISIBLE) showAllCards();
+  else selectTab(selectedTab || (data[0] ? data[0].hoche : null));
+}
+function updateHiddenBanner(data) {
+  var banner = document.getElementById('vf67HiddenBanner');
+  var chips = document.getElementById('vf67HiddenChips');
+  var hidden = [];
+  if (data) data.forEach(function(d){
+    var wrap = document.getElementById('vf67_card_wrap_'+d.hoche);
+    if (wrap && wrap.classList.contains('hidden-by-time')) hidden.push(d.hoche);
+  });
+  if (hidden.length===0) { banner.style.display='none'; return; }
+  banner.style.display=''; chips.innerHTML='';
+  hidden.forEach(function(i){
+    var chip = document.createElement('span');
+    chip.className = 'vf67-hidden-chip';
+    chip.textContent = i+'호차';
+    chip.onclick = function(){ reselectCard(i); };
+    chips.appendChild(chip);
+  });
+}
+function reselectCard(idx) {
+  var wrap = document.getElementById('vf67_card_wrap_'+idx);
+  if (wrap) { wrap.classList.remove('hidden-by-time'); pltTimestamps[idx]=new Date(); }
+  updateVisibility(); updateHiddenBanner(window._filteredData);
+}
+
+// ── 추가 배차 (웹 모달) ──
+function showAddVehicle() {
+  // 호차 자동 계산
+  var sel = formatDate(currentDate);
+  var todaysData = LS_DATA.filter(function(v){ return v.date === sel; });
+  var maxHoche = 0;
+  todaysData.forEach(function(v){ if (v.hoche > maxHoche) maxHoche = v.hoche; });
+  // 플레이스홀더 중 삭제되지 않은 호차도 고려
+  for (var ph = 1; ph <= 3; ph++) {
+    if (!(window._deletedPlaceholders && window._deletedPlaceholders[ph]) && ph > maxHoche) {
+      maxHoche = ph;
+    }
+  }
+  var nextHoche = maxHoche + 1;
+  
+  // 모달에 호차 표시
+  document.getElementById('addVHoche').textContent = nextHoche + '호차';
+  document.getElementById('addVHoche').dataset.hoche = nextHoche;
+  document.getElementById('addVehicleModal').style.display = 'flex';
+}
+
+function confirmAddVehicle() {
+  var hoche = parseInt(document.getElementById('addVHoche').dataset.hoche);
+  var time = document.getElementById('addVTime').value;
+  var ton = document.getElementById('addVTon').value;
+  
+  if (!hoche || !time || !ton) return;
+  
+  LS_DATA.push({
+    hoche: hoche,
+    plate: '',
+    driver: '',
+    name: '',
+    phone: '',
+    ton: ton,
+    time: time,
+    isNew: true,
+    date: formatDate(currentDate),
+    plt: 0,
+    hub: '부천1 HUB'
+  });
+  
+  closeAddVehicleModal();
+  
+  // 서버 저장
+  fetch('/api/ls-data', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(LS_DATA)
+  }).then(function(r){ return r.json(); }).then(function(data){
+    if (data.ok) { LS_DATA = data.data; loadDateData(); }
+    else { alert('❌ 저장 실패: '+(data.error||'')); }
+  }).catch(function(err){
+    alert('❌ 오류: '+err.message);
+  });
+}
+
+function closeAddVehicleModal() {
+  document.getElementById('addVehicleModal').style.display = 'none';
+}
+
+// ── 배차 요청 텍스트 생성 ──
+function generateDispatchText() {
+  var sel = formatDate(currentDate);
+  var filtered = LS_DATA.filter(function(v){ return v.date === sel; });
+  var m = currentDate.getMonth() + 1;
+  var d = currentDate.getDate();
+  var lines = [];
+  lines.push('VF67 - ' + m + '/' + d + ' 배차 요청 드립니다');
+  lines.push('');
+  
+  // 1) 기본 플레이스홀더 호차 (1~3, 삭제 제외)
+  for (var ph = 1; ph <= 3; ph++) {
+    // LS_DATA에 같은 hoche가 있으면 무조건 표시 (삭제 후 재추가 대응)
+    var existing = null;
+    for (var k = 0; k < filtered.length; k++) {
+      if (filtered[k].hoche === ph) { existing = filtered[k]; break; }
+    }
+    if (existing) {
+      var hub = existing.hub || '부천1 HUB';
+      var ton = existing.ton || '5T';
+      var time = existing.time || '20:00';
+      lines.push(hub + ' ' + ton + ' ' + time + ' ' + ph + '차');
+    } else if (!(window._deletedPlaceholders && window._deletedPlaceholders[ph])) {
+      // 기본값 (삭제되지 않은 플레이스홀더만) — DOM에서 현재 선택값 읽기
+      var timeEl = document.getElementById('time_select_'+ph);
+      var tonEl = document.getElementById('ton_select_'+ph);
+      var phTime = timeEl ? timeEl.value : [,'20:00','22:00','23:50'][ph] || '13:00';
+      var phTon = tonEl ? tonEl.value : (ph===1?'5T':ph===2?'5T':'11T');
+      lines.push('부천1 HUB ' + phTon + ' ' + phTime + ' ' + ph + '차');
+    }
+  }
+  
+  // 2) 추가 배차 데이터 (hoche > 3)
+  filtered.forEach(function(v){
+    if (v.hoche > 3) {
+      var hub = v.hub || '부천1 HUB';
+      var ton = v.ton || '5T';
+      var time = v.time || '13:00';
+      lines.push(hub + ' ' + ton + ' ' + time + ' ' + v.hoche + '차');
+    }
+  });
+  
+  lines.push('');
+  lines.push('상기와 같이 배차 진행 부탁드립니다');
+  return lines.join('\n');
+}
+
+// ── 배차 요청 → 모달 표시 ──
+function sendDispatchRequest() {
+  // 금일 상태 저장 (삭제 상태 포함)
+  saveDeletedPlaceholders();
+  var text = generateDispatchText();
+  if (!text) {
+    alert('❌ 배차 요청할 데이터가 없습니다.\n조회 중인 날짜의 차량 정보를 확인해주세요.');
+    return;
+  }
+  document.getElementById('dispatchModalTitle').textContent = '📤 배차 요청 내용';
+  document.getElementById('dispatchTextDisplay').textContent = text;
+  document.getElementById('dispatchModal').style.display = 'flex';
+}
+
+// ── 추가 배차 요청 (추가된 차량만) ──
+function generateExtraDispatchText() {
+  var sel = formatDate(currentDate);
+  var m = ('0'+(currentDate.getMonth()+1)).slice(-2);
+  var d = ('0'+currentDate.getDate()).slice(-2);
+  var filtered = LS_DATA.filter(function(v){ return v.date === sel; });
+  
+  // 추가 배차 항목만 (hoche > 3 또는 isNew=true)
+  var extra = filtered.filter(function(v){ return v.hoche > 3 || v.isNew; });
+  if (extra.length === 0) return null;
+  
+  var lines = [];
+  lines.push('안녕하세요. VF67 - ' + m + '/' + d + ' 추가 배차 요청 드립니다');
+  lines.push('');
+  
+  var seq = 1;
+  extra.forEach(function(v){
+    var hub = v.hub || '부천1 HUB';
+    var ton = v.ton || '5T';
+    var time = v.time || '13:00';
+    var hoche = v.hoche || '';
+    lines.push(seq + '. ' + hub + ' ' + ton + ' ' + time + ' ' + hoche + '호차');
+    seq++;
+  });
+  
+  lines.push('');
+  lines.push('상기와 같이 배차 진행 부탁드립니다');
+  return lines.join('\n');
+}
+
+function sendExtraDispatchRequest() {
+  saveDeletedPlaceholders();
+  var text = generateExtraDispatchText();
+  if (!text) {
+    alert('❌ 추가 배차 요청할 항목이 없습니다.\n➕ 추가 배차로 차량을 먼저 등록해주세요.');
+    return;
+  }
+  document.getElementById('dispatchModalTitle').textContent = '📤 추가 배차 요청 내용';
+  document.getElementById('dispatchTextDisplay').textContent = text;
+  document.getElementById('dispatchModal').style.display = 'flex';
+}
+
+// ── 모달 닫기 ──
+function closeDispatchModal() {
+  document.getElementById('dispatchModal').style.display = 'none';
+}
+
+// ── 클립보드 복사 ──
+function copyDispatchText() {
+  var text = document.getElementById('dispatchTextDisplay').textContent;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function(){
+      var btn = document.querySelector('#dispatchModal .modal-footer .btn-primary');
+      var orig = btn.textContent;
+      btn.textContent = '✅ 복사됨';
+      setTimeout(function(){ btn.textContent = orig; }, 1500);
+    }).catch(function(){
+      fallbackCopyDispatch(text);
+    });
+  } else {
+    fallbackCopyDispatch(text);
+  }
+}
+function fallbackCopyDispatch(text) {
+  var ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+  document.body.appendChild(ta); ta.select();
+  try {
+    document.execCommand('copy');
+    var btn = document.querySelector('#dispatchModal .modal-footer .btn-primary');
+    var orig = btn.textContent;
+    btn.textContent = '✅ 복사됨';
+    setTimeout(function(){ btn.textContent = orig; }, 1500);
+  } catch(e) { alert('📋 복사할 내용:\n\n' + text); }
+  document.body.removeChild(ta);
+}
+
+// ── 서버에서 삭제 상태 불러오기 ──
+function loadDeletedPlaceholders(callback) {
+  var sel = formatDate(currentDate);
+  fetch('/api/deleted-placeholders?date=' + sel)
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      window._deletedPlaceholders = data.deleted || {};
+      if (callback) callback();
+    })
+    .catch(function(){
+      window._deletedPlaceholders = {};
+      if (callback) callback();
+    });
+}
+
+// ── 초기화 ──
+updateDateDisplay();
+loadDeletedPlaceholders(function(){
+  loadDateData();
+});
+
+// 60초마다 1시간 경과 체크
+setInterval(checkElapsedCards, 60000);
+</script>
+</body>
+</html>
