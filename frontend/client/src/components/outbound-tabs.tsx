@@ -56,6 +56,12 @@ export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, 
     yesterday.setDate(yesterday.getDate() - 1);
     return yesterday.toISOString().split('T')[0];
   });
+  // 동기화 범위: 최근 14일 (빠진 날짜 자동 보완)
+  const syncStartDate = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 15); // 어제 기준 14일 전
+    return d.toISOString().split('T')[0];
+  })();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -146,7 +152,8 @@ export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, 
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
-          date: uploadDate,
+          start_date: syncStartDate,
+          end_date: uploadDate,
           url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQwqI0BG-d2aMrql7DK4fQQTjvu57VtToSLAkY_nq92a4Cg5GFVbIn6_IR7Fq6_O-2TloFSNlXT8ZWC/pub?gid=1152588885&single=true&output=csv'
         }),
       });

@@ -1,0 +1,2087 @@
+{
+  "meta": {
+    "source": "생산일지웹.xlsx",
+    "extracted": "2026-06-21",
+    "counts": {
+      "mold_master": 141,
+      "color_master": 36,
+      "production_rate": 112,
+      "eu_colors": 11,
+      "latest_plan_date": "2026-06-18",
+      "latest_plan_count": 37
+    }
+  },
+  "mold_master": {
+    "1": {
+      "id": 1,
+      "mold_number": "1",
+      "name_kr": "모던플러스 프레임",
+      "name_en": "Modern Plus Frame",
+      "name_th": "โมเดิร์นพลัสเฟรม",
+      "weight_g": 720
+    },
+    "101": {
+      "id": 105,
+      "mold_number": "101",
+      "name_kr": "미니해피 바디",
+      "name_en": "mini happy body",
+      "name_th": "มินิ แฮปปี้ บอดี้",
+      "weight_g": 235
+    },
+    "2": {
+      "id": 3,
+      "mold_number": "2",
+      "name_kr": "모던플러스 서랍",
+      "name_en": "Modern Plus Drawer",
+      "name_th": "ลิ้นชักโมเดิร์นพลัส",
+      "weight_g": 900
+    },
+    "3": {
+      "id": 4,
+      "mold_number": "3",
+      "name_kr": "모던플러스 블랑",
+      "name_en": "Modern Plus Blanc",
+      "name_th": "โมเดิร์น พลัส บลังค์",
+      "weight_g": 900
+    },
+    "4": {
+      "id": 5,
+      "mold_number": "4",
+      "name_kr": "모던플러스 상판",
+      "name_en": "Modern Plus Top Board",
+      "name_th": "แผ่นบนโมเดิร์นพลัส",
+      "weight_g": 700
+    },
+    "5": {
+      "id": 6,
+      "mold_number": "5",
+      "name_kr": "모던플러스 앞판",
+      "name_en": "Modern Plus front panel",
+      "name_th": "แผงด้านหน้าโมเดิร์นพลัส",
+      "weight_g": 400
+    },
+    "6": {
+      "id": 7,
+      "mold_number": "6",
+      "name_kr": "데이지 앞판",
+      "name_en": "Daisy Front Panel",
+      "name_th": "แผงด้านหน้าลายดอกเดซี่",
+      "weight_g": 400
+    },
+    "7": {
+      "id": 8,
+      "mold_number": "7",
+      "name_kr": "모던플러스 발",
+      "name_en": "Modern Plus Foot",
+      "name_th": "โมเดิร์นพลัสฟุต",
+      "weight_g": 40
+    },
+    "8": {
+      "id": 9,
+      "mold_number": "8",
+      "name_kr": "슬림 서랍장 서랍",
+      "name_en": "Slim Drawer Chest Drawer",
+      "name_th": "ลิ้นชักตู้ลิ้นชักแบบบาง",
+      "weight_g": 490
+    },
+    "801": {
+      "id": 10,
+      "mold_number": "801",
+      "name_kr": "슬림 서랍장 서랍 신규",
+      "name_en": "New Slim Drawer Chest Drawer",
+      "name_th": "ลิ้นชักตู้ลิ้นชักแบบบางใหม่",
+      "weight_g": 490
+    },
+    "9": {
+      "id": 11,
+      "mold_number": "9",
+      "name_kr": "슬림 서랍장 프레임",
+      "name_en": "slim dresser frame",
+      "name_th": "กรอบโต๊ะเครื่องแป้งเพรียวบาง",
+      "weight_g": 450
+    },
+    "901": {
+      "id": 12,
+      "mold_number": "901",
+      "name_kr": "슬림 서랍장 프레임 신규",
+      "name_en": "New Slim Dresser Frame",
+      "name_th": "กรอบโต๊ะเครื่องแป้งเพรียวบางใหม่",
+      "weight_g": 450
+    },
+    "10": {
+      "id": 13,
+      "mold_number": "10",
+      "name_kr": "슬립 서랍장 캡",
+      "name_en": "slip drawer caps",
+      "name_th": "ฝาปิดลิ้นชักกันลื่น",
+      "weight_g": 300
+    },
+    "11": {
+      "id": 14,
+      "mold_number": "11",
+      "name_kr": "슬림서랍장 바퀴",
+      "name_en": "slim chest of drawers wheels",
+      "name_th": "ล้อตู้ลิ้นชักแบบบาง",
+      "weight_g": null
+    },
+    "12": {
+      "id": 15,
+      "mold_number": "12",
+      "name_kr": "초대형 바디",
+      "name_en": "Extra Large Body",
+      "name_th": "ตัวใหญ่พิเศษ",
+      "weight_g": 900
+    },
+    "13": {
+      "id": 16,
+      "mold_number": "13",
+      "name_kr": "초대형 캡",
+      "name_en": "extra large cap",
+      "name_th": "ฝาครอบขนาดใหญ่พิเศษ",
+      "weight_g": 300
+    },
+    "14": {
+      "id": 17,
+      "mold_number": "14",
+      "name_kr": "해피 바디",
+      "name_en": "Happy Body",
+      "name_th": "ตัวแฮปปี้",
+      "weight_g": 900
+    },
+    "15": {
+      "id": 18,
+      "mold_number": "15",
+      "name_kr": "해피 캡",
+      "name_en": "happy cap",
+      "name_th": "ฝาครอบแฮปปี้",
+      "weight_g": 390
+    },
+    "16": {
+      "id": 19,
+      "mold_number": "16",
+      "name_kr": "손잡이(해피,초대형)",
+      "name_en": "Handle (happy, extra large)",
+      "name_th": "ที่จับ (แฮปปี้, ขนาดใหญ่พิเศษ)",
+      "weight_g": 50
+    },
+    "17": {
+      "id": 20,
+      "mold_number": "17",
+      "name_kr": "토이 바디",
+      "name_en": "Toy Body",
+      "name_th": "ตัวของเล่น",
+      "weight_g": 1500
+    },
+    "18": {
+      "id": 21,
+      "mold_number": "18",
+      "name_kr": "토이 손잡이",
+      "name_en": "Toy Handle",
+      "name_th": "ที่จับของเล่น",
+      "weight_g": 160
+    },
+    "19": {
+      "id": 22,
+      "mold_number": "19",
+      "name_kr": "일반 해피 바퀴",
+      "name_en": "Regular Happy Wheels",
+      "name_th": "ล้อแฮปปี้ทั่วไป",
+      "weight_g": 50
+    },
+    "20": {
+      "id": 23,
+      "mold_number": "20",
+      "name_kr": "오픈 바스켓",
+      "name_en": "Open Basket",
+      "name_th": "ตะกร้าเปิด",
+      "weight_g": 600
+    },
+    "21": {
+      "id": 24,
+      "mold_number": "21",
+      "name_kr": "오픈 바스켓 마개",
+      "name_en": "open basket closure",
+      "name_th": "เปิดปิดตะกร้า",
+      "weight_g": null
+    },
+    "22": {
+      "id": 25,
+      "mold_number": "22",
+      "name_kr": "에센셜 상판",
+      "name_en": "Essential Tops",
+      "name_th": "ท็อปที่จำเป็น",
+      "weight_g": 370
+    },
+    "23": {
+      "id": 26,
+      "mold_number": "23",
+      "name_kr": "에센셜 앞판",
+      "name_en": "Essential Front Panel",
+      "name_th": "แผงด้านหน้าที่จำเป็น",
+      "weight_g": 150
+    },
+    "232": {
+      "id": 27,
+      "mold_number": "232",
+      "name_kr": "데코스 앞판",
+      "name_en": "Deco front panel",
+      "name_th": "แผงด้านหน้าเดคโค",
+      "weight_g": 150
+    },
+    "24": {
+      "id": 28,
+      "mold_number": "24",
+      "name_kr": "라탄 기본형 앞판",
+      "name_en": "Rattan Basic Front Panel",
+      "name_th": "แผงด้านหน้าหวายแบบพื้นฐาน",
+      "weight_g": 125
+    },
+    "25": {
+      "id": 29,
+      "mold_number": "25",
+      "name_kr": "에센셜 프레임",
+      "name_en": "essential frame",
+      "name_th": "กรอบที่จำเป็น",
+      "weight_g": 310
+    },
+    "26": {
+      "id": 30,
+      "mold_number": "26",
+      "name_kr": "에센셜 서랍",
+      "name_en": "essential drawer",
+      "name_th": "ลิ้นชักที่จำเป็น",
+      "weight_g": 600
+    },
+    "27": {
+      "id": 31,
+      "mold_number": "27",
+      "name_kr": "에센셜 기둥",
+      "name_en": "Essential Pillar",
+      "name_th": "เสาที่จำเป็น",
+      "weight_g": 130
+    },
+    "28": {
+      "id": 32,
+      "mold_number": "28",
+      "name_kr": "에센셜 발",
+      "name_en": "essential feet",
+      "name_th": "เท้าที่สำคัญ",
+      "weight_g": 110
+    },
+    "29": {
+      "id": 33,
+      "mold_number": "29",
+      "name_kr": "와이드 상판",
+      "name_en": "Wide Top Board",
+      "name_th": "แผ่นบนแบบกว้าง",
+      "weight_g": 680
+    },
+    "30": {
+      "id": 34,
+      "mold_number": "30",
+      "name_kr": "와이드 앞판",
+      "name_en": "Wide Front Panel",
+      "name_th": "แผงหน้ากว้างที่สามารถเปลี่ยนได้ของตู้ลิ้นชัก",
+      "weight_g": 280
+    },
+    "31": {
+      "id": 35,
+      "mold_number": "31",
+      "name_kr": "와이드 프레임",
+      "name_en": "Wide Frame",
+      "name_th": "กรอบกว้าง",
+      "weight_g": 410
+    },
+    "32": {
+      "id": 36,
+      "mold_number": "32",
+      "name_kr": "와이드 서랍",
+      "name_en": "wide drawer",
+      "name_th": "ลิ้นชักกว้าง",
+      "weight_g": 830
+    },
+    "33": {
+      "id": 37,
+      "mold_number": "33",
+      "name_kr": "슬림형 상판",
+      "name_en": "Slim top plate",
+      "name_th": "แผ่นด้านบนบางเฉียบ",
+      "weight_g": null
+    },
+    "34": {
+      "id": 38,
+      "mold_number": "34",
+      "name_kr": "슬림형 앞판",
+      "name_en": "slim front plate",
+      "name_th": "แผ่นหน้าเพรียวบาง",
+      "weight_g": null
+    },
+    "36": {
+      "id": 39,
+      "mold_number": "36",
+      "name_kr": "슬림형 서랍",
+      "name_en": "slim drawer",
+      "name_th": "ลิ้นชักเพรียวบาง",
+      "weight_g": null
+    },
+    "37": {
+      "id": 40,
+      "mold_number": "37",
+      "name_kr": "어반 옷걸이",
+      "name_en": "urban hanger",
+      "name_th": "ไม้แขวนเสื้อในเมือง",
+      "weight_g": 30
+    },
+    "35": {
+      "id": 41,
+      "mold_number": "35",
+      "name_kr": "슬림형 프레임",
+      "name_en": "slim frame",
+      "name_th": "กรอบบาง",
+      "weight_g": null
+    },
+    "38": {
+      "id": 42,
+      "mold_number": "38",
+      "name_kr": "러블리 옷걸이",
+      "name_en": "Lovely Hanger",
+      "name_th": "ไม้แขวนเสื้อน่ารัก",
+      "weight_g": 40
+    },
+    "39": {
+      "id": 43,
+      "mold_number": "39",
+      "name_kr": "비행기 옷걸이",
+      "name_en": "airplane hanger",
+      "name_th": "ไม้แขวนเสื้อรูปเครื่องบิน",
+      "weight_g": 40
+    },
+    "40": {
+      "id": 44,
+      "mold_number": "40",
+      "name_kr": "로코스 L",
+      "name_en": "Locos L",
+      "name_th": "Locos L",
+      "weight_g": 600
+    },
+    "41": {
+      "id": 45,
+      "mold_number": "41",
+      "name_kr": "로코스 M",
+      "name_en": "Locos M",
+      "name_th": "Locos M",
+      "weight_g": 500
+    },
+    "42": {
+      "id": 46,
+      "mold_number": "42",
+      "name_kr": "로코스 S",
+      "name_en": "Locos S",
+      "name_th": "Locos S",
+      "weight_g": 300
+    },
+    "43": {
+      "id": 47,
+      "mold_number": "43",
+      "name_kr": "로코스 캡 L,M",
+      "name_en": "Locos CAP - L",
+      "name_th": "Locos CAP - L",
+      "weight_g": 210
+    },
+    "44": {
+      "id": 48,
+      "mold_number": "44",
+      "name_kr": "로코스 캡 S",
+      "name_en": "Locos CAP - S",
+      "name_th": "Locos CAP - S",
+      "weight_g": 100
+    },
+    "45": {
+      "id": 49,
+      "mold_number": "45",
+      "name_kr": "레브 스토리지 L",
+      "name_en": "Rev Storage L",
+      "name_th": "ที่เก็บของ Rev ขนาด L",
+      "weight_g": 600
+    },
+    "46": {
+      "id": 50,
+      "mold_number": "46",
+      "name_kr": "레브 스토리지 M",
+      "name_en": "Rev Storage M",
+      "name_th": "ที่เก็บของ Rev ขนาด M",
+      "weight_g": 450
+    },
+    "47": {
+      "id": 51,
+      "mold_number": "47",
+      "name_kr": "레브 스토리지 캡",
+      "name_en": "rev storage cap",
+      "name_th": "ฝาปิดที่เก็บของ Rev",
+      "weight_g": 180
+    },
+    "48": {
+      "id": 52,
+      "mold_number": "48",
+      "name_kr": "레브 레일",
+      "name_en": "rev rail",
+      "name_th": "ราวเลื่อน Rev",
+      "weight_g": null
+    },
+    "49": {
+      "id": 53,
+      "mold_number": "49",
+      "name_kr": "모니카",
+      "name_en": "monica",
+      "name_th": "โมนิก้า",
+      "weight_g": 800
+    },
+    "50": {
+      "id": 54,
+      "mold_number": "50",
+      "name_kr": "모니카 캡",
+      "name_en": "monica cap",
+      "name_th": "ฝาปิดโมนิก้า",
+      "weight_g": 400
+    },
+    "51": {
+      "id": 55,
+      "mold_number": "51",
+      "name_kr": "모니카 핸들",
+      "name_en": "monica handle",
+      "name_th": "ที่จับโมนิก้า",
+      "weight_g": 160
+    },
+    "52": {
+      "id": 56,
+      "mold_number": "52",
+      "name_kr": "모니카 똑딱이",
+      "name_en": "Monica Snap Button",
+      "name_th": "กระดุมแป๊กโมนิก้า",
+      "weight_g": null
+    },
+    "53": {
+      "id": 57,
+      "mold_number": "53",
+      "name_kr": "오픈 바스켓 파이프",
+      "name_en": "open basket pipe",
+      "name_th": "เปิดท่อตะกร้า",
+      "weight_g": 100
+    },
+    "54": {
+      "id": 58,
+      "mold_number": "54",
+      "name_kr": "중간연결봉",
+      "name_en": "middle connecting rod",
+      "name_th": "ก้านสูบกลาง",
+      "weight_g": 30
+    },
+    "55": {
+      "id": 59,
+      "mold_number": "55",
+      "name_kr": "바퀴 연결봉",
+      "name_en": "wheel connecting rod",
+      "name_th": "ก้านสูบล้อ",
+      "weight_g": 30
+    },
+    "56": {
+      "id": 60,
+      "mold_number": "56",
+      "name_kr": "바퀴",
+      "name_en": "wheel",
+      "name_th": "ล้อ",
+      "weight_g": 300
+    },
+    "57": {
+      "id": 61,
+      "mold_number": "57",
+      "name_kr": "리빙카트 바구니 대",
+      "name_en": "Living Cart Basket Stand",
+      "name_th": "ขาตั้งตะกร้ารถเข็นนั่งเล่น",
+      "weight_g": 650
+    },
+    "58": {
+      "id": 62,
+      "mold_number": "58",
+      "name_kr": "리빙카트 바구니 소",
+      "name_en": "Living Cart Basket Small",
+      "name_th": "รถเข็นนั่งเล่น ตะกร้าเล็ก",
+      "weight_g": 41
+    },
+    "59": {
+      "id": 63,
+      "mold_number": "59",
+      "name_kr": "리빙카트 손잡이",
+      "name_en": "Living cart handle",
+      "name_th": "ที่จับรถเข็นนั่งเล่น",
+      "weight_g": 190
+    },
+    "60": {
+      "id": 64,
+      "mold_number": "60",
+      "name_kr": "리빙카트 바퀴대, 연결봉",
+      "name_en": "Living cart wheel base, connecting rod",
+      "name_th": "ฐานล้อรถเข็นนั่งเล่นก้านสูบ",
+      "weight_g": 40
+    },
+    "61": {
+      "id": 65,
+      "mold_number": "61",
+      "name_kr": "리빙카트 마개",
+      "name_en": "Living Cart Stopper",
+      "name_th": "จุกปิดรถเข็นมีชีวิต",
+      "weight_g": 50
+    },
+    "62": {
+      "id": 66,
+      "mold_number": "62",
+      "name_kr": "리빙카트 바퀴",
+      "name_en": "Living Cart Wheels",
+      "name_th": "ล้อรถเข็นที่อยู่อาศัย",
+      "weight_g": null
+    },
+    "63": {
+      "id": 67,
+      "mold_number": "63",
+      "name_kr": "슬림웨건 상판",
+      "name_en": "Slim wagon top",
+      "name_th": "ด้านบนรถเข็นแบบบาง",
+      "weight_g": 270
+    },
+    "64": {
+      "id": 68,
+      "mold_number": "64",
+      "name_kr": "슬림웨건 바구니",
+      "name_en": "Slim Wagon Basket",
+      "name_th": "ตะกร้ารถเข็นแบบบาง",
+      "weight_g": 330
+    },
+    "65": {
+      "id": 69,
+      "mold_number": "65",
+      "name_kr": "펭귄 머리",
+      "name_en": "penguin head",
+      "name_th": "หัวนกเพนกวิน",
+      "weight_g": 450
+    },
+    "66": {
+      "id": 70,
+      "mold_number": "66",
+      "name_kr": "펭귄 얼굴",
+      "name_en": "Penguin Face",
+      "name_th": "หน้านกเพนกวิน",
+      "weight_g": 210
+    },
+    "67": {
+      "id": 71,
+      "mold_number": "67",
+      "name_kr": "펭귄 손잡이",
+      "name_en": "Penguin Handle",
+      "name_th": "ที่จับรูปนกเพนกวิน",
+      "weight_g": 100
+    },
+    "68": {
+      "id": 72,
+      "mold_number": "68",
+      "name_kr": "펭귄 귀, 눈",
+      "name_en": "Penguin ears, eyes",
+      "name_th": "หูตาเพนกวิน",
+      "weight_g": 50
+    },
+    "69": {
+      "id": 73,
+      "mold_number": "69",
+      "name_kr": "펭귄 바구니",
+      "name_en": "penguin basket",
+      "name_th": "ตะกร้านกเพนกวิน",
+      "weight_g": 500
+    },
+    "70": {
+      "id": 74,
+      "mold_number": "70",
+      "name_kr": "에코빈 바디",
+      "name_en": "Ecobin Body",
+      "name_th": "ตัวถังขยะรีไซเคิล",
+      "weight_g": null
+    },
+    "71": {
+      "id": 75,
+      "mold_number": "71",
+      "name_kr": "에코빈 캡",
+      "name_en": "ecobin cap",
+      "name_th": "หมวกอีโคบิน",
+      "weight_g": null
+    },
+    "72": {
+      "id": 76,
+      "mold_number": "72",
+      "name_kr": "야채 바구니",
+      "name_en": "vegetable basket",
+      "name_th": "ตะกร้าผัก",
+      "weight_g": 350
+    },
+    "73": {
+      "id": 77,
+      "mold_number": "73",
+      "name_kr": "후라이펜",
+      "name_en": "frying pen",
+      "name_th": "ปากกาทอด",
+      "weight_g": null
+    },
+    "74": {
+      "id": 78,
+      "mold_number": "74",
+      "name_kr": "메인식기",
+      "name_en": "Main Tableware",
+      "name_th": "ชุดอาหารหลัก",
+      "weight_g": null
+    },
+    "75": {
+      "id": 79,
+      "mold_number": "75",
+      "name_kr": "보조 식기",
+      "name_en": "secondary tableware",
+      "name_th": "ชุดอาหารรอง",
+      "weight_g": null
+    },
+    "76": {
+      "id": 80,
+      "mold_number": "76",
+      "name_kr": "수저, 포크",
+      "name_en": "spoon, fork",
+      "name_th": "ช้อน, ส้อม",
+      "weight_g": null
+    },
+    "77": {
+      "id": 81,
+      "mold_number": "77",
+      "name_kr": "토들러 컵",
+      "name_en": "Toddler Cup",
+      "name_th": "แก้วสำหรับเด็กวัยหัดเดิน",
+      "weight_g": null
+    },
+    "78": {
+      "id": 82,
+      "mold_number": "78",
+      "name_kr": "스마트 트레이닝 컵",
+      "name_en": "smart training cup",
+      "name_th": "ถ้วยฝึกซ้อมอัจฉริยะ",
+      "weight_g": 100
+    },
+    "79": {
+      "id": 83,
+      "mold_number": "79",
+      "name_kr": "스마트 트레이닝 컵 캡",
+      "name_en": "smart training cup cap",
+      "name_th": "หมวกแก๊ปฝึกซ้อมอัจฉริยะ",
+      "weight_g": 50
+    },
+    "80": {
+      "id": 84,
+      "mold_number": "80",
+      "name_kr": "스마트 트레이닝 컵 마개",
+      "name_en": "Smart Training Cup Stopper",
+      "name_th": "ฝาปิดถ้วยฝึกอัจฉริยะ",
+      "weight_g": null
+    },
+    "81": {
+      "id": 85,
+      "mold_number": "81",
+      "name_kr": "스마트 트레이닝 컵 손잡이",
+      "name_en": "Smart Training Cup Handle",
+      "name_th": "ที่จับถ้วยฝึกอัจฉริยะ",
+      "weight_g": null
+    },
+    "82": {
+      "id": 86,
+      "mold_number": "82",
+      "name_kr": "오이캡 육각",
+      "name_en": "cucumber cap hexagon",
+      "name_th": "ฝาปิดแตงกวาหกเหลี่ยม",
+      "weight_g": null
+    },
+    "83": {
+      "id": 87,
+      "mold_number": "83",
+      "name_kr": "오이캡",
+      "name_en": "cucumber cap",
+      "name_th": "หมวกแตงกวา",
+      "weight_g": null
+    },
+    "84": {
+      "id": 88,
+      "mold_number": "84",
+      "name_kr": "슬라이딩 스텝 L",
+      "name_en": "sliding step L",
+      "name_th": "เลื่อนขั้นตอน L",
+      "weight_g": 250
+    },
+    "85": {
+      "id": 89,
+      "mold_number": "85",
+      "name_kr": "슬라이딩 스텝 S",
+      "name_en": "Sliding Step S",
+      "name_th": "ขั้นตอนการเลื่อน S",
+      "weight_g": 150
+    },
+    "86": {
+      "id": 90,
+      "mold_number": "86",
+      "name_kr": "해피 프레임 상판",
+      "name_en": "Happy Frame Top Board",
+      "name_th": "แผ่นบนกรอบแฮปปี้",
+      "weight_g": null
+    },
+    "87": {
+      "id": 91,
+      "mold_number": "87",
+      "name_kr": "해피 프레임 프레임",
+      "name_en": "Happy Frame Frame",
+      "name_th": "กรอบของกรอบแฮปปี้",
+      "weight_g": null
+    },
+    "88": {
+      "id": 92,
+      "mold_number": "88",
+      "name_kr": "해피 프레임 기둥",
+      "name_en": "Happy Frame Pillar",
+      "name_th": "เสากรอบแฮปปี้",
+      "weight_g": null
+    },
+    "89": {
+      "id": 93,
+      "mold_number": "89",
+      "name_kr": "해피 프레임 앞판",
+      "name_en": "Happy Frame Front Panel",
+      "name_th": "แผงด้านหน้าเฟรมแฮปปี้",
+      "weight_g": null
+    },
+    "90": {
+      "id": 94,
+      "mold_number": "90",
+      "name_kr": "스마일 손잡이",
+      "name_en": "smile handle",
+      "name_th": "ที่จับยิ้ม",
+      "weight_g": null
+    },
+    "91": {
+      "id": 95,
+      "mold_number": "91",
+      "name_kr": "키즈 손잡이",
+      "name_en": "kids handle",
+      "name_th": "เด็กจัดการ",
+      "weight_g": 60
+    },
+    "92": {
+      "id": 96,
+      "mold_number": "92",
+      "name_kr": "원형 손잡이",
+      "name_en": "Round Handle",
+      "name_th": "ที่จับทรงกลม",
+      "weight_g": null
+    },
+    "93": {
+      "id": 97,
+      "mold_number": "93",
+      "name_kr": "소변기",
+      "name_en": "Urinal",
+      "name_th": "โถปัสสาวะ",
+      "weight_g": 300
+    },
+    "94": {
+      "id": 98,
+      "mold_number": "94",
+      "name_kr": "꼬마 변기",
+      "name_en": "kid potty",
+      "name_th": "กระโถนเด็ก",
+      "weight_g": 500
+    },
+    "95": {
+      "id": 99,
+      "mold_number": "95",
+      "name_kr": "스틸렉",
+      "name_en": "Stilec",
+      "name_th": "ชั้นวางเหล็ก",
+      "weight_g": null
+    },
+    "96": {
+      "id": 100,
+      "mold_number": "96",
+      "name_kr": "펭귄발(홀캡 고리)",
+      "name_en": "Penguin Foot (Hole Cap Ring)",
+      "name_th": "เท้าเพนกวิน (ห่วงฝาปิดรู)",
+      "weight_g": 160
+    },
+    "97": {
+      "id": 101,
+      "mold_number": "97",
+      "name_kr": "젖병건조대",
+      "name_en": "baby bottle drying rack",
+      "name_th": "ชั้นตากขวดนม",
+      "weight_g": null
+    },
+    "98": {
+      "id": 102,
+      "mold_number": "98",
+      "name_kr": "젖병건조대 핀",
+      "name_en": "Baby Bottle Drying Rack Pin",
+      "name_th": "พินชั้นตากขวดนม",
+      "weight_g": null
+    },
+    "99": {
+      "id": 103,
+      "mold_number": "99",
+      "name_kr": "옷정리 트레이",
+      "name_en": "Clothes Organizing Tray",
+      "name_th": "ถาดจัดระเบียบเสื้อผ้า",
+      "weight_g": 30
+    },
+    "100": {
+      "id": 104,
+      "mold_number": "100",
+      "name_kr": "우드 고정대",
+      "name_en": "wood fixture",
+      "name_th": "อุปกรณ์ยึดไม้",
+      "weight_g": null
+    },
+    "102": {
+      "id": 106,
+      "mold_number": "102",
+      "name_kr": "미니해피 캡",
+      "name_en": "Mini Happy Cap",
+      "name_th": "ฝาปิดมินิแฮปปี้",
+      "weight_g": 160
+    },
+    "103": {
+      "id": 107,
+      "mold_number": "103",
+      "name_kr": "먼지 커버",
+      "name_en": "dust cover",
+      "name_th": "ฝาครอบกันฝุ่น",
+      "weight_g": null
+    },
+    "104": {
+      "id": 108,
+      "mold_number": "104",
+      "name_kr": "핸들러 바스켓 와이드(L)",
+      "name_en": "Handler Basket Wide (L)",
+      "name_th": "ตะก",
+      "weight_g": 220
+    },
+    "105": {
+      "id": 109,
+      "mold_number": "105",
+      "name_kr": "핸들러 바스켓 베이직(M)",
+      "name_en": "Handler Basket Basic (M)",
+      "name_th": "ตะกร้าแฮนด์เลอร์ พื้นฐาน (M)",
+      "weight_g": 180
+    },
+    "106": {
+      "id": 110,
+      "mold_number": "106",
+      "name_kr": "핸들러 바스켓 슬림(S)",
+      "name_en": "Handler Basket Slim (S)",
+      "name_th": "ตะกร้าแฮนด์เลอร์ บาง (S)",
+      "weight_g": 150
+    },
+    "107": {
+      "id": 111,
+      "mold_number": "107",
+      "name_kr": "로코스 XS",
+      "name_en": "Locos XS",
+      "name_th": "โลคอส XS",
+      "weight_g": 160
+    },
+    "108": {
+      "id": 112,
+      "mold_number": "108",
+      "name_kr": "슬림 우드 부속",
+      "name_en": "Slim wood attachment",
+      "name_th": "อุปกรณ์เสริมไม้บาง",
+      "weight_g": null
+    },
+    "109": {
+      "id": 113,
+      "mold_number": "109",
+      "name_kr": "템바보드",
+      "name_en": "Themba Board",
+      "name_th": "กระดานเทมบา",
+      "weight_g": null
+    },
+    "110": {
+      "id": 114,
+      "mold_number": "110",
+      "name_kr": "바퀴 고정핀",
+      "name_en": "Wheel fixing pin",
+      "name_th": "หมุดยึดล้อ",
+      "weight_g": null
+    },
+    "111": {
+      "id": 115,
+      "mold_number": "111",
+      "name_kr": "어반 옷걸이 신규 금형",
+      "name_en": "Urban hanger new mold",
+      "name_th": "แม่พิมพ์ใหม่ไม้แขวนเสื้อเมือง",
+      "weight_g": 30
+    },
+    "112": {
+      "id": 116,
+      "mold_number": "112",
+      "name_kr": "어반 와이드 옷걸이",
+      "name_en": "Urban Wide Hanger",
+      "name_th": "ไม้แขวนเสื้อกว้างแบบเมือง",
+      "weight_g": null
+    },
+    "113": {
+      "id": 117,
+      "mold_number": "113",
+      "name_kr": "해피프레임 서랍",
+      "name_en": "Happy Frame Drawer",
+      "name_th": "ลิ้นชักกรอบแฮปปี้",
+      "weight_g": null
+    },
+    "114": {
+      "id": 118,
+      "mold_number": "114",
+      "name_kr": "데크타일",
+      "name_en": "Deck tiles",
+      "name_th": "กระเบื้องดาดฟ้า",
+      "weight_g": null
+    },
+    "115": {
+      "id": 119,
+      "mold_number": "115",
+      "name_kr": "목 늘림 방지 옷걸이(밸런스 옷걸이)",
+      "name_en": "Anti-stretch hanger (balance hanger)",
+      "name_th": "ไม้แขวนเสื้อกันยืด (ไม้แขวนเสื้อสมดุล)",
+      "weight_g": null
+    },
+    "116": {
+      "id": 120,
+      "mold_number": "116",
+      "name_kr": "맥스 서랍장 프레임",
+      "name_en": "Max chest of drawers frame",
+      "name_th": "โครงตู้ลิ้นชักแม็กซ์",
+      "weight_g": null
+    },
+    "117": {
+      "id": 121,
+      "mold_number": "117",
+      "name_kr": "맥스 서랍장 상판",
+      "name_en": "Max dresser top",
+      "name_th": "ท็อปตู้เสื้อผ้าแม็กซ์",
+      "weight_g": null
+    },
+    "118": {
+      "id": 122,
+      "mold_number": "118",
+      "name_kr": "맥스 서랍장 서랍",
+      "name_en": "Max dresser drawers",
+      "name_th": "ลิ้นชักตู้เสื้อผ้าแม็กซ์",
+      "weight_g": null
+    },
+    "119": {
+      "id": 123,
+      "mold_number": "119",
+      "name_kr": "펭귄 고리",
+      "name_en": "Penguin ring",
+      "name_th": "ห่วงเพนกวิน",
+      "weight_g": null
+    },
+    "120": {
+      "id": 124,
+      "mold_number": "120",
+      "name_kr": "바퀴핀",
+      "name_en": "Wheel pin",
+      "name_th": "หมุดล้อ",
+      "weight_g": null
+    },
+    "121": {
+      "id": 125,
+      "mold_number": "121",
+      "name_kr": "탑백 72L",
+      "name_en": "Top Bag 72L",
+      "name_th": "กระเป๋าท็อป 72 ลิตร",
+      "weight_g": null
+    },
+    "122": {
+      "id": 126,
+      "mold_number": "122",
+      "name_kr": "탑백 52L",
+      "name_en": "Top Bag 52L",
+      "name_th": "กระเป๋าท็อป 52 ลิตร",
+      "weight_g": null
+    },
+    "123": {
+      "id": 127,
+      "mold_number": "123",
+      "name_kr": "탑백 24L",
+      "name_en": "Top Bag 24L",
+      "name_th": "กระเป๋าท็อป 24 ลิตร",
+      "weight_g": null
+    },
+    "124": {
+      "id": 128,
+      "mold_number": "124",
+      "name_kr": "탑백 72L,52L 캡",
+      "name_en": "Top bag 72L/52L cap",
+      "name_th": "ฝาปิดกระเป๋าท็อป 72 ลิตร/52 ลิตร",
+      "weight_g": null
+    },
+    "125": {
+      "id": 129,
+      "mold_number": "125",
+      "name_kr": "탑백 24L 캡",
+      "name_en": "Top Bag 24L Cap",
+      "name_th": "ฝาปิดกระเป๋าท็อป 24 ลิตร",
+      "weight_g": null
+    },
+    "126": {
+      "id": 130,
+      "mold_number": "126",
+      "name_kr": "북트롤리 상판(분리)",
+      "name_en": "Book trolley top (separated)",
+      "name_th": "ด้านบนรถเข็นหนังสือ (แยกส่วน)",
+      "weight_g": null
+    },
+    "127": {
+      "id": 131,
+      "mold_number": "127",
+      "name_kr": "북트롤리 중간판(삼각)",
+      "name_en": "Book trolley middle plate (triangular)",
+      "name_th": "แผ่นกลางรถเข็นหนังสือ (สามเหลี่ยม)",
+      "weight_g": null
+    },
+    "128": {
+      "id": 132,
+      "mold_number": "128",
+      "name_kr": "북트롤리 하판(사각)",
+      "name_en": "Book trolley lower plate (square)",
+      "name_th": "แผ่นล่างรถเข็นหนังสือ (สี่เหลี่ยม)",
+      "weight_g": null
+    },
+    "129": {
+      "id": 133,
+      "mold_number": "129",
+      "name_kr": "북트롤리 연결기둥",
+      "name_en": "Book trolley connection pillar",
+      "name_th": "เสาเชื่อมต่อรถเข็นหนังสือ",
+      "weight_g": null
+    },
+    "130": {
+      "id": 134,
+      "mold_number": "130",
+      "name_kr": "북트롤리 바퀴 연결봉(하단받침)",
+      "name_en": "Book trolley wheel connecting rod (bottom support)",
+      "name_th": "แกนเชื่อมต่อล้อรถเข็นหนังสือ (ฐานรองด้านล่าง)",
+      "weight_g": null
+    },
+    "131": {
+      "id": 135,
+      "mold_number": "131",
+      "name_kr": "북트롤리 마개",
+      "name_en": "Book trolley stopper",
+      "name_th": "ที่หยุดรถเข็นหนังสือ",
+      "weight_g": null
+    },
+    "132": {
+      "id": 136,
+      "mold_number": "132",
+      "name_kr": "와이드 우드 프레임",
+      "name_en": "Wide wood frame",
+      "name_th": "กรอบไม้กว้าง",
+      "weight_g": null
+    },
+    "133": {
+      "id": 137,
+      "mold_number": "133",
+      "name_kr": "일반형 우드 프레임",
+      "name_en": "Standard wood frame",
+      "name_th": "กรอบไม้มาตรฐาน",
+      "weight_g": null
+    },
+    "134": {
+      "id": 138,
+      "mold_number": "134",
+      "name_kr": "모던 플러스 라탄 앞판",
+      "name_en": "Modern Plus Rattan Front Panel",
+      "name_th": "แผงด้านหน้าหวายโมเดิร์น พลัส (Phaeng dan na khong wai modern plus)",
+      "weight_g": null
+    },
+    "135": {
+      "id": 138,
+      "mold_number": "135",
+      "name_kr": "이유",
+      "name_en": "EU",
+      "name_th": "",
+      "weight_g": null
+    },
+    "136": {
+      "id": 138,
+      "mold_number": "136",
+      "name_kr": "이유 기둥",
+      "name_en": "EU pillar",
+      "name_th": "EU เสา",
+      "weight_g": null
+    },
+    "137": {
+      "id": 139,
+      "mold_number": "137",
+      "name_kr": "바지걸이",
+      "name_en": "trouser hanger",
+      "name_th": "ไม้แขวนกางเกง",
+      "weight_g": null
+    },
+    "138": {
+      "id": 140,
+      "mold_number": "138",
+      "name_kr": "몽드 슬림 유아동 옷걸이",
+      "name_en": "Monde Slim Kids & Toddler Hanger",
+      "name_th": "ไม้แขวนเสื้อเด็กแบบสลิม Monde",
+      "weight_g": null
+    }
+  },
+  "color_master": {
+    "GRAY 9097": {
+      "name_kr": "",
+      "name_en": "GRAY1-CAP(GRAY1)"
+    },
+    "GRAY 11215-1": {
+      "name_kr": "그레이2",
+      "name_en": "Extra Large Body (Gray2) Handle-ivory"
+    },
+    "GRAY 9023": {
+      "name_kr": "그레이3",
+      "name_en": "Gray3"
+    },
+    "GREEN 3746EQ": {
+      "name_kr": "그린(파스텔)",
+      "name_en": "Green"
+    },
+    "GRAY 9091": {
+      "name_kr": "",
+      "name_en": "Decos NAVY1"
+    },
+    "BLUE 20311": {
+      "name_kr": "",
+      "name_en": "Decos NAVY2"
+    },
+    "DARK 9022": {
+      "name_kr": "다크 투명",
+      "name_en": "Dark O"
+    },
+    "GREEN 7080": {
+      "name_kr": "",
+      "name_en": "Simple Mint1"
+    },
+    "GREEN 30072": {
+      "name_kr": "민트2",
+      "name_en": "Mint2"
+    },
+    "VIOLET 8176": {
+      "name_kr": "바이올렛",
+      "name_en": "Violet"
+    },
+    "BROWN 11-578": {
+      "name_kr": "베이지",
+      "name_en": "Baige"
+    },
+    "BROWN 11-573": {
+      "name_kr": "",
+      "name_en": "Ratan Brown"
+    },
+    "Brown 4142": {
+      "name_kr": "브라운(다크)",
+      "name_en": "Dark Brown"
+    },
+    "-": {
+      "name_kr": "블루(파스텔)",
+      "name_en": "BLUE(B2)"
+    },
+    "BLUE 2083": {
+      "name_kr": "블루(모던)",
+      "name_en": "Extra Large Body (Blue3) Handle-ivory"
+    },
+    "IVORY 1060": {
+      "name_kr": "",
+      "name_en": "IVORY-CAP(O)"
+    },
+    "IVORY 5516-2": {
+      "name_kr": "",
+      "name_en": "IVORY2-Daiso"
+    },
+    "YELLOW 4414PQ": {
+      "name_kr": "옐로우(파스텔)",
+      "name_en": "Yello"
+    },
+    "ORANGE 6565": {
+      "name_kr": "오렌지",
+      "name_en": "Orange"
+    },
+    "PINK 6078": {
+      "name_kr": "핑크(모던)",
+      "name_en": "Extra Large Body (PINK3) Handle-ivory"
+    },
+    "PINK 7416PQ": {
+      "name_kr": "핑크(파스텔)",
+      "name_en": "Pink(P2)"
+    },
+    "WHITE 180": {
+      "name_kr": "",
+      "name_en": "WHITE-CAP(O)"
+    },
+    "IVORY 1154": {
+      "name_kr": "화이트2",
+      "name_en": "WHITE2"
+    },
+    "DARK GREEN 7157": {
+      "name_kr": "그린(다크)",
+      "name_en": "Dark Green"
+    },
+    "GRAY-9091": {
+      "name_kr": "네이비(브리다)",
+      "name_en": "Navy(BRIDA)"
+    },
+    "ORANGE MOPG-068 MC 0325": {
+      "name_kr": "오렌지(브리다)",
+      "name_en": "Orange(BRIDA)"
+    },
+    "GREEN 7169": {
+      "name_kr": "카키(브리다)",
+      "name_en": "Kaki(BRIDA)"
+    },
+    "YELLOW 3089": {
+      "name_kr": "옐로우(브리다)",
+      "name_en": "Yello(BRIDA)"
+    },
+    "R601": {
+      "name_kr": "",
+      "name_en": "O-CAP(O)"
+    },
+    "YELLO - 3093": {
+      "name_kr": "버터",
+      "name_en": "Extra Large Body (Butter) Handle-ivory"
+    },
+    "GRAY 150520": {
+      "name_kr": "그레이4",
+      "name_en": "Gray4"
+    },
+    "sample": {
+      "name_kr": "샘플",
+      "name_en": "sample"
+    },
+    "RED 2259": {
+      "name_kr": "비비드 레드",
+      "name_en": "EU RED"
+    },
+    "BLUE 3847": {
+      "name_kr": "비비드 블루",
+      "name_en": "EU BLUE"
+    },
+    "YELLO 4338": {
+      "name_kr": "비비드 옐로우",
+      "name_en": "EU YELLO"
+    },
+    "WHITE-25+IVORY-25": {
+      "name_kr": "",
+      "name_en": "MIX 50"
+    }
+  },
+  "production_rate": {
+    "꼬마 변기": {
+      "hourly_rate": 34.5
+    },
+    "데이지 앞판": {
+      "hourly_rate": 56.0
+    },
+    "데크타일": {
+      "hourly_rate": 94.9
+    },
+    "라탄 기본형 앞판": {
+      "hourly_rate": 77.5
+    },
+    "러블리 옷걸이": {
+      "hourly_rate": 89.4
+    },
+    "레브 스토리지 L": {
+      "hourly_rate": 64.9
+    },
+    "레브 스토리지 M": {
+      "hourly_rate": 73.1
+    },
+    "로코스 L": {
+      "hourly_rate": 71.2
+    },
+    "로코스 M": {
+      "hourly_rate": 83.2
+    },
+    "로코스 S": {
+      "hourly_rate": 82.3
+    },
+    "로코스 XS": {
+      "hourly_rate": 96.1
+    },
+    "로코스 캡 L,M": {
+      "hourly_rate": 98.0
+    },
+    "로코스 캡 S": {
+      "hourly_rate": 78.7
+    },
+    "리빙카트 바구니 대": {
+      "hourly_rate": 52.0
+    },
+    "리빙카트 바구니 소": {
+      "hourly_rate": 72.8
+    },
+    "리빙카트 바퀴": {
+      "hourly_rate": 65.1
+    },
+    "리빙카트 손잡이": {
+      "hourly_rate": 52.0
+    },
+    "맥스 서랍장 상판": {
+      "hourly_rate": 80.0
+    },
+    "맥스 서랍장 서랍": {
+      "hourly_rate": 62.8
+    },
+    "맥스 서랍장 프레임": {
+      "hourly_rate": 60.1
+    },
+    "먼지 커버": {
+      "hourly_rate": 107.3
+    },
+    "모니카 캡": {
+      "hourly_rate": 87.0
+    },
+    "모던플러스 발": {
+      "hourly_rate": 80.9
+    },
+    "모던플러스 블랑": {
+      "hourly_rate": 51.7
+    },
+    "모던플러스 상판": {
+      "hourly_rate": 64.7
+    },
+    "모던플러스 서랍": {
+      "hourly_rate": 54.9
+    },
+    "모던플러스 앞판": {
+      "hourly_rate": 48.2
+    },
+    "모던플러스 프레임": {
+      "hourly_rate": null
+    },
+    "목 늘림 방지 옷걸이(밸런스 옷걸이)": {
+      "hourly_rate": null
+    },
+    "미니해피 바디": {
+      "hourly_rate": 67.4
+    },
+    "미정": {
+      "hourly_rate": null
+    },
+    "바퀴": {
+      "hourly_rate": 84.1
+    },
+    "바퀴 고정핀": {
+      "hourly_rate": 65.4
+    },
+    "바퀴 연결봉": {
+      "hourly_rate": 116.6
+    },
+    "바퀴핀": {
+      "hourly_rate": 199.7
+    },
+    "북트롤리 마개": {
+      "hourly_rate": 69.4
+    },
+    "북트롤리 바퀴 연결봉(하단받침)": {
+      "hourly_rate": 127.2
+    },
+    "북트롤리 상판(분리)": {
+      "hourly_rate": 56.6
+    },
+    "북트롤리 연결기둥": {
+      "hourly_rate": 87.2
+    },
+    "북트롤리 중간판(삼각)": {
+      "hourly_rate": 73.0
+    },
+    "북트롤리 하판(사각)": {
+      "hourly_rate": 94.2
+    },
+    "비행기 옷걸이": {
+      "hourly_rate": 94.6
+    },
+    "손잡이(해피,초대형)": {
+      "hourly_rate": 85.0
+    },
+    "슬라이딩 스텝 L": {
+      "hourly_rate": 92.4
+    },
+    "슬라이딩 스텝 M": {
+      "hourly_rate": 97.5
+    },
+    "슬림 서랍장 서랍": {
+      "hourly_rate": 70.2
+    },
+    "슬림 서랍장 서랍 신규": {
+      "hourly_rate": 69.3
+    },
+    "슬림 서랍장 프레임": {
+      "hourly_rate": 62.5
+    },
+    "슬림 서랍장 프레임 신규": {
+      "hourly_rate": 62.7
+    },
+    "슬림 우드 부속": {
+      "hourly_rate": 190.9
+    },
+    "슬림서랍장 바퀴": {
+      "hourly_rate": 115.9
+    },
+    "슬림웨건 바구니": {
+      "hourly_rate": 77.0
+    },
+    "슬림웨건 상판": {
+      "hourly_rate": 91.4
+    },
+    "슬림형 상판": {
+      "hourly_rate": 77.7
+    },
+    "슬림형 서랍": {
+      "hourly_rate": 72.2
+    },
+    "슬림형 앞판": {
+      "hourly_rate": 78.1
+    },
+    "슬림형 프레임": {
+      "hourly_rate": 84.6
+    },
+    "슬립 서랍장 캡": {
+      "hourly_rate": 104.7
+    },
+    "야채 바구니": {
+      "hourly_rate": 76.3
+    },
+    "어반 옷걸이": {
+      "hourly_rate": 90.9
+    },
+    "어반 옷걸이 신규 금형": {
+      "hourly_rate": 82.5
+    },
+    "어반 와이드 옷걸이": {
+      "hourly_rate": 73.5
+    },
+    "에센셜 기둥": {
+      "hourly_rate": 142.8
+    },
+    "에센셜 발": {
+      "hourly_rate": 181.8
+    },
+    "에센셜 상판": {
+      "hourly_rate": 79.6
+    },
+    "에센셜 서랍": {
+      "hourly_rate": 71.3
+    },
+    "에센셜 앞판": {
+      "hourly_rate": 85.0
+    },
+    "에센셜 프레임": {
+      "hourly_rate": 85.1
+    },
+    "오이캡 육각": {
+      "hourly_rate": 104.3
+    },
+    "오픈 바스켓": {
+      "hourly_rate": 66.1
+    },
+    "오픈 바스켓 파이프": {
+      "hourly_rate": 93.9
+    },
+    "옷정리 트레이": {
+      "hourly_rate": 129.1
+    },
+    "와이드 상판": {
+      "hourly_rate": 67.8
+    },
+    "와이드 서랍": {
+      "hourly_rate": 61.6
+    },
+    "와이드 앞판": {
+      "hourly_rate": 75.6
+    },
+    "와이드 프레임": {
+      "hourly_rate": null
+    },
+    "일반 해피 바퀴": {
+      "hourly_rate": 118.4
+    },
+    "중간연결봉": {
+      "hourly_rate": 87.1
+    },
+    "초대형 바디": {
+      "hourly_rate": 54.0
+    },
+    "초대형 캡": {
+      "hourly_rate": 98.7
+    },
+    "탑백 24L 캡": {
+      "hourly_rate": 63.1
+    },
+    "탑백 52L": {
+      "hourly_rate": 40.9
+    },
+    "탑백 72L": {
+      "hourly_rate": 44.0
+    },
+    "탑백 72L,52L 캡": {
+      "hourly_rate": 74.7
+    },
+    "템바보드": {
+      "hourly_rate": 66.6
+    },
+    "토들러 컵": {
+      "hourly_rate": 67.1
+    },
+    "토이 바디": {
+      "hourly_rate": 32.3
+    },
+    "토이 손잡이": {
+      "hourly_rate": 92.1
+    },
+    "펭귄 머리": {
+      "hourly_rate": 77.1
+    },
+    "펭귄 바구니": {
+      "hourly_rate": 88.2
+    },
+    "펭귄 얼굴": {
+      "hourly_rate": 66.3
+    },
+    "펭귄발": {
+      "hourly_rate": 145.2
+    },
+    "펭귄발(홀캡 고리)": {
+      "hourly_rate": 87.2
+    },
+    "해피 바디": {
+      "hourly_rate": 51.8
+    },
+    "해피 캡": {
+      "hourly_rate": 84.1
+    },
+    "해피 프레임 상판": {
+      "hourly_rate": 89.5
+    },
+    "해피 프레임 프레임": {
+      "hourly_rate": 65.4
+    },
+    "핸들러 바스켓 베이직(M)": {
+      "hourly_rate": 83.8
+    },
+    "핸들러 바스켓 슬림(S)": {
+      "hourly_rate": 95.0
+    },
+    "핸들러 바스켓 와이드(L)": {
+      "hourly_rate": 89.9
+    },
+    "에코빈 바디": {
+      "hourly_rate": 75.2
+    },
+    "에코빈 캡": {
+      "hourly_rate": 72.8
+    },
+    "와이드 우드 프레임": {
+      "hourly_rate": 84.3
+    },
+    "펭귄 고리": {
+      "hourly_rate": 18.3
+    },
+    "레브 스토리지 캡": {
+      "hourly_rate": 130.9
+    },
+    "해피 프레임 기둥": {
+      "hourly_rate": 36.5
+    },
+    "탑백 24L": {
+      "hourly_rate": 61.0
+    },
+    "신규 모던플러스 프레임": {
+      "hourly_rate": 82.3
+    },
+    "스마트 트레이닝 컵 마개": {
+      "hourly_rate": 67.9
+    },
+    "슬라이딩 스텝 S": {
+      "hourly_rate": 92.2
+    },
+    "모던 플러스 라탄 앞판": {
+      "hourly_rate": 64.5
+    },
+    "총합계": {
+      "hourly_rate": null
+    }
+  },
+  "eu_color_codes": {
+    "EU YELLO9": 690,
+    "EU YELLO4": 693,
+    "EU RED9": 698,
+    "EU RED6": 696,
+    "EU RED4": 694,
+    "EU RED2": 691,
+    "EU BLUE9": 699,
+    "EU BLUE6": 697,
+    "WHITE19": 2149,
+    "WHITE16": 2146,
+    "WHITE14": 2145
+  },
+  "latest_plan": [
+    {
+      "date": "2026-06-18",
+      "machine": "4.0",
+      "mold": "2",
+      "name_kr": "모던플러스 서랍",
+      "name_en": "Modern Plus Drawer(ลิ้นชักโมเดิร์นพลัส)",
+      "color1": "WHITE1",
+      "color2": "WHITE 180",
+      "unit_qty": 1.0,
+      "unit": "P",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "5.0",
+      "mold": "101",
+      "name_kr": "신규 모던플러스 프레임",
+      "name_en": "New Modern Plus Frame(ใหม่ โมเดิร์นพลัสเฟรม)",
+      "color1": "WHITE1",
+      "color2": "WHITE 180",
+      "unit_qty": 1.0,
+      "unit": "P",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "6.0",
+      "mold": "5",
+      "name_kr": "모던플러스 앞판",
+      "name_en": "Modern Plus front panel(แผงด้านหน้าโมเดิร์นพลัส)",
+      "color1": "WHITE1",
+      "color2": "WHITE 180",
+      "unit_qty": 1.0,
+      "unit": "P",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "7.0",
+      "mold": "901",
+      "name_kr": "슬림 서랍장 프레임 신규",
+      "name_en": "New Slim Dresser Frame(กรอบโต๊ะเครื่องแป้งเพรียวบางใหม่)",
+      "color1": "WHITE1",
+      "color2": "WHITE 180",
+      "unit_qty": 1132.0,
+      "unit": "EA",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "8.0",
+      "mold": "801",
+      "name_kr": "슬림 서랍장 서랍 신규",
+      "name_en": "New Slim Drawer Chest Drawer(ลิ้นชักตู้ลิ้นชักแบบบางใหม่)",
+      "color1": "WHITE1",
+      "color2": "WHITE 180",
+      "unit_qty": 56.0,
+      "unit": "BOX",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "9.0",
+      "mold": "32",
+      "name_kr": "와이드 서랍",
+      "name_en": "wide drawer(ลิ้นชักกว้าง)",
+      "color1": "WHITE1",
+      "color2": "WHITE 180",
+      "unit_qty": 1.0,
+      "unit": "P",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "9.0",
+      "mold": "36",
+      "name_kr": "슬림형 서랍",
+      "name_en": "slim drawer(ลิ้นชักเพรียวบาง)",
+      "color1": "WHITE1",
+      "color2": "WHITE 180",
+      "unit_qty": 3.0,
+      "unit": "P",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "10.0",
+      "mold": "114",
+      "name_kr": "데크타일",
+      "name_en": "Deck tiles(กระเบื้องดาดฟ้า)",
+      "color1": "Black",
+      "color2": "-",
+      "unit_qty": 72.0,
+      "unit": "BOX",
+      "total": 0
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "10.0",
+      "mold": "135",
+      "name_kr": "이유",
+      "name_en": "EU()",
+      "color1": "EU RED",
+      "color2": "RED 2259",
+      "unit_qty": 112.0,
+      "unit": "BOX",
+      "total": 691
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "10.0",
+      "mold": "135",
+      "name_kr": "이유",
+      "name_en": "EU()",
+      "color1": "EU RED",
+      "color2": "RED 2259",
+      "unit_qty": 40.0,
+      "unit": "BOX",
+      "total": 698
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "10.0",
+      "mold": "135",
+      "name_kr": "이유",
+      "name_en": "EU()",
+      "color1": "EU YELLO",
+      "color2": "YELLO 4338",
+      "unit_qty": 40.0,
+      "unit": "BOX",
+      "total": 0
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "10.0",
+      "mold": "135",
+      "name_kr": "이유",
+      "name_en": "EU()",
+      "color1": "EU YELLO",
+      "color2": "YELLO 4338",
+      "unit_qty": 6.0,
+      "unit": "BOX",
+      "total": 0
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "10.0",
+      "mold": "135",
+      "name_kr": "이유",
+      "name_en": "EU()",
+      "color1": "EU BLUE",
+      "color2": "BLUE 3847",
+      "unit_qty": 20.0,
+      "unit": "BOX",
+      "total": 699
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "10.0",
+      "mold": "135",
+      "name_kr": "이유",
+      "name_en": "EU()",
+      "color1": "EU BLUE",
+      "color2": "BLUE 3847",
+      "unit_qty": 56.0,
+      "unit": "BOX",
+      "total": 0
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "10.0",
+      "mold": "135",
+      "name_kr": "이유",
+      "name_en": "EU()",
+      "color1": "EU WHITE",
+      "color2": "WHITE 180",
+      "unit_qty": 20.0,
+      "unit": "BOX",
+      "total": 0
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "10.0",
+      "mold": "135",
+      "name_kr": "이유",
+      "name_en": "EU()",
+      "color1": "EU WHITE",
+      "color2": "WHITE 180",
+      "unit_qty": 40.0,
+      "unit": "BOX",
+      "total": 0
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "11.0",
+      "mold": "111",
+      "name_kr": "어반 옷걸이 신규 금형",
+      "name_en": "Urban hanger new mold(แม่พิมพ์ใหม่ไม้แขวนเสื้อเมือง)",
+      "color1": "WHITE1",
+      "color2": "WHITE 180",
+      "unit_qty": 112.0,
+      "unit": "BOX",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "11.0",
+      "mold": "111",
+      "name_kr": "어반 옷걸이 신규 금형",
+      "name_en": "Urban hanger new mold(แม่พิมพ์ใหม่ไม้แขวนเสื้อเมือง)",
+      "color1": "Ivory",
+      "color2": "IVORY 1060",
+      "unit_qty": 80.0,
+      "unit": "BOX",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "11.0",
+      "mold": "111",
+      "name_kr": "어반 옷걸이 신규 금형",
+      "name_en": "Urban hanger new mold(แม่พิมพ์ใหม่ไม้แขวนเสื้อเมือง)",
+      "color1": "Ivory",
+      "color2": "IVORY 1060",
+      "unit_qty": 56.0,
+      "unit": "BOX",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "11.0",
+      "mold": "111",
+      "name_kr": "어반 옷걸이 신규 금형",
+      "name_en": "Urban hanger new mold(แม่พิมพ์ใหม่ไม้แขวนเสื้อเมือง)",
+      "color1": "Gray2",
+      "color2": "GRAY 11215-1",
+      "unit_qty": 56.0,
+      "unit": "BOX",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "12.0",
+      "mold": "99",
+      "name_kr": "옷정리 트레이",
+      "name_en": "Clothes Organizing Tray(ถาดจัดระเบียบเสื้อผ้า)",
+      "color1": "WHITE1",
+      "color2": "WHITE 180",
+      "unit_qty": 112.0,
+      "unit": "BOX",
+      "total": 0
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "12.0",
+      "mold": "99",
+      "name_kr": "옷정리 트레이",
+      "name_en": "Clothes Organizing Tray(ถาดจัดระเบียบเสื้อผ้า)",
+      "color1": "WHITE1",
+      "color2": "WHITE 180",
+      "unit_qty": 80.0,
+      "unit": "BOX",
+      "total": 0
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "12.0",
+      "mold": "128",
+      "name_kr": "북트롤리 하판(사각)",
+      "name_en": "Book trolley lower plate (square)(แผ่นล่างรถเข็นหนังสือ (สี่เหลี่ยม))",
+      "color1": "Pink(P3)",
+      "color2": "PINK 6078",
+      "unit_qty": 20.0,
+      "unit": "BOX",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "12.0",
+      "mold": "128",
+      "name_kr": "북트롤리 하판(사각)",
+      "name_en": "Book trolley lower plate (square)(แผ่นล่างรถเข็นหนังสือ (สี่เหลี่ยม))",
+      "color1": "Butter",
+      "color2": "YELLO - 3093",
+      "unit_qty": 20.0,
+      "unit": "BOX",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "12.0",
+      "mold": "128",
+      "name_kr": "북트롤리 하판(사각)",
+      "name_en": "Book trolley lower plate (square)(แผ่นล่างรถเข็นหนังสือ (สี่เหลี่ยม))",
+      "color1": "Ivory2",
+      "color2": "IVORY 5516-2",
+      "unit_qty": 40.0,
+      "unit": "BOX",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "12.0",
+      "mold": "127",
+      "name_kr": "북트롤리 중간판(삼각)",
+      "name_en": "Book trolley middle plate (triangular)(แผ่นกลางรถเข็นหนังสือ (สามเหลี่ยม))",
+      "color1": "Ivory2",
+      "color2": "IVORY 5516-2",
+      "unit_qty": 40.0,
+      "unit": "BOX",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "12.0",
+      "mold": "127",
+      "name_kr": "북트롤리 중간판(삼각)",
+      "name_en": "Book trolley middle plate (triangular)(แผ่นกลางรถเข็นหนังสือ (สามเหลี่ยม))",
+      "color1": "Modern Blue(B3)",
+      "color2": "BLUE 2083",
+      "unit_qty": 20.0,
+      "unit": "BOX",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "13.0",
+      "mold": "42",
+      "name_kr": "로코스 S",
+      "name_en": "Locos S(Locos S)",
+      "color1": "Ivory",
+      "color2": "IVORY 1060",
+      "unit_qty": 112.0,
+      "unit": "BOX",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "13.0",
+      "mold": "42",
+      "name_kr": "로코스 S",
+      "name_en": "Locos S(Locos S)",
+      "color1": "Ivory",
+      "color2": "IVORY 1060",
+      "unit_qty": 40.0,
+      "unit": "BOX",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "13.0",
+      "mold": "42",
+      "name_kr": "로코스 S",
+      "name_en": "Locos S(Locos S)",
+      "color1": "WHITE1",
+      "color2": "WHITE 180",
+      "unit_qty": 112.0,
+      "unit": "BOX",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "13.0",
+      "mold": "42",
+      "name_kr": "로코스 S",
+      "name_en": "Locos S(Locos S)",
+      "color1": "WHITE1",
+      "color2": "WHITE 180",
+      "unit_qty": 40.0,
+      "unit": "BOX",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "14.0",
+      "mold": "40",
+      "name_kr": "로코스 L",
+      "name_en": "Locos L(Locos L)",
+      "color1": "Ivory",
+      "color2": "IVORY 1060",
+      "unit_qty": 64.0,
+      "unit": "BOX",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "14.0",
+      "mold": "40",
+      "name_kr": "로코스 L",
+      "name_en": "Locos L(Locos L)",
+      "color1": "Ivory",
+      "color2": "IVORY 1060",
+      "unit_qty": 64.0,
+      "unit": "BOX",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "14.0",
+      "mold": "40",
+      "name_kr": "로코스 L",
+      "name_en": "Locos L(Locos L)",
+      "color1": "Ivory",
+      "color2": "IVORY 1060",
+      "unit_qty": 32.0,
+      "unit": "BOX",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "14.0",
+      "mold": "40",
+      "name_kr": "로코스 L",
+      "name_en": "Locos L(Locos L)",
+      "color1": "WHITE-CAP(WHITE)",
+      "color2": "WHITE 180",
+      "unit_qty": 64.0,
+      "unit": "BOX",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "14.0",
+      "mold": "40",
+      "name_kr": "로코스 L",
+      "name_en": "Locos L(Locos L)",
+      "color1": "WHITE1",
+      "color2": "WHITE 180",
+      "unit_qty": 96.0,
+      "unit": "BOX",
+      "total": null
+    },
+    {
+      "date": "2026-06-18",
+      "machine": "14.0",
+      "mold": "40",
+      "name_kr": "로코스 L",
+      "name_en": "Locos L(Locos L)",
+      "color1": "WHITE1",
+      "color2": "WHITE 180",
+      "unit_qty": 32.0,
+      "unit": "BOX",
+      "total": null
+    }
+  ]
+}

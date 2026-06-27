@@ -1835,7 +1835,13 @@ def production_log(request):
         color1=c1,
         color2=c2,
         unit=str(record.get("unit") or "").strip(),
-        defaults=defaults,
+        quantity=qty,
+        unit_quantity=unit_qty,
+        defaults={
+            "product_name_eng": str(record.get("productNameEng") or "").strip(),
+            "total": total,
+            "status": status_value,
+        },
     )
     _production_apply_status_model(obj, status_value)
     obj.total = _production_calc_total(obj.quantity, obj.unit_quantity, obj.total)
@@ -1949,6 +1955,90 @@ def production_log_bulk_reorder(request):
             sort_order = item.get("sort_order", 0)
             ProductionLog.objects.filter(id=pid).update(sort_order=sort_order)
     return Response({"success": True, "updated": len(orders)})
+
+
+@api_view(["POST"])
+def production_log_carry_forward(request):
+    """
+    미완료 작업(from_date, status != 'ended')을 to_date로 이월.
+
+    POST /api/production-log/carry-forward
+    Query params:
+      from_date (optional, default: 어제)
+      to_date   (optional, default: 오늘)
+    Body (optional):
+      { "from_date": "YYYY-MM-DD", "to_date": "YYYY-MM-DD" }
+
+    동작:
+      - from_date의 status != 'ended' 인 ProductionLog 조회
+      - (date, machine_number, mold_number, color1, color2) 조합이
+        to_date에 이미 존재하면 -> 건너뜀 (중복 방지)
+      - 없으면 -> date를 to_date로 UPDATE
+      - ended 상태는 원래 날짜에 유지 (이력 보존)
+    """
+    today = timezone.localdate()
+    yesterday = today - timedelta(days=1)
+
+    payload = request.data if isinstance(request.data, dict) else {}
+
+    # 쿼리파라미터 우선, 없으면 body, 없으면 기본값
+    from_date_str = (
+        request.query_params.get("from_date")
+        or payload.get("from_date")
+        or yesterday.isoformat()
+    )
+    to_date_str = (
+        request.query_params.get("to_date")
+        or payload.get("to_date")
+        or today.isoformat()
+    )
+
+    try:
+        from_date = datetime.fromisoformat(from_date_str).date()
+    except (ValueError, TypeError):
+        return Response(
+            {"success": False, "error": "invalid from_date format. Use YYYY-MM-DD."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        to_date = datetime.fromisoformat(to_date_str).date()
+    except (ValueError, TypeError):
+        return Response(
+            {"success": False, "error": "invalid to_date format. Use YYYY-MM-DD."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # from_date의 미완료(ended가 아닌) 작업 조회
+    sources = list(
+        ProductionLog.objects.filter(date=from_date).exclude(status="ended")
+    )
+
+    carried = 0
+    skipped = 0
+    with transaction.atomic():
+        for src in sources:
+            # to_date에 동일한 (machine, mold, color1, color2) 조합이 있으면 스킵
+            exists = ProductionLog.objects.filter(
+                date=to_date,
+                machine_number=src.machine_number,
+                mold_number=src.mold_number,
+                color1=src.color1,
+                color2=src.color2,
+            ).exists()
+            if exists:
+                skipped += 1
+                continue
+            # 이월: date만 to_date로 변경 (나머지 필드는 유지)
+            ProductionLog.objects.filter(pk=src.pk).update(date=to_date)
+            carried += 1
+
+    return Response({
+        "success": True,
+        "carried": carried,
+        "skipped": skipped,
+        "from_date": from_date.isoformat(),
+        "to_date": to_date.isoformat(),
+    })
 
 
 @api_view(["DELETE"])
@@ -3139,12 +3229,15 @@ def ai_production_chat(request):
 
 @api_view(["GET"])
 def machine_user_list(request):
-    """기계별 사용자 목록 조회"""
+    """기계별 사용자 목록 조회 (사원번호 필터 지원)"""
     machine_number = request.query_params.get("machine_number")
+    employee_number = request.query_params.get("employee_number")
 
     users = MachineUser.objects.filter(is_active=True)
     if machine_number:
         users = users.filter(machine_number=machine_number)
+    if employee_number:
+        users = users.filter(employee_number=employee_number)
 
     return Response(
         {
@@ -3153,6 +3246,7 @@ def machine_user_list(request):
                 {
                     "id": u.id,
                     "machine_number": u.machine_number,
+                    "employee_number": u.employee_number,
                     "user_name": u.user_name,
                 }
                 for u in users

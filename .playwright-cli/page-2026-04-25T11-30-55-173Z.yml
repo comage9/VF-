@@ -1,0 +1,139 @@
+- generic [ref=e8]:
+  - button "라이브 배경 일시 중지" [ref=e11] [cursor=pointer]:
+    - img [ref=e13]
+  - main "VF By Vendor 체크인" [ref=e17]:
+    - 'generic "VF By Vendor 체크인 해당 출근일의 근무자(담당자) 정보를 입력 해주시면, 업무 및 Feedback시 해당 연락처를 통해 소통합니다. 체크인을 진행하지 않으실 경우 업무 소통이 지연되거나 휴무자에게 연락이 갈 수 있습니다. 요청 사항을 입력해주시면 해당일 근무 특이 사항에 대한 Feedback 을 반영할 수 있습니다. 입력 해주신 정보는 매니저 외에 확인이 불가능합니다. [개인정보 수집 및 이용 안내] 본 Forms을 통해 수집되는 개인정보는 정상 창고 운영 확인을 위한 용도로만 사용됩니다. 수집 항목: 담당자 성명, 연락처, 금일 출근 인원 정보 수집 목적: 벤더플렉스(VF) 당일 온콜 담당자 파악 보유 및 이용 기간: 수집일로부터 3개월 후 자동 폐기 관련 법령에 따라 개인정보는 위 목적 외로 이용되지 않으며, 보유 기간 경과 시 안전하게 파기됩니다. 출고 시작 전 작업자 확인을 위해 반드시 체크인하시고 작업 진행하시길 바랍니다." [ref=e19]':
+      - generic [ref=e21]:
+        - button "양식 메뉴" [ref=e26] [cursor=pointer]:
+          - img [ref=e28]
+        - generic [ref=e30]:
+          - img [ref=e32]
+          - heading "VF By Vendor 체크인" [level=1] [ref=e33]:
+            - generic [ref=e34]: VF By Vendor 체크인
+      - generic [ref=e36]:
+        - list [ref=e37]:
+          - listitem [ref=e38]:
+            - text: 해당 출근일의
+            - generic [ref=e39]: 근무자(담당자)
+            - generic [ref=e40]: 정보를 입력 해주시면, 업무 및 Feedback시 해당 연락처를 통해 소통합니다.
+          - listitem [ref=e41]:
+            - text: 체크인을 진행하지 않으실 경우
+            - generic [ref=e42]: 업무 소통이 지연
+            - text: 되거나
+            - generic [ref=e43]: 휴무자에게 연락
+            - text: 이 갈 수 있습니다.
+          - listitem [ref=e44]: 요청 사항을 입력해주시면 해당일 근무 특이 사항에 대한 Feedback 을 반영할 수 있습니다.
+          - listitem [ref=e45]:
+            - generic [ref=e46]: 입력 해주신 정보는 매니저 외에 확인이 불가능합니다.
+        - text: "[개인정보 수집 및 이용 안내] 본 Forms을 통해 수집되는 개인정보는 정상 창고 운영 확인을 위한 용도로만 사용됩니다."
+        - list [ref=e47]:
+          - listitem [ref=e48]: "수집 항목: 담당자 성명, 연락처, 금일 출근 인원 정보"
+          - listitem [ref=e49]: "수집 목적: 벤더플렉스(VF) 당일 온콜 담당자 파악"
+          - listitem [ref=e50]: "보유 및 이용 기간: 수집일로부터 3개월 후 자동 폐기"
+        - text: 관련 법령에 따라 개인정보는 위 목적 외로 이용되지 않으며, 보유 기간 경과 시 안전하게 파기됩니다.
+        - text: 출고 시작 전 작업자 확인을 위해 반드시 체크인하시고 작업 진행하시길 바랍니다.
+    - generic [ref=e51]:
+      - generic [ref=e52]:
+        - generic [ref=e53]: 이 양식을 제출하면 직접 제공하지 않는 한 이름 및 전자 메일 주소와 같은 세부 정보가 자동으로 수집되지 않습니다.
+        - generic [ref=e54]:
+          - generic [ref=e55]: "*"
+          - text: 필수
+      - generic [ref=e56]:
+        - generic [ref=e57]:
+          - generic [ref=e60]:
+            - heading "센터답변 필수" [level=2] [ref=e61]:
+              - generic [ref=e62]: 센터
+              - note "답변 필수" [ref=e63]: "*"
+            - log [ref=e64]
+          - button "센터답변 필수" [ref=e68] [cursor=pointer]:
+            - generic [ref=e69]: 답변 선택
+            - img [ref=e71]
+        - generic [ref=e73]:
+          - generic [ref=e76]:
+            - heading "근무자 성함답변 필수" [level=2] [ref=e77]:
+              - generic [ref=e78]: 근무자 성함
+              - note "답변 필수" [ref=e79]: "*"
+            - log [ref=e80]
+          - textbox "근무자 성함답변 필수" [active] [ref=e84]:
+            - /placeholder: 답변을 입력하세요.
+        - generic [ref=e85]:
+          - generic [ref=e86]:
+            - generic [ref=e88]:
+              - heading "근무자 연락처답변 필수" [level=2] [ref=e89]:
+                - generic [ref=e90]: 근무자 연락처
+                - note "답변 필수" [ref=e91]: "*"
+              - log [ref=e92]
+            - generic [ref=e94]: 010-1234-1234 형식으로 입력 해주세요.
+          - textbox "근무자 연락처답변 필수 010-1234-1234 형식으로 입력 해주세요." [ref=e98]:
+            - /placeholder: 답변을 입력하세요.
+        - generic [ref=e99]:
+          - generic [ref=e100]:
+            - generic [ref=e102]:
+              - heading "출고 운영 시간답변 필수" [level=2] [ref=e103]:
+                - generic [ref=e104]: 출고 운영 시간
+                - note "답변 필수" [ref=e105]: "*"
+              - log [ref=e106]
+            - generic [ref=e108]: 예) 15:00~01:00
+          - textbox "출고 운영 시간답변 필수 예) 15:00~01:00" [ref=e112]:
+            - /placeholder: ~이(가) 포함된 텍스트를 입력하세요.
+        - generic [ref=e113]:
+          - generic [ref=e114]:
+            - generic [ref=e116]:
+              - heading "근무 인원답변 필수" [level=2] [ref=e117]:
+                - generic [ref=e118]: 근무 인원
+                - note "답변 필수" [ref=e119]: "*"
+              - log [ref=e120]
+            - generic [ref=e123]:
+              - text: 예) 3
+              - text: 쿠팡 주문 출고 작업 인원수를 정확히 입력하시기 바랍니다.
+          - textbox "근무 인원답변 필수 예) 3 쿠팡 주문 출고 작업 인원수를 정확히 입력하시기 바랍니다." [ref=e127]:
+            - /placeholder: 값은 숫자여야 합니다.
+        - generic [ref=e128]:
+          - generic [ref=e129]:
+            - generic [ref=e131]:
+              - heading "시설 피해 유무 확인답변 필수" [level=2] [ref=e132]:
+                - generic [ref=e133]: 시설 피해 유무 확인
+                - note "답변 필수" [ref=e134]: "*"
+              - log [ref=e135]
+            - generic [ref=e138]:
+              - text: 눈/비/강풍 등 기상으로 인해서 VF 센터 건물 피해가 있는지 확인 후
+              - generic [ref=e139]: 있음 / 없음 체크
+              - text: 부탁드리며, 현 시점 이후 발생할 경우 요청사항 및 유선으로 즉시 보고해주시기 바랍니다.
+          - radiogroup "시설 피해 유무 확인답변 필수 눈/비/강풍 등 기상으로 인해서 VF 센터 건물 피해가 있는지 확인 후 있음 / 없음 체크 부탁드리며, 현 시점 이후 발생할 경우 요청사항 및 유선으로 즉시 보고해주시기 바랍니다." [ref=e141]:
+            - generic [ref=e142]:
+              - generic [ref=e145]:
+                - generic [ref=e146]:
+                  - radio "있음" [ref=e147] [cursor=pointer]
+                  - img [ref=e149]
+                - generic "있음" [ref=e151]
+              - generic [ref=e154]:
+                - generic [ref=e155]:
+                  - radio "없음" [ref=e156] [cursor=pointer]
+                  - img [ref=e158]
+                - generic "없음" [ref=e160]
+      - button "제출" [ref=e163] [cursor=pointer]
+      - generic [ref=e164]:
+        - text: 암호는 절대로 알려주지 마세요.
+        - link "신고하기" [ref=e165] [cursor=pointer]
+    - generic [ref=e166]:
+      - link "Microsoft 365" [ref=e168] [cursor=pointer]
+      - contentinfo [ref=e169]:
+        - generic [ref=e170]:
+          - generic [ref=e171]: 이 내용은 양식 소유자에 의해 작성됩니다. 제출하는 데이터는 양식 소유자에게 전송됩니다. Microsoft는 이 양식 소유자를 포함한 고객의 개인 정보 보호 또는 보안 관행에 대해 책임을 지지 않습니다. 절대 비밀번호를 알려주지 마세요.
+          - generic [ref=e172]:
+            - generic [ref=e173]:
+              - link "Microsoft Forms" [ref=e174] [cursor=pointer]
+              - text: "| AI 기반 설문 조사, 퀴즈, 투표"
+              - link "고유 양식 만들기" [ref=e176] [cursor=pointer]
+            - generic [ref=e177]:
+              - link "개인정보처리방침" [ref=e179] [cursor=pointer]:
+                - /url: http://go.microsoft.com/fwlink/?LinkId=521839
+              - text: "|"
+              - link "소비자 건강 개인정보처리방침" [ref=e181] [cursor=pointer]:
+                - /url: https://go.microsoft.com/fwlink/?linkid=2259814
+              - text: "|"
+              - link "사용 약관" [ref=e182] [cursor=pointer]:
+                - /url: https://go.microsoft.com/fwlink/?linkid=866263
+              - text: "|"
+              - link "개인정보처리방침 및 위치정보이용약관" [ref=e183] [cursor=pointer]:
+                - /url: https://go.microsoft.com/fwlink/?LinkId=521839

@@ -1,0 +1,32 @@
+[
+  {
+    "plate": "서울86바2540",
+    "driverName": "조영인",
+    "driverPhone": "010-5625-1055",
+    "ton": "5T",
+    "hoche": 1,
+    "time": "20:00",
+    "original_ton": "5T",
+    "date": "2026-06-22"
+  },
+  {
+    "plate": "경기89바1454",
+    "driverName": "김동수",
+    "driverPhone": "010-3940-9811",
+    "ton": "5T",
+    "hoche": 2,
+    "time": "22:00",
+    "original_ton": "5T",
+    "date": "2026-06-22"
+  },
+  {
+    "plate": "광주90바1703",
+    "driverName": "김경옥",
+    "driverPhone": "010-2078-8556",
+    "ton": "11T",
+    "hoche": 3,
+    "time": "23:50",
+    "original_ton": "11T",
+    "date": "2026-06-22"
+  }
+]

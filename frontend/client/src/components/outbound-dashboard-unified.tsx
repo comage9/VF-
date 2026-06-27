@@ -71,6 +71,7 @@ function normalizeOutboundRecord(record: any): OutboundRecordWithBoxes {
         productName: record?.productName ?? record?.product_name ?? '',
         outboundDate,
         salesAmount: salesAmount === null || Number.isNaN(salesAmount) ? null : salesAmount,
+        purchasePrice: record?.purchasePrice ?? record?.purchase_price ?? null,
         boxQuantity: record?.boxQuantity ?? record?.box_quantity ?? null,
         unitCount: record?.unitCount ?? record?.unit_count ?? null,
         quantity: record?.quantity,  // FC inbound uses quantity field
@@ -1944,7 +1945,7 @@ export default function OutboundDashboardUnified({ dataSource = 'vf', activeTab 
     const handleDownload = () => {
         if (!processedData?.filtered) return;
 
-        const headers = ['출고날짜', '제품명', '분류', '바코드', '수량', '박스수량', '판매금액'];
+        const headers = ['출고날짜', '제품명', '분류', '바코드', '수량', '박스수량', '판매금액', '매입가(단가)'];
         const csvContent = [
             headers.join(','),
             ...processedData.filtered.map(r => [
@@ -1954,7 +1955,8 @@ export default function OutboundDashboardUnified({ dataSource = 'vf', activeTab 
                 r.barcode,
                 r.quantity,
                 r.boxQuantity,
-                r.salesAmount
+                r.salesAmount,
+                r.purchasePrice ?? ''
             ].join(','))
         ].join('\n');
 

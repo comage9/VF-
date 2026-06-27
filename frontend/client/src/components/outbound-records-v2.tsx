@@ -415,6 +415,7 @@ export default function OutboundRecordsV2() {
                         { key: 'boxQuantity', label: '출고 수량(박스)', render: (v, r) => NUMBER_FORMATTER.format(v ?? r.quantity ?? 0) },
                         { key: 'unitCount', label: '출고 수량(낱개)', render: (v) => v ? NUMBER_FORMATTER.format(v) : '-' },
                         { key: 'salesAmount', label: '판매금액', render: (v) => v ? formatCurrency(v) : '-' },
+                        { key: 'purchase_price', label: '매입가(단가)', render: (v) => v ? NUMBER_FORMATTER.format(v) + '원' : '-' },
                         { key: 'notes', label: '비고' }
                     ]}
                     searchPlaceholder="결과 내 재검색..."

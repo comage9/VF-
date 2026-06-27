@@ -189,6 +189,11 @@ urlpatterns = [
         views.production_log_move_pending_to_today,
         name="production-log-move-pending-to-today",
     ),
+    path(
+        "production-log/carry-forward",
+        views.production_log_carry_forward,
+        name="production-log-carry-forward",
+    ),
     path("production-log/<str:date>", views.production_log_by_date, name="production-log-by-date"),
     path("production/copy-day", views.production_copy_day, name="production-copy-day"),
     path(

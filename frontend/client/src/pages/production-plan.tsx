@@ -47,7 +47,7 @@ import { Check, ChevronDown, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 import { MobileFilterDrawer } from "@/components/MobileFilterDrawer";
-import { useInventory, useUpdateInventory } from '@/components/shared/api';
+import { useInventory, useUpdateInventory, useOutboundStats } from '@/components/shared/api';
 import type { ProductionItem as SharedProductionItem, ProductionDraft as SharedProductionDraft, OutboundData } from '@/components/shared/types';
 import { OutboundStatsPanel } from '@/components/shared/outbound-stats-panel';
 
@@ -222,14 +222,16 @@ interface SortableRowProps {
   row: ProductionItem;
   index: number;
   isSelected: boolean;
-  onToggleSelect: (id: number, checked: boolean) => void;
-  onStatusChange: (item: ProductionItem, newStatus: ProductionItem['status']) => void;
-  onStatusReset: (item: ProductionItem) => void;
-  onEdit: (item: ProductionItem) => void;
-  onDelete: (id: number) => void;
-  onMachineNumberChange: (item: ProductionItem, newMachineNumber: string) => void;
-  getStatusBadge: (status: string | undefined) => JSX.Element;
-  getMachineAccent: (machineNumber: string | undefined) => { border: string; headerBg: string; rowBg: string };
+  onToggleSelect: (id: string, checked: boolean) => void;
+  onStatusChange: (id: string, status: string) => void;
+  onStatusReset: (id: string) => void;
+  onEdit: (row: ProductionItem) => void;
+  onDelete: (id: string) => void;
+  onMachineNumberChange: (row: ProductionItem, newMachineNumber: string) => void;
+  getStatusBadge: (status: string) => React.ReactNode;
+  getMachineAccent: (machineNumber: string) => { rowBg: string; badgeBg: string };
+  weeklyOutbound?: number;
+  showSeparator?: boolean;
 }
 
 const SortableRow = React.memo(function SortableRow({
@@ -244,6 +246,8 @@ const SortableRow = React.memo(function SortableRow({
   onMachineNumberChange,
   getStatusBadge,
   getMachineAccent,
+  weeklyOutbound,
+  showSeparator,
 }: SortableRowProps) {
   const {
     attributes,
@@ -269,6 +273,7 @@ const SortableRow = React.memo(function SortableRow({
       className={cn(
         "border-t border-border/60 hover:bg-muted/40",
         getMachineAccent(row.machineNumber).rowBg,
+        showSeparator && "!border-t-2 !border-dashed !border-gray-400",
       )}
     >
       <td className="py-3 px-4">
@@ -287,7 +292,6 @@ const SortableRow = React.memo(function SortableRow({
           />
         </div>
       </td>
-      <td className="py-3 px-4 text-center text-red-600 text-xl font-bold">{index}</td>
       <td className="py-3 px-4">{getStatusBadge(row.status)}</td>
       <td className="py-3 px-4">{row.date}</td>
       <td className="py-3 px-4">
@@ -321,14 +325,40 @@ const SortableRow = React.memo(function SortableRow({
           </div>
         )}
       </td>
-      <td className="py-3 px-4">{row.moldNumber}</td>
+      <td className="py-3 px-4">
+        <div className="flex items-center gap-2">
+          {row.moldNumber}
+          {row.moldNumber === '99' && (
+            <img src="/images/mold_99.jpg" className="w-8 h-8 cursor-pointer object-contain mix-blend-multiply" title="옷정리 트레이 - 클릭하여 확대" onClick={() => window.open('/images/mold_99.jpg', '_blank', 'width=600,height=600')} />
+          )}
+        </div>
+      </td>
       <td className="py-3 px-4">
         <div className="font-medium">{row.productName}</div>
         <div className="text-xs text-muted-foreground">{row.productNameEng}</div>
+        {weeklyOutbound !== undefined && weeklyOutbound > 0 && (() => {
+          const planned = (row.unitQuantity || 0) * (row.quantity || 0);
+          if (planned === 0) return null;
+          const ratio = planned / weeklyOutbound;
+          const pct = Math.round(ratio * 100);
+          let label = '';
+          let color = '';
+          if (ratio > 1.5) { label = `⚠ 초과 (${pct}%)`; color = 'text-orange-600'; }
+          else if (ratio < 0.5) { label = `↓ 부족 (${pct}%)`; color = 'text-blue-600'; }
+          else { label = `✓ 적정 (${pct}%)`; color = 'text-green-600'; }
+          return (
+            <div className={`text-xs mt-0.5 font-medium ${color}`}>
+              주간출고 {weeklyOutbound.toLocaleString()} · {label}
+            </div>
+          );
+        })()}
       </td>
-      <td className="py-3 px-4">{row.color1} {row.color2 && `/ ${row.color2}`}</td>
-      <td className="py-3 px-4 text-right">{NUMBER_FORMATTER.format(row.unitQuantity || 0)}</td>
+      <td className="py-3 px-4 text-sm text-muted-foreground">{row.productNameEng}</td>
+      <td className="py-3 px-4">{row.color1}</td>
+      <td className="py-3 px-4 text-sm">{row.color2}</td>
+      <td className="py-3 px-4 text-right">{row.unitQuantity ? `${NUMBER_FORMATTER.format(row.unitQuantity)}개` : '-'}</td>
       <td className="py-3 px-4 text-right">{NUMBER_FORMATTER.format(row.quantity || 0)}</td>
+      <td className="py-3 px-4 text-right">{row.unit || '-'}</td>
       <td className="py-3 px-4 text-right font-medium">{NUMBER_FORMATTER.format((row.unitQuantity || 0) * (row.quantity || 0))}</td>
       <td className="py-3 px-4">
         <div className="flex items-center justify-center gap-2">
@@ -464,7 +494,6 @@ const SortableMobileCard = React.memo(function SortableMobileCard({
           />
           <Badge variant="outline">{row.machineNumber}</Badge>
           <span className="font-medium text-sm">{row.date}</span>
-          <span className="text-red-600 text-lg font-bold">№ {index}</span>
         </div>
         {getStatusBadge(row.status)}
       </CardHeader>
@@ -475,14 +504,17 @@ const SortableMobileCard = React.memo(function SortableMobileCard({
             <p className="text-xs text-muted-foreground">{row.productNameEng}</p>
           </div>
           <div className="text-right">
-            <p className="font-bold text-lg">{NUMBER_FORMATTER.format((row.unitQuantity || 0) * (row.quantity || 0))}</p>
-            <p className="text-xs text-muted-foreground">총계</p>
+            <p className="font-bold text-lg">{NUMBER_FORMATTER.format(row.unitQuantity || 0)}개 × {NUMBER_FORMATTER.format(row.quantity || 0)}{row.unit || ''}</p>
+            <p className="text-xs text-muted-foreground">= {NUMBER_FORMATTER.format((row.unitQuantity || 0) * (row.quantity || 0))}개</p>
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div>
             <span className="text-muted-foreground text-xs">금형:</span> {row.moldNumber}
+            {row.moldNumber === '99' && (
+              <img src="/images/mold_99.jpg" className="w-8 h-8 inline-block ml-1 align-middle object-contain mix-blend-multiply cursor-pointer" title="옷정리 트레이 - 클릭" onClick={() => window.open('/images/mold_99.jpg', '_blank', 'width=600,height=600')} />
+            )}
           </div>
           <div>
             <span className="text-muted-foreground text-xs">색상:</span> {row.color1} {row.color2 && `/ ${row.color2}`}
@@ -567,11 +599,41 @@ export default function ProductionPlan() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [selectedDate, setSelectedDate] = useState<string>('latest');
+  const today = new Date().toISOString().split('T')[0];
+  const [selectedDate, setSelectedDate] = useState<string>(today);
   const { data: latestData = [], isLoading } = useProductionLog(selectedDate);
   const { data: meta } = useProductionMeta();
   const { data: invData, isLoading: invLoading } = useInventory();
   const updateInventory = useUpdateInventory();
+  const { data: outboundStats } = useOutboundStats(7);
+
+  // 미완료 작업 이월 (어제 -> 오늘)
+  const carryForwardMutation = useMutation({
+    mutationFn: async () => {
+      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+      const url = `/api/production-log/carry-forward?from_date=${yesterday}&to_date=${today}`;
+      const response = await fetch(url, { method: 'POST' });
+      if (!response.ok) throw new Error('이월 실패');
+      return response.json() as Promise<{ success: boolean; carried: number; skipped: number; from_date: string; to_date: string; }>;
+    },
+    onSuccess: (data) => {
+      alert(`${data.carried}건 이월 완료 (${data.skipped}건 중복 생략)`);
+      queryClient.invalidateQueries({ queryKey: ["/api/production"] });
+    },
+    onError: (error) => {
+      alert(`이월 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+    }
+  });
+
+  // 제품별 주간 출고량 Map
+  const productOutboundMap = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!outboundStats?.by_product) return map;
+    for (const p of outboundStats.by_product) {
+      map.set(p.product_name, p.quantity);
+    }
+    return map;
+  }, [outboundStats]);
 
   const [machineFilter, setMachineFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
@@ -594,6 +656,45 @@ export default function ProductionPlan() {
   const [editStockValue, setEditStockValue] = useState<string>('');
   const [activeId, setActiveId] = useState<number | null>(null);
   const [moveConfirmDate, setMoveConfirmDate] = useState<string | null>(null);
+
+  // === 사원번호 모드 ===
+  const [employeeNumber, setEmployeeNumber] = useState<string>('');
+  const [employeeMachines, setEmployeeMachines] = useState<string[]>([]);
+  const [employeeName, setEmployeeName] = useState<string>('');
+  const [empLoading, setEmpLoading] = useState(false);
+
+  const handleEmployeeLogin = useCallback(async () => {
+    const emp = employeeNumber.trim();
+    if (!emp) {
+      setEmployeeMachines([]);
+      setEmployeeName('');
+      return;
+    }
+    // 1~50 범위 검증
+    const empNum = parseInt(emp, 10);
+    if (isNaN(empNum) || empNum < 1 || empNum > 50) {
+      setEmployeeMachines([]);
+      setEmployeeName('1~50번만 가능');
+      return;
+    }
+    setEmpLoading(true);
+    try {
+      const res = await fetch(`/api/machine/users?employee_number=${encodeURIComponent(emp)}`);
+      const json = await res.json();
+      if (json.success && json.users.length > 0) {
+        setEmployeeMachines(json.users.map((u: any) => u.machine_number));
+        setEmployeeName(json.users[0].user_name || '');
+      } else {
+        setEmployeeMachines([]);
+        setEmployeeName('사용자 없음');
+      }
+    } catch {
+      setEmployeeMachines([]);
+      setEmployeeName('조회 실패');
+    } finally {
+      setEmpLoading(false);
+    }
+  }, [employeeNumber]);
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -1198,6 +1299,35 @@ export default function ProductionPlan() {
 
   return (
     <div className="space-y-6 pb-28 md:pb-0">
+      {/* === 사원번호 모드 === */}
+      <div className="bg-card border border-border rounded-lg p-4 flex flex-wrap items-center gap-3">
+        <Label htmlFor="emp-number" className="whitespace-nowrap text-sm font-medium">사원번호</Label>
+        <Input
+          id="emp-number"
+          type="number"
+          min={1}
+          max={50}
+          placeholder="사원번호 (1~50) — 빈칸 시 전체"
+          value={employeeNumber}
+          onChange={(e) => setEmployeeNumber(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleEmployeeLogin()}
+          className="max-w-[200px]"
+        />
+        <Button onClick={handleEmployeeLogin} disabled={empLoading} size="sm">
+          {empLoading ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />조회 중</> : '조회'}
+        </Button>
+        {employeeNumber && (
+          <Button onClick={() => { setEmployeeNumber(''); setEmployeeMachines([]); setEmployeeName(''); }} variant="outline" size="sm">
+            전체 보기
+          </Button>
+        )}
+        {employeeName && (
+          <Badge variant={employeeMachines.length > 0 ? 'default' : 'destructive'} className="text-xs">
+            {employeeName}
+          </Badge>
+        )}
+      </div>
+
       {/* 모바일 최소 헤더 - Drawer 열기 */}
       <div className="md:hidden sticky top-0 z-10 bg-card border-b border-border p-3 flex items-center justify-between backdrop-blur-sm bg-card/95">
         <div className="flex items-center gap-2">
@@ -1211,6 +1341,7 @@ export default function ProductionPlan() {
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
           </Button>
           <span className="text-sm font-semibold">생산 계획</span>
+          <button onClick={() => document.body.classList.toggle('monochrome')} className="ml-2 text-xs px-2 py-0.5 rounded border hover:bg-muted" title="모노크롬 전환">◐</button>
           {selectedIds.length > 0 && (
             <Badge variant="secondary" className="text-xs">{selectedIds.length}건 선택</Badge>
           )}
@@ -1252,6 +1383,17 @@ export default function ProductionPlan() {
                 ))}
               </SelectContent>
             </Select>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={carryForwardMutation.isPending}
+              onClick={() => carryForwardMutation.mutate()}
+              className="mt-2"
+              data-testid="carry-forward-button"
+            >
+              {carryForwardMutation.isPending ? '이월 중...' : '이월 (어제 → 오늘)'}
+            </Button>
           </div>
 
           <div className="flex flex-col space-y-1.5">
@@ -1636,7 +1778,7 @@ export default function ProductionPlan() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>기본수량</Label>
+                    <Label>단위(낱개)</Label>
                     {availableUnitQuantities.length > 0 ? (
                       <Select
                         value={String(newRecord.unitQuantity ?? 0)}
@@ -1674,7 +1816,7 @@ export default function ProductionPlan() {
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label>단위</Label>
+                    <Label>생산단위(P/BOX)</Label>
                     <Select
                       value={newRecord.unit || ''}
                       onValueChange={(v) => setNewRecord((prev) => ({ ...prev, unit: v }))}
@@ -1692,7 +1834,7 @@ export default function ProductionPlan() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>수량</Label>
+                    <Label>생산수량</Label>
                     <Input
                       type="number"
                       value={newRecord.quantity || 0}
@@ -2247,23 +2389,25 @@ export default function ProductionPlan() {
                       }}
                     />
                   </th>
-                  <th className="py-3 px-4 w-12 text-center">순번</th>
                   <th className="py-3 px-4">상태</th>
                   <th className="py-3 px-4">일자</th>
                   <th className="py-3 px-4">기계</th>
                   <th className="py-3 px-4">금형</th>
                   <th className="py-3 px-4">제품명</th>
+                  <th className="py-3 px-4">영문명</th>
                   <th className="py-3 px-4">색상</th>
+                  <th className="py-3 px-4">롯트번호</th>
                   <th className="py-3 px-4 text-right">단위</th>
                   <th className="py-3 px-4 text-right">생산수량</th>
-                  <th className="py-3 px-4 text-right">총계</th>
+                  <th className="py-3 px-4 text-right">생산단위</th>
+                  <th className="py-3 px-4 text-right">작업예정 수량(낱개)</th>
                   <th className="py-3 px-4 text-center">작업</th>
                 </tr>
               </thead>
               <tbody>
                 {displayRows.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="text-center py-10 text-muted-foreground">
+                    <td colSpan={13} className="text-center py-10 text-muted-foreground">
                       데이터가 없습니다.
                     </td>
                   </tr>
@@ -2278,8 +2422,10 @@ export default function ProductionPlan() {
                               기계번호: {machineNumber} ({rows.length}건)
                             </td>
                           </tr>
-                          {rows.map((row) => {
+                          {rows.map((row, rowIdx) => {
                             const displayIndex = displayRows.findIndex(r => r.id === row.id) + 1;
+                            const prevRow = rowIdx > 0 ? rows[rowIdx - 1] : null;
+                            const showSep = prevRow && prevRow.moldNumber !== row.moldNumber;
                             return (
                             <SortableRow
                               key={row.id}
@@ -2300,6 +2446,8 @@ export default function ProductionPlan() {
                               onMachineNumberChange={handleMachineNumberChange}
                               getStatusBadge={getStatusBadge}
                               getMachineAccent={getMachineAccent}
+                              weeklyOutbound={productOutboundMap.get(row.productName)}
+                              showSeparator={showSep}
                             />
                             );
                           })}

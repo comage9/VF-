@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>바코드 스캐너 대시보드</title>
+    <!-- JsBarcode 라이브러리 로드 -->
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --surface-color: #1e1e1e;
+            --text-primary: #ffffff;
+            --text-secondary: #b3b3b3;
+            --accent-color: #bb86fc;
+            --error-color: #cf6679;
+            --success-color: #03dac6;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            color: var(--accent-color);
+            margin-bottom: 20px;
+        }
+
+        .input-section {
+            width: 100%;
+            max-width: 800px;
+            margin-bottom: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 150px;
+            background-color: var(--surface-color);
+            color: var(--text-primary);
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 15px;
+            font-size: 14px;
+            resize: vertical;
+            box-sizing: border-box;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        textarea:focus {
+            border-color: var(--accent-color);
+        }
+
+        button {
+            background-color: var(--accent-color);
+            color: #000;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        /* 메인 대시보드 레이아웃 (3분할) */
+        .dashboard {
+            display: none;
+        }
+
+        .dashboard.active {
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+            width: 98%;
+            max-width: 1600px; /* 좌우 패널 추가로 최대 너비 확장 */
+            height: 90vh;
+            background-color: transparent;
+            padding: 0;
+            box-shadow: none;
+        }
+
+        .dashboard-sidebar {
+            flex: 0 0 300px;
+            background-color: var(--surface-color);
+            border-radius: 12px;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        /* 우측 사이드바(적재 위치) 추가 */
+        .right-sidebar {
+            flex: 0 0 320px;
+        }
+
+        .dashboard-main {
+            flex: 1;
+            background-color: var(--surface-color);
+            border-radius: 12px;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow-y: auto;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        /* 리스트 공통 스타일 (사이드바용) */
+        .list-container {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .list-item {
+            padding: 12px;
+            background-color: #1a1a1a;
+            border-radius: 6px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .list-item:hover {
+            border-color: #555;
+        }
+
+        .list-item.active {
+            border-color: var(--accent-color);
+            background-color: rgba(187, 134, 252, 0.15);
+        }
+
+        .list-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .list-item-title {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .list-item-flag {
+            color: var(--error-color);
+            font-size: 12px;
+            font-weight: bold;
+            display: none;
+        }
+
+        .list-item.flagged .list-item-flag {
+            display: block;
+        }
+
+        .list-item.flagged .list-item-title {
+            color: var(--error-color);
+        }
+
+        .list-item-name {
+            font-size: 15px;
+            font-weight: bold;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* 카트(적재 위치) 선택 스타일 */
+        .cart-selector {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .cart-option {
+            background-color: #1a1a1a;
+            border: 2px solid transparent;
+            border-radius: 6px;
+            padding: 12px;
+            cursor: pointer;
+            color: var(--text-primary);
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.2s;
+        }
+
+        .cart-option:hover {
+            border-color: #555;
+        }
+
+        .cart-option input[type="radio"] {
+            accent-color: var(--accent-color);
+            transform: scale(1.2);
+        }
+
+        .cart-option input:checked + span {
+            color: var(--accent-color);
+        }
+
+        .cart-option:has(input:checked) {
+            border-color: var(--accent-color);
+            background-color: rgba(187, 134, 252, 0.15);
+        }
+
+        /* 뱃지 스타일 */
+        .badge-container {
+            height: 30px;
+            display: flex;
+            align-items: center;
+            width: 100%;
+            max-width: 600px;
+            margin-bottom: 10px;
+        }
+
+        .flag-badge {
+            background-color: var(--error-color);
+            color: #000;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            display: none;
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* 상세 정보 카드 내부요소 */
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #2a2a2a;
+            padding: 15px 20px;
+            border-radius: 8px;
+            height: 90px;
+            box-sizing: border-box;
+            width: 100%;
+            max-width: 600px;
+            margin-bottom: 20px;
+        }
+
+        .product-info {
+            flex: 1;
+            overflow: hidden;
+            padding-right: 20px;
+        }
+
+        .qty-info {
+            text-align: right;
+            min-width: 120px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .info-label {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .info-value-name {
+            font-size: 18px;
+            font-weight: bold;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            line-height: 1.3;
+        }
+
+        .info-value-qty {
+            font-size: 42px;
+            font-weight: bold;
+            color: #00e676;
+            line-height: 1;
+        }
+
+        .barcode-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            width: 100%;
+            max-width: 600px;
+            box-sizing: border-box;
+        }
+
+        .barcode-section svg {
+            max-width: 100%;
+            height: auto;
+        }
+
+        .barcode-title {
+            color: #000;
+            font-weight: bold;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 10px;
+            width: 100%;
+            max-width: 600px;
+        }
+
+        .counter {
+            font-size: 18px;
+            color: var(--text-secondary);
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            justify-content: center;
+            width: 100%;
+            max-width: 600px;
+        }
+
+        .flag-btn {
+            background-color: transparent;
+            border: 2px solid var(--error-color);
+            color: var(--error-color);
+            flex: 1;
+        }
+
+        .flag-btn.active {
+            background-color: var(--error-color);
+            color: #000;
+        }
+
+        .list-btn {
+            background-color: var(--success-color);
+            flex: 1;
+        }
+
+        .instructions {
+            text-align: center;
+            color: var(--text-secondary);
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        .error-message {
+            color: var(--error-color);
+            margin-top: 10px;
+            text-align: center;
+            display: none;
+        }
+
+        /* 모달 스타일 (좌우 분할) */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(0, 0, 0, 0.85);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background-color: var(--surface-color);
+            border-radius: 12px;
+            width: 95%;
+            max-width: 1200px;
+            height: 90vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        }
+
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid #333;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            color: var(--error-color);
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+        }
+
+        .close-btn:hover {
+            color: #fff;
+            background: none;
+        }
+
+        .modal-body {
+            padding: 20px;
+            display: flex;
+            gap: 20px;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .modal-sidebar {
+            flex: 0 0 300px;
+            background-color: #2a2a2a;
+            border-radius: 8px;
+            padding: 15px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-main {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #1a1a1a;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .modal-footer {
+            padding: 20px;
+            border-top: 1px solid #333;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+
+        .empty-msg {
+            text-align: center;
+            color: var(--text-secondary);
+            padding: 40px 0;
+            width: 100%;
+        }
+
+        #copyToast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: var(--success-color);
+            color: #000;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            display: none;
+            z-index: 2000;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>바코드 스캐너 대시보드</h1>
+
+    <div class="input-section" id="inputSection">
+        <p style="margin:0; color: var(--text-secondary);">엑셀 등에서 복사한 데이터를 아래에 붙여넣고 시작 버튼을 누르세요.</p>
+        <textarea id="dataInput" placeholder="여기에 데이터를 붙여넣으세요..."></textarea>
+        <button id="startButton">데이터 스캔 시작</button>
+        <div id="errorMessage" class="error-message"></div>
+    </div>
+
+    <!-- 메인 대시보드 -->
+    <div class="dashboard" id="dashboard">
+        
+        <!-- 좌측: 전체 작업 목록 사이드바 -->
+        <div class="dashboard-sidebar">
+            <div style="color: var(--text-secondary); margin-bottom: 15px; font-weight: bold; font-size: 14px; display: flex; justify-content: space-between;">
+                <span>전체 작업 목록</span>
+                <span id="sidebarCounter">0 / 0</span>
+            </div>
+            <ul id="dashboardList" class="list-container"></ul>
+        </div>
+        
+        <!-- 중앙: 바코드 메인 화면 -->
+        <div class="dashboard-main">
+            <div class="badge-container">
+                <div id="flagBadge" class="flag-badge">⚠️ 미입고 처리됨</div>
+            </div>
+
+            <div class="info-row">
+                <div class="product-info">
+                    <div class="info-label">제품명</div>
+                    <div class="info-value-name" id="valProductName">-</div>
+                </div>
+                <div class="qty-info">
+                    <div class="info-label">입고 가능수량</div>
+                    <div class="info-value-qty" id="valQuantity">-</div>
+                </div>
+            </div>
+
+            <div class="barcode-section">
+                <div class="barcode-title">발주번호</div>
+                <svg id="barcodeOrder"></svg>
+            </div>
+
+            <div class="barcode-section">
+                <div class="barcode-title">상품 바코드</div>
+                <svg id="barcodeProduct"></svg>
+            </div>
+
+            <div class="barcode-section" style="margin-bottom: 0;">
+                <div class="barcode-title">로케이션</div>
+                <svg id="barcodeLocation"></svg>
+            </div>
+
+            <div class="controls">
+                <button id="prevBtn">&lt; 이전</button>
+                <div class="counter"><span id="currentIndexDisplay">0</span> / <span id="totalCountDisplay">0</span></div>
+                <button id="nextBtn">다음 &gt;</button>
+            </div>
+            
+            <div class="action-buttons">
+                <button id="flagBtn" class="flag-btn">⚠️ 미입고 체크 (Enter)</button>
+                <button id="showListBtn" class="list-btn">📋 미입고 품목 모아보기</button>
+            </div>
+
+            <div class="instructions">
+                방향키(←, →), 스페이스바: 이동 &nbsp; | &nbsp; Enter키: 미입고 체크/해제
+            </div>
+        </div>
+
+        <!-- 우측: 적재 위치(카트) 바코드 -->
+        <div class="dashboard-sidebar right-sidebar">
+            <div style="color: var(--text-secondary); margin-bottom: 15px; font-weight: bold; font-size: 14px;">적재 위치(카트) 선택</div>
+            
+            <div class="cart-selector">
+                <label class="cart-option">
+                    <input type="radio" name="cartLoc" value="320-RCRT1-1-1" checked> 
+                    <span>320-RCRT1-1-1</span>
+                </label>
+                <label class="cart-option">
+                    <input type="radio" name="cartLoc" value="320-RCRT1-1-2"> 
+                    <span>320-RCRT1-1-2</span>
+                </label>
+                <label class="cart-option">
+                    <input type="radio" name="cartLoc" value="320-RCRT1-1-3"> 
+                    <span>320-RCRT1-1-3</span>
+                </label>
+                <label class="cart-option">
+                    <input type="radio" name="cartLoc" value="320-RCRT1-1-4"> 
+                    <span>320-RCRT1-1-4</span>
+                </label>
+            </div>
+
+            <div class="barcode-section" style="margin-top: 20px;">
+                <div class="barcode-title" id="cartBarcodeTitle">320-RCRT1-1-1</div>
+                <svg id="barcodeCart"></svg>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 미입고 품목 모아보기 모달 -->
+    <div class="modal-overlay" id="listModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>⚠️ 미입고 품목 목록</h2>
+                <div style="color: var(--text-secondary); font-size: 14px; margin-left: 15px;">
+                    (스페이스바, 좌우 방향키로 이동 가능)
+                </div>
+                <div style="flex:1"></div>
+                <button class="close-btn" id="closeModalBtn">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="modal-sidebar" id="modalSidebar">
+                    <div style="color: var(--text-secondary); margin-bottom: 15px; font-weight: bold; font-size: 14px;">미입고 체크 목록</div>
+                    <ul id="modalList" class="list-container"></ul>
+                </div>
+                
+                <div class="modal-main" id="modalMainDisplay">
+                    <div id="flaggedItemsContainer" style="width: 100%; max-width: 600px;"></div>
+                </div>
+                
+                <div id="emptyMsg" class="empty-msg" style="display: none;">미입고로 체크된 품목이 없습니다.</div>
+            </div>
+            
+            <div class="modal-footer">
+                <button id="copyBtn" style="background-color: var(--accent-color);">리스트 클립보드에 복사</button>
+                <button id="closeModalBtn2" style="background-color: #333; color: white;">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="copyToast">복사되었습니다!</div>
+
+    <script>
+        let parsedData = [];
+        let currentIndex = 0;
+        let colIndices = {};
+        let flaggedIndices = new Set(); 
+
+        let modalSortedIndices = [];
+        let modalCurrentIdx = 0;
+
+        const dataInput = document.getElementById('dataInput');
+        const startButton = document.getElementById('startButton');
+        const errorMessage = document.getElementById('errorMessage');
+        const inputSection = document.getElementById('inputSection');
+        const dashboard = document.getElementById('dashboard');
+        
+        const dashboardList = document.getElementById('dashboardList');
+        const sidebarCounter = document.getElementById('sidebarCounter');
+
+        const valProductName = document.getElementById('valProductName');
+        const valQuantity = document.getElementById('valQuantity');
+        const flagBadge = document.getElementById('flagBadge');
+        
+        const currentIndexDisplay = document.getElementById('currentIndexDisplay');
+        const totalCountDisplay = document.getElementById('totalCountDisplay');
+        
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const flagBtn = document.getElementById('flagBtn');
+        const showListBtn = document.getElementById('showListBtn');
+
+        const listModal = document.getElementById('listModal');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+        const closeModalBtn2 = document.getElementById('closeModalBtn2');
+        const modalSidebar = document.getElementById('modalSidebar');
+        const modalList = document.getElementById('modalList');
+        const modalMainDisplay = document.getElementById('modalMainDisplay');
+        const flaggedItemsContainer = document.getElementById('flaggedItemsContainer');
+        const emptyMsg = document.getElementById('emptyMsg');
+        const copyBtn = document.getElementById('copyBtn');
+        const copyToast = document.getElementById('copyToast');
+
+        const cartRadios = document.querySelectorAll('input[name="cartLoc"]');
+        const cartBarcodeTitle = document.getElementById('cartBarcodeTitle');
+
+        startButton.addEventListener('click', parseData);
+        flagBtn.addEventListener('click', toggleFlag);
+        showListBtn.addEventListener('click', openModal);
+        closeModalBtn.addEventListener('click', closeModal);
+        closeModalBtn2.addEventListener('click', closeModal);
+        copyBtn.addEventListener('click', copyToClipboard);
+
+        // 카트 위치 라디오 버튼 이벤트
+        cartRadios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    renderCartBarcode(e.target.value);
+                }
+            });
+        });
+
+        function renderCartBarcode(value) {
+            cartBarcodeTitle.textContent = value;
+            renderBarcode('#barcodeCart', value);
+        }
+        
+        function parseData() {
+            const text = dataInput.value.trim();
+            if (!text) {
+                showError("데이터를 입력해주세요.");
+                return;
+            }
+
+            const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+            if (lines.length === 0) {
+                showError("데이터가 없습니다.");
+                return;
+            }
+
+            const firstLineCols = lines[0].split('\t').map(h => h.trim().replace(/\s+/g, ''));
+            let hasHeader = firstLineCols.some(h => h.includes('발주번호') || h.includes('제품명'));
+
+            if (hasHeader) {
+                colIndices = {
+                    orderNo: firstLineCols.findIndex(h => h.includes('발주번호')),
+                    productName: firstLineCols.findIndex(h => h.includes('제품명')),
+                    quantity: firstLineCols.findIndex(h => h.includes('입고가능수량') || h.includes('수량')),
+                    barcode: firstLineCols.findIndex(h => h.includes('상품바코드') || (h.includes('바코드') && !h.includes('상품바코드'))),
+                    location: firstLineCols.findIndex(h => h.includes('로케이션'))
+                };
+                if (colIndices.barcode === -1) {
+                     colIndices.barcode = firstLineCols.findIndex(h => h.includes('바코드'));
+                }
+                parsedData = lines.slice(1).map(line => line.split('\t').map(c => c.trim()));
+            } else {
+                colIndices = {
+                    orderNo: 0,
+                    barcode: 4,
+                    productName: 5,
+                    quantity: 7,
+                    location: 18
+                };
+                parsedData = lines.map(line => line.split('\t').map(c => c.trim()));
+            }
+
+            if (parsedData.length === 0) {
+                showError("데이터 행이 없습니다.");
+                return;
+            }
+
+            errorMessage.style.display = 'none';
+            inputSection.style.display = 'none';
+            flaggedIndices.clear(); 
+            dashboard.classList.add('active');
+            
+            currentIndex = 0;
+            totalCountDisplay.textContent = parsedData.length;
+            
+            initDashboardSidebar();
+            renderCurrentRow();
+
+            // 초기 우측 카트 바코드 렌더링
+            const selectedCart = document.querySelector('input[name="cartLoc"]:checked').value;
+            renderCartBarcode(selectedCart);
+        }
+
+        function showError(msg) {
+            errorMessage.textContent = msg;
+            errorMessage.style.display = 'block';
+        }
+
+        function initDashboardSidebar() {
+            dashboardList.innerHTML = '';
+            parsedData.forEach((row, i) => {
+                const getVal = (idx) => idx !== -1 ? (row[idx] || '') : '';
+                const productName = getVal(colIndices.productName);
+
+                const li = document.createElement('li');
+                li.className = 'list-item';
+                li.id = 'dashboard-list-item-' + i;
+                li.innerHTML = `
+                    <div class="list-item-header">
+                        <div class="list-item-title">작업 품목 #${i + 1}</div>
+                        <div class="list-item-flag">⚠️ 미입고</div>
+                    </div>
+                    <div class="list-item-name">${productName || '-'}</div>
+                `;
+                li.onclick = () => {
+                    currentIndex = i;
+                    renderCurrentRow();
+                };
+                dashboardList.appendChild(li);
+            });
+        }
+
+        function updateDashboardSidebar() {
+            const items = dashboardList.querySelectorAll('.list-item');
+            items.forEach((item, i) => {
+                if (i === currentIndex) {
+                    item.classList.add('active');
+                    item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                } else {
+                    item.classList.remove('active');
+                }
+
+                if (flaggedIndices.has(i)) {
+                    item.classList.add('flagged');
+                } else {
+                    item.classList.remove('flagged');
+                }
+            });
+        }
+
+        function renderCurrentRow() {
+            if (parsedData.length === 0) return;
+            
+            currentIndexDisplay.textContent = currentIndex + 1;
+            sidebarCounter.textContent = `${currentIndex + 1} / ${parsedData.length}`;
+            const row = parsedData[currentIndex];
+
+            valProductName.textContent = colIndices.productName !== -1 ? (row[colIndices.productName] || '-') : '-';
+            valQuantity.textContent = colIndices.quantity !== -1 ? (row[colIndices.quantity] || '-') : '-';
+
+            renderBarcode('#barcodeOrder', colIndices.orderNo !== -1 ? row[colIndices.orderNo] : '');
+            renderBarcode('#barcodeProduct', colIndices.barcode !== -1 ? row[colIndices.barcode] : '');
+            renderBarcode('#barcodeLocation', colIndices.location !== -1 ? row[colIndices.location] : '');
+
+            if (flaggedIndices.has(currentIndex)) {
+                flagBadge.style.display = 'inline-block';
+                flagBtn.classList.add('active');
+                flagBtn.textContent = '⚠️ 미입고 해제 (Enter)';
+            } else {
+                flagBadge.style.display = 'none';
+                flagBtn.classList.remove('active');
+                flagBtn.textContent = '⚠️ 미입고 체크 (Enter)';
+            }
+
+            updateDashboardSidebar();
+        }
+
+        function renderBarcode(selector, text) {
+            const svg = document.querySelector(selector);
+            if (!text) {
+                svg.style.display = 'none';
+                return;
+            }
+            svg.style.display = 'block';
+            try {
+                JsBarcode(selector, text, {
+                    format: "CODE128",
+                    displayValue: true,
+                    fontSize: 18,
+                    height: 80,
+                    margin: 10
+                });
+            } catch (e) {
+                console.error("Barcode generation error:", e);
+                svg.style.display = 'none';
+            }
+        }
+
+        function toggleFlag() {
+            if (flaggedIndices.has(currentIndex)) {
+                flaggedIndices.delete(currentIndex);
+            } else {
+                flaggedIndices.add(currentIndex);
+            }
+            renderCurrentRow();
+        }
+
+        function nextRow() {
+            if (currentIndex < parsedData.length - 1) {
+                currentIndex++;
+                renderCurrentRow();
+            }
+        }
+
+        function prevRow() {
+            if (currentIndex > 0) {
+                currentIndex--;
+                renderCurrentRow();
+            }
+        }
+
+        // 모달 관리
+        function openModal() {
+            listModal.classList.add('active');
+            modalSortedIndices = Array.from(flaggedIndices).sort((a, b) => a - b);
+            modalCurrentIdx = 0;
+            renderModalInterface();
+        }
+
+        function closeModal() {
+            listModal.classList.remove('active');
+        }
+
+        function renderModalInterface() {
+            modalList.innerHTML = '';
+            flaggedItemsContainer.innerHTML = '';
+            
+            if (modalSortedIndices.length === 0) {
+                modalSidebar.style.display = 'none';
+                modalMainDisplay.style.display = 'none';
+                emptyMsg.style.display = 'block';
+                copyBtn.style.display = 'none';
+                return;
+            }
+
+            modalSidebar.style.display = 'flex';
+            modalMainDisplay.style.display = 'flex';
+            emptyMsg.style.display = 'none';
+            copyBtn.style.display = 'inline-block';
+
+            modalSortedIndices.forEach((dataIndex, i) => {
+                const row = parsedData[dataIndex];
+                const getVal = (idx) => idx !== -1 ? (row[idx] || '') : '';
+                const productName = getVal(colIndices.productName);
+                
+                const li = document.createElement('li');
+                li.className = 'list-item' + (i === modalCurrentIdx ? ' active' : '');
+                li.innerHTML = `
+                    <div class="list-item-header">
+                        <div class="list-item-title">미입고 품목 #${i + 1}</div>
+                    </div>
+                    <div class="list-item-name">${productName || '-'}</div>
+                `;
+                li.onclick = () => {
+                    modalCurrentIdx = i;
+                    renderModalCurrentRow();
+                };
+                modalList.appendChild(li);
+            });
+
+            renderModalCurrentRow();
+        }
+
+        function renderModalCurrentRow() {
+            if (modalSortedIndices.length === 0) return;
+            
+            const items = modalList.querySelectorAll('.list-item');
+            items.forEach((item, i) => {
+                if (i === modalCurrentIdx) {
+                    item.classList.add('active');
+                    item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                } else {
+                    item.classList.remove('active');
+                }
+            });
+
+            flaggedItemsContainer.innerHTML = '';
+            
+            const dataIndex = modalSortedIndices[modalCurrentIdx];
+            const row = parsedData[dataIndex];
+            const getVal = (idx) => idx !== -1 ? (row[idx] || '') : '';
+            
+            const orderNo = getVal(colIndices.orderNo);
+            const barcode = getVal(colIndices.barcode);
+            const location = getVal(colIndices.location);
+            const productName = getVal(colIndices.productName);
+            const quantity = getVal(colIndices.quantity);
+
+            const card = document.createElement('div');
+            card.style.backgroundColor = 'var(--bg-color)';
+            card.style.padding = '20px';
+            card.style.borderRadius = '12px';
+            card.style.border = '1px solid #333';
+            card.style.width = '100%';
+            
+            card.innerHTML = `
+                <div style="margin-bottom: 15px; color: var(--error-color); font-weight: bold; font-size: 18px; display: flex; justify-content: space-between;">
+                    <span>⚠️ 미입고 처리됨</span>
+                    <span style="color: var(--text-secondary); font-size: 14px;">${modalCurrentIdx + 1} / ${modalSortedIndices.length}</span>
+                </div>
+                <div class="info-row" style="margin-bottom: 20px; width: 100%;">
+                    <div class="product-info">
+                        <div class="info-label">제품명</div>
+                        <div class="info-value-name">${productName || '-'}</div>
+                    </div>
+                    <div class="qty-info">
+                        <div class="info-label">입고 가능수량</div>
+                        <div class="info-value-qty">${quantity || '-'}</div>
+                    </div>
+                </div>
+                
+                <div class="barcode-section" style="margin-bottom: 10px;">
+                    <div class="barcode-title">발주번호</div>
+                    <svg id="modal-barcode-order"></svg>
+                </div>
+
+                <div class="barcode-section" style="margin-bottom: 10px;">
+                    <div class="barcode-title">상품 바코드</div>
+                    <svg id="modal-barcode-product"></svg>
+                </div>
+
+                <div class="barcode-section">
+                    <div class="barcode-title">로케이션</div>
+                    <svg id="modal-barcode-location"></svg>
+                </div>
+            `;
+            flaggedItemsContainer.appendChild(card);
+
+            renderBarcode('#modal-barcode-order', orderNo);
+            renderBarcode('#modal-barcode-product', barcode);
+            renderBarcode('#modal-barcode-location', location);
+        }
+
+        function modalNextRow() {
+            if (modalCurrentIdx < modalSortedIndices.length - 1) {
+                modalCurrentIdx++;
+                renderModalCurrentRow();
+            }
+        }
+
+        function modalPrevRow() {
+            if (modalCurrentIdx > 0) {
+                modalCurrentIdx--;
+                renderModalCurrentRow();
+            }
+        }
+
+        function copyToClipboard() {
+            if (flaggedIndices.size === 0) return;
+
+            let copyText = "순번\t발주번호\t상품바코드\t제품명\t수량\n";
+            const sortedIndices = Array.from(flaggedIndices).sort((a, b) => a - b);
+            
+            sortedIndices.forEach(index => {
+                const row = parsedData[index];
+                const getVal = (idx) => idx !== -1 ? (row[idx] || '') : '';
+                copyText += `${index + 1}\t${getVal(colIndices.orderNo)}\t${getVal(colIndices.barcode)}\t${getVal(colIndices.productName)}\t${getVal(colIndices.quantity)}\n`;
+            });
+
+            navigator.clipboard.writeText(copyText).then(() => {
+                copyToast.style.display = 'block';
+                setTimeout(() => {
+                    copyToast.style.display = 'none';
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy: ', err);
+                alert("복사에 실패했습니다.");
+            });
+        }
+
+        // 키보드 이벤트
+        document.addEventListener('keydown', (e) => {
+            if (listModal.classList.contains('active')) {
+                if (e.code === 'Escape') {
+                    closeModal();
+                } else if (e.code === 'Space' || e.code === 'ArrowRight' || e.code === 'ArrowDown') {
+                    e.preventDefault(); 
+                    modalNextRow();
+                } else if (e.code === 'ArrowLeft' || e.code === 'ArrowUp') {
+                    e.preventDefault();
+                    modalPrevRow();
+                }
+                return;
+            }
+
+            if (!dashboard.classList.contains('active')) return;
+
+            if (e.code === 'Space' || e.code === 'ArrowRight' || e.code === 'ArrowDown') {
+                e.preventDefault(); 
+                nextRow();
+            } else if (e.code === 'ArrowLeft' || e.code === 'ArrowUp') {
+                e.preventDefault();
+                prevRow();
+            } else if (e.code === 'Enter' || e.code === 'NumpadEnter') {
+                e.preventDefault();
+                toggleFlag();
+            }
+        });
+    </script>
+</body>
+</html>

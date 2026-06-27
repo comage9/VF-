@@ -7,6 +7,7 @@ class OutboundRecord(models.Model):
     product_name = models.CharField(max_length=255, db_index=True)
     quantity = models.IntegerField(default=0, null=True, blank=True) # None 허용
     sales_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0, null=True, blank=True) # None 허용
+    purchase_price = models.IntegerField(default=0, null=True, blank=True, help_text="매입가(단가, 원)")
     box_quantity = models.IntegerField(null=True, blank=True)
     unit_count = models.IntegerField(null=True, blank=True)
     category = models.CharField(max_length=100, db_index=True)
@@ -31,6 +32,7 @@ class InventoryItem(models.Model):
     name = models.CharField(max_length=255, db_index=True)
     category = models.CharField(max_length=100, default='기타')
     current_stock = models.IntegerField(default=0)
+    unit_cost = models.IntegerField(default=0, null=True, blank=True, help_text="매입단가(원)")
     minimum_stock = models.IntegerField(default=0)
     status = models.CharField(max_length=50, default='충분')
     barcode = models.CharField(max_length=100, null=True, blank=True, db_index=True)
@@ -354,8 +356,8 @@ class ProductionLog(models.Model):
         ]
         constraints = [
             models.UniqueConstraint(
-                fields=['date', 'machine_number', 'mold_number', 'product_name', 'color1', 'color2', 'unit'],
-                name='uniq_productionlog_key',
+                fields=['date', 'machine_number', 'mold_number', 'product_name', 'color1', 'color2', 'unit', 'quantity', 'unit_quantity'],
+                name='uniq_productionlog_full_key',
             )
         ]
 

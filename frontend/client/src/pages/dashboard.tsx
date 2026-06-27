@@ -1,15 +1,14 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useEffect } from "react";
 import Sidebar, { SidebarItem, MobileNav } from "@/components/sidebar";
 import OutboundTabs from "@/components/outbound-tabs";
 import InventoryTab, { type InventoryTabKey } from "@/components/inventory-tab";
 import DeliveryOverview from "@/pages/delivery-overview";
+import DepartureDashboard from "@/pages/departure-dashboard";
 import ProductionPlan from "@/pages/production-plan";
 
 import ProductMaster from "@/pages/product-master";
-import BarcodeGeneration from "@/pages/barcode-generation";
-import DepartureDashboard from "@/pages/departure-dashboard";
 import NotFound from "@/pages/not-found";
 import { AIChatWidget } from "@/components/ai-chatbot";
 
@@ -68,8 +67,15 @@ const NAV_ITEMS: SidebarItem[] = [
     key: "departure",
     path: "/departure",
     label: "출차 관리",
-    icon: "fa-truck-fast",
-    description: "VF 출차 관리 대시보드 — 차량 배차, 시간/톤수/PLT 관리",
+    icon: "fa-truck-moving",
+    description: "VF 출차 차량 등록 및 KPP/LS 연동 대시보드",
+  },
+  {
+    key: "scanner",
+    path: "/scanner",
+    label: "VF 입고 바코드",
+    icon: "fa-barcode",
+    description: "미입고 품목 확인 및 바코드 스캔 작업을 수행합니다.",
   },
 ];
 
@@ -107,10 +113,15 @@ const PAGE_META: Record<string, PageMeta> = {
     title: "바코드 생성",
     description: "송장번호/제품 바코드 생성 및 시간대별 출고 데이터 전송",
   },
+  scanner: {
+    key: "scanner",
+    title: "VF 입고 바코드",
+    description: "미입고 품목 확인 및 바코드 스캔 작업을 수행합니다.",
+  },
   departure: {
     key: "departure",
-    title: "출차 관리",
-    description: "VF 출차 관리 — 차량 배차, 시간/톤수/PLT 관리",
+    title: "출차 관리 대시보드",
+    description: "VF 출차 차량 등록, LS 배차 요청, KPP 팔레트 등록",
   },
 };
 
@@ -142,10 +153,12 @@ function resolveActiveKey(pathname: string): string {
 
     case "/master":
       return "master";
-    case "/barcode":
-      return "barcode";
     case "/departure":
       return "departure";
+    case "/barcode":
+      return "barcode";
+    case "/scanner":
+      return "scanner";
     default:
       return "unknown";
   }
@@ -153,6 +166,7 @@ function resolveActiveKey(pathname: string): string {
 
 export default function Dashboard() {
   const [location, setLocation] = useLocation();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const normalizedPath = useMemo(() => normalizePath(location), [location]);
   const activeKey = resolveActiveKey(normalizedPath);
   const meta = PAGE_META[activeKey] || PAGE_META.delivery;
@@ -211,10 +225,24 @@ export default function Dashboard() {
 
       case "/master":
         return <ProductMaster />;
-      case "/barcode":
-        return <BarcodeGeneration />;
       case "/departure":
         return <DepartureDashboard />;
+      case "/barcode":
+        return (
+          <iframe
+            src="/barcode.html"
+            className="w-full h-full border-0"
+            title="바코드 생성"
+          />
+        );
+      case "/scanner":
+        return (
+          <iframe
+            src="/barcode_scanner.html"
+            className="w-full h-full border-0"
+            title="VF 입고 바코드"
+          />
+        );
       default:
         return <NotFound />;
     }
@@ -222,7 +250,7 @@ export default function Dashboard() {
 
   return (
     <div className="flex h-screen bg-background">
-      <Sidebar items={NAV_ITEMS} activeKey={activeKey === "unknown" ? "delivery" : activeKey} />
+      <Sidebar items={NAV_ITEMS} activeKey={activeKey === "unknown" ? "delivery" : activeKey} collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="bg-card border-b border-border px-6 py-4 flex items-center justify-between">

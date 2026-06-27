@@ -1,16 +1,60 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;family=Space+Grotesk:wght@300;400;500;600;700&amp;display=swap');
 @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ── Nothing Design Monochrome Toggle ── */
 :root {
-  /* Toss Design Language: Single accent #721FE5 purple */
-  /* 배경: #FAFAFA (gentle warm white, not pure white) */
+  /* Light (Toss) — default */
+  --bg-primary: #FAFAFA;
+  --bg-secondary: #FFFFFF;
+  --bg-card: #FFFFFF;
+  --text-primary: #1f2937;
+  --text-secondary: #6b7280;
+  --accent: #721FE5;
+  --border: #e5e7eb;
+  --font-body: 'Inter', 'Noto Sans KR', sans-serif;
+}
+
+body.monochrome {
+  /* Dark Monochrome — Nothing Design inspired */
+  --bg-primary: #18181b;
+  --bg-secondary: #27272a;
+  --bg-card: #27272a;
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --accent: #ffffff;
+  --border: #3f3f46;
+  --font-body: 'Space Grotesk', 'Inter', 'Noto Sans KR', sans-serif;
+  --background: #18181b;
+  --background-solid: #18181b;
+  --foreground: #f4f4f5;
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+  --card: #27272a;
+  --card-foreground: #f4f4f5;
+  --popover: #27272a;
+  --popover-foreground: #f4f4f5;
+  --border: #3f3f46;
+  --input: #3f3f46;
+  --primary: #f4f4f5;
+  --primary-foreground: #18181b;
+  --secondary: #3f3f46;
+  --secondary-foreground: #f4f4f5;
+  --accent: #3f3f46;
+  --accent-foreground: #f4f4f5;
+  --destructive: #7f1d1d;
+  --destructive-foreground: #f4f4f5;
+  --ring: #a1a1aa;
+  --radius: 0px;
+}
+
+:root {
   --background: #FAFAFA;
   --background-solid: #FAFAFA;
-  --foreground: #2A2A2A;  /* Strong: grayscale, never pure black */
+  --foreground: #2A2A2A;
 
   /* 카드 */
   --card: #ffffff;
@@ -36,7 +80,7 @@
 
   --accent: #F0E8FF;  /* brand-tint */
   --accent-foreground: #5A10CC;
-  --accent-hover: #E8DFFF;
+  --accent-hover: #E8DFF0;
 
   /* Status colors - small strong areas */
   --success: #6B9B7A;
@@ -174,12 +218,8 @@
 
 /* Loading animation */
 @keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .animate-pulse {
@@ -234,14 +274,8 @@ button:focus-visible {
 
 /* 차트 애니메이션 */
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .chart-container {
@@ -306,117 +340,13 @@ button:focus-visible {
   overflow: auto !important;
 }
 
-[cmdk-root] {
-  max-height: 450px !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-
-[cmdk-list] {
-  scrollbar-width: thin;
-  scrollbar-color: #E8E8EA transparent;
-  -webkit-overflow-scrolling: touch;
-  max-height: 400px !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-}
-
-[cmdk-list]::-webkit-scrollbar {
-  width: 6px;
-}
-
-[cmdk-list]::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-[cmdk-list]::-webkit-scrollbar-thumb {
-  background-color: #E8E8EA;
-  border-radius: 3px;
-}
-
-[cmdk-group] {
-  max-height: none !important;
-  overflow-y: visible !important;
-}
-
-[cmdk-group-heading] {
-  display: none !important;
-}
-
-[cmdk-item] {
-  min-height: 36px !important;
-  height: auto !important;
-  padding: 8px 12px !important;
-}
-
-.cmdk-input-wrapper {
-  position: sticky;
-  top: 0;
-  background: white;
-  z-index: 10;
-  border-bottom: 1px solid #E8E8EA;
-  flex-shrink: 0;
-}
-
-[cmdk-input-wrapper] {
-  flex-shrink: 0;
-}
-
-[cmdk-root] {
-  max-height: none !important;
-  overflow: visible !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-
-[cmdk-list] {
-  scrollbar-width: thin;
-  scrollbar-color: #E8E8EA transparent;
-  -webkit-overflow-scrolling: touch;
-  max-height: 400px !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-}
-
-[cmdk-list]::-webkit-scrollbar {
-  width: 6px;
-}
-
-[cmdk-list]::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-[cmdk-list]::-webkit-scrollbar-thumb {
-  background-color: #E8E8EA;
-  border-radius: 3px;
-}
-
-[cmdk-group] {
-  max-height: none !important;
-  overflow-y: visible !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-
-[cmdk-group-heading] {
-  display: none !important;
-}
-
-[cmdk-item] {
-  min-height: 36px !important;
-  height: auto !important;
-  padding: 8px 12px !important;
-}
-
-.cmdk-input-wrapper {
-  position: sticky;
-  top: 0;
-  background: white;
-  z-index: 10;
-  border-bottom: 1px solid #E8E8EA;
-  flex-shrink: 0;
-}
-
-[cmdk-input-wrapper] {
-  flex-shrink: 0;
-}
+/* CMK 관련 스타일 유지 */
+[cmdk-root] { max-height: 450px !important; display: flex !important; flex-direction: column !important; }
+[cmdk-list] { scrollbar-width: thin; scrollbar-color: #E8E8EA transparent; -webkit-overflow-scrolling: touch; max-height: 400px !important; overflow-y: auto !important; overflow-x: hidden !important; }
+[cmdk-list]::-webkit-scrollbar { width: 6px; }
+[cmdk-list]::-webkit-scrollbar-track { background: transparent; }
+[cmdk-list]::-webkit-scrollbar-thumb { background-color: #E8E8EA; border-radius: 3px; }
+[cmdk-group] { max-height: none !important; overflow-y: visible !important; }
+[cmdk-group-heading] { display: none !important; }
+[cmdk-item] { min-height: 36px !important; height: auto !important; padding: 8px 12px !important; }
+.cmdk-input-wrapper { position: sticky; top: 0; background: white; z-index: 10; border-bottom: 1px solid #E8E8EA; flex-shrink: 0; }

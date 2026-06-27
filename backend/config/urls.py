@@ -9,4 +9,5 @@ urlpatterns = [
     path('', root_view),
     path('admin/', admin.site.urls),
     path('api/', include('sales_api.urls')),
+    path('departure/', include('departure.urls')),
 ]
