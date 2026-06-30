@@ -159,6 +159,8 @@ cd frontend/client && npm run dev -- --host 0.0.0.0 --port 5174
 - 매 작업 시작 전 `CLAUDE.md` 다시 안 읽음 (캐싱됨). 변경 시에만 재로드.
 - 큰 파일 분석은 `skill_view(file_path=...)` 또는 `delegate_task`로 컨텍스트 격리.
 - 컨텍스트 가득 채운 채로 "한 번 더 시도" 금지 → 실패율 급증.
+- **Fork vs Hand-off**: Fork = 분기점까지 컨텍스트 자동 상속 (UI 버튼 1회). Hand-off = 새 세션에 요약본 수동 주입 (4요소: 진행·파일·문제·다음목표). 둘 다 30~40% 시점에 사용.
+- **검증 3가지**: ① 셀프 검증 루프 ② 자동 테스트 실행 ③ 다른 에이전트 교차 리뷰 (qa 에이전트가 담당). 상세 → `harness/references/verification-loop.md`.
 
 ## 변경 이력 (드리프트 방지)
 
@@ -166,6 +168,7 @@ cd frontend/client && npm run dev -- --host 0.0.0.0 --port 5174
 |------|------|------|
 | 2026-06-30 | production-log 업로드 버그 수정 (`views.py` line 2265~2351) | `unit_qty`/`unit_label` 컬럼 의미 반전, `update_or_create` lookup 키 보강 |
 | 2026-06-30 | CLAUDE.md에 하네스 4기둥·컨텍스트 관리 추가 | 영상(`6IbdH5jMP00`) 원칙 반영 |
+| 2026-06-30 | harness/references/ `verification-loop.md`, `session-handoff.md` 추가 | 자료(`Harness Engineering: ...`) 보강 — 검증 3방법·셀프 검증 4요소·Fork/Hand-off 절차 |
 | 2026-05-14 | production-log 삭제 기능 405 에러 해결 | 벌크 삭제 엔드포인트 사용 (`production-plan.tsx` 894-897) |
 
 ## MindVault — MANDATORY
