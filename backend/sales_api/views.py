@@ -2263,7 +2263,24 @@ def upload_production_file(request):
                     continue
 
                 qty = _to_int(row.get("quantity"))
-                unit_qty = _to_int(row.get("unitQuantity")) or _to_int(row.get("unit"))
+                # 엑셀 컬럼 의미:
+                #   - unit         : 박스당 개수 (정수, 예: 200, 96, 64)  → DB.unit_quantity
+                #   - unitQuantity : 단위명 (예: 'BOX', 'EA', 'P')          → DB.unit (CharField)
+                #   - quantity     : 박스 개수                              → DB.quantity
+                # 호환성: 한 컬럼이 비어있으면 다른 컬럼에서 폴백.
+                unit_qty = _to_int(row.get("unit")) or _to_int(row.get("unitQuantity"))
+                unit_raw_value = row.get("unitQuantity")
+                if isinstance(unit_raw_value, (int, float)) and not isinstance(unit_raw_value, bool):
+                    unit_label = ""
+                else:
+                    unit_label = str(unit_raw_value or "").strip()
+
+                if rows_processed == 0:
+                    import sys
+                    _u = row.get("unit")
+                    _uq = row.get("unitQuantity")
+                    sys.stderr.write("[UPLOAD-DEBUG] unit=" + repr(_u) + " type=" + type(_u).__name__ + " | unitQuantity=" + repr(_uq) + " type=" + type(_uq).__name__ + " | unit_qty=" + str(unit_qty) + " unit_label=" + repr(unit_label) + chr(10))
+                    sys.stderr.flush()
 
                 # === 색상 세트 조합 확인 ===
                 if c1 and c2:
@@ -2316,13 +2333,14 @@ def upload_production_file(request):
 
                 defaults = {
                     "product_name_eng": str(row.get("productNameEng") or "").strip(),
-                    "unit": str(row.get("unit") or "").strip(),
+                    "unit": unit_label,
                     "quantity": qty,
                     "unit_quantity": unit_qty,
                     "total": total,
                     "status": status_value,
                 }
 
+                # lookup에 unit/quantity/unit_quantity 포함 → 중복 행 보존
                 obj, created = ProductionLog.objects.update_or_create(
                     date=date_obj,
                     machine_number=machine,
@@ -2330,6 +2348,9 @@ def upload_production_file(request):
                     product_name=pname,
                     color1=c1,
                     color2=c2,
+                    unit=unit_label,
+                    quantity=qty,
+                    unit_quantity=unit_qty,
                     defaults=defaults,
                 )
                 _production_apply_status_model(obj, status_value)

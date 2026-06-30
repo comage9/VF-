@@ -116,6 +116,58 @@ cd frontend/client && npm run dev -- --host 0.0.0.0 --port 5174
 - **qa**: 테스트, 버그 검증
 - **design**: UI/UX 검토, 디자인 토큰
 
+## 하네스 4기둥 (영상: 실밸개발자, 2026-06-29)
+
+> **원칙: 같은 모델·같은 프롬프트인데 결과가 갈리는 진짜 이유는 모델이 아니라 환경(하네스)이다.**
+> LangChain 벤치마크: 모델·프롬프트 고정, 하네스만 손봤을 때 **+14% 성능 향상**.
+
+| 기둥 | VF-new에서의 담당 | 원칙 |
+|------|------------------|------|
+| **맥락 (Context)** | `vf-context` 스킬, 이 `CLAUDE.md` | **200줄 안팎 유지** (매 세션 통째로 로드됨) |
+| **제약 (Constraint)** | "⚠️ 중요 규칙" 섹션, `DESIGN-LANGUAGE.md`, `MindVault MANDATORY` | 절대 위반 금지 규칙은 짧고 명확하게 |
+| **작업 흐름 (Orchestration)** | `.claude/skills/harness/` 스킬, Agent Team | 작업별 스킬 자동 트리거, 단계별 핸드오프 |
+| **검증 (Verification)** | `qa` 에이전트, `incremental-qa` 원칙 | 변경 후 반드시 검증 → 실패 시 컨텍스트 재설계 |
+
+**6축 순환**: ① 구조(폴더) → ② 맥락(아는 것) → ③ 계획 → ④ 실행 → ⑤ 검증 → ⑥ 개선
+
+### CLAUDE.md 3층 상속 (가까운 규칙이 이김)
+
+```
+유저 레벨  (~/.claude/)          ← 개인 습관, 모든 프로젝트 공통
+프로젝트 레벨 (./CLAUDE.md)      ← VF- 전체 규칙 (현재 파일, 200줄 이내)
+모듈 레벨 (backend/CLAUDE.md,    ← 특정 모듈 특수 규칙
+           frontend/CLAUDE.md)
+```
+
+**현황**: 루트 `CLAUDE.md`만 있음. 모듈 레벨은 필요할 때만 추가 (Over-engineering 금지).
+
+### Progressive Disclosure (점진적 공개)
+
+- **CLAUDE.md = 색인** (얕게, 200줄 이내). 매 세션 통째로 로드되므로 무거우면 안 됨.
+- **세부 규칙 = `.claude/skills/{name}/references/`** (필요할 때만 `skill_view`로 로드). 37개 파일 분리되어 있음 ✅
+- **새 규칙 추가 기준**: CLAUDE.md 본문 수정이 아니라, references/ 또는 새 skill로 분리. 단, 절대 위반 금지 규칙(API trailing slash, MindVault MANDATORY)은 CLAUDE.md 본문에 남김.
+
+### 컨텍스트 창 관리 (필수)
+
+| 사용량 | 액션 |
+|--------|------|
+| **< 30%** | 일반 작업 계속 |
+| **30~40%** | 새 세션 시작 고려 (`/clear` 또는 `/compact`) |
+| **50%+** | **현재 작업 버리고** 새 세션. fork · handoff 활용. 결과물 신뢰 불가 |
+
+**규칙**: 
+- 매 작업 시작 전 `CLAUDE.md` 다시 안 읽음 (캐싱됨). 변경 시에만 재로드.
+- 큰 파일 분석은 `skill_view(file_path=...)` 또는 `delegate_task`로 컨텍스트 격리.
+- 컨텍스트 가득 채운 채로 "한 번 더 시도" 금지 → 실패율 급증.
+
+## 변경 이력 (드리프트 방지)
+
+| 날짜 | 변경 | 이유 |
+|------|------|------|
+| 2026-06-30 | production-log 업로드 버그 수정 (`views.py` line 2265~2351) | `unit_qty`/`unit_label` 컬럼 의미 반전, `update_or_create` lookup 키 보강 |
+| 2026-06-30 | CLAUDE.md에 하네스 4기둥·컨텍스트 관리 추가 | 영상(`6IbdH5jMP00`) 원칙 반영 |
+| 2026-05-14 | production-log 삭제 기능 405 에러 해결 | 벌크 삭제 엔드포인트 사용 (`production-plan.tsx` 894-897) |
+
 ## MindVault — MANDATORY
 
 **ALWAYS run `mindvault query "<question>" --global` BEFORE answering any codebase question.**
