@@ -50,17 +50,22 @@ export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, 
 
   const [activeTab, setActiveTab] = useState<OutboundTabKey>(getInitialTabFromUrl());
   const [isSyncing, setIsSyncing] = useState(false);
+  const getLocalDateString = (d: Date) => {
+    const offset = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - offset).toISOString().split('T')[0];
+  };
+
   const [uploadDate, setUploadDate] = useState(() => {
     // VF 출고 데이터는 어제까지가 최신, 오늘 데이터는 출고 완료 후 업로드
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    return yesterday.toISOString().split('T')[0];
+    return getLocalDateString(yesterday);
   });
   // 동기화 범위: 최근 14일 (빠진 날짜 자동 보완)
   const syncStartDate = (() => {
     const d = new Date();
     d.setDate(d.getDate() - 15); // 어제 기준 14일 전
-    return d.toISOString().split('T')[0];
+    return getLocalDateString(d);
   })();
   const queryClient = useQueryClient();
   const { toast } = useToast();

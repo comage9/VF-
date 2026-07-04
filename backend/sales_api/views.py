@@ -527,6 +527,21 @@ def inventory_unified(request):
         )
     }
 
+    # 60-day stats for cover days and 10-day target calculation
+    start_60 = end_date - timedelta(days=59)
+    outbound_60_qs = OutboundRecord.objects.filter(
+        outbound_date__range=[start_60, end_date]
+    )
+    outbound_60_qs = outbound_60_qs.exclude(barcode__isnull=True).exclude(barcode="")
+    if baseline_barcodes:
+        outbound_60_qs = outbound_60_qs.filter(barcode__in=baseline_barcodes)
+    outbound_60_agg = {
+        row["barcode"]: int(row.get("qty") or 0)
+        for row in outbound_60_qs.values("barcode").annotate(
+            qty=Coalesce(Sum("box_quantity"), 0)
+        )
+    }
+
     # 14-day stats for cover days
     start_14 = end_date - timedelta(days=13)
     outbound_14_qs = OutboundRecord.objects.filter(
@@ -573,6 +588,10 @@ def inventory_unified(request):
 
         out30 = int(outbound_30_agg.get(bc) or 0)
         avg_daily_30 = (out30 / 30.0) if out30 > 0 else 0.0
+        
+        out60 = int(outbound_60_agg.get(bc) or 0)
+        avg_daily_60 = (out60 / 60.0) if out60 > 0 else 0.0
+
         # 정책: 최소재고=3일치, 최대재고=30일치(한달)
         calc_min_stock = int(round(avg_daily_30 * 3)) if avg_daily_30 > 0 else 0
         calc_max_stock = int(round(avg_daily_30 * 30)) if avg_daily_30 > 0 else 0
@@ -653,6 +672,7 @@ def inventory_unified(request):
                 "avgDailyOutbound14d": avg_daily,
                 "outbound30dTotal": out30,
                 "avgDailyOutbound30d": avg_daily_30,
+                "avgDailyOutbound60d": avg_daily_60,
             }
         )
 

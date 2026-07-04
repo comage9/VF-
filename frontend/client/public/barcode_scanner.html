@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>바코드 스캐너 대시보드</title>
     <!-- JsBarcode 라이브러리 로드 -->
-    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <script src="JsBarcode.all.min.js"></script>
     <style>
         :root {
             --bg-color: #121212;
@@ -93,7 +93,7 @@
             flex-direction: row;
             gap: 20px;
             width: 98%;
-            max-width: 1600px; /* 좌우 패널 추가로 최대 너비 확장 */
+            max-width: 1920px; /* 좌우 패널 추가로 최대 너비 확장 */
             height: 90vh;
             background-color: transparent;
             padding: 0;
@@ -316,6 +316,8 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            justify-content: center;
+            text-align: center;
             background-color: #fff;
             padding: 20px;
             border-radius: 8px;
@@ -326,6 +328,8 @@
         }
 
         .barcode-section svg {
+            display: block;
+            margin: 0 auto;
             max-width: 100%;
             height: auto;
         }
@@ -335,6 +339,8 @@
             font-weight: bold;
             font-size: 16px;
             margin-bottom: 10px;
+            text-align: center;
+            width: 100%;
         }
 
         .controls {
@@ -534,6 +540,11 @@
                 <div id="flagBadge" class="flag-badge">⚠️ 미입고 처리됨</div>
             </div>
 
+            <div class="inbound-date-badge" id="inboundDateContainer" style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-weight: bold; font-size: 15px; color: #ffeb3b; width: 100%; max-width: 600px; padding: 0 5px;">
+                <span>📅 입고 예정일:</span>
+                <span id="valInboundDate">-</span>
+            </div>
+            
             <div class="info-row">
                 <div class="product-info">
                     <div class="info-label">제품명</div>
@@ -545,10 +556,18 @@
                 </div>
             </div>
 
-            <div class="barcode-section">
-                <div class="barcode-title">발주번호</div>
-                <svg id="barcodeOrder"></svg>
+            <div class="info-row" style="margin-top: -10px;">
+                <div class="product-info">
+                    <div class="info-label">전산 재고 수량 (60일 일평균 출고)</div>
+                    <div class="info-value-name" id="valCurrentStock" style="font-size: 16px; color: var(--text-primary); margin-top: 5px;">-</div>
+                </div>
+                <div class="qty-info">
+                    <div class="info-label">10일 보유 수량</div>
+                    <div class="info-value-qty" id="val10Day" style="font-size: 32px; color: #ffeb3b;">-</div>
+                </div>
             </div>
+
+            <!-- 발주번호는 우측 사이드바에 생성되므로 중앙 UI에서는 제거 -->
 
             <div class="barcode-section">
                 <div class="barcode-title">상품 바코드</div>
@@ -562,13 +581,14 @@
 
             <div class="controls">
                 <button id="prevBtn">&lt; 이전</button>
-                <div class="counter"><span id="currentIndexDisplay">0</span> / <span id="totalCountDisplay">0</span></div>
+                <div class="counter"><span id="currentIndexDisplay">0</span> / <span id="totalCountDisplay">0</span> <span style="font-size: 13px; color: var(--text-secondary); margin-left: 10px;">(총 수량: <span id="totalQuantityDisplay" style="color: #ffeb3b; font-weight: bold;">0</span>개)</span></div>
                 <button id="nextBtn">다음 &gt;</button>
             </div>
             
             <div class="action-buttons">
                 <button id="flagBtn" class="flag-btn">⚠️ 미입고 체크 (Enter)</button>
                 <button id="showListBtn" class="list-btn">📋 미입고 품목 모아보기</button>
+                <button id="resetBtn" class="reset-btn" style="background-color: var(--error-color); color: #000; flex: 1;">🔄 작업 초기화</button>
             </div>
 
             <div class="instructions">
@@ -602,6 +622,21 @@
             <div class="barcode-section" style="margin-top: 20px;">
                 <div class="barcode-title" id="cartBarcodeTitle">320-RCRT1-1-1</div>
                 <svg id="barcodeCart"></svg>
+            </div>
+        </div>
+
+        <!-- 우측2: 발주번호 선택 바코드 (발주번호가 여러 개일 때만 표시) -->
+        <div class="dashboard-sidebar right-sidebar" id="orderSidebar" style="display: none;">
+            <div style="color: var(--text-secondary); margin-bottom: 15px; font-weight: bold; font-size: 14px;">발주번호 선택</div>
+            
+            <div class="cart-selector" id="orderSelector" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
+                <!-- 동적으로 채워질 예정 -->
+            </div>
+
+            <div class="barcode-section" style="margin-top: 20px;" id="selectedOrderBarcodesSection">
+                <div class="barcode-title" id="orderBarcodeTitle">발주번호</div>
+                <div id="orderBarcodeContainer" style="display: flex; flex-direction: column; gap: 15px; width: 100%; align-items: center;">
+                </div>
             </div>
         </div>
 
@@ -646,9 +681,28 @@
         let currentIndex = 0;
         let colIndices = {};
         let flaggedIndices = new Set(); 
+        let orderNoList = []; 
+        let filteredIndices = []; 
+        let inventoryCache = {}; 
 
         let modalSortedIndices = [];
         let modalCurrentIdx = 0;
+
+        // 서버 동기화용 상태 변수들
+        let lastServerUpdatedAt = null;
+        let lastSavedText = '';
+        let suppressNextSave = false;
+        let saveTimer = null;
+        let saveInFlight = false;
+        let savePending = false;
+        const SAVE_DEBOUNCE_MS = 200;
+        const TODAY = (() => {
+            const d = new Date();
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const r = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${r}`;
+        })();
 
         const dataInput = document.getElementById('dataInput');
         const startButton = document.getElementById('startButton');
@@ -670,6 +724,7 @@
         const nextBtn = document.getElementById('nextBtn');
         const flagBtn = document.getElementById('flagBtn');
         const showListBtn = document.getElementById('showListBtn');
+        const resetBtn = document.getElementById('resetBtn');
 
         const listModal = document.getElementById('listModal');
         const closeModalBtn = document.getElementById('closeModalBtn');
@@ -691,6 +746,7 @@
         closeModalBtn.addEventListener('click', closeModal);
         closeModalBtn2.addEventListener('click', closeModal);
         copyBtn.addEventListener('click', copyToClipboard);
+        if (resetBtn) resetBtn.addEventListener('click', resetData);
 
         // 카트 위치 라디오 버튼 이벤트
         cartRadios.forEach(radio => {
@@ -704,6 +760,545 @@
         function renderCartBarcode(value) {
             cartBarcodeTitle.textContent = value;
             renderBarcode('#barcodeCart', value);
+        }
+
+        // ─── 다중 컴퓨터 공유 및 폴링 동기화 ───
+        function apiBase() {
+            return '';
+        }
+
+        async function loadFromServer() {
+            try {
+                const r = await fetch(`${apiBase()}/departure/api/barcode/load?date=${TODAY}`, { cache: 'no-store' });
+                if (!r.ok) return null;
+                const j = await r.json();
+                if (!j.ok) return null;
+                if (!j.exists) return { exists: false };
+                return { exists: true, data: j.data };
+            } catch (e) {
+                console.warn('loadFromServer 실패:', e);
+                return null;
+            }
+        }
+
+        async function resetFromServer() {
+            try {
+                await fetch(`${apiBase()}/departure/api/barcode/clear?date=${TODAY}`, { method: 'DELETE' });
+            } catch (e) {
+                console.warn('resetFromServer 실패:', e);
+            }
+        }
+
+        async function saveToServer() {
+            if (suppressNextSave) {
+                suppressNextSave = false;
+                return;
+            }
+            const body = {
+                date: TODAY,
+                parsed_text: dataInput.value,
+                col_indices: colIndices,
+                rows: parsedData,
+                flagged_indices: Array.from(flaggedIndices),
+                current_index: filteredIndices[currentIndex] || 0,
+            };
+            try {
+                const r = await fetch(`${apiBase()}/departure/api/barcode/save`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                const j = await r.json().catch(() => null);
+                if (j && j.ok) {
+                    lastSavedText = dataInput.value;
+                    if (j.updated_at) lastServerUpdatedAt = j.updated_at;
+                }
+            } catch (e) {
+                console.warn('saveToServer 실패:', e);
+            }
+        }
+
+        function scheduleSave() {
+            if (saveTimer) clearTimeout(saveTimer);
+            saveTimer = setTimeout(async () => {
+                saveTimer = null;
+                if (saveInFlight) {
+                    savePending = true;
+                    return;
+                }
+                saveInFlight = true;
+                await saveToServer();
+                saveInFlight = false;
+                if (savePending) {
+                    savePending = false;
+                    scheduleSave();
+                }
+            }, SAVE_DEBOUNCE_MS);
+        }
+
+        async function loadInventoryCache() {
+            try {
+                const response = await fetch('/api/inventory/unified');
+                const result = await response.json();
+                if (result && result.success && result.data) {
+                    result.data.forEach(item => {
+                        const bc = (item.barcode || '').trim();
+                        if (bc) {
+                            inventoryCache[bc] = {
+                                currentStock: item.currentStock || 0,
+                                avgDailyOutbound60d: item.avgDailyOutbound60d || 0
+                            };
+                        }
+                    });
+                }
+            } catch (e) {
+                console.warn('전산 재고 데이터를 가져오지 못했습니다:', e);
+            }
+        }
+
+        function updateTotalQuantity() {
+            let total = 0;
+            if (filteredIndices && filteredIndices.length > 0 && colIndices.quantity !== undefined && colIndices.quantity !== -1) {
+                filteredIndices.forEach(idx => {
+                    const row = parsedData[idx];
+                    const qVal = parseFloat(row[colIndices.quantity]) || 0;
+                    total += qVal;
+                });
+            }
+            const totalQtyDisplay = document.getElementById('totalQuantityDisplay');
+            if (totalQtyDisplay) {
+                totalQtyDisplay.textContent = total.toLocaleString();
+            }
+        }
+
+        function sortParsedData() {
+            if (!parsedData || parsedData.length === 0) return;
+            
+            function parseDateValue(str) {
+                if (!str) return 0;
+                // 표준 날짜 포맷 테스트 (2026.7.4 -> 2026-7-4로 정규화하여 시도)
+                const normalized = str.replace(/\./g, '-').replace(/\s+/g, '');
+                let timestamp = Date.parse(normalized);
+                if (!isNaN(timestamp)) {
+                    return timestamp;
+                }
+                
+                // 수동 점(.) 스플릿 fallback
+                const parts = str.split('.').map(p => p.trim()).filter(p => p.length > 0);
+                let year = new Date().getFullYear();
+                let month = 1;
+                let day = 1;
+                if (parts.length === 3) {
+                    year = parseInt(parts[0]) || year;
+                    month = parseInt(parts[1]) || month;
+                    day = parseInt(parts[2]) || day;
+                } else if (parts.length === 2) {
+                    month = parseInt(parts[0]) || month;
+                    day = parseInt(parts[1]) || day;
+                }
+                return new Date(year, month - 1, day).getTime();
+            }
+
+            function compareValues(a, b) {
+                const numA = parseFloat(a);
+                const numB = parseFloat(b);
+                if (!isNaN(numA) && !isNaN(numB)) {
+                    return numA - numB;
+                }
+                return a.localeCompare(b);
+            }
+
+            parsedData.sort((a, b) => {
+                if (colIndices.inboundDate !== undefined && colIndices.inboundDate !== -1) {
+                    const dateA = (a[colIndices.inboundDate] || '').trim();
+                    const dateB = (b[colIndices.inboundDate] || '').trim();
+                    const timeA = parseDateValue(dateA);
+                    const timeB = parseDateValue(dateB);
+                    if (timeA !== timeB) {
+                        return timeA - timeB; // 빠른 일자 순(오름차순)
+                    }
+                }
+                if (colIndices.productNo !== undefined && colIndices.productNo !== -1) {
+                    const noA = (a[colIndices.productNo] || '').trim();
+                    const noB = (b[colIndices.productNo] || '').trim();
+                    return compareValues(noA, noB); // 낮은 제품번호 순(오름차순)
+                }
+                return 0;
+            });
+        }
+
+        async function tryResumeFromServer() {
+            const res = await loadFromServer();
+            if (!res || !res.exists || !res.data) {
+                return false;
+            }
+            const data = res.data;
+            parsedData = data.rows || [];
+            colIndices = data.col_indices || {};
+            sortParsedData(); // 복원 시 정렬 적용
+            
+            flaggedIndices = new Set(data.flagged_indices || []);
+            lastSavedText = data.parsed_text || '';
+            lastServerUpdatedAt = data.updated_at || '';
+
+            if (data.parsed_text) dataInput.value = data.parsed_text;
+
+            errorMessage.style.display = 'none';
+            inputSection.style.display = 'none';
+            dashboard.classList.add('active');
+
+            // filteredIndices 및 UI 셋팅
+            filteredIndices = parsedData.map((_, idx) => idx);
+            currentIndex = parsedData.length > 0 ? (filteredIndices.indexOf(data.current_index) !== -1 ? filteredIndices.indexOf(data.current_index) : 0) : 0;
+            totalCountDisplay.textContent = filteredIndices.length;
+            updateTotalQuantity();
+
+            initDashboardSidebar();
+            renderCurrentRow();
+
+            const selectedCart = document.querySelector('input[name="cartLoc"]:checked').value;
+            renderCartBarcode(selectedCart);
+
+            // 발주번호 선택기 갱신
+            const orderNoSet = new Set();
+            parsedData.forEach(row => {
+                const orderNo = colIndices.orderNo !== -1 ? (row[colIndices.orderNo] || '').trim() : '';
+                if (orderNo) {
+                    orderNoSet.add(orderNo);
+                }
+            });
+            orderNoList = Array.from(orderNoSet).sort();
+            renderOrderSelector();
+
+            return true;
+        }
+
+        let pollingTimer = null;
+        function startPolling() {
+            if (pollingTimer) clearInterval(pollingTimer);
+            pollingTimer = setInterval(async () => {
+                try {
+                    const res = await loadFromServer();
+                    if (res === null) {
+                        // 일시적 통신 오류/네트워크 리셋 상태: 기존 로컬 데이터를 덮어쓰거나 날리지 않고 그대로 보관
+                        return;
+                    }
+                    
+                    if (res.exists === false) {
+                        // 서버에서 데이터가 완전히 명시적으로 비워진(초기화된) 상태
+                        if (parsedData.length > 0) {
+                            parsedData = [];
+                            colIndices = {};
+                            flaggedIndices = new Set();
+                            currentIndex = 0;
+                            lastSavedText = '';
+                            lastServerUpdatedAt = null;
+                            filteredIndices = [];
+                            dashboard.classList.remove('active');
+                            inputSection.style.display = 'flex';
+                            dataInput.value = '';
+                            const orderSidebar = document.getElementById('orderSidebar');
+                            if (orderSidebar) orderSidebar.style.display = 'none';
+                            const totalQtyDisplay = document.getElementById('totalQuantityDisplay');
+                            if (totalQtyDisplay) totalQtyDisplay.textContent = '0';
+                        }
+                        return;
+                    }
+
+                    const data = res.data;
+                    const serverUpdatedAt = data.updated_at || '';
+                    if (serverUpdatedAt === lastServerUpdatedAt) {
+                        return;
+                    }
+
+                    if (data.parsed_text === lastSavedText && data.rows.length === parsedData.length) {
+                        lastServerUpdatedAt = serverUpdatedAt;
+                        const newFlagged = new Set(data.flagged_indices || []);
+                        if (newFlagged.size !== flaggedIndices.size || [...newFlagged].some(i => !flaggedIndices.has(i))) {
+                            flaggedIndices = newFlagged;
+                            if (dashboard.classList.contains('active')) {
+                                initDashboardSidebar();
+                                renderCurrentRow();
+                            }
+                        }
+                        return;
+                    }
+
+                    lastServerUpdatedAt = serverUpdatedAt;
+                    suppressNextSave = true;
+                    parsedData = data.rows || [];
+                    colIndices = data.col_indices || {};
+                    sortParsedData(); // 폴링 갱신 시에도 정렬 보장
+                    
+                    flaggedIndices = new Set(data.flagged_indices || []);
+                    lastSavedText = data.parsed_text || '';
+                    if (data.parsed_text) dataInput.value = data.parsed_text;
+
+                    if (parsedData.length > 0) {
+                        if (inputSection.style.display !== 'none') {
+                            inputSection.style.display = 'none';
+                            dashboard.classList.add('active');
+                        }
+                        
+                        filteredIndices = parsedData.map((_, idx) => idx);
+                        const filterIdx = filteredIndices.indexOf(data.current_index || 0);
+                        currentIndex = filterIdx !== -1 ? filterIdx : 0;
+                        
+                        totalCountDisplay.textContent = filteredIndices.length;
+                        updateTotalQuantity();
+                        initDashboardSidebar();
+                        renderCurrentRow();
+                        const selectedCart = document.querySelector('input[name="cartLoc"]:checked').value;
+                        renderCartBarcode(selectedCart);
+
+                        const orderNoSet = new Set();
+                        parsedData.forEach(row => {
+                            const orderNo = colIndices.orderNo !== -1 ? (row[colIndices.orderNo] || '').trim() : '';
+                            if (orderNo) {
+                                orderNoSet.add(orderNo);
+                            }
+                        });
+                        orderNoList = Array.from(orderNoSet).sort();
+                        renderOrderSelector();
+                    }
+                } catch (e) {
+                    console.warn('폴링 동기화 오류:', e);
+                }
+            }, 3000);
+        }
+
+        // 페이지 로드 시 자동으로 기존 데이터 확인 + 폴링 시작
+        (async function bootstrap() {
+            await loadInventoryCache(); // 인벤토리 전산 데이터 먼저 로드
+            const res = await loadFromServer();
+            if (res && res.exists && res.data && res.data.rows && res.data.rows.length > 0) {
+                lastServerUpdatedAt = res.data.updated_at || '';
+                await tryResumeFromServer();
+            }
+            startPolling();
+        })();
+
+        // beforeunload 훅
+        window.addEventListener('beforeunload', () => {
+            if (saveTimer) {
+                clearTimeout(saveTimer);
+                saveTimer = null;
+                try {
+                    const body = JSON.stringify({
+                        date: TODAY,
+                        parsed_text: dataInput.value,
+                        col_indices: colIndices,
+                        rows: parsedData,
+                        flagged_indices: Array.from(flaggedIndices),
+                        current_index: filteredIndices[currentIndex] || 0,
+                    });
+                    const blob = new Blob([body], { type: 'application/json' });
+                    navigator.sendBeacon(`${apiBase()}/departure/api/barcode/save`, blob);
+                } catch (e) {}
+            }
+        });
+
+        async function resetData() {
+            if (!confirm("현재 스캔 작업을 초기화하고 처음 화면으로 돌아가시겠습니까?\n(서버에 동기화된 내역도 삭제됩니다.)")) {
+                return;
+            }
+
+            // 서버 데이터 초기화
+            if (typeof resetFromServer === 'function') {
+                await resetFromServer();
+            }
+
+            // 로컬 메모리 상태 초기화
+            parsedData = [];
+            currentIndex = 0;
+            colIndices = {};
+            flaggedIndices.clear();
+            if (typeof filteredIndices !== 'undefined') filteredIndices = [];
+            orderNoList = [];
+            const totalQtyDisplay = document.getElementById('totalQuantityDisplay');
+            if (totalQtyDisplay) totalQtyDisplay.textContent = '0';
+
+            // UI 제어 및 초기 화면 회귀
+            dataInput.value = '';
+            dashboard.classList.remove('active');
+            inputSection.style.display = 'flex';
+
+            // 발주번호 선택기 및 바코드 영역 초기화/숨김
+            const orderSidebar = document.getElementById('orderSidebar');
+            if (orderSidebar) orderSidebar.style.display = 'none';
+
+            errorMessage.style.display = 'none';
+        }
+
+        function renderOrderSelector() {
+            const orderSidebar = document.getElementById('orderSidebar');
+            const orderSelector = document.getElementById('orderSelector');
+            if (!orderSidebar || !orderSelector) return;
+
+            if (orderNoList.length <= 1) {
+                orderSidebar.style.display = 'none';
+                return;
+            }
+
+            orderSidebar.style.display = 'flex';
+            orderSelector.innerHTML = '';
+
+            // 1. "전체 선택" 체크박스 생성
+            const allLabel = document.createElement('label');
+            allLabel.className = 'cart-option';
+            allLabel.style.borderBottom = '1px solid #333';
+            allLabel.style.paddingBottom = '10px';
+            allLabel.style.marginBottom = '5px';
+            
+            const allInput = document.createElement('input');
+            allInput.type = 'checkbox';
+            allInput.id = 'checkAllOrders';
+            allInput.checked = true; // 기본값은 전체 선택
+
+            const allSpan = document.createElement('span');
+            allSpan.textContent = '전체 선택';
+            allSpan.style.fontWeight = 'bold';
+
+            allLabel.appendChild(allInput);
+            allLabel.appendChild(allSpan);
+            orderSelector.appendChild(allLabel);
+
+            // 2. 개별 발주번호 체크박스들 생성
+            const itemInputs = [];
+            orderNoList.forEach((orderNo) => {
+                const label = document.createElement('label');
+                label.className = 'cart-option';
+                
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.name = 'selectedOrderNo';
+                input.value = orderNo;
+                input.checked = true; // 기본적으로 전부 체크됨
+
+                input.addEventListener('change', () => {
+                    // 개별 체크 해제/체크 시 "전체 선택" 상태 연동
+                    const checkedCount = itemInputs.filter(i => i.checked).length;
+                    allInput.checked = (checkedCount === itemInputs.length);
+                    applyOrderFilter();
+                });
+
+                const span = document.createElement('span');
+                span.textContent = orderNo;
+
+                label.appendChild(input);
+                label.appendChild(span);
+                orderSelector.appendChild(label);
+                itemInputs.push(input);
+            });
+
+            // "전체 선택" 클릭 시 일괄 제어
+            allInput.addEventListener('change', (e) => {
+                const isChecked = e.target.checked;
+                itemInputs.forEach(input => {
+                    input.checked = isChecked;
+                });
+                applyOrderFilter();
+            });
+
+            applyOrderFilter();
+        }
+
+        function applyOrderFilter() {
+            // 1. 체크된 발주번호 수집
+            const checkedBoxes = document.querySelectorAll('input[name="selectedOrderNo"]:checked');
+            const selectedOrders = Array.from(checkedBoxes).map(cb => cb.value);
+
+            // 2. parsedData에서 일치하는 원본 행 인덱스 추출하여 filteredIndices 구성
+            filteredIndices = [];
+            parsedData.forEach((row, idx) => {
+                const orderNo = colIndices.orderNo !== -1 ? (row[colIndices.orderNo] || '').trim() : '';
+                if (selectedOrders.includes(orderNo)) {
+                    filteredIndices.push(idx);
+                }
+            });
+
+            // 3. 인덱스 포인터 범위 정정
+            if (filteredIndices.length === 0) {
+                currentIndex = 0;
+            } else if (currentIndex >= filteredIndices.length) {
+                currentIndex = filteredIndices.length - 1;
+            }
+
+            // 4. 화면 및 총 수량 갱신
+            totalCountDisplay.textContent = filteredIndices.length;
+            updateTotalQuantity();
+            initDashboardSidebar();
+            renderCurrentRow();
+
+            // 5. 우측 하단 발주번호 바코드 영역 동적 제어
+            const orderBarcodeTitle = document.getElementById('orderBarcodeTitle');
+            const orderBarcodeContainer = document.getElementById('orderBarcodeContainer');
+            
+            if (orderBarcodeContainer) {
+                orderBarcodeContainer.innerHTML = ''; // 기존 동적 바코드 비우기
+
+                if (selectedOrders.length === 0) {
+                    if (orderBarcodeTitle) orderBarcodeTitle.textContent = "선택 없음";
+                    const parentSection = document.getElementById('selectedOrderBarcodesSection');
+                    if (parentSection) parentSection.style.display = 'none';
+                } else {
+                    const parentSection = document.getElementById('selectedOrderBarcodesSection');
+                    if (parentSection) parentSection.style.display = 'block';
+
+                    if (selectedOrders.length === 1) {
+                        if (orderBarcodeTitle) orderBarcodeTitle.textContent = "발주번호";
+                    } else {
+                        const isAllSelected = (selectedOrders.length === orderNoList.length);
+                        if (orderBarcodeTitle) orderBarcodeTitle.textContent = isAllSelected ? "발주번호 (전체)" : "발주번호 (다중 선택)";
+                    }
+
+                    // 선택된 각 발주번호의 바코드를 차례로 생성
+                    selectedOrders.forEach((orderNo, idx) => {
+                        const barcodeWrapper = document.createElement('div');
+                        barcodeWrapper.style.width = '100%';
+                        barcodeWrapper.style.display = 'flex';
+                        barcodeWrapper.style.flexDirection = 'column';
+                        barcodeWrapper.style.alignItems = 'center';
+                        if (idx < selectedOrders.length - 1) {
+                            barcodeWrapper.style.borderBottom = '1px dashed #444';
+                            barcodeWrapper.style.paddingBottom = '12px';
+                            barcodeWrapper.style.marginBottom = '12px';
+                        }
+
+                        // 다중 선택 시 구분 타이틀 노출
+                        if (selectedOrders.length > 1) {
+                            const titleDiv = document.createElement('div');
+                            titleDiv.textContent = `발주번호: ${orderNo}`;
+                            titleDiv.style.color = '#333';
+                            titleDiv.style.fontSize = '12px';
+                            titleDiv.style.fontWeight = 'bold';
+                            titleDiv.style.marginBottom = '5px';
+                            barcodeWrapper.appendChild(titleDiv);
+                        }
+
+                        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                        const svgId = `barcodeSelectedOrder_${idx}`;
+                        svg.setAttribute('id', svgId);
+                        svg.style.display = 'block';
+                        svg.style.margin = '0 auto';
+                        barcodeWrapper.appendChild(svg);
+                        
+                        orderBarcodeContainer.appendChild(barcodeWrapper);
+
+                        try {
+                            JsBarcode(`#${svgId}`, orderNo, {
+                                format: "CODE128",
+                                displayValue: true,
+                                fontSize: 16,
+                                height: 75,
+                                margin: 5
+                            });
+                        } catch (e) {
+                            console.error(`동적 발주번호 바코드 생성 실패 (${orderNo}):`, e);
+                        }
+                    });
+                }
+            }
         }
         
         function parseData() {
@@ -728,8 +1323,17 @@
                     productName: firstLineCols.findIndex(h => h.includes('제품명')),
                     quantity: firstLineCols.findIndex(h => h.includes('입고가능수량') || h.includes('수량')),
                     barcode: firstLineCols.findIndex(h => h.includes('상품바코드') || (h.includes('바코드') && !h.includes('상품바코드'))),
-                    location: firstLineCols.findIndex(h => h.includes('로케이션'))
+                    locationIndices: firstLineCols.reduce((acc, h, idx) => {
+                        if (h.includes('로케이션')) acc.push(idx);
+                        return acc;
+                    }, []),
+                    inboundDate: firstLineCols.findIndex(h => h.includes('입고예정일') || h.includes('입고예정')),
+                    // '제품번호' 열을 우선 타겟팅하고 없으면 '상품번호'로 fallback
+                    productNo: firstLineCols.findIndex(h => h === '제품번호' || (h.includes('제품번호') && !h.includes('상품번호')))
                 };
+                if (colIndices.productNo === -1) {
+                    colIndices.productNo = firstLineCols.findIndex(h => h.includes('상품번호') || h.includes('제품번호'));
+                }
                 if (colIndices.barcode === -1) {
                      colIndices.barcode = firstLineCols.findIndex(h => h.includes('바코드'));
                 }
@@ -740,7 +1344,9 @@
                     barcode: 4,
                     productName: 5,
                     quantity: 7,
-                    location: 18
+                    location: 18,
+                    inboundDate: 2,
+                    productNo: 19 // 기본 20번째 컬럼이 제품번호
                 };
                 parsedData = lines.map(line => line.split('\t').map(c => c.trim()));
             }
@@ -750,13 +1356,18 @@
                 return;
             }
 
+            // 데이터 처리 후 정렬 및 필터 인덱스 초기 설정
+            sortParsedData();
+
             errorMessage.style.display = 'none';
             inputSection.style.display = 'none';
             flaggedIndices.clear(); 
             dashboard.classList.add('active');
             
+            filteredIndices = parsedData.map((_, idx) => idx);
             currentIndex = 0;
-            totalCountDisplay.textContent = parsedData.length;
+            totalCountDisplay.textContent = filteredIndices.length;
+            updateTotalQuantity();
             
             initDashboardSidebar();
             renderCurrentRow();
@@ -764,6 +1375,20 @@
             // 초기 우측 카트 바코드 렌더링
             const selectedCart = document.querySelector('input[name="cartLoc"]:checked').value;
             renderCartBarcode(selectedCart);
+
+            // 데이터 처리 후 고유 발주번호 목록 추출 및 UI 렌더링
+            const orderNoSet = new Set();
+            parsedData.forEach(row => {
+                const orderNo = colIndices.orderNo !== -1 ? (row[colIndices.orderNo] || '').trim() : '';
+                if (orderNo) {
+                    orderNoSet.add(orderNo);
+                }
+            });
+            orderNoList = Array.from(orderNoSet).sort();
+            renderOrderSelector();
+
+            // 서버 저장 스케줄 가동
+            scheduleSave();
         }
 
         function showError(msg) {
@@ -773,22 +1398,23 @@
 
         function initDashboardSidebar() {
             dashboardList.innerHTML = '';
-            parsedData.forEach((row, i) => {
+            filteredIndices.forEach((dataIndex, filterIdx) => {
+                const row = parsedData[dataIndex];
                 const getVal = (idx) => idx !== -1 ? (row[idx] || '') : '';
                 const productName = getVal(colIndices.productName);
 
                 const li = document.createElement('li');
                 li.className = 'list-item';
-                li.id = 'dashboard-list-item-' + i;
+                li.id = 'dashboard-list-item-' + dataIndex;
                 li.innerHTML = `
                     <div class="list-item-header">
-                        <div class="list-item-title">작업 품목 #${i + 1}</div>
+                        <div class="list-item-title">작업 품목 #${filterIdx + 1}</div>
                         <div class="list-item-flag">⚠️ 미입고</div>
                     </div>
                     <div class="list-item-name">${productName || '-'}</div>
                 `;
                 li.onclick = () => {
-                    currentIndex = i;
+                    currentIndex = filterIdx;
                     renderCurrentRow();
                 };
                 dashboardList.appendChild(li);
@@ -797,15 +1423,16 @@
 
         function updateDashboardSidebar() {
             const items = dashboardList.querySelectorAll('.list-item');
-            items.forEach((item, i) => {
-                if (i === currentIndex) {
+            items.forEach((item, filterIdx) => {
+                const dataIndex = filteredIndices[filterIdx];
+                if (filterIdx === currentIndex) {
                     item.classList.add('active');
                     item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 } else {
                     item.classList.remove('active');
                 }
 
-                if (flaggedIndices.has(i)) {
+                if (flaggedIndices.has(dataIndex)) {
                     item.classList.add('flagged');
                 } else {
                     item.classList.remove('flagged');
@@ -814,20 +1441,48 @@
         }
 
         function renderCurrentRow() {
-            if (parsedData.length === 0) return;
+            if (filteredIndices.length === 0) return;
             
             currentIndexDisplay.textContent = currentIndex + 1;
-            sidebarCounter.textContent = `${currentIndex + 1} / ${parsedData.length}`;
-            const row = parsedData[currentIndex];
+            sidebarCounter.textContent = `${currentIndex + 1} / ${filteredIndices.length}`;
+            
+            const actualIndex = filteredIndices[currentIndex];
+            const row = parsedData[actualIndex];
+
+            const valInbound = document.getElementById('valInboundDate');
+            if (valInbound) {
+                valInbound.textContent = colIndices.inboundDate !== -1 ? (row[colIndices.inboundDate] || '-') : '-';
+            }
 
             valProductName.textContent = colIndices.productName !== -1 ? (row[colIndices.productName] || '-') : '-';
             valQuantity.textContent = colIndices.quantity !== -1 ? (row[colIndices.quantity] || '-') : '-';
 
-            renderBarcode('#barcodeOrder', colIndices.orderNo !== -1 ? row[colIndices.orderNo] : '');
-            renderBarcode('#barcodeProduct', colIndices.barcode !== -1 ? row[colIndices.barcode] : '');
-            renderBarcode('#barcodeLocation', colIndices.location !== -1 ? row[colIndices.location] : '');
+            // 전산 재고 및 10일 재고 보유량 수량 매핑 복원
+            const valStock = document.getElementById('valCurrentStock');
+            const val10 = document.getElementById('val10Day');
+            
+            const barcodeVal = colIndices.barcode !== -1 ? (row[colIndices.barcode] || '').trim() : '';
+            if (barcodeVal && inventoryCache[barcodeVal]) {
+                const stockData = inventoryCache[barcodeVal];
+                const currentStock = stockData.currentStock || 0;
+                const avg60d = stockData.avgDailyOutbound60d || 0;
+                const target10d = Math.round(avg60d * 10);
+                
+                if (valStock) valStock.textContent = `${currentStock} 개 (일 평균 출고: ${avg60d.toFixed(1)} 개)`;
+                if (val10) val10.textContent = `${target10d} 개`;
+            } else {
+                if (valStock) valStock.textContent = '-';
+                if (val10) val10.textContent = '-';
+            }
 
-            if (flaggedIndices.has(currentIndex)) {
+            // 상품 바코드 렌더링
+            renderBarcode('#barcodeProduct', barcodeVal);
+            
+            // 로케이션 바코드 렌더링 (다중 로케이션 열 탐색 적용)
+            const locationVal = getLocationValue(row);
+            renderBarcode('#barcodeLocation', locationVal);
+
+            if (flaggedIndices.has(actualIndex)) {
                 flagBadge.style.display = 'inline-block';
                 flagBtn.classList.add('active');
                 flagBtn.textContent = '⚠️ 미입고 해제 (Enter)';
@@ -840,13 +1495,32 @@
             updateDashboardSidebar();
         }
 
+        function getLocationValue(row) {
+            if (colIndices.locationIndices && colIndices.locationIndices.length > 0) {
+                for (const idx of colIndices.locationIndices) {
+                    const val = (row[idx] || '').trim();
+                    if (val && val !== '#N/A' && val !== '0') {
+                        return val;
+                    }
+                }
+            }
+            if (colIndices.location !== undefined && colIndices.location !== -1) {
+                return (row[colIndices.location] || '').trim();
+            }
+            return '';
+        }
+
         function renderBarcode(selector, text) {
             const svg = document.querySelector(selector);
-            if (!text) {
+            if (!svg) return;
+            const container = svg.closest('.barcode-section');
+            if (!text || text === '#N/A' || text === '0') {
                 svg.style.display = 'none';
+                if (container) container.style.display = 'none';
                 return;
             }
             svg.style.display = 'block';
+            if (container) container.style.display = 'block';
             try {
                 JsBarcode(selector, text, {
                     format: "CODE128",
@@ -858,22 +1532,26 @@
             } catch (e) {
                 console.error("Barcode generation error:", e);
                 svg.style.display = 'none';
+                if (container) container.style.display = 'none';
             }
         }
 
         function toggleFlag() {
-            if (flaggedIndices.has(currentIndex)) {
-                flaggedIndices.delete(currentIndex);
+            const actualIndex = filteredIndices[currentIndex];
+            if (flaggedIndices.has(actualIndex)) {
+                flaggedIndices.delete(actualIndex);
             } else {
-                flaggedIndices.add(currentIndex);
+                flaggedIndices.add(actualIndex);
             }
             renderCurrentRow();
+            scheduleSave();
         }
 
         function nextRow() {
-            if (currentIndex < parsedData.length - 1) {
+            if (currentIndex < filteredIndices.length - 1) {
                 currentIndex++;
                 renderCurrentRow();
+                scheduleSave();
             }
         }
 
@@ -881,6 +1559,7 @@
             if (currentIndex > 0) {
                 currentIndex--;
                 renderCurrentRow();
+                scheduleSave();
             }
         }
 

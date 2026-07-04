@@ -382,6 +382,7 @@ function renderAll() {
 }
 
 // ── 봉인씰 ──
+var sealSides = [{'key':'leftWing','label':'좌측윙'},{'key':'rightWing','label':'우측윙'},{'key':'backDoor','label':'후면도어'}];
 function renderSeal(data) {
   var grid = document.getElementById('sealGrid');
   grid.innerHTML = '';
@@ -392,14 +393,42 @@ function renderSeal(data) {
   }
   var sec = grid.closest('.card');
   if (sec) sec.style.display = '';
-  var sides = ['좌측윙','우측윙','후면도어'];
-  for (var i = 1; i <= data.length; i++) {
-    sides.forEach(function(s){
+  data.forEach(function(v){
+    var hoche = v.hoche;
+    var seals = v.seals || {};
+    sealSides.forEach(function(s){
       var div = document.createElement('div');
       div.className = 'seal-item';
-      div.innerHTML = '<label>' + i + '호차' + s + ':</label><input class="inp inp-xs" placeholder="">';
+      var savedVal = seals[s.key] || '';
+      div.innerHTML = '<label>' + hoche + '호차 ' + s.label + ':</label>' +
+        '<input class="inp inp-xs" id="seal_' + hoche + '_' + s.key + '" value="' + savedVal + '" placeholder="-" onchange="onSealChange(' + hoche + ')">';
       grid.appendChild(div);
     });
+  });
+}
+function onSealChange(hoche) {
+  var seals = {};
+  sealSides.forEach(function(s){
+    var el = document.getElementById('seal_' + hoche + '_' + s.key);
+    seals[s.key] = el ? el.value.trim() : '';
+  });
+  var dateKey = formatDate(currentDate);
+  var updated = false;
+  for (var i = 0; i < LS_DATA.length; i++) {
+    if (LS_DATA[i].hoche === hoche && LS_DATA[i].date === dateKey) {
+      LS_DATA[i].seals = seals;
+      updated = true;
+      break;
+    }
+  }
+  if (updated) {
+    fetch('/departure/api/ls-data', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(LS_DATA)
+    }).then(function(r){ return r.json(); }).then(function(data){
+      if(data.ok) { LS_DATA = data.data; }
+    }).catch(function(){});
   }
 }
 
@@ -1253,7 +1282,15 @@ function executePrint() {
   
   if (btn) btn.textContent = '⏳';
   
-  fetch('/departure/api/print/' + hoche + '?plt=' + (document.getElementById('plt_input_' + hoche) ? parseInt(document.getElementById('plt_input_' + hoche).value) || 0 : 0))
+  var pltVal = (document.getElementById('plt_input_' + hoche) ? parseInt(document.getElementById('plt_input_' + hoche).value) || 0 : 0);
+  var sealParams = '';
+  sealSides.forEach(function(s){
+    var el = document.getElementById('seal_' + hoche + '_' + s.key);
+    if (el && el.value.trim()) {
+      sealParams += '&seal_' + s.key + '=' + encodeURIComponent(el.value.trim());
+    }
+  });
+  fetch('/departure/api/print/' + hoche + '?plt=' + pltVal + sealParams)
   .then(function(r) {
     if (!r.ok) {
       return r.text().then(function(t) {

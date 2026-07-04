@@ -242,6 +242,18 @@ def render_page(request):
     return HttpResponse(html)
 
 
+def render_barcode_scanner(request):
+    """scanner 페이지를 Django에서 직접 서빙 (Vite proxy의 SSE 비호환 회피).
+    public/ 의 barcode_scanner.html 을 그대로 반환. origin이 같아져서 SSE가 정상 동작.
+    """
+    scanner_path = os.path.abspath(os.path.join(APP_DIR, "..", "..", "frontend", "client", "public", "barcode_scanner.html"))
+    if not os.path.isfile(scanner_path):
+        return HttpResponse("barcode_scanner.html not found", status=404)
+    with open(scanner_path, "r", encoding="utf-8") as f:
+        html = f.read()
+    return HttpResponse(html)
+
+
 def api_vehicles(request):
     q = request.GET.get("q", "").strip()
     if q:
@@ -418,6 +430,26 @@ def api_print(request, hoche):
 
     if os.path.isfile(ls_pdf):
         try:
+            # 봉인씰 번호가 있으면 PDF에 합성
+            seal_left  = request.GET.get("seal_leftWing", "").strip()
+            seal_right = request.GET.get("seal_rightWing", "").strip()
+            seal_back  = request.GET.get("seal_backDoor", "").strip()
+            if seal_left or seal_right or seal_back:
+                import fitz as _fitz
+                tmp_pdf = ls_pdf + ".sealed.pdf"
+                doc = _fitz.open(ls_pdf)
+                page = doc[0]
+                # 봉인씰 라벨 우측 빈칸 좌표 (fitz PDF 좌표계 기준)
+                if seal_left:
+                    page.insert_text((175, 252), seal_left, fontsize=10, fontname="helv")
+                if seal_right:
+                    page.insert_text((310, 252), seal_right, fontsize=10, fontname="helv")
+                if seal_back:
+                    page.insert_text((502, 252), seal_back, fontsize=10, fontname="helv")
+                doc.save(tmp_pdf)
+                doc.close()
+                ls_pdf = tmp_pdf
+                results.append(f"🔒 봉인씰 합성: L={seal_left or '-'}, R={seal_right or '-'}, B={seal_back or '-'}")
             import win32api
             win32api.ShellExecute(0, "printto", ls_pdf, '"Canon G2010 series"', ".", 0)
             results.append(f"✅ LS PDF 출력: {hoche}호차 완료 ({os.path.basename(ls_pdf)})")
@@ -582,3 +614,173 @@ def api_ls_sync(request):
         "source": "db",  # LS API 차단으로 DB 기반으로 변경
         "message": "LS API 차단 (CloudFront 403) — PDF 수동 등록 필요"
     })
+
+
+# ────────────────────────────────────────────────────────────────
+# Barcode Scanner 다중 컴퓨터 공유 API
+# ────────────────────────────────────────────────────────────────
+# - scanner 페이지에서 입력한 데이터와 미입고 체크 상태를
+#   일별 JSON 파일로 저장하여 다른 컴퓨터에서 즉시 공유 가능하게 한다.
+# - 초기화(clear) 기능 제공.
+# - SSE(Server-Sent Events)로 다른 컴퓨터 변경분을 실시간 push.
+
+import threading
+import queue as _queue
+
+BARCODE_SUBSCRIBERS = {}      # date_str -> list[queue.Queue]
+BARCODE_SUBSCRIBERS_LOCK = threading.Lock()
+
+
+def _barcode_path(date_str):
+    return os.path.join(DATA_DIR, f"barcode_{date_str}.json")
+
+
+def _barcode_load_from_disk(date_str):
+    """디스크에서 저장된 데이터를 읽어옴. 없으면 None."""
+    path = _barcode_path(date_str)
+    if os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return None
+    return None
+
+
+def _barcode_save_to_disk(date_str, payload):
+    """디스크에 저장 + 모든 SSE 구독자에게 변경 알림."""
+    payload["updated_at"] = datetime.datetime.now().isoformat()
+    path = _barcode_path(date_str)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+    # SSE 구독자에게 알림
+    with BARCODE_SUBSCRIBERS_LOCK:
+        subscribers = list(BARCODE_SUBSCRIBERS.get(date_str, []))
+    for q in subscribers:
+        try:
+            q.put_nowait({"type": "update", "date": date_str})
+        except Exception:
+            pass
+
+
+@csrf_exempt
+def api_barcode_save(request):
+    """scanner 데이터 저장.
+    POST body: { date?: "YYYY-MM-DD", parsed_text, col_indices, rows, flagged_indices, current_index }
+    GET → 단순 상태 확인용
+    """
+    if request.method != "POST":
+        return JsonResponse({"ok": False, "error": "POST only"}, status=405)
+
+    try:
+        body = json.loads(request.body)
+    except Exception:
+        return JsonResponse({"ok": False, "error": "invalid json"}, status=400)
+
+    date_str = body.get("date") or datetime.date.today().strftime("%Y-%m-%d")
+    payload = {
+        "date": date_str,
+        "parsed_text": body.get("parsed_text", ""),
+        "col_indices": body.get("col_indices", {}),
+        "rows": body.get("rows", []),
+        "flagged_indices": sorted(list(body.get("flagged_indices", []))),
+        "current_index": int(body.get("current_index", 0)),
+    }
+    _barcode_save_to_disk(date_str, payload)
+    return JsonResponse({"ok": True, "date": date_str,
+                         "rows": len(payload["rows"]),
+                         "flagged": len(payload["flagged_indices"]),
+                         "updated_at": payload["updated_at"]})
+
+
+@csrf_exempt
+def api_barcode_load(request):
+    """저장된 scanner 데이터 로드. GET ?date=YYYY-MM-DD"""
+    date_str = request.GET.get("date") or datetime.date.today().strftime("%Y-%m-%d")
+    data = _barcode_load_from_disk(date_str)
+    if data is None:
+        return JsonResponse({"ok": True, "exists": False, "date": date_str})
+    return JsonResponse({"ok": True, "exists": True, "date": date_str, "data": data})
+
+
+@csrf_exempt
+def api_barcode_clear(request):
+    """저장된 scanner 데이터 초기화(삭제). DELETE or POST, ?date=YYYY-MM-DD"""
+    date_str = request.GET.get("date") or datetime.date.today().strftime("%Y-%m-%d")
+    path = _barcode_path(date_str)
+    removed = False
+    if os.path.isfile(path):
+        try:
+            os.remove(path)
+            removed = True
+        except Exception as e:
+            return JsonResponse({"ok": False, "error": str(e)}, status=500)
+
+    # SSE 구독자에게 clear 알림
+    with BARCODE_SUBSCRIBERS_LOCK:
+        subscribers = list(BARCODE_SUBSCRIBERS.get(date_str, []))
+    for q in subscribers:
+        try:
+            q.put_nowait({"type": "clear", "date": date_str})
+        except Exception:
+            pass
+
+    return JsonResponse({"ok": True, "date": date_str, "removed": removed})
+
+
+def api_barcode_subscribe(request):
+    """SSE(Server-Sent Events) 스트림. 다른 컴퓨터 변경분을 실시간 push.
+    GET /api/barcode/subscribe?date=YYYY-MM-DD
+    """
+    from django.http import StreamingHttpResponse
+    date_str = request.GET.get("date") or TODAY
+
+    def event_stream():
+        q = _queue.Queue(maxsize=16)
+        with BARCODE_SUBSCRIBERS_LOCK:
+            BARCODE_SUBSCRIBERS.setdefault(date_str, []).append(q)
+        try:
+            # 연결 직후 현재 스냅샷 즉시 push
+            current = _barcode_load_from_disk(date_str)
+            yield f"data: {json.dumps({'type': 'hello', 'date': date_str, 'exists': current is not None}, ensure_ascii=False)}\n\n"
+            last_payload_version = None
+            if current is not None:
+                last_payload_version = current.get("updated_at", "")
+                yield f"data: {json.dumps({'type': 'snapshot', 'date': date_str, 'data': current}, ensure_ascii=False)}\n\n"
+
+            # 변경 이벤트 대기
+            while True:
+                try:
+                    evt = q.get(timeout=15)
+                except _queue.Empty:
+                    # keep-alive (프록시/브라우저 연결 유지)
+                    yield ":\n\n"
+                    continue
+
+                if evt.get("type") == "clear":
+                    yield f"data: {json.dumps({'type': 'clear', 'date': date_str}, ensure_ascii=False)}\n\n"
+                    last_payload_version = None
+                    continue
+
+                if evt.get("type") == "update":
+                    latest = _barcode_load_from_disk(date_str)
+                    if latest is None:
+                        yield f"data: {json.dumps({'type': 'clear', 'date': date_str}, ensure_ascii=False)}\n\n"
+                        last_payload_version = None
+                        continue
+                    version = latest.get("updated_at", "")
+                    if version == last_payload_version:
+                        continue
+                    last_payload_version = version
+                    yield f"data: {json.dumps({'type': 'snapshot', 'date': date_str, 'data': latest}, ensure_ascii=False)}\n\n"
+        finally:
+            with BARCODE_SUBSCRIBERS_LOCK:
+                subs = BARCODE_SUBSCRIBERS.get(date_str, [])
+                if q in subs:
+                    subs.remove(q)
+
+    resp = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
+    resp["Cache-Control"] = "no-cache"
+    resp["X-Accel-Buffering"] = "no"
+    return resp

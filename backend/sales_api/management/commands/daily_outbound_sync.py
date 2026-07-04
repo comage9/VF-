@@ -29,7 +29,7 @@ class Command(BaseCommand):
         # 동기화 전 DB 최신 날짜 확인
         latest = OutboundRecord.objects.order_by("-outbound_date").first()
         latest_date = latest.outbound_date if latest else None
-        today = timezone.now().date()
+        today = timezone.localdate()
         self.stdout.write(f"DB 최신 날짜: {latest_date}, 오늘: {today}")
 
         # 어제 날짜부터 동기화 (이미 있으면 update_or_create로 갱신)

@@ -398,10 +398,10 @@ const loadScript = (src: string, opts?: { async?: boolean }) =>
 
 async function ensureChartScripts() {
   if (!(window as any).Chart) {
-    await loadScript("https://cdn.jsdelivr.net/npm/chart.js@3.9.1");
+    await loadScript("/chart.min.js");
   }
   if (!(window as any).ChartDataLabels) {
-    await loadScript("https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0");
+    await loadScript("/chartjs-plugin-datalabels.min.js");
   }
 }
 
