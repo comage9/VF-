@@ -99,7 +99,44 @@ body{font-family:'Segoe UI','Noto Sans KR',sans-serif;background:#f0f2f5;color:#
 .seal-item label{color:#6b7280;width:90px}
 
 /* ── RESPONSIVE ── */
-@media(max-width:900px){.info-closeout-wrapper{flex-direction:column}.info-closeout-wrapper .closeout-section{max-width:none}#vf67Container{grid-template-columns:1fr}}
+/* ── MOBILE TABS ── */
+.mobile-tab-bar { display: none; background: #fff; margin-bottom: 16px; border-radius: 8px; overflow: hidden; border: 1px solid #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+.mobile-tab-btn { flex: 1; padding: 14px; font-weight: 700; border: none; background: #f9fafb; color: #6b7280; font-size: 15px; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s; }
+.mobile-tab-btn.active { color: #2563eb; border-bottom-color: #2563eb; background: #eff6ff; }
+
+/* ── RESPONSIVE OVERRIDES ── */
+@media(max-width:900px){
+  .info-closeout-wrapper{flex-direction:column}
+  .info-closeout-wrapper .closeout-section{max-width:none}
+  #vf67Container{grid-template-columns:1fr}
+
+  .mobile-tab-bar { display: flex; }
+  .tab-content-sec { display: none !important; }
+  .tab-content-sec.active { display: block !important; }
+  .info-closeout-wrapper.active { display: flex !important; }
+  
+  /* 카드형 테이블 - summary-table */
+  .summary-table, .summary-table thead, .summary-table tbody, .summary-table th, .summary-table td, .summary-table tr { display: block; }
+  .summary-table thead tr { position: absolute; top: -9999px; left: -9999px; }
+  .summary-table tr { border: 1px solid #e5e7eb; margin-bottom: 12px; border-radius: 8px; background: #fff; padding: 12px; position: relative; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+  .summary-table td { border: none !important; border-bottom: 1px solid #f3f4f6 !important; position: relative; padding: 10px 10px 10px 110px !important; text-align: left !important; min-height: 40px; display: flex; align-items: center; }
+  .summary-table td:last-child { border-bottom: 0 !important; justify-content: flex-end; }
+  .summary-table td:before { position: absolute; left: 10px; top: 12px; width: 90px; white-space: nowrap; font-weight: 600; color: #6b7280; font-size: 13px; content: attr(data-label); }
+  .summary-table td select, .summary-table td input { margin: 0; width: 100% !important; max-width: 250px; text-align: left; }
+  .summary-table td select.time-select { text-align: left; -moz-text-align-last: left; }
+
+  /* 입력 폼 세로 정렬 */
+  .add-v-row { flex-direction: column; align-items: flex-start; gap: 8px; margin-bottom: 16px; }
+  .add-v-label { width: auto; font-size: 14px; color: #6b7280; }
+  .add-v-label:after { content: ''; }
+  .add-v-select { width: 100%; padding: 12px; font-size: 16px; }
+  
+  /* 봉인씰 모바일 개선 */
+  .seal-grid { display: flex; flex-direction: column; gap: 12px; }
+  .seal-item { flex-direction: column; align-items: flex-start; gap: 6px; background: #f9fafb; padding: 12px; border-radius: 8px; border: 1px solid #e5e7eb; }
+  .seal-item label { width: auto; font-weight: 700; color: #1f2937; }
+  .seal-item input { width: 100%; padding: 12px; font-size: 16px; }
+}
 @media print{body{background:#fff;color:#000}.card{background:#fff;border:1px solid #ccc}.inp,.inp-region{border:1px solid #ccc;background:#fff;color:#000}}
 
 /* ── MODAL ── */
@@ -138,12 +175,14 @@ body{font-family:'Segoe UI','Noto Sans KR',sans-serif;background:#f0f2f5;color:#
     <span class="badge">실시간</span>
   </div>
   <div style="display:flex;gap:8px;align-items:center">
-    <button class="btn btn-success btn-sm" onclick="sendDispatchRequest()" id="dispatchBtn">🚛 배차 요청</button>
-    <button class="btn btn-sm" onclick="sendExtraDispatchRequest()" id="extraDispatchBtn" style="background:#f97316;border-color:#f97316;color:#fff">📤 추가 배차 요청</button>
-    <button class="btn btn-primary btn-sm" onclick="location.reload()">🔄 새로고침</button>
-    <button class="btn btn-sm" onclick="syncDBData()" id="syncBtn" style="background:#6366f1;border-color:#6366f1;color:#fff">🔄 DB 동기화</button>
+      <button class="btn btn-success btn-sm" onclick="sendDispatchRequest()" id="dispatchBtn">🚛 배차 요청</button>
+      <button class="btn btn-sm" onclick="sendExtraDispatchRequest()" id="extraDispatchBtn" style="background:#f97316;border-color:#f97316;color:#fff">📤 추가 배차 요청</button>
+      <button class="btn btn-primary btn-sm" onclick="location.reload()">🔄 새로고침</button>
+      <button class="btn btn-sm" onclick="syncDBData()" id="syncBtn" style="background:#6366f1;border-color:#6366f1;color:#fff">🔄 DB 동기화</button>
+      <button class="btn btn-sm" onclick="scanDownloadFolder()" id="downloadScanBtn" style="background:#06b6d4;border-color:#06b6d4;color:#fff">📥 다운로드 스캔</button>
+      <button class="btn btn-sm" onclick="showVehicleOrderModal()" style="background:#8b5cf6;border-color:#8b5cf6;color:#fff">📋 차량 순서 입력</button>
+    </div>
   </div>
-</div>
 
 <!-- ═══════ 2. DATE NAV ═══════ -->
 <div class="date-nav">
@@ -154,8 +193,15 @@ body{font-family:'Segoe UI','Noto Sans KR',sans-serif;background:#f0f2f5;color:#
   <input type="date" id="datePicker" onchange="onDatePick()">
 </div>
 
+<!-- ═══════ 2.5. MOBILE TAB BAR ═══════ -->
+<div class="mobile-tab-bar">
+  <button class="mobile-tab-btn active" onclick="switchMobileTab('summary')" id="mtab-summary">출차현황</button>
+  <button class="mobile-tab-btn" onclick="switchMobileTab('vf67')" id="mtab-vf67">VF67관리</button>
+  <button class="mobile-tab-btn" onclick="switchMobileTab('seal')" id="mtab-seal">봉인씰</button>
+</div>
+
 <!-- ═══════ 3. INFO + CLOSEOUT (side by side) ═══════ -->
-<div class="info-closeout-wrapper" id="infoCloseoutWrapper" style="display:none">
+<div class="info-closeout-wrapper tab-content-sec active" id="infoCloseoutWrapper" style="display:none">
 
   <!-- ── VEHICLE SUMMARY TABLE ── -->
   <div class="card summary-section" id="vehicleSummarySection">
@@ -198,7 +244,7 @@ body{font-family:'Segoe UI','Noto Sans KR',sans-serif;background:#f0f2f5;color:#
 <div id="vf67TabBar"></div>
 
 <!-- ═══════ 5. VF67 CARDS ═══════ -->
-<div class="card vf67-section" id="vf67Section" style="display:none">
+<div class="card vf67-section tab-content-sec" id="vf67Section" style="display:none">
   <div class="card-title"><span>📄 VF67 출차 카드</span></div>
   <div id="vf67Container"></div>
   <div class="vf67-hidden-banner" id="vf67HiddenBanner" style="display:none">
@@ -208,7 +254,7 @@ body{font-family:'Segoe UI','Noto Sans KR',sans-serif;background:#f0f2f5;color:#
 </div>
 
 <!-- ═══════ 6. SEAL ═══════ -->
-<div class="card">
+<div class="card tab-content-sec" id="sealCard">
   <div class="card-title">🔒 봉인씰</div>
   <div class="seal-grid" id="sealGrid"></div>
 </div>
@@ -295,6 +341,33 @@ body{font-family:'Segoe UI','Noto Sans KR',sans-serif;background:#f0f2f5;color:#
   </div>
 </div>
 
+<!-- ═══════ VEHICLE ORDER MODAL ═══════ -->
+<div id="vehicleOrderModal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:600px">
+    <div class="modal-header">
+      <span>📋 차량 순서 입력</span>
+      <button onclick="closeVehicleOrderModal()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#6b7280">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:12px;color:#6b7280;margin-bottom:8px;line-height:1.5">
+        형식: [허브][호차] 차량번호 연락처<br>
+        예: [부천1HUB][1호] 경기82바3167 010-5216-6253<br>
+        한 줄에 하나씩 입력하세요.
+      </div>
+      <textarea id="vehicleOrderInput" style="width:100%;height:200px;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-family:monospace;font-size:13px;line-height:1.6;resize:vertical"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="applyVehicleOrder()">✅ 적용</button>
+      <button class="btn" onclick="closeVehicleOrderModal()">취소</button>
+    </div>
+  </div>
+</div>
+      <button class="btn btn-primary" onclick="applyVehicleOrder()">✅ 적용</button>
+      <button class="btn" onclick="closeVehicleOrderModal()">취소</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════ TOAST CONTAINER ═══════ -->
 <div id="toastContainer"></div>
 
@@ -302,6 +375,24 @@ body{font-family:'Segoe UI','Noto Sans KR',sans-serif;background:#f0f2f5;color:#
 // ── 서버 주입 데이터 ──
 var LS_DATA = __LS_DATA__;
 var KPP_DATA = __KPP_DATA__;
+
+// ── 모바일 탭 전환 ──
+function switchMobileTab(tabId) {
+  document.querySelectorAll('.mobile-tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  document.getElementById('mtab-' + tabId).classList.add('active');
+  
+  document.getElementById('infoCloseoutWrapper').classList.remove('active');
+  document.getElementById('vf67Section').classList.remove('active');
+  document.getElementById('sealCard').classList.remove('active');
+  
+  if (tabId === 'summary') {
+    document.getElementById('infoCloseoutWrapper').classList.add('active');
+  } else if (tabId === 'vf67') {
+    document.getElementById('vf67Section').classList.add('active');
+  } else if (tabId === 'seal') {
+    document.getElementById('sealCard').classList.add('active');
+  }
+}
 
 // ── 상태 관리 ──
 var MAX_VISIBLE = 4;
@@ -401,10 +492,59 @@ function renderSeal(data) {
       div.className = 'seal-item';
       var savedVal = seals[s.key] || '';
       div.innerHTML = '<label>' + hoche + '호차 ' + s.label + ':</label>' +
-        '<input class="inp inp-xs" id="seal_' + hoche + '_' + s.key + '" value="' + savedVal + '" placeholder="-" onchange="onSealChange(' + hoche + ')">';
+        '<input class="inp inp-xs" id="seal_' + hoche + '_' + s.key + '" value="' + savedVal + '" placeholder="-" onchange="onSealChange(' + hoche + ')" onkeyup="onSealKeyUp(event, ' + hoche + ', \'' + s.key + '\')">';
       grid.appendChild(div);
     });
   });
+}
+function onSealKeyUp(event, hoche, key) {
+  // 엔터 키 입력 시에만 다음 칸으로 이동 (스캐너의 자동 엔터와 조화)
+  if (event.key === 'Enter') {
+    moveToNextSealInput(hoche, key);
+  }
+}
+function moveToNextSealInput(hoche, key) {
+  var nextKeyMap = {
+    'leftWing': 'rightWing',
+    'rightWing': 'backDoor',
+    'backDoor': null
+  };
+  var nextKey = nextKeyMap[key];
+  
+  // 80ms 지연을 주어 스캐너 하드웨어 입력 버퍼가 완전히 비워진 후 포커스를 넘김 (글자 잘림 및 다음 필드 오염 방지)
+  setTimeout(function() {
+    if (nextKey) {
+      var nextEl = document.getElementById('seal_' + hoche + '_' + nextKey);
+      if (nextEl) {
+        nextEl.focus();
+        nextEl.select();
+      }
+    } else {
+      // 후면도어(backDoor) 완료 시 -> 다음 호차(hoche + 1)의 좌측윙으로 자동 이동 시도
+      var nextHoche = hoche + 1;
+      var nextEl = null;
+      while (nextHoche <= 30) {
+        var elTest = document.getElementById('seal_' + nextHoche + '_leftWing');
+        if (elTest) {
+          nextEl = elTest;
+          break;
+        }
+        nextHoche++;
+      }
+      
+      // 현재 호차 값 강제 저장 트리거
+      onSealChange(hoche);
+      
+      if (nextEl) {
+        nextEl.focus();
+        nextEl.select();
+      } else {
+        // 다음 호차 란이 없는 진짜 최종 호차인 경우 포커스 아웃
+        var el = document.getElementById('seal_' + hoche + '_' + key);
+        if (el) el.blur();
+      }
+    }
+  }, 80);
 }
 function onSealChange(hoche) {
   var seals = {};
@@ -422,7 +562,7 @@ function onSealChange(hoche) {
     }
   }
   if (updated) {
-    fetch('/departure/api/ls-data', {
+    fetch('/departure/api/ls-data?date=' + dateKey, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify(LS_DATA)
@@ -439,7 +579,6 @@ function renderSummaryTableWithData(data) {
   document.getElementById('infoCloseoutWrapper').style.display = 'flex';
   
   // 1) 기본 플레이스홀더 호차 (1~3, 삭제 제외)
-  //    단, LS_DATA에 해당 hoche가 있으면 삭제됐어도 다시 표시
   var phList = [];
   for (var ph = 1; ph <= 3; ph++) {
     var hasData = false;
@@ -463,8 +602,8 @@ function renderSummaryTableWithData(data) {
     return;
   }
   
-  // 3) 플레이스홀더 호차 렌더링
-  //    → LS_DATA에 같은 hoche가 있으면 데이터 행, 없으면 플레이스홀더 행
+    // 3) 시간순 정렬 및 렌더링
+  var renderItems = [];
   phList.forEach(function(ph){
     var existing = null;
     if (data) {
@@ -472,25 +611,40 @@ function renderSummaryTableWithData(data) {
         if (data[k].hoche === ph) { existing = data[k]; break; }
       }
     }
-    if (existing && existing.plate && existing.plate.trim() !== '') {
-      renderDataRow(container, existing);
-    } else if (existing) {
-      // LS_DATA에 hoche는 있지만 plate 미입력 → 플레이스홀더 행 (시간/톤수는 데이터 유지)
-      renderPlaceholderRow(container, ph, existing.time, existing.ton);
-    } else {
-      renderPlaceholderRow(container, ph);
-    }
+    var t = (existing && existing.time) ? existing.time : ([,'20:00','22:00','23:50'][ph] || '99:99');
+    renderItems.push({ hoche: ph, existing: existing, isExtra: false, sortTime: t });
   });
   
-  // 4) 추가 배차 데이터 렌더링
   extraData.forEach(function(d){
-    if (d.plate && d.plate.trim() !== '') {
-      renderDataRow(container, d);
+    var t = d.time ? d.time : '99:99';
+    renderItems.push({ hoche: d.hoche, existing: d, isExtra: true, sortTime: t });
+  });
+  
+  // 3) 호차순 정렬 (시간순 정렬 제거 - 호차 1,2,3 순서 고정)
+    renderItems.sort(function(a, b) {
+      return a.hoche - b.hoche;
+    });
+  
+  renderItems.forEach(function(item) {
+    if (!item.isExtra) {
+      var existing = item.existing;
+      if (existing && existing.plate && existing.plate.trim() !== '') {
+        renderDataRow(container, existing);
+      } else if (existing) {
+        renderPlaceholderRow(container, item.hoche, existing.time, existing.ton);
+      } else {
+        renderPlaceholderRow(container, item.hoche);
+      }
     } else {
-      // plate 미입력 = 대기중 → 플레이스홀더 형태 (시간/톤수 드롭다운 + 입력 필드)
-      renderPlaceholderRow(container, d.hoche, d.time, d.ton);
+      var d = item.existing;
+      if (d.plate && d.plate.trim() !== '') {
+        renderDataRow(container, d);
+      } else {
+        renderPlaceholderRow(container, d.hoche, d.time, d.ton);
+      }
     }
   });
+
 }
 
 // ── 플레이스홀더 단일 행 ──
@@ -509,17 +663,17 @@ function renderPlaceholderRow(container, ph, optTime, optTon) {
     + '</select>';
   var tr = document.createElement('tr');
   tr.innerHTML =
-    '<td>'+ph+'호차</td>' +
-    '<td><select class="inp inp-xs time-select" id="time_select_'+ph+'" onchange="onTimeChange('+ph+')">'+optsHtml+'</select></td>' +
-    '<td><input class="inp inp-xs" id="plate_input_'+ph+'" onchange="savePlaceholderVehicle('+ph+')"></td>' +
-    '<td><input class="inp inp-xs" id="driver_input_'+ph+'" onchange="savePlaceholderVehicle('+ph+')"></td>' +
-    '<td><input class="inp inp-xs" id="phone_input_'+ph+'" onchange="savePlaceholderVehicle('+ph+')"></td>' +
-    '<td><span class="badge-new">🆕 신규</span></td>' +
-    '<td><input class="inp inp-xs" value="0" id="plt_input_'+ph+'"></td>' +
-    '<td><button class="btn btn-sm" onclick="printVehicle('+ph+')" style="opacity:0.4;cursor:not-allowed" disabled title="차량 정보 입력 필요">🖨️</button></td>' +
-    '<td></td>' +
-    '<td>' + tonHtml + '</td>' +
-    '<td><button class="btn btn-sm" onclick="deleteRow('+ph+')" style="color:#ef4444">🗑️</button></td>';
+    '<td data-label="호차">'+ph+'호차</td>' +
+    '<td data-label="시간"><select class="inp inp-xs time-select" id="time_select_'+ph+'" onchange="onTimeChange('+ph+')">'+optsHtml+'</select></td>' +
+    '<td data-label="차량번호"><input class="inp inp-xs" id="plate_input_'+ph+'" onchange="savePlaceholderVehicle('+ph+')"></td>' +
+    '<td data-label="기사님"><input class="inp inp-xs" id="driver_input_'+ph+'" onchange="savePlaceholderVehicle('+ph+')"></td>' +
+    '<td data-label="연락처"><input class="inp inp-xs" id="phone_input_'+ph+'" onchange="savePlaceholderVehicle('+ph+')"></td>' +
+    '<td data-label="구분"><span class="badge-new">🆕 신규</span></td>' +
+    '<td data-label="파렛트"><input class="inp inp-xs" value="0" id="plt_input_'+ph+'"></td>' +
+    '<td data-label="🖨️"><button class="btn btn-sm" onclick="printVehicle('+ph+')" style="opacity:0.4;cursor:not-allowed" disabled title="차량 정보 입력 필요">🖨️</button></td>' +
+    '<td data-label="출고시간"></td>' +
+    '<td data-label="톤수">' + tonHtml + '</td>' +
+    '<td data-label="관리"><button class="btn btn-sm" onclick="deleteRow('+ph+')" style="color:#ef4444">🗑️</button></td>';
   container.appendChild(tr);
 }
 
@@ -548,25 +702,25 @@ function renderDataRow(container, d) {
   var timeVal = d.time || '13:00';
   var timeOpts = ['13:00','13:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','20:00','22:00','23:50'];
   if (timeOpts.indexOf(timeVal) === -1) { timeOpts.push(timeVal); }
-  var timeHtml = '<select class="inp inp-xs time-select" onchange="onTimeChange('+i+')" id="time_select_'+i+'">';
+  var timeHtml = '<td data-label="시간"><select class="inp inp-xs time-select" onchange="onTimeChange('+i+')" id="time_select_'+i+'">';
   timeOpts.forEach(function(t){ timeHtml += '<option value="'+t+'"'+(timeVal===t?' selected':'')+'>'+t+'</option>'; });
-  timeHtml += '</select>';
+  timeHtml += '</select></td>';
   tr.innerHTML =
-    '<td>' + i + '호차</td>' +
+    '<td data-label="호차">' + i + '호차</td>' +
     timeHtml +
-    '<td>' + plate + '</td>' +
-    '<td>' + driver + '</td>' +
-    '<td>' + phone + '</td>' +
-    '<td>' + badge + '</td>' +
-    '<td><input class="inp inp-xs" value="' + savedPlt + '" onchange="onPalletChange(' + i + ')" id="plt_input_' + i + '"></td>' +
-    '<td><button class="btn btn-sm" onclick="printVehicle('+i+')" title="LS PDF + KPP EDI 출력">🖨️</button></td>' +
-    '<td id="plt_time_' + i + '">' + savedTime + '</td>' +
-    '  <select class="inp inp-xs" id="ton_select_' + i + '" onchange="onTonnageChange(' + i + ')">'
+    '<td data-label="차량번호">' + plate + '</td>' +
+    '<td data-label="기사님">' + driver + '</td>' +
+    '<td data-label="연락처">' + phone + '</td>' +
+    '<td data-label="구분">' + badge + '</td>' +
+    '<td data-label="파렛트"><input class="inp inp-xs" value="' + savedPlt + '" onchange="onPalletChange(' + i + ')" id="plt_input_' + i + '"></td>' +
+    '<td data-label="🖨️"><button class="btn btn-sm" onclick="printVehicle('+i+')" title="LS PDF + KPP EDI 출력">🖨️</button></td>' +
+    '<td data-label="출고시간" id="plt_time_' + i + '">' + savedTime + '</td>' +
+    '<td data-label="톤수"><select class="inp inp-xs" id="ton_select_' + i + '" onchange="onTonnageChange(' + i + ')">'
     + '<option value="5T"' + (ton==='5T'?' selected':'') + '>5T</option>'
     + '<option value="11T"' + (ton==='11T'?' selected':'') + '>11T</option>'
     + '<option value="14T"' + (ton==='14T'?' selected':'') + '>14T</option>'
     + '</select></td>' +
-    '<td><button onclick="deleteRow('+i+')" style="background:none;border:none;cursor:pointer;font-size:16px">🗑️</button></td>';
+    '<td data-label="관리"><button onclick="deleteRow('+i+')" style="background:none;border:none;cursor:pointer;font-size:16px">🗑️</button></td>';
   container.appendChild(tr);
 }
 
@@ -1307,8 +1461,8 @@ function executePrint() {
     showToast(msg, data.ok ? 'success' : 'error', 8000);
     if (btn) btn.textContent = origText;
     
-    // 출력 완료 후 백엔드로부터 최신 톤수 및 이력 상태 실시간 동기화
-    fetch('/departure/api/ls-data')
+    // 출력 완료 후 백엔드로부터 최신 톤수 및 이력 상태 실시간 동기화 (조회 중인 날짜 명시)
+    fetch('/departure/api/ls-data?date=' + formatDate(currentDate))
     .then(function(res){ return res.json(); })
     .then(function(resData){
       if(resData.data) { LS_DATA = resData.data; }
@@ -1690,8 +1844,99 @@ function syncDBData() {
     });
 }
 
+// ── Downloads 폴더 스캔 버튼 ──
+function scanDownloadFolder() {
+  var btn = document.getElementById('downloadScanBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 스캔 중...'; }
+  fetch('/departure/api/ls-download-scan', {
+    method: 'POST'
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.ok) {
+        var count = data.new_count || 0;
+        alert('📥 다운로드 폴더 스캔 완료\n신규 차량 등록: ' + count + '대');
+        if (count > 0) {
+          // 데이터가 새로 등록되었으므로 서버 데이터 다시 로드
+          loadFromServerAndRender();
+        }
+      } else {
+        alert('❌ 스캔 실패: ' + (data.error || '알 수 없는 오류'));
+      }
+    })
+    .catch(function(err) {
+      alert('❌ 스캔 중 오류 발생: ' + err);
+    })
+    .finally(function() {
+      if (btn) { btn.disabled = false; btn.textContent = '📥 다운로드 스캔'; }
+    });
+}
+
 // ── 페이지 로드 시 초기화 ──
 loadDateData();
+
+// ── 차량 순서 입력 모달 ──
+function showVehicleOrderModal() {
+  var dateStr = formatDate(currentDate);
+  var lines = [];
+  for (var h = 1; h <= 3; h++) {
+    var v = LS_DATA.find(function(x){ return x.hoche === h && x.date === dateStr; });
+    if (v && v.plate && v.plate.trim()) {
+      var hub = v.hub || '부천1 HUB';
+      var phone = v.phone || '';
+      lines.push('[' + hub + '][' + h + '호] ' + v.plate + ' ' + phone);
+    }
+  }
+  document.getElementById('vehicleOrderInput').value = lines.join('\n');
+  document.getElementById('vehicleOrderModal').style.display = 'flex';
+}
+function closeVehicleOrderModal() {
+  document.getElementById('vehicleOrderModal').style.display = 'none';
+}
+function applyVehicleOrder() {
+  var text = document.getElementById('vehicleOrderInput').value.trim();
+  if (!text) { alert('입력 내용이 없습니다.'); return; }
+  
+  var dateStr = formatDate(currentDate);
+  var lines = text.split('\n').map(function(l){ return l.trim(); }).filter(function(l){ return l; });
+  var updated = false;
+  
+  lines.forEach(function(line){
+    // 파싱: [부천1HUB][1호] 경기82바3167 010-5216-6253
+    var match = line.match(/\[([^\]]+)\]\[(\d+)호\]\s+(\S+)\s+(\S+)/);
+    if (match) {
+      var hub = match[1];
+      var hoche = parseInt(match[2]);
+      var plate = match[3];
+      var phone = match[4];
+      
+      // LS_DATA에서 해당 호차 찾기
+      for (var i = 0; i < LS_DATA.length; i++) {
+        if (LS_DATA[i].hoche === hoche && LS_DATA[i].date === dateStr) {
+          LS_DATA[i].plate = plate;
+          LS_DATA[i].phone = phone;
+          LS_DATA[i].driver = LS_DATA[i].driver || '';
+          LS_DATA[i].hub = hub;
+          updated = true;
+          break;
+        }
+      }
+    }
+  });
+  
+  if (updated) {
+    fetch('/departure/api/ls-data', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(LS_DATA)
+    }).then(function(r){ return r.json(); }).then(function(data){
+      if (data.ok) { LS_DATA = data.data; loadDateData(); }
+    });
+    closeVehicleOrderModal();
+  } else {
+    alert('파싱할 수 있는 데이터가 없습니다. 형식을 확인해주세요.');
+  }
+}
 
 </script>
 </body>

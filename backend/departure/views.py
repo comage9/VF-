@@ -1,5 +1,5 @@
 """VF 출차 관리 대시보드 — Django views (Flask app.py 이식)"""
-import json, os, datetime, re, time, urllib.request, urllib.parse
+import json, os, datetime, re, time, urllib.request, urllib.parse, threading
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
@@ -52,74 +52,93 @@ def _ls_data_path_for(date_str):
     return os.path.join(DATA_DIR, "ls_data.json")
 
 
+from departure.models import DepartureRecord
+
+
 def load_ls_data_by_date(date_str):
-    """지정 날짜의 ls_data 로드 (없으면 빈 리스트). 일별 파일 우선, 공통 파일 fallback."""
+    """지정 날짜의 ls_data 로드 (없으면 빈 리스트). DB departure_records 테이블에서 조회."""
     if not date_str:
         date_str = TODAY
-    daily = os.path.join(DATA_DIR, f"ls_data_{date_str}.json")
-    if os.path.isfile(daily):
-        try:
-            with open(daily, "r", encoding="utf-8") as f:
-                saved = json.load(f)
-            if isinstance(saved, list):
-                return saved
-        except Exception:
-            pass
-    # fallback: 공통 ls_data.json에서 date 필드 필터링
-    common = os.path.join(DATA_DIR, "ls_data.json")
-    if os.path.isfile(common):
-        try:
-            with open(common, "r", encoding="utf-8") as f:
-                saved = json.load(f)
-            if isinstance(saved, list):
-                return [v for v in saved if v.get("date") == date_str]
-        except Exception:
-            pass
-    return []
+    try:
+        records = DepartureRecord.objects.filter(date=date_str).order_by('hoche')
+        result = []
+        for r in records:
+            result.append({
+                "plate": r.plate,
+                "driver": r.driver_name,
+                "name": r.driver_name,
+                "driverName": r.driver_name,
+                "driverPhone": r.driver_phone,
+                "phone": r.driver_phone,
+                "ton": r.ton,
+                "original_ton": r.original_ton,
+                "hoche": r.hoche,
+                "time": r.time,
+                "date": str(r.date),
+                "plt": r.plt,
+                "hub": r.hub,
+                "isNew": r.is_new,
+                "slipNo": r.slip_no,
+                "barcode": r.barcode,
+                "lastSeen": r.last_seen,
+                "totalOrders": r.total_orders,
+                "seals": {
+                    "leftWing": r.seal_left_wing,
+                    "rightWing": r.seal_right_wing,
+                    "backDoor": r.seal_back_door
+                }
+            })
+        return result
+    except Exception as e:
+        print(f"Error loading departure records: {e}")
+        return []
 
 
 def save_ls_data_by_date(date_str, data):
-    """지정 날짜의 ls_data를 일별 파일에 저장 (다른 날짜 데이터는 보존)."""
+    """지정 날짜의 ls_data를 DB에 저장."""
     if not date_str:
         date_str = TODAY
-    daily = os.path.join(DATA_DIR, f"ls_data_{date_str}.json")
-    # 모든 entry에 date 보정
-    norm = []
-    for v in (data or []):
-        ev = dict(v)
-        ev["date"] = date_str
-        norm.append(ev)
-    with open(daily, "w", encoding="utf-8") as f:
-        json.dump(norm, f, ensure_ascii=False, indent=2)
-    return daily
+    try:
+        # DB에서 전달받은 호차 외의 다른 호차는 삭제 처리
+        incoming_hoches = [v.get("hoche") for v in (data or []) if v.get("hoche")]
+        DepartureRecord.objects.filter(date=date_str).exclude(hoche__in=incoming_hoches).delete()
+        
+        for v in (data or []):
+            hoche = v.get("hoche")
+            if not hoche:
+                continue
+            seals = v.get("seals") or {}
+            DepartureRecord.objects.update_or_create(
+                date=date_str,
+                hoche=hoche,
+                defaults={
+                    "plate": v.get("plate", ""),
+                    "driver_name": v.get("driverName") or v.get("driver") or v.get("name") or "",
+                    "driver_phone": v.get("driverPhone") or v.get("phone") or "",
+                    "ton": v.get("ton", "5T"),
+                    "original_ton": v.get("original_ton", "5T"),
+                    "time": v.get("time", ""),
+                    "plt": v.get("plt", 0),
+                    "hub": v.get("hub", ""),
+                    "is_new": v.get("isNew", False),
+                    "slip_no": v.get("slipNo") or v.get("slip_no") or "",
+                    "barcode": v.get("barcode", ""),
+                    "last_seen": v.get("lastSeen") or v.get("last_seen") or "-",
+                    "total_orders": v.get("totalOrders", 0),
+                    "seal_left_wing": seals.get("leftWing", ""),
+                    "seal_right_wing": seals.get("rightWing", ""),
+                    "seal_back_door": seals.get("backDoor", ""),
+                }
+            )
+    except Exception as e:
+        print(f"Error saving departure records: {e}")
+    return ""
 
 
 def _ensure_ls_loaded_for(date_str):
     """요청 날짜의 데이터가 모듈 캐시에 없으면 로드."""
     global LS_DATA
-    if not LS_DATA:
-        LS_DATA = load_ls_data_by_date(date_str)
-        for v in LS_DATA:
-            if "original_ton" not in v or not v.get("original_ton"):
-                v["original_ton"] = v.get("ton", "5T")
-
-
-# 기동 시: 오늘 날짜 일별 파일 우선 로드 (없으면 공통 파일)
-ls_data_path_today = os.path.join(DATA_DIR, f"ls_data_{TODAY}.json")
-ls_data_path = ls_data_path_today
-if not os.path.isfile(ls_data_path):
-    ls_data_path = os.path.join(DATA_DIR, "ls_data.json")
-if os.path.isfile(ls_data_path):
-    try:
-        with open(ls_data_path, "r", encoding="utf-8") as f:
-            saved = json.load(f)
-        if isinstance(saved, list):
-            LS_DATA = saved
-            for v in LS_DATA:
-                if "original_ton" not in v or not v.get("original_ton"):
-                    v["original_ton"] = v.get("ton", "5T")
-    except Exception:
-        pass
+    LS_DATA = load_ls_data_by_date(date_str)
 
 
 def is_plate_match(p1, p2):
@@ -151,25 +170,38 @@ def enrich_ls_data(data):
         total_orders = 0
         is_new = True
         
-        # Collect ALL matching DB entries
-        all_matches = []
+        # Exact plate match first (plateNumber exact match)
+        exact_match = None
         if plate:
             for db_v in VEHICLES:
                 db_plate = db_v.get("plateNumber", "").strip()
-                if is_plate_match(db_plate, plate):
-                    all_matches.append(db_v)
+                if db_plate == plate:
+                    exact_match = db_v
+                    break
         
-        if all_matches:
-            # Collect ALL unique dates across all entries (valid + [DELETED] 모두 포함)
-            all_dates = set()
-            best_v = None  # driver 정보가 있는 entry 우선
-            for mv in all_matches:
-                for d in mv.get("dates", []):
-                    all_dates.add(d)
+        # If no exact match, try fuzzy match (last 4 digits + common chars)
+        fuzzy_matches = []
+        if not exact_match and plate:
+            for db_v in VEHICLES:
+                db_plate = db_v.get("plateNumber", "").strip()
+                if is_plate_match(db_plate, plate):
+                    fuzzy_matches.append(db_v)
+        
+        # Use exact match if available, else best fuzzy match
+        matched_v = exact_match
+        if not matched_v and fuzzy_matches:
+            # Prefer match with driver info
+            best_v = None
+            for mv in fuzzy_matches:
                 if best_v is None or (mv.get("driverName") and mv["driverName"] not in ("[DELETED]", "")):
                     best_v = mv
-            if best_v is None:
-                best_v = all_matches[0]
+            matched_v = best_v or fuzzy_matches[0]
+        
+        if matched_v:
+            # Collect dates from matched vehicle
+            all_dates = set()
+            for d in matched_v.get("dates", []):
+                all_dates.add(d)
             
             # 오늘 제외 접안 계산
             today_str = today
@@ -183,15 +215,20 @@ def enrich_ls_data(data):
                 total_orders = 0
                 is_new = True
 
-            # Fill missing fields from matched DB entry (best_v = driver 정보 있는 entry 우선)
+            # Fill missing fields ONLY if not already present in LS data
+            # Driver name
             if not ev.get("driver") or not ev.get("driver").strip():
-                db_driver = best_v.get("driverName", "") or ""
+                db_driver = matched_v.get("driverName", "") or ""
                 if db_driver.endswith(".0"):
                     db_driver = ""
                 ev["driver"] = db_driver or v.get("driverName", "") or ""
                 ev["name"] = ev["driver"]
+            # Phone - only fill if LS data doesn't have it
             if not ev.get("phone") or not ev.get("phone").strip():
-                ev["phone"] = (best_v.get("driverPhone", "") or "") or v.get("driverPhone", "") or v.get("phone", "") or ""
+                ev["phone"] = (matched_v.get("driverPhone", "") or "") or v.get("driverPhone", "") or v.get("phone", "") or ""
+            # Ton - only fill if missing
+            if not ev.get("ton") or not ev.get("ton").strip():
+                ev["ton"] = matched_v.get("ton", "5T")
         
         ev["isNew"] = is_new
         ev["lastSeen"] = last_seen
@@ -299,10 +336,15 @@ def api_ls_data(request):
         raw = json.loads(request.body)
         target_date = (request.GET.get("date") or "").strip()
         if isinstance(raw, dict):
-            target_date = target_date or raw.get("date") or TODAY
+            target_date = target_date or raw.get("date")
             arr = raw.get("vehicles", raw)
         else:
             arr = raw
+            if isinstance(raw, list) and len(raw) > 0:
+                target_date = target_date or raw[0].get("date")
+        if not target_date or not re.match(r"^\d{4}-\d{2}-\d{2}$", target_date):
+            target_date = TODAY
+            
         if isinstance(arr, dict):
             arr = [arr]
         # original_ton 보정
@@ -345,7 +387,11 @@ def api_dispatch_request(request):
     """VF67 배차 요청 메시지 → Telegram"""
     if request.method != "POST":
         return JsonResponse({"ok": False, "error": "POST required"}, status=405)
-    if not LS_DATA:
+
+    # 오늘 날짜 데이터만 사용
+    today_str = datetime.date.today().strftime("%Y-%m-%d")
+    today_data = load_ls_data_by_date(today_str)
+    if not today_data:
         return JsonResponse({"ok": False, "error": "등록된 차량이 없습니다"}, status=400)
 
     tg_config = CONFIG.get("telegram", {})
@@ -358,12 +404,6 @@ def api_dispatch_request(request):
     m = datetime.date.today().month
     d = datetime.date.today().day
     date_str = f"{m}/{d}"
-
-    # 오늘 날짜 데이터만 사용 (다른 날짜 캐시가 섞이지 않도록)
-    today_str = datetime.date.today().strftime("%Y-%m-%d")
-    today_data = [v for v in LS_DATA if v.get("date") == today_str]
-    if not today_data:
-        return JsonResponse({"ok": False, "error": "등록된 차량이 없습니다"}, status=400)
 
     lines = [f"VF67 - {date_str} 배차 요청 드립니다"]
     for v in today_data:
@@ -406,40 +446,55 @@ def debug(request):
 
 @csrf_exempt
 def api_print(request, hoche):
-    "KPP EDI + LS PDF 출력 통합 (실제 인쇄 로직)"
+    """LS PDF 출력 통합 (실제 인쇄 로직) - VehicleOrderService 사용"""
     plt = int(request.GET.get("plt", "0"))
     dashboard_plt = plt
     results = []
     ok = True
 
-    # 대시보드 LS_DATA에서 해당 호차 정보 조회
+    # VehicleOrderService 사용
+    from .services.vehicle_order import vehicle_order_service
+
+    target_date = request.GET.get("date") or datetime.date.today().strftime("%Y-%m-%d")
+    
+    # 호차로 차량번호 찾기
+    current_order = vehicle_order_service.get_today_order(target_date)
     vehicle = None
-    for v in LS_DATA:
+    for v in current_order:
         if v.get("hoche") == hoche:
             vehicle = v
             break
-    dash_plate = (vehicle or {}).get("plate", "").strip()
-    dash_ton = (vehicle or {}).get("ton", "")
+    
+    if not vehicle or not vehicle.get("plate"):
+        return JsonResponse({"ok": False, "hoche": hoche, "results": ["차량 정보 없음"]}, status=404)
+    
+    dash_plate = vehicle.get("plate", "").strip()
+    dash_ton = vehicle.get("ton", "")
+    seals = vehicle.get("seals", {"leftWing": "", "rightWing": "", "backDoor": ""})
 
     # ── 1단계: LS PDF 출력 ──
-    ls_pdf_dir = os.path.join(DATA_DIR, "ls_pdfs", datetime.date.today().strftime("%Y-%m-%d"))
-    ls_pdf = os.path.join(ls_pdf_dir, f"{hoche}_slip.pdf")
-    # 날짜 없이도 검색
-    if not os.path.isfile(ls_pdf):
-        ls_pdf = os.path.join(DATA_DIR, "ls_pdfs", f"{hoche}_slip.pdf")
+    # PDF는 차량번호+날짜 기준으로 탐색
+    ls_pdf = vehicle_order_service.get_pdf_path(dash_plate, target_date)
+    
+    # Fallback: 기존 hoche 파일명 규칙 (마이그레이션용)
+    if not ls_pdf:
+        ls_pdf_dir = os.path.join(DATA_DIR, "ls_pdfs", target_date)
+        ls_pdf = os.path.join(ls_pdf_dir, f"{hoche}_slip.pdf")
+        if not os.path.isfile(ls_pdf):
+            ls_pdf = os.path.join(DATA_DIR, "ls_pdfs", target_date, f"{hoche}_slip.pdf")
 
     if os.path.isfile(ls_pdf):
         try:
-            # 봉인씰 번호가 있으면 PDF에 합성
-            seal_left  = request.GET.get("seal_leftWing", "").strip()
-            seal_right = request.GET.get("seal_rightWing", "").strip()
-            seal_back  = request.GET.get("seal_backDoor", "").strip()
+            # 봉인씰 번호가 있으면 PDF에 합성 (GET 파라미터 우선, 없으면 저장된 것 사용)
+            seal_left  = request.GET.get("seal_leftWing", "").strip() or seals.get("leftWing", "")
+            seal_right = request.GET.get("seal_rightWing", "").strip() or seals.get("rightWing", "")
+            seal_back  = request.GET.get("seal_backDoor", "").strip() or seals.get("backDoor", "")
+            
             if seal_left or seal_right or seal_back:
                 import fitz as _fitz
                 tmp_pdf = ls_pdf + ".sealed.pdf"
                 doc = _fitz.open(ls_pdf)
                 page = doc[0]
-                # 봉인씰 라벨 우측 빈칸 좌표 (fitz PDF 좌표계 기준)
                 if seal_left:
                     page.insert_text((175, 252), seal_left, fontsize=10, fontname="helv")
                 if seal_right:
@@ -449,105 +504,69 @@ def api_print(request, hoche):
                 doc.save(tmp_pdf)
                 doc.close()
                 ls_pdf = tmp_pdf
-                results.append(f"🔒 봉인씰 합성: L={seal_left or '-'}, R={seal_right or '-'}, B={seal_back or '-'}")
-            import win32api
-            win32api.ShellExecute(0, "printto", ls_pdf, '"Canon G2010 series"', ".", 0)
-            results.append(f"✅ LS PDF 출력: {hoche}호차 완료 ({os.path.basename(ls_pdf)})")
+                results.append(f"🔒 봉인실 합성: L={seal_left or '-'}, R={seal_right or '-'}, B={seal_back or '-'}")
+            
+            # 봉인씰 저장 (GET 파라미터가 있으면)
+            if request.GET.get("seal_leftWing") or request.GET.get("seal_rightWing") or request.GET.get("seal_backDoor"):
+                vehicle_order_service.save_seals(dash_plate, target_date, {
+                    "leftWing": seal_left,
+                    "rightWing": seal_right,
+                    "backDoor": seal_back
+                })
+            
+            try:
+                import win32print
+                import win32ui
+                from PIL import Image, ImageWin
+                import fitz as _fitz
+                
+                # 1. 고화질 픽스맵 이미지로 렌더링
+                doc = _fitz.open(ls_pdf)
+                page = doc[0]
+                pix = page.get_pixmap(dpi=300)
+                img_data = pix.tobytes("png")
+                
+                from io import BytesIO
+                img = Image.open(BytesIO(img_data))
+                doc.close()
+                
+                # 2. 프린터 DC 생성 및 이미지 다이렉트 드로잉 (레지스트리 뷰어 연동 차단)
+                hDC = win32ui.CreateDC()
+                hDC.CreatePrinterDC("Canon G2010 series")
+                
+                printable_width = hDC.GetDeviceCaps(110)   # PHYSICALWIDTH
+                printable_height = hDC.GetDeviceCaps(111)  # PHYSICALHEIGHT
+                
+                hDC.StartDoc("LS_PDF_Sealed_Print")
+                hDC.StartPage()
+                
+                img_w, img_h = img.size
+                ratio = min(printable_width / img_w, printable_height / img_h)
+                new_w = int(img_w * ratio)
+                new_h = int(img_h * ratio)
+                
+                dib = ImageWin.Dib(img)
+                x_offset = (printable_width - new_w) // 2
+                y_offset = (printable_height - new_h) // 2
+                dib.draw(hDC.GetHandleOutput(), (x_offset, y_offset, x_offset + new_w, y_offset + new_h))
+                
+                hDC.EndPage()
+                hDC.EndDoc()
+                hDC.DeleteDC()
+                results.append(f"✅ GDI 다이렉트 인쇄: {hoche}호차({dash_plate}) 전송 완료")
+            except Exception as pe:
+                results.append(f"⚠️ 다이렉트 인쇄 시도 실패 ({pe}) ➡️ 기본 ShellExecute 백업 구동")
+                import win32api
+                win32api.ShellExecute(0, "printto", ls_pdf, '"Canon G2010 series"', ".", 0)
+                results.append(f"✅ LS PDF 출력: {hoche}호차({dash_plate}) 완료")
         except Exception as e:
             results.append(f"⚠️ LS PDF 출력 오류: {e}")
             ok = False
     else:
-        results.append(f"⚠️ LS PDF 없음: {ls_pdf}")
-
-    # ── 2단계: KPP 연동 (PLT 조회, 수정 및 EDI 출력) ──
-    try:
-        with CDPHandle() as cdp:
-            conn = cdp.connect()
-            if "찾을 수 없" in conn or not conn:
-                results.append(f"❌ KPP 연결 실패: {conn or '연결할 수 없음'}")
-                ok = False
-            else:
-                # KPP alert/confirm 무력화
-                cdp.js('window.alert = function() { return true; }; window.confirm = function() { return true; };')
-
-                # 오늘 날짜 조회
-                today_str = datetime.date.today().strftime('%Y-%m-%d')
-                cdp.js(f'document.getElementById("sr_dlv_dat_f").value = "{today_str}"')
-                cdp.js(f'document.getElementById("sr_dlv_dat_t").value = "{today_str}"')
-                cdp.js('document.getElementById("search").click()')
-                time.sleep(2)
-
-                # 그리드에서 호차 행 찾기
-                kpp_data = None
-                rc = cdp.js('GC.Spread.Sheets.findControl("grid").getActiveSheet().getRowCount()')
-                if not rc or rc == 0:
-                    results.append("⚠️ KPP 조회 결과 0건")
-                else:
-                    for r in range(int(rc)):
-                        h = cdp.js(f'GC.Spread.Sheets.findControl("grid").getActiveSheet().getValue({r},36)') or ""
-                        if str(hoche) in str(h):
-                            kpp_plt = cdp.js(f'GC.Spread.Sheets.findControl("grid").getActiveSheet().getValue({r},18)') or 0
-                            kpp_plate = cdp.js(f'GC.Spread.Sheets.findControl("grid").getActiveSheet().getValue({r},31)') or ""
-                            kpp_data = {"plt": int(kpp_plt), "plate": str(kpp_plate).strip()}
-                            break
-
-                if kpp_data is None:
-                    results.append(f"⚠️ KPP에서 {hoche}호차를 찾을 수 없음")
-                else:
-                    kpp_plt = kpp_data["plt"]
-                    kpp_plate = kpp_data["plate"]
-
-                    # 차량번호 비교
-                    if dash_plate and kpp_plate:
-                        import re as _re
-                        dash_num_only = _re.sub(r'[^0-9]', '', dash_plate)
-                        kpp_num_only = _re.sub(r'[^0-9]', '', kpp_plate)
-                        if kpp_num_only in dash_num_only or dash_num_only in kpp_num_only:
-                            results.append(f"✅ 차량번호 일치: {dash_plate}")
-                        else:
-                            results.append(f"⚠️ 차량번호 불일치! KPP: {kpp_plate}, 대시보드: {dash_plate}")
-
-                    # PLT 비교 및 KPP 수정
-                    if dashboard_plt == 0:
-                        results.append(f"ℹ️ 대시보드 PLT=0 (미입력), KPP 현재 PLT={kpp_plt}")
-                    elif kpp_plt == dashboard_plt:
-                        results.append(f"✅ 수량 일치: PLT={kpp_plt} — KPP 수정 없이 출력")
-                    else:
-                        results.append(f"📊 수량 불일치: KPP={kpp_plt}, 대시보드={dashboard_plt} ➡️ KPP 수정 시도...")
-                        kpp_result = do_set_plt(cdp, hoche, dashboard_plt)
-                        results.append(f"🔄 KPP 수정 결과: {kpp_result}")
-
-                # KPP EDI 출력
-                if kpp_data is not None:
-                    # CDP 연결 상태 확인
-                    _cdp_alive = False
-                    try:
-                        _v = cdp.js('1+1')
-                        _cdp_alive = _v is not None
-                    except Exception:
-                        _cdp_alive = False
-                    if not _cdp_alive:
-                        results.append("⚠️ CDP 연결 복구 중...")
-                        try:
-                            cdp.close()
-                        except Exception:
-                            pass
-                        _conn_msg = cdp.connect()
-                        if "찾을 수 없" in _conn_msg:
-                            results.append(f"❌ KPP 재연결 실패 ➡️ KPP EDI 출력을 건너뜁니다")
-                        else:
-                            results.append(f"✅ KPP 재연결 성공")
-                            cdp.js('window.alert = function() { return true; }; window.confirm = function() { return true; };')
-                            kpp_print = do_edi_print(cdp, hoche)
-                            results.append(f"🖨️ KPP EDI: {kpp_print}")
-                    else:
-                        kpp_print = do_edi_print(cdp, hoche)
-                        results.append(f"🖨️ KPP EDI: {kpp_print}")
-
-    except Exception as e:
-        results.append(f"❌ KPP 동작 오류: {e}")
+        results.append(f"⚠️ LS PDF 없음: {dash_plate} ({target_date})")
         ok = False
 
+    # KPP 연동을 수행하지 않고 오직 LS PDF 출력 후 즉시 리턴
     return JsonResponse({"ok": ok, "hoche": hoche, "results": results})
 
 
@@ -616,171 +635,36 @@ def api_ls_sync(request):
     })
 
 
+@csrf_exempt
+def api_ls_download_scan(request):
+    """Downloads 폴더의 로지스밀 PDF 파일을 즉각 스캔하여 DB화"""
+    if request.method not in ("POST", "GET"):
+        return JsonResponse({"ok": False, "error": "POST or GET required"}, status=405)
+    
+    from .downloader_parser import scan_downloads_folder
+    res = scan_downloads_folder()
+    return JsonResponse(res)
+
+
 # ────────────────────────────────────────────────────────────────
-# Barcode Scanner 다중 컴퓨터 공유 API
+# Downloads 폴더 자동 감시 백그라운드 데몬 (10분 주기)
 # ────────────────────────────────────────────────────────────────
-# - scanner 페이지에서 입력한 데이터와 미입고 체크 상태를
-#   일별 JSON 파일로 저장하여 다른 컴퓨터에서 즉시 공유 가능하게 한다.
-# - 초기화(clear) 기능 제공.
-# - SSE(Server-Sent Events)로 다른 컴퓨터 변경분을 실시간 push.
+def _start_downloads_watcher():
+    def watcher_loop():
+        # Django 기동 후 초기 로드 안정화 대기
+        time.sleep(15)
+        while True:
+            try:
+                from .downloader_parser import scan_downloads_folder
+                res = scan_downloads_folder()
+                if res.get("ok") and res.get("new_count", 0) > 0:
+                    print(f"[Auto-Watcher] Scanned downloads folder. Registered {res['new_count']} new vehicles.")
+            except Exception:
+                pass
+            time.sleep(600)  # 10분 대기
 
-import threading
-import queue as _queue
+    t = threading.Thread(target=watcher_loop, daemon=True)
+    t.start()
 
-BARCODE_SUBSCRIBERS = {}      # date_str -> list[queue.Queue]
-BARCODE_SUBSCRIBERS_LOCK = threading.Lock()
-
-
-def _barcode_path(date_str):
-    return os.path.join(DATA_DIR, f"barcode_{date_str}.json")
-
-
-def _barcode_load_from_disk(date_str):
-    """디스크에서 저장된 데이터를 읽어옴. 없으면 None."""
-    path = _barcode_path(date_str)
-    if os.path.isfile(path):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return None
-    return None
-
-
-def _barcode_save_to_disk(date_str, payload):
-    """디스크에 저장 + 모든 SSE 구독자에게 변경 알림."""
-    payload["updated_at"] = datetime.datetime.now().isoformat()
-    path = _barcode_path(date_str)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-
-    # SSE 구독자에게 알림
-    with BARCODE_SUBSCRIBERS_LOCK:
-        subscribers = list(BARCODE_SUBSCRIBERS.get(date_str, []))
-    for q in subscribers:
-        try:
-            q.put_nowait({"type": "update", "date": date_str})
-        except Exception:
-            pass
-
-
-@csrf_exempt
-def api_barcode_save(request):
-    """scanner 데이터 저장.
-    POST body: { date?: "YYYY-MM-DD", parsed_text, col_indices, rows, flagged_indices, current_index }
-    GET → 단순 상태 확인용
-    """
-    if request.method != "POST":
-        return JsonResponse({"ok": False, "error": "POST only"}, status=405)
-
-    try:
-        body = json.loads(request.body)
-    except Exception:
-        return JsonResponse({"ok": False, "error": "invalid json"}, status=400)
-
-    date_str = body.get("date") or datetime.date.today().strftime("%Y-%m-%d")
-    payload = {
-        "date": date_str,
-        "parsed_text": body.get("parsed_text", ""),
-        "col_indices": body.get("col_indices", {}),
-        "rows": body.get("rows", []),
-        "flagged_indices": sorted(list(body.get("flagged_indices", []))),
-        "current_index": int(body.get("current_index", 0)),
-    }
-    _barcode_save_to_disk(date_str, payload)
-    return JsonResponse({"ok": True, "date": date_str,
-                         "rows": len(payload["rows"]),
-                         "flagged": len(payload["flagged_indices"]),
-                         "updated_at": payload["updated_at"]})
-
-
-@csrf_exempt
-def api_barcode_load(request):
-    """저장된 scanner 데이터 로드. GET ?date=YYYY-MM-DD"""
-    date_str = request.GET.get("date") or datetime.date.today().strftime("%Y-%m-%d")
-    data = _barcode_load_from_disk(date_str)
-    if data is None:
-        return JsonResponse({"ok": True, "exists": False, "date": date_str})
-    return JsonResponse({"ok": True, "exists": True, "date": date_str, "data": data})
-
-
-@csrf_exempt
-def api_barcode_clear(request):
-    """저장된 scanner 데이터 초기화(삭제). DELETE or POST, ?date=YYYY-MM-DD"""
-    date_str = request.GET.get("date") or datetime.date.today().strftime("%Y-%m-%d")
-    path = _barcode_path(date_str)
-    removed = False
-    if os.path.isfile(path):
-        try:
-            os.remove(path)
-            removed = True
-        except Exception as e:
-            return JsonResponse({"ok": False, "error": str(e)}, status=500)
-
-    # SSE 구독자에게 clear 알림
-    with BARCODE_SUBSCRIBERS_LOCK:
-        subscribers = list(BARCODE_SUBSCRIBERS.get(date_str, []))
-    for q in subscribers:
-        try:
-            q.put_nowait({"type": "clear", "date": date_str})
-        except Exception:
-            pass
-
-    return JsonResponse({"ok": True, "date": date_str, "removed": removed})
-
-
-def api_barcode_subscribe(request):
-    """SSE(Server-Sent Events) 스트림. 다른 컴퓨터 변경분을 실시간 push.
-    GET /api/barcode/subscribe?date=YYYY-MM-DD
-    """
-    from django.http import StreamingHttpResponse
-    date_str = request.GET.get("date") or TODAY
-
-    def event_stream():
-        q = _queue.Queue(maxsize=16)
-        with BARCODE_SUBSCRIBERS_LOCK:
-            BARCODE_SUBSCRIBERS.setdefault(date_str, []).append(q)
-        try:
-            # 연결 직후 현재 스냅샷 즉시 push
-            current = _barcode_load_from_disk(date_str)
-            yield f"data: {json.dumps({'type': 'hello', 'date': date_str, 'exists': current is not None}, ensure_ascii=False)}\n\n"
-            last_payload_version = None
-            if current is not None:
-                last_payload_version = current.get("updated_at", "")
-                yield f"data: {json.dumps({'type': 'snapshot', 'date': date_str, 'data': current}, ensure_ascii=False)}\n\n"
-
-            # 변경 이벤트 대기
-            while True:
-                try:
-                    evt = q.get(timeout=15)
-                except _queue.Empty:
-                    # keep-alive (프록시/브라우저 연결 유지)
-                    yield ":\n\n"
-                    continue
-
-                if evt.get("type") == "clear":
-                    yield f"data: {json.dumps({'type': 'clear', 'date': date_str}, ensure_ascii=False)}\n\n"
-                    last_payload_version = None
-                    continue
-
-                if evt.get("type") == "update":
-                    latest = _barcode_load_from_disk(date_str)
-                    if latest is None:
-                        yield f"data: {json.dumps({'type': 'clear', 'date': date_str}, ensure_ascii=False)}\n\n"
-                        last_payload_version = None
-                        continue
-                    version = latest.get("updated_at", "")
-                    if version == last_payload_version:
-                        continue
-                    last_payload_version = version
-                    yield f"data: {json.dumps({'type': 'snapshot', 'date': date_str, 'data': latest}, ensure_ascii=False)}\n\n"
-        finally:
-            with BARCODE_SUBSCRIBERS_LOCK:
-                subs = BARCODE_SUBSCRIBERS.get(date_str, [])
-                if q in subs:
-                    subs.remove(q)
-
-    resp = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
-    resp["Cache-Control"] = "no-cache"
-    resp["X-Accel-Buffering"] = "no"
-    return resp
+# 모듈 로드 시 데몬 시작
+_start_downloads_watcher()
