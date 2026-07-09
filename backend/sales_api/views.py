@@ -471,29 +471,24 @@ def inventory_unified(request):
     master_map = {m.barcode: m for m in master_qs}
 
     # Category fallback from outbound records (when BarcodeMaster.category is empty)
-    baseline_barcodes = list(
-        baseline_items.exclude(barcode__isnull=True)
-        .exclude(barcode="")
-        .values_list("barcode", flat=True)
-        .distinct()
-    )
+    baseline_barcodes_qs = baseline_items.exclude(barcode__isnull=True).exclude(barcode="").values("barcode")
+    
     outbound_category_map = {}
-    if baseline_barcodes:
-        for row in (
-            OutboundRecord.objects.filter(barcode__in=baseline_barcodes)
-            .exclude(category__isnull=True)
-            .exclude(category="")
-            .values("barcode")
-            .annotate(category=Max("category"))
-        ):
-            outbound_category_map[(row.get("barcode") or "").strip()] = (
-                row.get("category") or ""
-            ).strip()
+    category_qs = (
+        OutboundRecord.objects.filter(barcode__in=baseline_barcodes_qs)
+        .exclude(category__isnull=True)
+        .exclude(category="")
+        .values("barcode")
+        .annotate(category=Max("category"))
+    )
+    for row in category_qs:
+        outbound_category_map[(row.get("barcode") or "").strip()] = (
+            row.get("category") or ""
+        ).strip()
 
     # Receipts since baseline date (including same day)
     receipt_qs = InventoryReceiptItem.objects.filter(receipt_date__gte=as_of)
-    if baseline_barcodes:
-        receipt_qs = receipt_qs.filter(barcode__in=baseline_barcodes)
+    receipt_qs = receipt_qs.filter(barcode__in=baseline_barcodes_qs)
     receipt_agg = {
         row["barcode"]: int(row.get("qty") or 0)
         for row in receipt_qs.values("barcode").annotate(qty=Sum("quantity_box"))
@@ -502,8 +497,7 @@ def inventory_unified(request):
     # Outbound since baseline date (including same day), boxes only
     outbound_qs = OutboundRecord.objects.filter(outbound_date__gte=as_of)
     outbound_qs = outbound_qs.exclude(barcode__isnull=True).exclude(barcode="")
-    if baseline_barcodes:
-        outbound_qs = outbound_qs.filter(barcode__in=baseline_barcodes)
+    outbound_qs = outbound_qs.filter(barcode__in=baseline_barcodes_qs)
     outbound_agg = {
         row["barcode"]: int(row.get("qty") or 0)
         for row in outbound_qs.values("barcode").annotate(
@@ -518,8 +512,7 @@ def inventory_unified(request):
         outbound_date__range=[start_30, end_date]
     )
     outbound_30_qs = outbound_30_qs.exclude(barcode__isnull=True).exclude(barcode="")
-    if baseline_barcodes:
-        outbound_30_qs = outbound_30_qs.filter(barcode__in=baseline_barcodes)
+    outbound_30_qs = outbound_30_qs.filter(barcode__in=baseline_barcodes_qs)
     outbound_30_agg = {
         row["barcode"]: int(row.get("qty") or 0)
         for row in outbound_30_qs.values("barcode").annotate(
@@ -533,8 +526,7 @@ def inventory_unified(request):
         outbound_date__range=[start_60, end_date]
     )
     outbound_60_qs = outbound_60_qs.exclude(barcode__isnull=True).exclude(barcode="")
-    if baseline_barcodes:
-        outbound_60_qs = outbound_60_qs.filter(barcode__in=baseline_barcodes)
+    outbound_60_qs = outbound_60_qs.filter(barcode__in=baseline_barcodes_qs)
     outbound_60_agg = {
         row["barcode"]: int(row.get("qty") or 0)
         for row in outbound_60_qs.values("barcode").annotate(
@@ -548,8 +540,7 @@ def inventory_unified(request):
         outbound_date__range=[start_14, end_date]
     )
     outbound_14_qs = outbound_14_qs.exclude(barcode__isnull=True).exclude(barcode="")
-    if baseline_barcodes:
-        outbound_14_qs = outbound_14_qs.filter(barcode__in=baseline_barcodes)
+    outbound_14_qs = outbound_14_qs.filter(barcode__in=baseline_barcodes_qs)
     outbound_14_agg = {
         row["barcode"]: int(row.get("qty") or 0)
         for row in outbound_14_qs.values("barcode").annotate(
@@ -5780,6 +5771,67 @@ def get_outbound_stats(request):
                 }
             )
 
+    # 2-2. Previous Year Trend (선택 기간의 1년 전 동일 구간, 동일 필터)
+    prev_year_trend = []
+    if start and end:
+        try:
+            start_dt = datetime.strptime(start, "%Y-%m-%d")
+            end_dt = datetime.strptime(end, "%Y-%m-%d")
+            # 윤년(2/29) 대비: replace 실패 시 하루 줄여서 재시도
+            try:
+                prev_start_dt = start_dt.replace(year=start_dt.year - 1)
+            except ValueError:
+                prev_start_dt = start_dt.replace(year=start_dt.year - 1, day=28)
+            try:
+                prev_end_dt = end_dt.replace(year=end_dt.year - 1)
+            except ValueError:
+                prev_end_dt = end_dt.replace(year=end_dt.year - 1, day=28)
+
+            prev_start = prev_start_dt.strftime("%Y-%m-%d")
+            prev_end = prev_end_dt.strftime("%Y-%m-%d")
+
+            # 동일 필터(category, search, product)를 전년 구간에 적용
+            prev_queryset = OutboundRecord.objects.all()
+            prev_queryset = prev_queryset.filter(outbound_date__gte=prev_start)
+            prev_queryset = prev_queryset.filter(outbound_date__lte=prev_end)
+            if category and category != "all":
+                if category == "__others__":
+                    prev_top_cats = list(
+                        prev_queryset.values("category")
+                        .annotate(salesAmount=Sum("sales_amount"))
+                        .order_by("-salesAmount")
+                        .values_list("category", flat=True)[:10]
+                    )
+                    if prev_top_cats:
+                        prev_queryset = prev_queryset.exclude(category__in=prev_top_cats)
+                else:
+                    prev_queryset = prev_queryset.filter(category=category)
+            if search:
+                prev_queryset = prev_queryset.filter(product_name__icontains=search)
+            if product:
+                prev_queryset = prev_queryset.filter(product_name=product)
+
+            prev_daily = (
+                prev_queryset.annotate(date=trunc_func("outbound_date"))
+                .values("date")
+                .annotate(
+                    quantity=Coalesce(Sum("box_quantity"), 0),
+                    salesAmount=Coalesce(Sum("sales_amount"), Decimal("0")),
+                )
+                .order_by("date")
+            )
+            for item in prev_daily:
+                if item["date"]:
+                    prev_year_trend.append(
+                        {
+                            "date": item["date"].strftime("%Y-%m-%d"),
+                            "quantity": item["quantity"] or 0,
+                            "salesAmount": item["salesAmount"] or 0,
+                        }
+                    )
+        except (ValueError, TypeError):
+            prev_year_trend = []
+
     # 3. Category Breakdown
     category_breakdown = (
         queryset.values("category")
@@ -5798,6 +5850,7 @@ def get_outbound_stats(request):
                 "totalSalesAmount": summary["totalSalesAmount"] or 0,
             },
             "dailyTrend": trend_data,
+            "prevYearTrend": prev_year_trend,
             "categoryBreakdown": category_breakdown,
         }
     )

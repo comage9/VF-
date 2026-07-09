@@ -32,7 +32,11 @@ export default defineConfig({
         target: 'http://localhost:5176',
         changeOrigin: true,
       },
-      '/departure': {
+      '/departure/api': {
+        target: 'http://localhost:5176',
+        changeOrigin: true,
+      },
+      '/truck-freight/api': {
         target: 'http://localhost:5176',
         changeOrigin: true,
       },

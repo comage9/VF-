@@ -217,39 +217,81 @@ export default function ProductMasterPage() {
       ) : (
         <Card>
           <CardContent className="mt-6">
-            <table className="w-full text-sm text-left">
-              <thead className="bg-muted/40">
-                <tr>
-                  <th className="p-4">제품명</th>
-                  <th>영문명</th>
-                  <th>금형번호</th>
-                  <th>색상1</th>
-                  <th>색상2</th>
-                  <th className="text-right">기본수량</th>
-                  <th className="text-center w-32">작업</th>
-                </tr>
-              </thead>
-              <tbody>
-                {specs.map((spec) => (
-                  <tr key={spec.id} className="border-b">
-                    <td className="p-4 font-medium">{spec.product_name}</td>
-                    <td>{spec.product_name_eng}</td>
-                    <td>{spec.mold_number}</td>
-                    <td>{spec.color1}</td>
-                    <td>{spec.color2}</td>
-                    <td className="text-right">{spec.default_quantity}</td>
-                    <td className="p-4 flex justify-center gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(spec)}>
+            {/* 데스크탑 뷰 */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="min-w-full text-sm text-left">
+                <thead className="bg-muted/40 whitespace-nowrap">
+                  <tr>
+                    <th className="p-4">제품명</th>
+                    <th>영문명</th>
+                    <th>금형번호</th>
+                    <th>색상1</th>
+                    <th>색상2</th>
+                    <th className="text-right">기본수량</th>
+                    <th className="text-center w-32">작업</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {specs.map((spec) => (
+                    <tr key={spec.id} className="border-b">
+                      <td className="p-4 font-medium">{spec.product_name}</td>
+                      <td>{spec.product_name_eng}</td>
+                      <td>{spec.mold_number}</td>
+                      <td>{spec.color1}</td>
+                      <td>{spec.color2}</td>
+                      <td className="text-right">{spec.default_quantity}</td>
+                      <td className="p-4 flex justify-center gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(spec)}>
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDelete(spec.id)} disabled={deleteMutation.isPending && deleteMutation.variables === spec.id}>
+                          {deleteMutation.isPending && deleteMutation.variables === spec.id ? <Loader2 className="w-4 h-4 animate-spin"/> : <Trash2 className="w-4 h-4" />}
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* 모바일 뷰 (카드 리스트) */}
+            <div className="md:hidden space-y-4">
+              {specs.map((spec) => (
+                <div key={spec.id} className="bg-card border border-border rounded-lg p-4 shadow-sm flex flex-col gap-2">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1 pr-2">
+                      <h4 className="font-semibold text-base break-words">{spec.product_name}</h4>
+                      <p className="text-xs text-muted-foreground truncate">{spec.product_name_eng || '-'}</p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleOpenDialog(spec)}>
                         <Edit className="w-4 h-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDelete(spec.id)} disabled={deleteMutation.isPending && deleteMutation.variables === spec.id}>
+                      <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => handleDelete(spec.id)} disabled={deleteMutation.isPending && deleteMutation.variables === spec.id}>
                         {deleteMutation.isPending && deleteMutation.variables === spec.id ? <Loader2 className="w-4 h-4 animate-spin"/> : <Trash2 className="w-4 h-4" />}
                       </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm mt-2 bg-muted/30 p-2 rounded-md">
+                    <div>
+                      <span className="text-muted-foreground text-xs block mb-1">금형번호</span>
+                      <span className="font-medium">{spec.mold_number || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-xs block mb-1">기본수량</span>
+                      <span className="font-semibold text-primary">{spec.default_quantity || 0}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-muted-foreground text-xs block mb-1">색상</span>
+                      <span>{spec.color1 || '-'} {spec.color2 && `/ ${spec.color2}`}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {specs.length === 0 && (
+                <div className="text-center py-10 text-muted-foreground text-sm">등록된 제품이 없습니다.</div>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -306,30 +348,34 @@ const SpecEditDialog = ({ isOpen, onOpenChange, spec, onSave, isSaving }: SpecEd
                 <DialogHeader>
                     <DialogTitle>{spec ? '스펙 수정' : '신규 스펙 추가'}</DialogTitle>
                 </DialogHeader>
-                <div className="grid gap-4 py-4">
-                    <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="product_name" className="text-right">제품명</Label>
-                        <Input id="product_name" name="product_name" value={formData.product_name || ''} onChange={handleChange} className="col-span-3" />
+                <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto px-1">
+                    <div className="space-y-2">
+                        <Label htmlFor="product_name">제품명</Label>
+                        <Input id="product_name" name="product_name" value={formData.product_name || ''} onChange={handleChange} />
                     </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="product_name_eng" className="text-right">영문명</Label>
-                        <Input id="product_name_eng" name="product_name_eng" value={formData.product_name_eng || ''} onChange={handleChange} className="col-span-3" />
+                    <div className="space-y-2">
+                        <Label htmlFor="product_name_eng">영문명</Label>
+                        <Input id="product_name_eng" name="product_name_eng" value={formData.product_name_eng || ''} onChange={handleChange} />
                     </div>
-                     <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="mold_number" className="text-right">금형번호</Label>
-                        <Input id="mold_number" name="mold_number" value={formData.mold_number || ''} onChange={handleChange} className="col-span-3" />
+                     <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="mold_number">금형번호</Label>
+                            <Input id="mold_number" name="mold_number" value={formData.mold_number || ''} onChange={handleChange} />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="default_quantity">기본수량</Label>
+                            <Input id="default_quantity" name="default_quantity" type="number" value={formData.default_quantity || 0} onChange={handleChange} />
+                        </div>
                     </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="color1" className="text-right">색상1</Label>
-                        <Input id="color1" name="color1" value={formData.color1 || ''} onChange={handleChange} className="col-span-3" />
-                    </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="color2" className="text-right">색상2</Label>
-                        <Input id="color2" name="color2" value={formData.color2 || ''} onChange={handleChange} className="col-span-3" />
-                    </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="default_quantity" className="text-right">기본수량</Label>
-                        <Input id="default_quantity" name="default_quantity" type="number" value={formData.default_quantity || 0} onChange={handleChange} className="col-span-3" />
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="color1">색상1</Label>
+                            <Input id="color1" name="color1" value={formData.color1 || ''} onChange={handleChange} />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="color2">색상2</Label>
+                            <Input id="color2" name="color2" value={formData.color2 || ''} onChange={handleChange} />
+                        </div>
                     </div>
                 </div>
                 <DialogFooter>

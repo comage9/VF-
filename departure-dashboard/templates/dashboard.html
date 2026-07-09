@@ -420,8 +420,8 @@ function renderSummaryTableWithData(data) {
     return;
   }
   
-  // 3) 플레이스홀더 호차 렌더링
-  //    → LS_DATA에 같은 hoche가 있으면 데이터 행, 없으면 플레이스홀더 행
+    // 3) 시간순 정렬 및 렌더링
+  var renderItems = [];
   phList.forEach(function(ph){
     var existing = null;
     if (data) {
@@ -429,25 +429,40 @@ function renderSummaryTableWithData(data) {
         if (data[k].hoche === ph) { existing = data[k]; break; }
       }
     }
-    if (existing && existing.plate && existing.plate.trim() !== '') {
-      renderDataRow(container, existing);
-    } else if (existing) {
-      // LS_DATA에 hoche는 있지만 plate 미입력 → 플레이스홀더 행 (시간/톤수는 데이터 유지)
-      renderPlaceholderRow(container, ph, existing.time, existing.ton);
-    } else {
-      renderPlaceholderRow(container, ph);
-    }
+    var t = (existing && existing.time) ? existing.time : ([,'20:00','22:00','23:50'][ph] || '99:99');
+    renderItems.push({ hoche: ph, existing: existing, isExtra: false, sortTime: t });
   });
   
-  // 4) 추가 배차 데이터 렌더링
   extraData.forEach(function(d){
-    if (d.plate && d.plate.trim() !== '') {
-      renderDataRow(container, d);
+    var t = d.time ? d.time : '99:99';
+    renderItems.push({ hoche: d.hoche, existing: d, isExtra: true, sortTime: t });
+  });
+  
+  // 3) 호차순 정렬 (시간순 정렬 제거 - 호차 1,2,3 순서 고정)
+    renderItems.sort(function(a, b) {
+      return a.hoche - b.hoche;
+    });
+  
+  renderItems.forEach(function(item) {
+    if (!item.isExtra) {
+      var existing = item.existing;
+      if (existing && existing.plate && existing.plate.trim() !== '') {
+        renderDataRow(container, existing);
+      } else if (existing) {
+        renderPlaceholderRow(container, item.hoche, existing.time, existing.ton);
+      } else {
+        renderPlaceholderRow(container, item.hoche);
+      }
     } else {
-      // plate 미입력 = 대기중 → 플레이스홀더 형태 (시간/톤수 드롭다운 + 입력 필드)
-      renderPlaceholderRow(container, d.hoche, d.time, d.ton);
+      var d = item.existing;
+      if (d.plate && d.plate.trim() !== '') {
+        renderDataRow(container, d);
+      } else {
+        renderPlaceholderRow(container, d.hoche, d.time, d.ton);
+      }
     }
   });
+
 }
 
 // ── 플레이스홀더 단일 행 ──

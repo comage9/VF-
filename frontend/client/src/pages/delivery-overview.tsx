@@ -446,6 +446,7 @@ async function resolveApiBase(): Promise<string> {
 function DeliveryOverview() {
   const dashboardRef = useRef<any>(null);
   const initializedRef = useRef(false);
+  const [mobileTab, setMobileTab] = useState<'chart' | 'barcodes' | 'inputs'>('chart');
 
   useEffect(() => {
     // In React dev StrictMode, effects can run mount -> cleanup -> mount.
@@ -555,9 +556,15 @@ function DeliveryOverview() {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px] gap-6 items-start">
-          <div className="bg-card border border-border rounded-lg p-5 shadow-sm space-y-6">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="flex xl:hidden bg-card border-b border-border sticky top-0 z-20 shadow-sm mb-4 rounded-lg overflow-hidden">
+          <button onClick={() => setMobileTab('chart')} className={`flex-1 py-3 text-sm font-semibold border-b-2 transition-colors ${mobileTab === 'chart' ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-muted-foreground hover:bg-muted/50'}`}>📊 차트/요약</button>
+          <button onClick={() => setMobileTab('barcodes')} className={`flex-1 py-3 text-sm font-semibold border-b-2 transition-colors ${mobileTab === 'barcodes' ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-muted-foreground hover:bg-muted/50'}`}>📋 출고 내역</button>
+          <button onClick={() => setMobileTab('inputs')} className={`flex-1 py-3 text-sm font-semibold border-b-2 transition-colors ${mobileTab === 'inputs' ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-muted-foreground hover:bg-muted/50'}`}>✍️ 데이터 입력</button>
+        </div>
+
+        <div className="flex flex-col xl:grid xl:grid-cols-[minmax(0,1fr)_420px] gap-6 items-start">
+          <div className={`bg-card border border-border rounded-lg p-3 xl:p-5 shadow-sm space-y-6 order-2 xl:order-1 ${mobileTab === 'inputs' ? 'hidden xl:block' : 'block'}`}>
+            <div className={`flex-col gap-4 xl:flex-row xl:items-end xl:justify-between ${mobileTab === 'chart' ? 'flex' : 'hidden xl:flex'}`}>
               <div>
                 <h2 className="text-lg font-semibold text-foreground">
                   시간별 출고 현황 (최근 3일)
@@ -567,25 +574,25 @@ function DeliveryOverview() {
                 </p>
               </div>
               <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                <div className="flex items-center gap-2">
-                  <input id="start-date" type="date" className="input input-sm input-bordered" />
+                <div className="flex flex-wrap items-center gap-2">
+                  <input id="start-date" type="date" className="input input-md md:input-sm input-bordered text-base md:text-sm" />
                   <span className="text-sm text-muted-foreground">~</span>
-                  <input id="end-date" type="date" className="input input-sm input-bordered" />
-                  <button id="range-search-btn" className="btn btn-sm">
+                  <input id="end-date" type="date" className="input input-md md:input-sm input-bordered text-base md:text-sm" />
+                  <button id="range-search-btn" className="btn btn-md md:btn-sm">
                     기간 조회
                   </button>
-                  <button id="range-clear-btn" className="btn btn-sm btn-ghost">
+                  <button id="range-clear-btn" className="btn btn-md md:btn-sm btn-ghost">
                     해제
                   </button>
-                  <span id="range-result" className="text-xs text-muted-foreground"></span>
+                  <span id="range-result" className="text-xs text-muted-foreground w-full md:w-auto mt-1 md:mt-0"></span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button id="export-excel-btn" className="btn btn-sm">
+                <div className="flex items-center gap-2 mt-2 md:mt-0">
+                  <button id="export-excel-btn" className="btn btn-md md:btn-sm flex-1 md:flex-none">
                     엑셀 내보내기
                   </button>
                   <button
                     id="upload-btn"
-                    className="btn btn-sm btn-primary"
+                    className="btn btn-md md:btn-sm btn-primary flex-1 md:flex-none"
                     data-react-upload="1"
                     onClick={(e) => {
                       e.preventDefault();
@@ -611,15 +618,17 @@ function DeliveryOverview() {
             </div>
 
             <div className="space-y-6">
-              <div className="h-[750px] min-w-0 bg-card border border-border rounded-lg shadow-sm p-4 relative">
+              <div className={`h-[350px] xl:h-[750px] min-w-0 bg-card border border-border rounded-lg shadow-sm p-2 xl:p-4 relative ${mobileTab === 'chart' ? 'block' : 'hidden xl:block'}`}>
                 <canvas id="hourly-chart" className="w-full h-full" />
               </div>
-              <BarcodeStatsPanel />
+              <div className={`h-[600px] xl:h-auto ${mobileTab === 'barcodes' ? 'block' : 'hidden xl:block'}`}>
+                <BarcodeStatsPanel />
+              </div>
             </div>
 
-            <div className="space-y-4">
+            <div className={`space-y-4 ${mobileTab === 'chart' ? 'block' : 'hidden xl:block'}`}>
               <div className="flex items-center justify-end">
-                <button id="toggle-aux-stats" className="btn btn-sm">
+                <button id="toggle-aux-stats" className="btn btn-md md:btn-sm">
                   증감/편차 보기
                 </button>
               </div>
@@ -639,7 +648,7 @@ function DeliveryOverview() {
               </div>
             </div>
 
-            <div className="text-sm text-muted-foreground space-y-1">
+            <div className={`text-sm text-muted-foreground space-y-1 ${mobileTab === 'chart' ? 'block' : 'hidden xl:block'}`}>
               <p>• 0시부터 23시까지 시간별 누적 출고량입니다 (23시가 하루 최종값)</p>
               <p>• 오늘 데이터는 실선, 어제는 점선, 그저께는 긴 점선으로 표시됩니다</p>
               <p>• 오늘 데이터의 각 포인트에 값 라벨이 표시되며 예측은 * 로 강조됩니다</p>
@@ -648,13 +657,13 @@ function DeliveryOverview() {
               </p>
             </div>
 
-            <details className="bg-muted/30 border border-border rounded-lg p-4">
-              <summary className="cursor-pointer text-sm font-medium text-foreground">
+            <details className={`bg-muted/30 border border-border rounded-lg p-4 ${mobileTab === 'chart' ? 'block' : 'hidden xl:block'}`}>
+              <summary className="cursor-pointer text-sm font-medium text-foreground p-2 -m-2">
                 예측 모델 정보 보기
               </summary>
-              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-muted-foreground">
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-muted-foreground">
                 <div>
-                  <h4 className="font-semibold mb-2">적용된 예측 모델</h4>
+                  <h4 className="font-semibold mb-2 text-foreground">적용된 예측 모델</h4>
                   <ul className="space-y-1">
                     <li>• 요일별 패턴 분석 (25%)</li>
                     <li>• 시간대별 성장 패턴 (20%)</li>
@@ -664,7 +673,7 @@ function DeliveryOverview() {
                   </ul>
                 </div>
                 <div>
-                  <h4 className="font-semibold mb-2">예측 정확도 개선 요소</h4>
+                  <h4 className="font-semibold mb-2 text-foreground">예측 정확도 개선 요소</h4>
                   <ul className="space-y-1">
                     <li>• 같은 요일 과거 데이터 활용</li>
                     <li>• 시간대별 고유 증가 패턴</li>
@@ -674,7 +683,7 @@ function DeliveryOverview() {
                   </ul>
                 </div>
               </div>
-              <div className="mt-3 p-3 bg-info/10 rounded text-xs text-info-content">
+              <div className="mt-4 p-3 bg-info/10 rounded-md text-xs text-info-content border border-info/20 leading-relaxed">
                 <strong>참고:</strong> 예측값은 과거 데이터 패턴을 기반으로 계산되며 실제 결과와 차이가 있을 수 있습니다. 더 많은
                 과거 데이터가 축적될수록 예측 정확도가 향상됩니다.
               </div>
@@ -682,9 +691,9 @@ function DeliveryOverview() {
 
           </div>
 
-          <div className="space-y-4">
+          <div className={`space-y-4 order-1 xl:order-2 ${mobileTab === 'barcodes' ? 'hidden xl:block' : 'block'}`}>
             {/* KPI Overview - Z-Layout 기반 (2x2 그리드) */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className={`grid grid-cols-2 gap-3 ${mobileTab === 'chart' ? 'grid' : 'hidden xl:grid'}`}>
               <StatCard
                 title="오늘 누적 출고"
                 icon={Truck}
@@ -726,7 +735,7 @@ function DeliveryOverview() {
             </div>
 
             {/* AI Insight Section */}
-            <div id="ai-insight-container" className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 rounded-lg p-4">
+            <div id="ai-insight-container" className={`bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 rounded-lg p-4 ${mobileTab === 'chart' ? 'block' : 'hidden xl:block'}`}>
               <div className="flex items-start gap-3">
                 <div className="p-2 bg-white rounded-full shadow-sm text-indigo-600">
                   <i className="fas fa-robot text-xl"></i>
@@ -743,61 +752,61 @@ function DeliveryOverview() {
               </div>
             </div>
 
-            <div className="bg-card border border-border rounded-lg p-3 shadow-sm">
+            <div className={`bg-card border border-border rounded-lg p-4 shadow-sm ${mobileTab === 'inputs' ? 'block' : 'hidden xl:block'}`}>
               <h2 className="text-base font-semibold text-foreground mb-3">오늘자 시간별 데이터 입력</h2>
               <div className="h-[170px] overflow-y-auto pr-1">
                 <div
                   id="dynamic-data-entry-container"
-                  className="space-y-2 text-sm text-muted-foreground"
+                  className="space-y-3 text-sm text-muted-foreground"
                 ></div>
               </div>
               <div id="form-feedback" className="mt-2 text-xs text-primary"></div>
             </div>
 
-            <div className="bg-card border border-border rounded-lg p-3 shadow-sm">
+            <div className={`bg-card border border-border rounded-lg p-4 shadow-sm ${mobileTab === 'inputs' ? 'block' : 'hidden xl:block'}`}>
               <h2 className="text-base font-semibold text-foreground mb-3">특이사항 입력</h2>
-              <form id="special-note-form" className="space-y-2">
-                <div className="grid grid-cols-2 gap-2">
-                  <input id="special-note-product" type="text" className="input input-sm input-bordered" placeholder="제품명" />
-                  <input id="special-note-barcode" type="text" className="input input-sm input-bordered" placeholder="바코드" />
-                  <input id="special-note-sku" type="text" className="input input-sm input-bordered" placeholder="SKU" />
-                  <input id="special-note-qty" type="number" className="input input-sm input-bordered" placeholder="수량" />
+              <form id="special-note-form" className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-2">
+                  <input id="special-note-product" type="text" className="input input-md md:input-sm input-bordered text-base md:text-sm" placeholder="제품명" />
+                  <input id="special-note-barcode" type="text" className="input input-md md:input-sm input-bordered text-base md:text-sm" placeholder="바코드" />
+                  <input id="special-note-sku" type="text" className="input input-md md:input-sm input-bordered text-base md:text-sm" placeholder="SKU" />
+                  <input id="special-note-qty" type="number" className="input input-md md:input-sm input-bordered text-base md:text-sm" placeholder="수량" />
                 </div>
-                <input id="special-note-datetime" type="datetime-local" className="input input-sm input-bordered w-full" />
-                <textarea id="special-note-memo" className="textarea textarea-bordered textarea-sm w-full" rows={3} placeholder="행사/이슈/특이사항 메모 (텍스트)"></textarea>
-                <button type="submit" className="btn btn-primary btn-sm w-full">저장</button>
+                <input id="special-note-datetime" type="datetime-local" className="input input-md md:input-sm input-bordered w-full text-base md:text-sm" />
+                <textarea id="special-note-memo" className="textarea textarea-bordered textarea-md md:textarea-sm w-full text-base md:text-sm" rows={3} placeholder="행사/이슈/특이사항 메모 (텍스트)"></textarea>
+                <button type="submit" className="btn btn-primary btn-md md:btn-sm w-full">저장</button>
                 <div id="special-note-feedback" className="text-xs text-primary"></div>
               </form>
-              <div className="mt-3">
-                <div className="text-xs text-muted-foreground mb-2">오늘 등록된 특이사항</div>
-                <div id="special-notes-list" className="space-y-2 text-sm text-muted-foreground"></div>
+              <div className="mt-4 pt-4 border-t border-border">
+                <div className="text-sm font-medium text-foreground mb-2">오늘 등록된 특이사항</div>
+                <div id="special-notes-list" className="space-y-3 text-sm text-muted-foreground"></div>
               </div>
             </div>
 
             {/* 백테스트 결과 패널 */}
-            <div className="bg-card border border-border rounded-lg p-4 shadow-sm">
+            <div className={`bg-card border border-border rounded-lg p-4 shadow-sm ${mobileTab === 'inputs' ? 'block' : 'hidden xl:block'}`}>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-base font-semibold text-foreground">예측 정확도</h2>
               </div>
-              <div className="space-y-3">
-                <button id="show-stats-btn" className="btn btn-sm btn-outline w-full">
+              <div className="space-y-3 flex flex-col sm:flex-row sm:space-y-0 sm:gap-2">
+                <button id="show-stats-btn" className="btn btn-md md:btn-sm btn-outline flex-1">
                   백테스트 통계
                 </button>
-                <button id="run-backtest-btn" className="btn btn-sm btn-outline w-full">
-                  전체 알고리즘 백테스트
+                <button id="run-backtest-btn" className="btn btn-md md:btn-sm btn-outline flex-1">
+                  전체 백테스트
                 </button>
               </div>
-              <div id="backtest-summary" className="mt-3 text-xs text-muted-foreground hidden">
+              <div id="backtest-summary" className="mt-4 text-xs text-muted-foreground hidden p-3 bg-muted/30 rounded-md border border-border">
                 <div className="font-medium text-foreground mb-1">최근 결과:</div>
                 <div id="backtest-summary-content"></div>
               </div>
             </div>
 
             {/* 내일 예측 패널 */}
-            <div className="bg-card border border-border rounded-lg p-4 shadow-sm">
+            <div className={`bg-card border border-border rounded-lg p-4 shadow-sm ${mobileTab === 'chart' ? 'block' : 'hidden xl:block'}`}>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-base font-semibold text-foreground">📅 내일 예측</h2>
-                <button id="refresh-daily-prediction" className="btn btn-xs btn-ghost">
+                <button id="refresh-daily-prediction" className="btn btn-sm md:btn-xs btn-ghost">
                   새로고침
                 </button>
               </div>

@@ -657,6 +657,9 @@ export default function ProductionPlan() {
   const [activeId, setActiveId] = useState<number | null>(null);
   const [moveConfirmDate, setMoveConfirmDate] = useState<string | null>(null);
 
+  // 모바일 메인 탭 상태
+  const [mobileMainTab, setMobileMainTab] = useState<'monitoring' | 'plans'>('monitoring');
+
   // === 사원번호 모드 ===
   const [employeeNumber, setEmployeeNumber] = useState<string>('');
   const [employeeMachines, setEmployeeMachines] = useState<string[]>([]);
@@ -1329,22 +1332,28 @@ export default function ProductionPlan() {
       </div>
 
       {/* 모바일 최소 헤더 - Drawer 열기 */}
-      <div className="md:hidden sticky top-0 z-10 bg-card border-b border-border p-3 flex items-center justify-between backdrop-blur-sm bg-card/95">
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsDrawerOpen(true)}
-            className="h-9 w-9 p-0"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
-          </Button>
-          <span className="text-sm font-semibold">생산 계획</span>
-          <button onClick={() => document.body.classList.toggle('monochrome')} className="ml-2 text-xs px-2 py-0.5 rounded border hover:bg-muted" title="모노크롬 전환">◐</button>
-          {selectedIds.length > 0 && (
-            <Badge variant="secondary" className="text-xs">{selectedIds.length}건 선택</Badge>
-          )}
+      <div className="md:hidden sticky top-0 z-20 bg-card border-b border-border flex flex-col backdrop-blur-sm bg-card/95 shadow-sm">
+        <div className="p-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsDrawerOpen(true)}
+              className="h-9 w-9 p-0"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+            </Button>
+            <span className="text-sm font-semibold">생산 계획</span>
+            <button onClick={() => document.body.classList.toggle('monochrome')} className="ml-2 text-xs px-2 py-0.5 rounded border hover:bg-muted" title="모노크롬 전환">◐</button>
+            {selectedIds.length > 0 && (
+              <Badge variant="secondary" className="text-xs">{selectedIds.length}건 선택</Badge>
+            )}
+          </div>
+        </div>
+        <div className="flex border-t border-border">
+          <button onClick={() => setMobileMainTab('monitoring')} className={`flex-1 py-2.5 text-sm font-semibold border-b-2 transition-colors ${mobileMainTab === 'monitoring' ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-muted-foreground hover:bg-muted/50'}`}>📈 모니터링</button>
+          <button onClick={() => setMobileMainTab('plans')} className={`flex-1 py-2.5 text-sm font-semibold border-b-2 transition-colors ${mobileMainTab === 'plans' ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-muted-foreground hover:bg-muted/50'}`}>📋 계획표</button>
         </div>
       </div>
 
@@ -1984,7 +1993,7 @@ export default function ProductionPlan() {
       </div>
 
       {/* KPI Overview - Z-Layout 기반 (2x2 그리드) */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className={`grid grid-cols-2 gap-3 ${mobileMainTab === 'monitoring' ? 'grid' : 'hidden md:grid'}`}>
         {/* 1순위: 총 수량 - 가장 강조 */}
         <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200">
           <CardContent className="p-4">
@@ -2044,7 +2053,7 @@ export default function ProductionPlan() {
 
       {/* AI 추천 결과 섹션 */}
       {showAIRecommend && (
-        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+        <div className={`bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border border-purple-200 dark:border-purple-800 rounded-lg p-4 ${mobileMainTab === 'monitoring' ? 'block' : 'hidden md:block'}`}>
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-bold text-purple-800 dark:text-purple-300 flex items-center gap-2">
               <Star className="w-4 h-4" />
@@ -2091,7 +2100,7 @@ export default function ProductionPlan() {
       )}
 
       {/* 진행 중 / 완료 탭 */}
-      <div className="flex gap-2 mb-4">
+      <div className={`flex gap-2 mb-4 ${mobileMainTab === 'plans' ? 'flex' : 'hidden md:flex'}`}>
         <Button
           variant={activeTab === 'active' ? 'default' : 'outline'}
           size="sm"
@@ -2117,7 +2126,7 @@ export default function ProductionPlan() {
 
       {/* 재고 확인 탭 */}
       {activeTab === 'inventory' && (
-        <div className="space-y-4">
+        <div className={`space-y-4 ${mobileMainTab === 'plans' ? 'block' : 'hidden md:block'}`}>
           <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-indigo-50">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-3">
@@ -2206,11 +2215,13 @@ export default function ProductionPlan() {
         </div>
       )}
 
-      {/* 생산计划的 탭이 아닐 때만 출고량 통계 + 생산 목록 표시 */}
+      {/* 생산계획 탭이 아닐 때만 출고량 통계 + 생산 목록 표시 */}
       {activeTab !== 'inventory' && (
         <>
           {/* 출고량 통계 패널 */}
-          <OutboundStatsPanel />
+          <div className={`${mobileMainTab === 'monitoring' ? 'block' : 'hidden md:block'}`}>
+            <OutboundStatsPanel />
+          </div>
 
       {/* 모바일 뷰 (카드 리스트) - 드래그 앤 드롭 */}
       <DndContext
@@ -2265,7 +2276,7 @@ export default function ProductionPlan() {
         }}
       >
         <SortableContext items={displayRows.map(r => r.id)} strategy={verticalListSortingStrategy}>
-          <div className="md:hidden space-y-4 flex-1 overflow-y-auto px-3 pb-24">
+          <div className={`md:hidden space-y-4 flex-1 overflow-y-auto px-3 pb-24 pt-2 ${mobileMainTab === 'plans' ? 'block' : 'hidden'}`}>
             {displayRows.map((row, index) => (
               <SortableMobileCard
                 key={row.id}
@@ -2300,7 +2311,7 @@ export default function ProductionPlan() {
         </>
       )}
 
-      <div className="md:hidden fixed bottom-0 left-0 right-0 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <div className={`md:hidden fixed bottom-0 left-0 right-0 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 z-20 ${mobileMainTab === 'plans' ? 'block' : 'hidden'}`}>
         <div className="p-3 space-y-2">
           <div className="flex gap-2">
             <Button

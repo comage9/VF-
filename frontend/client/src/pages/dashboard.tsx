@@ -9,6 +9,7 @@ import DepartureDashboard from "@/pages/departure-dashboard";
 import ProductionPlan from "@/pages/production-plan";
 
 import ProductMaster from "@/pages/product-master";
+import TruckFreightPage from "@/pages/truck-freight";
 import NotFound from "@/pages/not-found";
 import { AIChatWidget } from "@/components/ai-chatbot";
 
@@ -77,6 +78,13 @@ const NAV_ITEMS: SidebarItem[] = [
     icon: "fa-barcode",
     description: "미입고 품목 확인 및 바코드 스캔 작업을 수행합니다.",
   },
+  {
+    key: "truck-freight",
+    path: "/truck-freight",
+    label: "트럭 운송비",
+    icon: "fa-truck-loading",
+    description: "트럭 운송비 내역 조회, 입력 및 월별/계산서 종류별 통계를 확인합니다.",
+  },
 ];
 
 const PAGE_META: Record<string, PageMeta> = {
@@ -123,6 +131,11 @@ const PAGE_META: Record<string, PageMeta> = {
     title: "출차 관리 대시보드",
     description: "VF 출차 차량 등록, LS 배차 요청, KPP 팔레트 등록",
   },
+  "truck-freight": {
+    key: "truck-freight",
+    title: "트럭 운송비 관리",
+    description: "운송비 내역 조회, 입력 및 월별/계산서 종류별 통계",
+  },
 };
 
 function normalizePath(location: string | undefined): string {
@@ -159,6 +172,8 @@ function resolveActiveKey(pathname: string): string {
       return "barcode";
     case "/scanner":
       return "scanner";
+    case "/truck-freight":
+      return "truck-freight";
     default:
       return "unknown";
   }
@@ -243,6 +258,8 @@ export default function Dashboard() {
             title="VF 입고 바코드"
           />
         );
+      case "/truck-freight":
+        return <TruckFreightPage />;
       default:
         return <NotFound />;
     }

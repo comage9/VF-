@@ -1072,30 +1072,9 @@ const CustomTrendTooltip = ({ active, payload, label, totalSales, totalQty }: {
 
     const currentSales = Number(currentData.sales || 0);
     const currentQty = Number(currentData.quantity || 0);
-
-    // Find previous period data from the full trend array
-    // We need to pass the full trend data to calculate growth
-    const allTrendData = payload[0]?.payload?.allTrendData || [];
-    const currentIndex = allTrendData.findIndex((d: any) => d.fullDate === currentData.fullDate);
-
-    let salesGrowth = null;
-    let qtyGrowth = null;
-
-    if (currentIndex > 0) {
-        const prevData = allTrendData[currentIndex - 1];
-        const prevSales = Number(prevData?.sales || 0);
-        const prevQty = Number(prevData?.quantity || 0);
-
-        if (prevSales > 0) {
-            salesGrowth = ((currentSales - prevSales) / prevSales) * 100;
-        }
-        if (prevQty > 0) {
-            qtyGrowth = ((currentQty - prevQty) / prevQty) * 100;
-        }
-    }
-
-    const salesShare = totalSales > 0 ? (currentSales / totalSales) * 100 : 0;
-    const qtyShare = totalQty > 0 ? (currentQty / totalQty) * 100 : 0;
+    const salesTrend = currentData.salesTrend != null ? Number(currentData.salesTrend) : null;
+    const prevYearSales = currentData.prevYearSales != null ? Number(currentData.prevYearSales) : null;
+    const prevYearQty = currentData.prevYearQuantity != null ? Number(currentData.prevYearQuantity) : null;
 
     const formatCurrency = (value: number) => {
         if (value >= 100000000) return `${(value / 100000000).toFixed(1)}억`;
@@ -1103,55 +1082,54 @@ const CustomTrendTooltip = ({ active, payload, label, totalSales, totalQty }: {
         return value.toLocaleString();
     };
 
-    const renderGrowth = (growth: number | null) => {
-        if (growth === null) return <span className="text-gray-400">-</span>;
-        const isPositive = growth >= 0;
-        const color = isPositive ? 'text-emerald-600' : 'text-red-600';
-        const icon = isPositive ? '▲' : '▼';
-        return <span className={color}>{icon} {Math.abs(growth).toFixed(1)}%</span>;
-    };
+    // 표 행 정의: 색상 + 라벨 + 값 (+ 옵션 증감률)
+    type Row = { dot: string; dashed?: boolean; label: string; value: string; delta?: number | null };
+    const rows: Row[] = [
+        { dot: '#2563EB', label: '출고량(Box)', value: `${currentQty.toLocaleString()}` },
+        { dot: '#F97316', label: '매출액', value: `${formatCurrency(currentSales)}` },
+    ];
+    if (salesTrend != null) {
+        rows.push({ dot: '#6B7280', dashed: true, label: '매출 추세선', value: formatCurrency(salesTrend) });
+    }
+    if (prevYearSales != null) {
+        const delta = prevYearSales > 0 ? ((currentSales - prevYearSales) / prevYearSales) * 100 : null;
+        rows.push({ dot: '#A855F7', dashed: true, label: '전년 매출액', value: formatCurrency(prevYearSales), delta });
+    }
+    if (prevYearQty != null) {
+        const delta = prevYearQty > 0 ? ((currentQty - prevYearQty) / prevYearQty) * 100 : null;
+        rows.push({ dot: '#22C55E', dashed: true, label: '전년 출고량', value: prevYearQty.toLocaleString(), delta });
+    }
 
     return (
-        <div className="bg-white/95 backdrop-blur-sm border border-gray-200 rounded-lg shadow-lg p-4 min-w-[240px]">
-            <div className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b">
+        <div className="bg-black/80 backdrop-blur-sm rounded-lg shadow-xl p-3 min-w-[200px] text-white border border-white/10">
+            {/* 날짜 헤더 */}
+            <div className="text-xs font-semibold text-white/90 mb-2 pb-2 border-b border-white/15">
                 {currentData.fullDate || label}
             </div>
-
-            {/* Sales Row */}
-            <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-orange-500"></div>
-                    <span className="text-sm text-gray-600">매출액</span>
-                </div>
-                <div className="text-right">
-                    <div className="font-semibold text-gray-900">{formatCurrency(currentSales)}</div>
-                    <div className="text-xs text-gray-500">비중 {salesShare.toFixed(1)}%</div>
-                </div>
+            {/* 표 형태: 각 시리즈 = 한 행 (색상점 + 라벨 | 값) */}
+            <div className="flex flex-col gap-1.5">
+                {rows.map((row, i) => (
+                    <div key={i} className="flex items-center justify-between gap-4 text-xs">
+                        <div className="flex items-center gap-2">
+                            <span
+                                className={row.dashed ? "inline-block w-3" : "inline-block w-2.5 h-2.5 rounded-full"}
+                                style={row.dashed
+                                    ? { borderTop: `2px dashed ${row.dot}`, height: 0 }
+                                    : { backgroundColor: row.dot }}
+                            />
+                            <span className="text-white/80">{row.label}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="font-semibold text-white">{row.value}</span>
+                            {row.delta != null && (
+                                <span className={row.delta >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                                    {row.delta >= 0 ? '▲' : '▼'}{Math.abs(row.delta).toFixed(1)}%
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                ))}
             </div>
-            {salesGrowth !== null && (
-                <div className="flex items-center justify-between mb-3 pl-5">
-                    <span className="text-xs text-gray-500">전기 대비</span>
-                    {renderGrowth(salesGrowth)}
-                </div>
-            )}
-
-            {/* Quantity Row */}
-            <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-                    <span className="text-sm text-gray-600">출고량</span>
-                </div>
-                <div className="text-right">
-                    <div className="font-semibold text-gray-900">{currentQty.toLocaleString()} Box</div>
-                    <div className="text-xs text-gray-500">비중 {qtyShare.toFixed(1)}%</div>
-                </div>
-            </div>
-            {qtyGrowth !== null && (
-                <div className="flex items-center justify-between pl-5">
-                    <span className="text-xs text-gray-500">전기 대비</span>
-                    {renderGrowth(qtyGrowth)}
-                </div>
-            )}
         </div>
     );
 };
@@ -1719,11 +1697,38 @@ export default function OutboundDashboardUnified({ dataSource = 'vf', activeTab 
                 }
             }) : []);
 
-        // Add allTrendData reference to each item for growth calculation
-        const dailyTrendWithAllData = dailyTrend.map(item => ({
-            ...item,
-            allTrendData: dailyTrend
-        }));
+        // 전년 동기 데이터 인덱스 기반 매핑 (올해 i번째 ↔ 전년 i번째)
+        const prevYearTrend: Array<{ quantity: number; salesAmount: number }> =
+            (!hasMultiCategorySelection && outboundStats.prevYearTrend) ? outboundStats.prevYearTrend : [];
+
+        // 금액(sales) 기준 선형 회귀 추세선 계산 (최소제곡법)
+        const salesValues = dailyTrend.map(d => Number(d.sales) || 0);
+        const n = salesValues.length;
+        let trendValues: number[] = [];
+        if (n >= 2) {
+            const sumX = salesValues.reduce((s, _, i) => s + i, 0);
+            const sumY = salesValues.reduce((s, v) => s + v, 0);
+            const sumXY = salesValues.reduce((s, v, i) => s + i * v, 0);
+            const sumX2 = salesValues.reduce((s, _, i) => s + i * i, 0);
+            const denom = n * sumX2 - sumX * sumX;
+            if (denom !== 0) {
+                const m = (n * sumXY - sumX * sumY) / denom;
+                const b = (sumY - m * sumX) / n;
+                trendValues = salesValues.map((_, i) => Math.max(0, m * i + b));
+            }
+        }
+
+        // Add allTrendData, prevYear, trend to each item
+        const dailyTrendWithAllData = dailyTrend.map((item, i) => {
+            const prev = prevYearTrend[i];
+            return {
+                ...item,
+                allTrendData: dailyTrend,
+                salesTrend: trendValues.length > 0 ? Math.round(trendValues[i]) : undefined,
+                prevYearSales: prev ? Number(prev.salesAmount ?? 0) : undefined,
+                prevYearQuantity: prev ? Number(prev.quantity ?? 0) : undefined,
+            };
+        });
 
         const totalSales = hasMultiCategorySelection
             ? filtered.reduce((sum, r) => sum + Number(r.salesAmount ?? 0), 0)
@@ -2391,7 +2396,7 @@ export default function OutboundDashboardUnified({ dataSource = 'vf', activeTab 
                                     tickMargin={10}
                                     tickFormatter={(v: number) => `${Math.round(v / 10000)}만`}
                                 />
-                                <Tooltip
+                                <RechartsTooltip
                                     content={({ active, payload, label }: any) => (
                                         <CustomTrendTooltip
                                             active={active}
@@ -2451,6 +2456,45 @@ export default function OutboundDashboardUnified({ dataSource = 'vf', activeTab 
                                     strokeWidth={3}
                                     dot={false}
                                     label={dailyTrend.length <= 60 ? { position: 'top', fill: '#F97316', fontSize: 11, fontWeight: 'bold', dy: -6, formatter: (v: number) => v > 0 ? `${Math.round(v / 10000)}만` : '' } : undefined}
+                                />
+                                {/* 금액 기준 추세선 (선형 회귀) */}
+                                <Line
+                                    isAnimationActive={false}
+                                    yAxisId="right"
+                                    type="monotone"
+                                    dataKey="salesTrend"
+                                    name="매출 추세선"
+                                    stroke="#6B7280"
+                                    strokeWidth={2}
+                                    strokeDasharray="6 4"
+                                    dot={false}
+                                    connectNulls={true}
+                                />
+                                {/* 전년 동기 매출액 */}
+                                <Line
+                                    isAnimationActive={false}
+                                    yAxisId="right"
+                                    type="monotone"
+                                    dataKey="prevYearSales"
+                                    name="전년 매출액"
+                                    stroke="#A855F7"
+                                    strokeWidth={2}
+                                    strokeDasharray="5 5"
+                                    dot={false}
+                                    connectNulls={true}
+                                />
+                                {/* 전년 동기 출고량 */}
+                                <Line
+                                    isAnimationActive={false}
+                                    yAxisId="left"
+                                    type="monotone"
+                                    dataKey="prevYearQuantity"
+                                    name="전년 출고량"
+                                    stroke="#22C55E"
+                                    strokeWidth={2}
+                                    strokeDasharray="5 5"
+                                    dot={false}
+                                    connectNulls={true}
                                 />
                             </ComposedChart>
                         </ResponsiveContainer>

@@ -22,6 +22,7 @@ class OutboundRecord(models.Model):
         db_table = 'outbound_records'
         indexes = [
             models.Index(fields=['outbound_date', 'category']), # 복합 인덱스
+            models.Index(fields=['outbound_date', 'barcode']),  # 날짜+바코드 복합 인덱스 추가 (조회 성능 최적화)
         ]
 
     def __str__(self):

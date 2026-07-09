@@ -23,4 +23,7 @@ urlpatterns = [
     path("api/barcode/load", views.api_barcode_load, name="barcode-load"),
     path("api/barcode/clear", views.api_barcode_clear, name="barcode-clear"),
     path("api/barcode/subscribe", views.api_barcode_subscribe, name="barcode-subscribe"),
+
+    # Downloads 폴더 스캔 API
+    path("api/ls-download-scan", views.api_ls_download_scan, name="departure-download-scan"),
 ] 
