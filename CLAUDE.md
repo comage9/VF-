@@ -49,6 +49,18 @@ GET  /api/inventory/unified    → 통합 재고
 
 ## ⚠️ 중요 규칙 (반드시 확인)
 
+### 재고(enhanced) 현재고 산출 — 반복 버그 방지
+
+**단일 구현:** `backend/sales_api/inventory_stock.py`  
+views.py에 인라인 재구현 금지. 수정 시 이 파일만 변경.
+
+| 항목 | 규칙 |
+|------|------|
+| 업로드 스냅샷 의미 | 재고 기준일(`as_of`) = **그날 출고 이후 남은 재고** |
+| 현재고 공식 | `baseline + 입고(date > as_of) − 출고(date > as_of)` |
+| 금지 | 기준일 당일 출고/입고를 **다시** 가감 (`>= as_of` 사용 금지) |
+| 증상 | 당일 출고 이중 차감 → 가짜 품절·위험 과다·총재고금액 과소 |
+
 ### API 엔드포인트 규칙
 
 **Django URL은 trailing slash 없음!** `/api/production/` (slash 있음) → 404

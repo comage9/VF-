@@ -468,7 +468,28 @@ def inventory_unified(request):
     baseline_items = InventoryBaselineItem.objects.filter(upload=latest_upload)
 
     master_qs = BarcodeMaster.objects.all()
-    master_map = {m.barcode: m for m in master_qs}
+    master_map = {(m.barcode or "").strip(): m for m in master_qs if (m.barcode or "").strip()}
+
+    # 제품 마스터 단가(매입가) — 재고 금액 산출의 기준 단가
+    # 바코드 우선, 없으면 SKU/제품명으로 매칭
+    price_by_barcode = {}
+    price_by_sku = {}
+    price_by_name = {}
+    for spec in MasterSpec.objects.all().only(
+        "barcode", "sku_id", "product_name", "price", "prev_price", "price_changed_at"
+    ):
+        p = int(spec.price or 0)
+        if p <= 0:
+            continue
+        bc = (spec.barcode or "").strip()
+        sku = (spec.sku_id or "").strip()
+        name = (spec.product_name or "").strip()
+        if bc and bc not in price_by_barcode:
+            price_by_barcode[bc] = p
+        if sku and sku not in price_by_sku:
+            price_by_sku[sku] = p
+        if name and name not in price_by_name:
+            price_by_name[name] = p
 
     # Category fallback from outbound records (when BarcodeMaster.category is empty)
     baseline_barcodes_qs = baseline_items.exclude(barcode__isnull=True).exclude(barcode="").values("barcode")
@@ -486,24 +507,26 @@ def inventory_unified(request):
             row.get("category") or ""
         ).strip()
 
-    # Receipts since baseline date (including same day)
-    receipt_qs = InventoryReceiptItem.objects.filter(receipt_date__gte=as_of)
-    receipt_qs = receipt_qs.filter(barcode__in=baseline_barcodes_qs)
-    receipt_agg = {
-        row["barcode"]: int(row.get("qty") or 0)
-        for row in receipt_qs.values("barcode").annotate(qty=Sum("quantity_box"))
-    }
+    # 현재고 가감: sales_api/inventory_stock.py 단일 규칙
+    # (기준일 = 출고 후 잔여 스냅샷 → 당일 출고/입고 재차감 금지)
+    from .inventory_stock import (
+        aggregate_movements_after_baseline,
+        compute_current_stock,
+        stock_value,
+    )
 
-    # Outbound since baseline date (including same day), boxes only
-    outbound_qs = OutboundRecord.objects.filter(outbound_date__gte=as_of)
-    outbound_qs = outbound_qs.exclude(barcode__isnull=True).exclude(barcode="")
-    outbound_qs = outbound_qs.filter(barcode__in=baseline_barcodes_qs)
-    outbound_agg = {
-        row["barcode"]: int(row.get("qty") or 0)
-        for row in outbound_qs.values("barcode").annotate(
-            qty=Coalesce(Sum("box_quantity"), 0)
-        )
-    }
+    baseline_barcode_list = list(
+        baseline_items.exclude(barcode__isnull=True)
+        .exclude(barcode="")
+        .values_list("barcode", flat=True)
+        .distinct()
+    )
+    outbound_agg, receipt_agg = aggregate_movements_after_baseline(
+        as_of=as_of,
+        barcodes=baseline_barcode_list,
+        outbound_model=OutboundRecord,
+        receipt_model=InventoryReceiptItem,
+    )
 
     # 30-day stats for threshold calc (min/max)
     end_date = timezone.localdate()
@@ -551,9 +574,11 @@ def inventory_unified(request):
     def _status_from_thresholds(
         current_qty: int, min_stock: int, safety_stock: int, max_stock: int
     ) -> str:
-        # 우선순위: 위험(긴급발주) > 부족(발주요청) > 안전 > 과잉
-        # - 위험: 0 이하(품절 포함) 또는 최소재고 미달
-        # - 부족: 안전재고 이하
+        # 우선순위: 위험(긴급발주) > 부족(발주요청) > 과잉 > 안전
+        # - 위험: 품절(0 이하) 또는 최소재고 미만
+        # - 부족: 최소재고 이상 ~ 안전재고 이하 (안전재고 > 최소재고 일 때만 구간 존재)
+        #         안전재고 == 최소재고 이면 최소 도달 시 부족으로 표시
+        # - 과잉: 최대재고 초과
         if current_qty <= 0:
             return "critical"
         if min_stock > 0 and current_qty < min_stock:
@@ -571,11 +596,11 @@ def inventory_unified(request):
         base_qty = int(item.quantity_box or 0)
         rcv_qty = int(receipt_agg.get(bc) or 0)
         out_qty = int(outbound_agg.get(bc) or 0)
-        current_qty = base_qty + rcv_qty - out_qty
+        current_qty = compute_current_stock(base_qty, rcv_qty, out_qty)
 
         out14 = int(outbound_14_agg.get(bc) or 0)
         avg_daily = (out14 / 14.0) if out14 > 0 else 0.0
-        cover_days = (current_qty / avg_daily) if avg_daily > 0 else None
+        cover_days = (current_qty / avg_daily) if avg_daily > 0 and current_qty > 0 else None
 
         out30 = int(outbound_30_agg.get(bc) or 0)
         avg_daily_30 = (out30 / 30.0) if out30 > 0 else 0.0
@@ -583,9 +608,13 @@ def inventory_unified(request):
         out60 = int(outbound_60_agg.get(bc) or 0)
         avg_daily_60 = (out60 / 60.0) if out60 > 0 else 0.0
 
-        # 정책: 최소재고=3일치, 최대재고=30일치(한달)
+        # 정책: 최소재고=3일치, 최대재고=30일치(한달) — 30일 평균 출고 기준
         calc_min_stock = int(round(avg_daily_30 * 3)) if avg_daily_30 > 0 else 0
         calc_max_stock = int(round(avg_daily_30 * 30)) if avg_daily_30 > 0 else 0
+        # 안전재고 기본: 7일치 (최소보다 여유 구간을 두어 부족 분류가 동작하도록)
+        calc_safety_stock = int(round(avg_daily_30 * 7)) if avg_daily_30 > 0 else 0
+        if calc_safety_stock > 0 and calc_min_stock > 0:
+            calc_safety_stock = max(calc_safety_stock, calc_min_stock)
 
         # 임계값의 source of truth:
         # 1) BarcodeMaster에 설정값이 있으면 그것을 우선 사용
@@ -605,13 +634,15 @@ def inventory_unified(request):
         min_stock = bm_min_stock if bm_min_stock > 0 else calc_min_stock
         max_stock = bm_max_stock if bm_max_stock > 0 else calc_max_stock
 
-        # safetyStock은 부족(발주요청)의 기준으로 사용
-        # 값이 없으면(0) min_stock 이상이 되도록 보정하여 분류가 안정적으로 동작하게 함
-        safety_stock = bm_safety_stock
-        if safety_stock <= 0:
-            safety_stock = min_stock
+        # safetyStock: 부족(발주요청) 상한
+        # - 마스터 값이 있으면 사용 (최소재고 이상으로 보정)
+        # - 없으면 계산 안전재고(7일), 그것도 없으면 최소재고
+        if bm_safety_stock > 0:
+            safety_stock = max(bm_safety_stock, min_stock)
+        elif calc_safety_stock > 0:
+            safety_stock = max(calc_safety_stock, min_stock)
         else:
-            safety_stock = max(safety_stock, min_stock)
+            safety_stock = min_stock
 
         reorder_point = bm_reorder_point if bm_reorder_point > 0 else min_stock
 
@@ -626,15 +657,25 @@ def inventory_unified(request):
         ):
             hidden_reason = "lifecycle_zero_stock"
 
+        product_name = (
+            master.product_name
+            if (master and master.product_name)
+            else (item.product_name or "-")
+        )
+        sku_id = (master.sku_id if master else None) or ""
+        # 단가: MasterSpec 매입가 (바코드 → SKU → 제품명)
+        unit_price = (
+            price_by_barcode.get(bc)
+            or price_by_sku.get(str(sku_id).strip())
+            or price_by_name.get(str(product_name or "").strip())
+            or 0
+        )
+
         data.append(
             {
                 "id": str(item.id),
                 "skuId": (master.sku_id if master else None),
-                "productName": (
-                    master.product_name
-                    if (master and master.product_name)
-                    else (item.product_name or "-")
-                ),
+                "productName": product_name,
                 "currentStock": int(current_qty),
                 "minStock": int(min_stock),
                 "maxStock": int(max_stock),
@@ -653,6 +694,10 @@ def inventory_unified(request):
                     else (item.location or "")
                 ),
                 "barcode": bc,
+                "price": int(unit_price),
+                "baseStock": int(base_qty),
+                "receiptQty": int(rcv_qty),
+                "outboundQty": int(out_qty),
                 "lastUpdated": latest_upload.uploaded_at.isoformat()
                 if latest_upload.uploaded_at
                 else None,
@@ -667,6 +712,34 @@ def inventory_unified(request):
             }
         )
 
+    # 화면 집계 요약 (필터 전 전체 기준)
+    summary_critical = 0
+    summary_low = 0
+    summary_normal = 0
+    summary_high = 0
+    summary_critical_qty = 0
+    summary_low_qty = 0
+    summary_total_value = 0
+    summary_total_qty = 0
+    for row in data:
+        st = row.get("stockStatus") or "normal"
+        qty = int(row.get("currentStock") or 0)
+        price = int(row.get("price") or 0)
+        val = stock_value(qty, price)
+        qty_pos = max(0, qty)
+        if st == "critical":
+            summary_critical += 1
+            summary_critical_qty += qty_pos
+        elif st == "low":
+            summary_low += 1
+            summary_low_qty += qty_pos
+        elif st == "high":
+            summary_high += 1
+        else:
+            summary_normal += 1
+        summary_total_qty += qty_pos
+        summary_total_value += val
+
     return Response(
         {
             "success": True,
@@ -679,7 +752,17 @@ def inventory_unified(request):
                 "hasMore": False,
             },
             "summary": {
-                "overall": {},
+                "overall": {
+                    "critical": summary_critical,
+                    "low": summary_low,
+                    "normal": summary_normal,
+                    "high": summary_high,
+                    "criticalQuantity": summary_critical_qty,
+                    "lowQuantity": summary_low_qty,
+                    "totalValue": summary_total_value,
+                    "totalQuantity": summary_total_qty,
+                    "totalItems": len(data),
+                },
                 "filtered": {},
                 "options": {},
             },
@@ -1083,8 +1166,10 @@ def inventory_receipts_upload(request):
             rows_invalid += 1
             continue
         rdate = dt.date()
-        if rdate < as_of:
-            # 기준일 이전 입고는 반영하지 않음
+        # 기준일 = 출고 후 잔여 스냅샷 → 기준일 당일·이전 입고는 스냅샷에 포함되었다고 보고 제외
+        from .inventory_stock import is_movement_date_applicable
+
+        if not is_movement_date_applicable(rdate, as_of):
             rows_skipped += 1
             continue
         parsed.append(
@@ -1490,6 +1575,18 @@ def master_specs(request):
                     "color1": s.color1,
                     "color2": s.color2,
                     "default_quantity": int(s.default_quantity or 0),
+                    "sku_id": s.sku_id or "",
+                    "barcode": s.barcode or "",
+                    "category_lg": s.category_lg or "",
+                    "category_md": s.category_md or "",
+                    "price": int(s.price or 0),
+                    "lot_number": s.lot_number or "",
+                    "components": s.components or "",
+                    "image_url": s.image_url or "",
+                    "prev_price": int(s.prev_price or 0),
+                    "price_changed_at": s.price_changed_at.isoformat() if s.price_changed_at else None,
+                    "is_discontinued": s.is_discontinued,
+                    "is_no_outbound_3m": s.is_no_outbound_3m,
                 }
                 for s in specs
             ]
@@ -1510,6 +1607,18 @@ def master_specs(request):
             color1=payload.get("color1") or "",
             color2=payload.get("color2") or "",
             default_quantity=int(payload.get("default_quantity") or 0),
+            sku_id=payload.get("sku_id") or "",
+            barcode=payload.get("barcode") or "",
+            category_lg=payload.get("category_lg") or "",
+            category_md=payload.get("category_md") or "",
+            price=int(payload.get("price") or 0),
+            lot_number=payload.get("lot_number") or "",
+            components=payload.get("components") or "",
+            image_url=payload.get("image_url") or "",
+            prev_price=int(payload.get("prev_price") or 0),
+            price_changed_at=_parse_date_ymd(payload.get("price_changed_at")),
+            is_discontinued=bool(payload.get("is_discontinued") or False),
+            is_no_outbound_3m=bool(payload.get("is_no_outbound_3m") or False),
         )
     except Exception:
         return Response(
@@ -1525,9 +1634,109 @@ def master_specs(request):
             "color1": spec.color1,
             "color2": spec.color2,
             "default_quantity": int(spec.default_quantity or 0),
+            "sku_id": spec.sku_id or "",
+            "barcode": spec.barcode or "",
+            "category_lg": spec.category_lg or "",
+            "category_md": spec.category_md or "",
+            "price": int(spec.price or 0),
+            "lot_number": spec.lot_number or "",
+            "components": spec.components or "",
+            "image_url": spec.image_url or "",
+            "prev_price": int(spec.prev_price or 0),
+            "price_changed_at": spec.price_changed_at.isoformat() if spec.price_changed_at else None,
+            "is_discontinued": spec.is_discontinued,
+            "is_no_outbound_3m": spec.is_no_outbound_3m,
         },
         status=status.HTTP_201_CREATED,
     )
+
+
+def _clear_no_outbound_3m_on_activity(*, barcodes=None, sku_ids=None) -> int:
+    """
+    출고/입고 발생 시 '3개월 미출고' 플래그만 자동 해제.
+
+    단종(is_discontinued=True) 품목은 절대 자동 변경하지 않음.
+    단종 이동/복구는 제품 마스터 UI·API 수동 조작만 허용.
+    """
+    from django.db.models import Q
+
+    barcodes = {str(b).strip() for b in (barcodes or []) if b and str(b).strip()}
+    sku_ids = {str(s).strip() for s in (sku_ids or []) if s and str(s).strip()}
+    if not barcodes and not sku_ids:
+        return 0
+
+    scope = Q()
+    if barcodes:
+        scope |= Q(barcode__in=barcodes)
+    if sku_ids:
+        scope |= Q(sku_id__in=sku_ids)
+
+    return MasterSpec.objects.filter(
+        scope,
+        is_discontinued=False,
+        is_no_outbound_3m=True,
+    ).update(is_no_outbound_3m=False)
+
+
+def _normalize_master_status_flags(is_discontinued, is_no_outbound_3m, *, has_disc, has_no_out):
+    """
+    상태 플래그 정규화.
+    - 단종=True 이면 3개월 미출고는 항상 False (단종 탭 단독 표시)
+    - 둘 다 켜지지 않도록 상호 배타
+    """
+    disc = bool(is_discontinued) if has_disc else None
+    no_out = bool(is_no_outbound_3m) if has_no_out else None
+    if disc is True:
+        no_out = False
+    elif no_out is True and disc is None:
+        # 미출고로 전환 시 단종은 명시적으로 해제
+        disc = False
+    elif disc is False and no_out is None:
+        pass
+    return disc, no_out
+
+
+@api_view(["PATCH"])
+def master_specs_bulk_update(request):
+    """제품 마스터 대분류, 중분류, 색상, 단종 여부, 3개월 미출고 여부 일괄 수정 API.
+    단종 상태 변경은 이 API/개별 수정(수동)으로만 가능. 자동 배치에서는 단종을 건드리지 않음.
+    """
+    payload = request.data if isinstance(request.data, dict) else {}
+    ids = payload.get("ids", [])
+    if not ids:
+        return Response({"message": "수정할 대상 품목 ID 목록(ids)이 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
+        
+    update_data = {}
+    for key in ["category_lg", "category_md", "color1", "color2", "is_discontinued", "is_no_outbound_3m"]:
+        if key in payload:
+            if key in ["is_discontinued", "is_no_outbound_3m"]:
+                update_data[key] = bool(payload.get(key))
+            else:
+                update_data[key] = str(payload.get(key) or "").strip()
+
+    # 단종 ↔ 3개월 미출고 상호 배타 (수동 전환 시 정리)
+    has_disc = "is_discontinued" in update_data
+    has_no_out = "is_no_outbound_3m" in update_data
+    if has_disc or has_no_out:
+        disc, no_out = _normalize_master_status_flags(
+            update_data.get("is_discontinued"),
+            update_data.get("is_no_outbound_3m"),
+            has_disc=has_disc,
+            has_no_out=has_no_out,
+        )
+        if disc is not None:
+            update_data["is_discontinued"] = disc
+        if no_out is not None:
+            update_data["is_no_outbound_3m"] = no_out
+            
+    if not update_data:
+        return Response({"message": "수정할 데이터가 없습니다."}, status=status.HTTP_400_BAD_REQUEST)
+        
+    try:
+        updated_count = MasterSpec.objects.filter(id__in=ids).update(**update_data)
+        return Response({"success": True, "updated_count": updated_count})
+    except Exception as e:
+        return Response({"message": f"일괄 수정 처리 실패: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(["PUT", "DELETE"])
@@ -1541,6 +1750,8 @@ def master_specs_detail(request, id: int):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     payload = request.data if isinstance(request.data, dict) else {}
+    has_disc = "is_discontinued" in payload
+    has_no_out = "is_no_outbound_3m" in payload
     for key in [
         "product_name",
         "product_name_eng",
@@ -1548,13 +1759,45 @@ def master_specs_detail(request, id: int):
         "color1",
         "color2",
         "default_quantity",
+        "sku_id",
+        "barcode",
+        "category_lg",
+        "category_md",
+        "price",
+        "lot_number",
+        "components",
+        "image_url",
+        "prev_price",
+        "price_changed_at",
+        "is_discontinued",
+        "is_no_outbound_3m",
     ]:
         if key in payload:
-            setattr(spec, key, payload.get(key))
-    try:
-        spec.default_quantity = int(spec.default_quantity or 0)
-    except Exception:
-        spec.default_quantity = 0
+            val = payload.get(key)
+            if key == "price" or key == "default_quantity" or key == "prev_price":
+                try:
+                    val = int(val or 0)
+                except Exception:
+                    val = 0
+            elif key == "price_changed_at":
+                val = _parse_date_ymd(val)
+            elif key in ["is_discontinued", "is_no_outbound_3m"]:
+                val = bool(val)
+            setattr(spec, key, val)
+
+    # 단종은 수동 전환만: 단종 시 미출고 플래그 정리 (자동 배치와 혼선 방지)
+    if has_disc or has_no_out:
+        disc, no_out = _normalize_master_status_flags(
+            spec.is_discontinued,
+            spec.is_no_outbound_3m,
+            has_disc=True,
+            has_no_out=True,
+        )
+        if disc is not None:
+            spec.is_discontinued = disc
+        if no_out is not None:
+            spec.is_no_outbound_3m = no_out
+
     spec.save()
 
     return Response(
@@ -1566,8 +1809,305 @@ def master_specs_detail(request, id: int):
             "color1": spec.color1,
             "color2": spec.color2,
             "default_quantity": int(spec.default_quantity or 0),
+            "sku_id": spec.sku_id or "",
+            "barcode": spec.barcode or "",
+            "category_lg": spec.category_lg or "",
+            "category_md": spec.category_md or "",
+            "price": int(spec.price or 0),
+            "lot_number": spec.lot_number or "",
+            "components": spec.components or "",
+            "image_url": spec.image_url or "",
+            "prev_price": int(spec.prev_price or 0),
+            "price_changed_at": spec.price_changed_at.isoformat() if spec.price_changed_at else None,
+            "is_discontinued": spec.is_discontinued,
+            "is_no_outbound_3m": spec.is_no_outbound_3m,
         }
     )
+
+
+@api_view(["POST"])
+def master_specs_sync_outbound_status(request):
+    """최근 3개월간 출고 실적이 없는 품목들의 마스터 상태(is_no_outbound_3m)를 수동 갱신하는 API"""
+    from django.core.management import call_command
+    try:
+        call_command("update_outbound_status")
+        return Response({"success": True, "message": "출고 상태 정기 배치가 성공적으로 실행되었습니다."})
+    except Exception as e:
+        return Response({"message": f"배치 실행 실패: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(["POST"])
+def master_spec_upload_image(request):
+    """Product Spec 사진 업로드 API"""
+    from django.core.files.storage import FileSystemStorage
+    from django.conf import settings
+    
+    file_obj = request.FILES.get("image") or request.FILES.get("file")
+    if not file_obj:
+        return Response({"message": "이미지 파일이 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
+        
+    try:
+        specs_dir = os.path.join(settings.MEDIA_ROOT, "specs")
+        os.makedirs(specs_dir, exist_ok=True)
+        
+        fs = FileSystemStorage(location=specs_dir, base_url="/media/specs/")
+        filename = fs.save(file_obj.name, file_obj)
+        uploaded_file_url = fs.url(filename)
+        return Response({"success": True, "image_url": uploaded_file_url})
+    except Exception as e:
+        return Response({"message": f"파일 업로드 실패: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+def _parse_price_cell(val) -> int:
+    """엑셀 단가 셀 파싱 (5,280 / 5280 / 5,280원)."""
+    try:
+        s = str(val if val is not None else "").strip()
+        if not s or s.lower() in ("nan", "none", "-", ""):
+            return 0
+        s = s.replace(",", "").replace("원", "").replace(" ", "")
+        return int(float(s))
+    except (ValueError, TypeError):
+        return 0
+
+
+def _parse_fc_datetime(val):
+    """FC 입고 시각 파싱 (2026/07/14 17:46:05, YYYY-MM-DD 등)."""
+    if val is None:
+        return None
+    try:
+        if pd.isna(val):
+            return None
+    except Exception:
+        pass
+    try:
+        dt = pd.to_datetime(val, errors="coerce")
+        if pd.isna(dt):
+            return None
+        return dt.to_pydatetime() if hasattr(dt, "to_pydatetime") else dt
+    except Exception:
+        return None
+
+
+def _sync_master_prices_from_fc_stocked_df(df) -> dict:
+    """
+    단가 단일 기준: 쿠팡 FC 입고 파일 (Coupang_Stocked_Data_List) 양식.
+
+    필수: SKU번호, SKU명, 단가
+    권장: 입고/반출시각 (최신 단가 선정·변동일)
+    선택: 바코드/상품바코드
+
+    단가 컬럼(단가)을 MasterSpec.price 에 반영.
+    SKU별 최신 입고시각 행의 단가를 사용.
+    """
+    if df is None or getattr(df, "empty", True):
+        return {
+            "success": False,
+            "message": "데이터가 없습니다.",
+            "new_created": 0,
+            "updated": 0,
+            "unchanged": 0,
+            "total_items": 0,
+            "price_changed": 0,
+        }
+
+    work = df.copy()
+    work.columns = [str(c).strip() for c in work.columns]
+    cols = list(work.columns)
+
+    sku_col = next((c for c in ["SKU번호", "상품번호"] if c in cols), None)
+    name_col = next((c for c in ["SKU명", "상품이름", "상품명"] if c in cols), None)
+    # 통일 기준: FC 입고 파일의 '단가' 우선 (구 양식 매입가는 호환용 fallback)
+    price_col = next((c for c in ["단가", "매입가"] if c in cols), None)
+    date_col = next(
+        (c for c in ["입고/반출시각", "입고예정일", "발주등록일시"] if c in cols), None
+    )
+    barcode_col = next((c for c in ["상품바코드", "바코드"] if c in cols), None)
+
+    if not sku_col or not name_col or not price_col:
+        return {
+            "success": False,
+            "message": (
+                "필수 컬럼이 없습니다. FC 입고 파일(Coupang_Stocked_Data_List) 양식이 필요합니다. "
+                "필수: SKU번호, SKU명, 단가"
+            ),
+            "new_created": 0,
+            "updated": 0,
+            "unchanged": 0,
+            "total_items": 0,
+            "price_changed": 0,
+        }
+
+    # SKU별 최신 단가 취합
+    latest_by_sku = {}  # sku -> {dt, price, name, barcode}
+    for _, row in work.iterrows():
+        sku_id = str(row.get(sku_col, "") or "").strip()
+        product_name = str(row.get(name_col, "") or "").strip()
+        if not sku_id or not product_name or sku_id.lower() == "nan":
+            continue
+        if product_name.lower() == "nan":
+            continue
+
+        price = _parse_price_cell(row.get(price_col))
+        if price <= 0:
+            continue
+
+        raw_dt = row.get(date_col) if date_col else None
+        dt = _parse_fc_datetime(raw_dt) or datetime.now()
+        barcode = ""
+        if barcode_col:
+            barcode = str(row.get(barcode_col, "") or "").strip()
+            if barcode.lower() in ("nan", "none", "-"):
+                barcode = ""
+
+        prev = latest_by_sku.get(sku_id)
+        if prev is None or dt >= prev["dt"]:
+            latest_by_sku[sku_id] = {
+                "dt": dt,
+                "price": price,
+                "name": product_name,
+                "barcode": barcode,
+            }
+
+    registered_by_sku = {
+        s.sku_id.strip(): s for s in MasterSpec.objects.all() if s.sku_id
+    }
+    registered_by_barcode = {
+        s.barcode.strip(): s for s in MasterSpec.objects.all() if s.barcode
+    }
+    registered_by_name = {
+        s.product_name.strip(): s
+        for s in MasterSpec.objects.all()
+        if s.product_name
+    }
+
+    outbound_cats = {}
+    for row in (
+        OutboundRecord.objects.exclude(category="")
+        .exclude(category__isnull=True)
+        .values("product_name")
+        .annotate(category=Max("category"))
+    ):
+        outbound_cats[str(row.get("product_name") or "").strip()] = str(
+            row.get("category") or ""
+        ).strip()
+
+    barcode_cats = {}
+    for row in (
+        BarcodeMaster.objects.exclude(category="")
+        .exclude(category__isnull=True)
+        .values("product_name")
+        .annotate(category=Max("category"))
+    ):
+        barcode_cats[str(row.get("product_name") or "").strip()] = str(
+            row.get("category") or ""
+        ).strip()
+
+    new_created = 0
+    updated = 0
+    unchanged = 0
+    price_changed = 0
+
+    for sku_id, info in latest_by_sku.items():
+        latest_price = int(info["price"])
+        product_name = info["name"]
+        barcode = info["barcode"]
+        changed_date = info["dt"].date() if hasattr(info["dt"], "date") else info["dt"]
+
+        spec = None
+        if sku_id in registered_by_sku:
+            spec = registered_by_sku[sku_id]
+        elif barcode and barcode in registered_by_barcode:
+            spec = registered_by_barcode[barcode]
+        elif product_name in registered_by_name:
+            spec = registered_by_name[product_name]
+
+        if spec:
+            old_price = int(spec.price or 0)
+            dirty = False
+            if latest_price != old_price:
+                if old_price > 0:
+                    spec.prev_price = old_price
+                    spec.price_changed_at = changed_date
+                spec.price = latest_price
+                price_changed += 1
+                dirty = True
+            if not spec.sku_id:
+                spec.sku_id = sku_id
+                dirty = True
+            if barcode and not spec.barcode:
+                spec.barcode = barcode
+                dirty = True
+            if dirty:
+                spec.save()
+                updated += 1
+            else:
+                unchanged += 1
+        else:
+            inferred_cat = ""
+            name_strip = product_name.strip()
+            if name_strip in outbound_cats:
+                inferred_cat = outbound_cats[name_strip]
+            elif name_strip in barcode_cats:
+                inferred_cat = barcode_cats[name_strip]
+            if not inferred_cat:
+                inferred_cat = "미분류"
+
+            MasterSpec.objects.create(
+                product_name=product_name,
+                sku_id=sku_id,
+                barcode=barcode,
+                price=latest_price,
+                prev_price=0,
+                price_changed_at=changed_date,
+                category_lg=inferred_cat,
+                category_md="미분류",
+            )
+            new_created += 1
+            price_changed += 1
+
+    return {
+        "success": True,
+        "source": "fc_stocked_data_list",
+        "price_column": price_col,
+        "new_created": new_created,
+        "updated": updated,
+        "unchanged": unchanged,
+        "price_changed": price_changed,
+        "total_items": len(latest_by_sku),
+    }
+
+
+@api_view(["POST"])
+def master_spec_upload_excel(request):
+    """
+    제품 마스터 단가 연동 엑셀 업로드.
+    단일 기준: FC 입고 파일(Coupang_Stocked_Data_List) 양식 — 단가 컬럼.
+    """
+    if "file" not in request.FILES:
+        return Response({"message": "파일이 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+    file_obj = request.FILES["file"]
+    if not file_obj.name.endswith((".xlsx", ".xls")):
+        return Response({"message": "엑셀 파일만 지원합니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        import io
+
+        df = pd.read_excel(io.BytesIO(file_obj.read()), dtype=str)
+        df = df.fillna("")
+        result = _sync_master_prices_from_fc_stocked_df(df)
+        if not result.get("success"):
+            return Response(
+                {"message": result.get("message") or "단가 동기화 실패"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(result)
+    except Exception as e:
+        logger.error(f"Master Excel Upload Error: {e}")
+        return Response(
+            {"message": f"업로드 처리 실패: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 @api_view(["POST"])
@@ -2137,6 +2677,227 @@ def production_log_move_pending_to_today(request):
     })
 
 
+def _ingest_production_dataframe(df, success_message="생산 계획 데이터를 업로드했습니다."):
+    """공통: 생산일지 DataFrame → ProductionLog 반영. Response 또는 에러 Response 반환."""
+    if df is None or df.empty:
+        return Response(
+            {"message": "업로드할 데이터가 없습니다."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    df = df.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+
+    # Support common Korean column names by mapping them to canonical keys.
+    col_aliases = {
+        "date": ["일자", "날짜"],
+        "machineNumber": ["기계번호", "기계"],
+        "moldNumber": ["금형", "금형번호"],
+        "productName": ["제품명", "품명", "상품명"],
+        "productNameEng": ["제품명(영문)", "영문명"],
+        "color1": ["색상", "색상1"],
+        "color2": ["색상2"],
+        "unit": ["단위(문자)", "unit"],
+        "quantity": ["생산수량", "수량"],
+        "unitQuantity": ["단위", "단위수량"],
+        "total": ["총계", "합계"],
+        "status": ["상태"],
+    }
+
+    rename_map = {}
+    existing_cols = set(df.columns)
+    for canonical, aliases in col_aliases.items():
+        if canonical in existing_cols:
+            continue
+        for alias in aliases:
+            if alias in existing_cols:
+                rename_map[alias] = canonical
+                break
+    if rename_map:
+        df = df.rename(columns=rename_map)
+
+    required_cols = ["date", "machineNumber", "moldNumber", "productName"]
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        return Response(
+            {"message": f"필수 컬럼이 없습니다: {', '.join(missing)}"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # 박스 수량 기준 (1팔레트 기준)
+    BOX_QUANTITY_STANDARDS = {
+        "슬림형 앞판": 75,
+        "에센셜 앞판": 140,
+        "해피 바디": 270,
+        "와이드 상판": 30,
+        "와이드 앞판": 70,
+        "와이드 서랍": 180,
+        "데크타일": 72,
+    }
+
+    # 색상 세트 조합 규칙: 색상1 → 기대되는 색상2
+    COLOR_COMBINATION_RULES = {
+        "WHITE1": "WHITE 180",
+        "WHITE2": "IVORY 1154",
+    }
+
+    warnings = []
+    rows_processed = 0
+    rows_added = 0
+    rows_updated = 0
+
+    def _to_int(v):
+        try:
+            if v is None or (isinstance(v, float) and pd.isna(v)):
+                return 0
+            if isinstance(v, str):
+                v = v.replace(",", "").strip()
+            return int(float(v))
+        except Exception:
+            return 0
+
+    with transaction.atomic():
+        for _idx, row in df.iterrows():
+            product_name = row.get("productName")
+            if product_name is None or str(product_name).strip() == "":
+                continue
+
+            dt = row.get("date")
+            date_str = ""
+            try:
+                if pd.isna(dt):
+                    date_str = ""
+                else:
+                    date_str = pd.to_datetime(dt).date().isoformat()
+            except Exception:
+                date_str = str(dt).strip() if dt is not None else ""
+
+            if not date_str:
+                continue
+
+            machine = str(row.get("machineNumber") or "").strip()
+            mold = str(row.get("moldNumber") or "").strip()
+            pname = str(product_name or "").strip()
+            c1 = str(row.get("color1") or "").strip()
+            c2 = str(row.get("color2") or "").strip()
+            try:
+                date_obj = datetime.fromisoformat(date_str).date()
+            except Exception:
+                continue
+
+            qty = _to_int(row.get("quantity"))
+            # 엑셀 컬럼 의미:
+            #   - unit         : 박스당 개수 (정수)  → DB.unit_quantity
+            #   - unitQuantity : 단위명 (예: 'BOX')  → DB.unit (CharField)
+            #   - quantity     : 박스 개수           → DB.quantity
+            unit_qty = _to_int(row.get("unit")) or _to_int(row.get("unitQuantity"))
+            unit_raw_value = row.get("unitQuantity")
+            if isinstance(unit_raw_value, (int, float)) and not isinstance(unit_raw_value, bool):
+                unit_label = ""
+            else:
+                unit_label = str(unit_raw_value or "").strip()
+
+            # === 색상 세트 조합 확인 ===
+            if c1 and c2:
+                if c1 in COLOR_COMBINATION_RULES:
+                    expected_color2 = COLOR_COMBINATION_RULES[c1]
+                    if c2 != expected_color2:
+                        warnings.append(
+                            {
+                                "type": "color_combination",
+                                "row": _idx + 2,
+                                "product": pname,
+                                "color1": c1,
+                                "color2": c2,
+                                "expected": expected_color2,
+                                "message": f'[{pname}] 색상1 "{c1}"일 때 색상2는 "{expected_color2}"이어야 합니다. (현재: {c2})',
+                            }
+                        )
+                elif c1 not in COLOR_COMBINATION_RULES and c2:
+                    warnings.append(
+                        {
+                            "type": "color_combination_unknown",
+                            "row": _idx + 2,
+                            "product": pname,
+                            "color1": c1,
+                            "color2": c2,
+                            "message": f"[{pname}] 알 수 없는 색상 조합입니다. (색상1: {c1}, 색상2: {c2})",
+                        }
+                    )
+
+            # === 박스 수량 확인 ===
+            if unit_qty > 0 and pname in BOX_QUANTITY_STANDARDS:
+                standard_qty = BOX_QUANTITY_STANDARDS[pname]
+                if unit_qty != standard_qty:
+                    warnings.append(
+                        {
+                            "type": "box_quantity",
+                            "row": _idx + 2,
+                            "product": pname,
+                            "actual": unit_qty,
+                            "standard": standard_qty,
+                            "message": f"[{pname}] 표준 박스 수량은 {standard_qty}이어야 합니다. (현재: {unit_qty})",
+                        }
+                    )
+
+            total = _production_calc_total(qty, unit_qty, row.get("total"))
+            status_value = _production_normalize_status(
+                str(row.get("status") or "pending")
+            )
+
+            defaults = {
+                "product_name_eng": str(row.get("productNameEng") or "").strip(),
+                "unit": unit_label,
+                "quantity": qty,
+                "unit_quantity": unit_qty,
+                "total": total,
+                "status": status_value,
+            }
+
+            obj, created = ProductionLog.objects.update_or_create(
+                date=date_obj,
+                machine_number=machine,
+                mold_number=mold,
+                product_name=pname,
+                color1=c1,
+                color2=c2,
+                unit=unit_label,
+                quantity=qty,
+                unit_quantity=unit_qty,
+                defaults=defaults,
+            )
+            _production_apply_status_model(obj, status_value)
+            obj.total = _production_calc_total(
+                obj.quantity, obj.unit_quantity, obj.total
+            )
+            obj.save()
+
+            if created:
+                rows_added += 1
+            else:
+                rows_updated += 1
+            rows_processed += 1
+
+    all_dates = list(
+        ProductionLog.objects.values_list("date", flat=True)
+        .distinct()
+        .order_by("date")
+    )
+    latest_date = all_dates[-1].isoformat() if all_dates else None
+
+    return Response(
+        {
+            "success": True,
+            "message": success_message,
+            "rowsProcessed": rows_processed,
+            "rowsAdded": rows_added,
+            "rowsUpdated": rows_updated,
+            "latestDate": latest_date,
+            "warnings": warnings,
+        }
+    )
+
+
 @api_view(["POST"])
 def upload_production_file(request):
     _file = request.FILES.get("productionFile")
@@ -2167,236 +2928,48 @@ def upload_production_file(request):
                 sheet_name = xls.sheet_names[0]
 
         df = xls.parse(sheet_name) if sheet_name else pd.DataFrame()
-        if df is None or df.empty:
-            return Response(
-                {"message": "엑셀 파일에 데이터가 없습니다."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        df.columns = [str(c).strip() for c in df.columns]
-
-        # Support common Korean column names by mapping them to canonical keys.
-        col_aliases = {
-            "date": ["일자", "날짜"],
-            "machineNumber": ["기계번호", "기계"],
-            "moldNumber": ["금형", "금형번호"],
-            "productName": ["제품명", "품명", "상품명"],
-            "productNameEng": ["제품명(영문)", "영문명"],
-            "color1": ["색상", "색상1"],
-            "color2": ["색상2"],
-            "unit": ["단위(문자)", "unit"],
-            "quantity": ["생산수량", "수량"],
-            "unitQuantity": ["단위", "단위수량"],
-            "total": ["총계", "합계"],
-            "status": ["상태"],
-        }
-
-        rename_map = {}
-        existing_cols = set(df.columns)
-        for canonical, aliases in col_aliases.items():
-            if canonical in existing_cols:
-                continue
-            for alias in aliases:
-                if alias in existing_cols:
-                    rename_map[alias] = canonical
-                    break
-        if rename_map:
-            df = df.rename(columns=rename_map)
-
-        required_cols = ["date", "machineNumber", "moldNumber", "productName"]
-        missing = [c for c in required_cols if c not in df.columns]
-        if missing:
-            return Response(
-                {"message": f"필수 컬럼이 없습니다: {', '.join(missing)}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # 박스 수량 기준 (1팔레트 기준)
-        BOX_QUANTITY_STANDARDS = {
-            "슬림형 앞판": 75,
-            "에센셜 앞판": 140,
-            "해피 바디": 270,
-            "와이드 상판": 30,
-            "와이드 앞판": 70,
-            "와이드 서랍": 180,
-            "데크타일": 72,
-        }
-
-        # 색상 세트 조합 규칙: 색상1 → 기대되는 색상2
-        COLOR_COMBINATION_RULES = {
-            "WHITE1": "WHITE 180",
-            "WHITE2": "IVORY 1154",
-        }
-
-        warnings = []
-
-        rows_processed = 0
-        rows_added = 0
-        rows_updated = 0
-
-        with transaction.atomic():
-            for _idx, row in df.iterrows():
-                product_name = row.get("productName")
-                if product_name is None or str(product_name).strip() == "":
-                    continue
-
-                dt = row.get("date")
-                date_str = ""
-                try:
-                    if pd.isna(dt):
-                        date_str = ""
-                    else:
-                        date_str = pd.to_datetime(dt).date().isoformat()
-                except Exception:
-                    date_str = str(dt).strip() if dt is not None else ""
-
-                if not date_str:
-                    continue
-
-                def _to_int(v):
-                    try:
-                        if v is None or (isinstance(v, float) and pd.isna(v)):
-                            return 0
-                        if isinstance(v, str):
-                            v = v.replace(",", "").strip()
-                        return int(float(v))
-                    except Exception:
-                        return 0
-
-                machine = str(row.get("machineNumber") or "").strip()
-                mold = str(row.get("moldNumber") or "").strip()
-                pname = str(product_name or "").strip()
-                c1 = str(row.get("color1") or "").strip()
-                c2 = str(row.get("color2") or "").strip()
-                try:
-                    date_obj = datetime.fromisoformat(date_str).date()
-                except Exception:
-                    continue
-
-                qty = _to_int(row.get("quantity"))
-                # 엑셀 컬럼 의미:
-                #   - unit         : 박스당 개수 (정수, 예: 200, 96, 64)  → DB.unit_quantity
-                #   - unitQuantity : 단위명 (예: 'BOX', 'EA', 'P')          → DB.unit (CharField)
-                #   - quantity     : 박스 개수                              → DB.quantity
-                # 호환성: 한 컬럼이 비어있으면 다른 컬럼에서 폴백.
-                unit_qty = _to_int(row.get("unit")) or _to_int(row.get("unitQuantity"))
-                unit_raw_value = row.get("unitQuantity")
-                if isinstance(unit_raw_value, (int, float)) and not isinstance(unit_raw_value, bool):
-                    unit_label = ""
-                else:
-                    unit_label = str(unit_raw_value or "").strip()
-
-                if rows_processed == 0:
-                    import sys
-                    _u = row.get("unit")
-                    _uq = row.get("unitQuantity")
-                    sys.stderr.write("[UPLOAD-DEBUG] unit=" + repr(_u) + " type=" + type(_u).__name__ + " | unitQuantity=" + repr(_uq) + " type=" + type(_uq).__name__ + " | unit_qty=" + str(unit_qty) + " unit_label=" + repr(unit_label) + chr(10))
-                    sys.stderr.flush()
-
-                # === 색상 세트 조합 확인 ===
-                if c1 and c2:
-                    if c1 in COLOR_COMBINATION_RULES:
-                        expected_color2 = COLOR_COMBINATION_RULES[c1]
-                        if c2 != expected_color2:
-                            warnings.append(
-                                {
-                                    "type": "color_combination",
-                                    "row": _idx + 2,  # 1-indexed + header row
-                                    "product": pname,
-                                    "color1": c1,
-                                    "color2": c2,
-                                    "expected": expected_color2,
-                                    "message": f'[{pname}] 색상1 "{c1}"일 때 색상2는 "{expected_color2}"이어야 합니다. (현재: {c2})',
-                                }
-                            )
-                    # 기타 색상1에 대한 경고
-                    elif c1 not in COLOR_COMBINATION_RULES and c2:
-                        warnings.append(
-                            {
-                                "type": "color_combination_unknown",
-                                "row": _idx + 2,
-                                "product": pname,
-                                "color1": c1,
-                                "color2": c2,
-                                "message": f"[{pname}] 알 수 없는 색상 조합입니다. (색상1: {c1}, 색상2: {c2})",
-                            }
-                        )
-
-                # === 박스 수량 확인 (unit_quantity가 있는 경우) ===
-                if unit_qty > 0 and pname in BOX_QUANTITY_STANDARDS:
-                    standard_qty = BOX_QUANTITY_STANDARDS[pname]
-                    if unit_qty != standard_qty:
-                        warnings.append(
-                            {
-                                "type": "box_quantity",
-                                "row": _idx + 2,
-                                "product": pname,
-                                "actual": unit_qty,
-                                "standard": standard_qty,
-                                "message": f"[{pname}] 표준 박스 수량은 {standard_qty}이어야 합니다. (현재: {unit_qty})",
-                            }
-                        )
-
-                total = _production_calc_total(qty, unit_qty, row.get("total"))
-                status_value = _production_normalize_status(
-                    str(row.get("status") or "pending")
-                )
-
-                defaults = {
-                    "product_name_eng": str(row.get("productNameEng") or "").strip(),
-                    "unit": unit_label,
-                    "quantity": qty,
-                    "unit_quantity": unit_qty,
-                    "total": total,
-                    "status": status_value,
-                }
-
-                # lookup에 unit/quantity/unit_quantity 포함 → 중복 행 보존
-                obj, created = ProductionLog.objects.update_or_create(
-                    date=date_obj,
-                    machine_number=machine,
-                    mold_number=mold,
-                    product_name=pname,
-                    color1=c1,
-                    color2=c2,
-                    unit=unit_label,
-                    quantity=qty,
-                    unit_quantity=unit_qty,
-                    defaults=defaults,
-                )
-                _production_apply_status_model(obj, status_value)
-                obj.total = _production_calc_total(
-                    obj.quantity, obj.unit_quantity, obj.total
-                )
-                obj.save()
-
-                if created:
-                    rows_added += 1
-                else:
-                    rows_updated += 1
-                rows_processed += 1
-
-        all_dates = list(
-            ProductionLog.objects.values_list("date", flat=True)
-            .distinct()
-            .order_by("date")
-        )
-        latest_date = all_dates[-1].isoformat() if all_dates else None
-
-        return Response(
-            {
-                "success": True,
-                "message": "생산 계획 파일을 업로드했습니다.",
-                "rowsProcessed": rows_processed,
-                "rowsAdded": rows_added,
-                "rowsUpdated": rows_updated,
-                "latestDate": latest_date,
-                "warnings": warnings,
-            }
+        return _ingest_production_dataframe(
+            df, success_message="생산 계획 파일을 업로드했습니다."
         )
     except Exception as e:
         return Response(
             {"message": "생산 계획 파일 처리 중 오류가 발생했습니다.", "error": str(e)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+@api_view(["POST"])
+def upload_production_text(request):
+    """생산일지 표 텍스트(탭/쉼표 구분) 붙여넣기 업로드."""
+    payload = request.data if isinstance(request.data, dict) else {}
+    text = (payload.get("text") or "").strip()
+    if not text:
+        return Response(
+            {"message": "text is required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        lines = [ln for ln in text.splitlines() if ln.strip()]
+        if not lines:
+            return Response(
+                {"message": "업로드할 데이터가 없습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        first = lines[0]
+        if "\t" in first:
+            sep = "\t"
+        elif first.count(";") > first.count(","):
+            sep = ";"
+        else:
+            sep = ","
+        df = pd.read_csv(io.StringIO("\n".join(lines)), sep=sep, dtype=str, engine="python")
+        return _ingest_production_dataframe(
+            df, success_message="생산 계획 텍스트를 업로드했습니다."
+        )
+    except Exception as e:
+        return Response(
+            {"message": "생산 계획 텍스트 처리 중 오류가 발생했습니다.", "error": str(e)},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -3944,6 +4517,11 @@ def _process_outbound_csv_rows(headers, rows, now):
             for inst in instances:
                 inst.save()
 
+        # 신규 출고 품목 자동 복구: 3개월 미출고만 해제 (단종은 수동 유지)
+        synced_barcodes = {inst.barcode for inst in instances if inst.barcode}
+        if synced_barcodes:
+            _clear_no_outbound_3m_on_activity(barcodes=synced_barcodes)
+
     return len(instances)
 
 
@@ -5062,6 +5640,67 @@ def ai_chat(request):
         logger.error(f"AI chat error: {e}")
         return Response(
             {"answer": f"데이터를 가져오는 중 오류가 발생했습니다: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@api_view(["GET", "POST"])
+def ai_free_models(request):
+    """OpenRouter 무료 모델 목록 조회 / 선택 모델 저장."""
+    try:
+        from . import openrouter_service as ors
+
+        if request.method == "POST":
+            payload = request.data if isinstance(request.data, dict) else {}
+            model = (
+                payload.get("model")
+                or payload.get("selectedModel")
+                or payload.get("selected_model")
+                or ""
+            )
+            model = str(model).strip()
+            if not model:
+                return Response(
+                    {"success": False, "message": "model is required"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            store = ors.set_selected_model(model)
+            return Response(
+                {
+                    "success": True,
+                    "selectedModel": store.get("selected_model") or model,
+                    "models": store.get("models") or [],
+                }
+            )
+
+        force_raw = (
+            request.GET.get("refresh")
+            or request.GET.get("force")
+            or ""
+        )
+        force = str(force_raw).strip().lower() in ("1", "true", "yes", "y")
+        if force:
+            store = ors.refresh_free_models(force=True)
+        else:
+            store = ors.list_free_models(auto_refresh=True)
+
+        models = store.get("models") if isinstance(store.get("models"), list) else []
+        selected = store.get("selected_model") or ors.get_selected_model()
+        payload = {
+            "success": True,
+            "selectedModel": selected,
+            "models": models,
+            "source": store.get("source"),
+            "count": store.get("count") or len(models),
+            "cache_hit": store.get("cache_hit"),
+        }
+        if store.get("error"):
+            payload["error"] = store.get("error")
+        return Response(payload)
+    except Exception as e:
+        logger.error(f"ai_free_models error: {e}")
+        return Response(
+            {"success": False, "message": str(e), "models": []},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
@@ -7464,6 +8103,11 @@ def outbound_upload_excel(request):
         try:
             with transaction.atomic():
                 OutboundRecord.objects.bulk_create(outbound_instances, batch_size=500)
+
+                # 신규 출고 품목 자동 복구 (최근 3개월 미출고 상태 해제)
+                synced_barcodes = {inst.barcode for inst in outbound_instances if inst.barcode}
+                if synced_barcodes:
+                    _clear_no_outbound_3m_on_activity(barcodes=synced_barcodes)
         except Exception as e:
             logger.error(f"Bulk insert failed, falling back to individual saves: {e}")
             # 폴백: 개별 저장
@@ -8336,7 +8980,11 @@ def get_fc_inbound_pivot(request):
 
 @api_view(["POST"])
 def fc_inbound_upload(request):
-    """FC 입고 엑셀 파일 업로드 및 파싱"""
+    """
+    FC 입고 엑셀 업로드 (Coupang_Stocked_Data_List 양식).
+    - 입고 실적 저장
+    - 단가 컬럼 → 제품 마스터(MasterSpec.price) 자동 동기화 (단가 단일 기준)
+    """
     if "file" not in request.FILES:
         return Response(
             {"error": "No file provided"}, status=status.HTTP_400_BAD_REQUEST
@@ -8352,31 +9000,15 @@ def fc_inbound_upload(request):
     try:
         import io
         import hashlib
+        from django.db.models import Q
 
         # 파일 해시 계산 (중복 체크용)
         file_content = file.read()
         file_hash = hashlib.sha256(file_content).hexdigest()
 
-        # 같은 파일이 이미 업로드되었는지 확인
-        if FCInboundFileUpload.objects.filter(file_hash=file_hash).exists():
-            existing_upload = FCInboundFileUpload.objects.filter(
-                file_hash=file_hash
-            ).first()
-            return Response(
-                {
-                    "success": False,
-                    "error": "This file has already been uploaded",
-                    "existingUpload": {
-                        "fileName": existing_upload.file_name,
-                        "uploadDate": existing_upload.upload_date.isoformat(),
-                        "recordsCreated": existing_upload.records_created,
-                    },
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # DataFrame 로드
+        # DataFrame 로드 (해시 중복이어도 단가 재동기화 가능하도록 먼저 파싱)
         df = pd.read_excel(io.BytesIO(file_content))
+        df.columns = [str(c).strip() for c in df.columns]
 
         required_columns = ["SKU번호", "SKU명", "입고/반출시각", "물류센터", "수량"]
         missing = [col for col in required_columns if col not in df.columns]
@@ -8386,111 +9018,164 @@ def fc_inbound_upload(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # 단가 단일 기준: FC 파일 '단가' → MasterSpec 반영 (입고 중복과 무관하게 항상 실행)
+        price_sync = _sync_master_prices_from_fc_stocked_df(df)
+
+        already_uploaded = FCInboundFileUpload.objects.filter(file_hash=file_hash).exists()
+        existing_upload = (
+            FCInboundFileUpload.objects.filter(file_hash=file_hash).first()
+            if already_uploaded
+            else None
+        )
+
         records_created = 0
         records_skipped = 0
         records_duplicate = 0
         records_processed = 0
+        processed_skus = set()
+        processed_barcodes = set()
 
-        for _, row in df.iterrows():
-            records_processed += 1
-            try:
-                date_str = str(row.get("입고/반출시각", ""))
-                if not date_str or date_str == "nan":
-                    records_skipped += 1
-                    continue
-
+        if not already_uploaded:
+            for _, row in df.iterrows():
+                records_processed += 1
                 try:
-                    date_obj = pd.to_datetime(date_str, errors="coerce")
-                    if pd.isna(date_obj):
+                    date_str = str(row.get("입고/반출시각", ""))
+                    if not date_str or date_str == "nan":
                         records_skipped += 1
                         continue
-                    inbound_date = date_obj.date()
-                    inbound_datetime = date_obj  # 전체 datetime 저장 (중복 체크용)
-                except Exception:
-                    records_skipped += 1
-                    continue
 
-                sku_id = str(row.get("SKU번호", "")).strip()
-                barcode = str(row.get("SKU번호", "")).strip()
-                product_name = str(row.get("SKU명", "")).strip()
+                    try:
+                        date_obj = pd.to_datetime(date_str, errors="coerce")
+                        if pd.isna(date_obj):
+                            records_skipped += 1
+                            continue
+                        inbound_date = date_obj.date()
+                    except Exception:
+                        records_skipped += 1
+                        continue
 
-                try:
-                    quantity = int(float(str(row.get("수량", 0)).replace(",", "")))
-                except Exception:
-                    quantity = 0
+                    sku_id = str(row.get("SKU번호", "") or "").strip()
+                    product_name = str(row.get("SKU명", "") or "").strip()
 
-                try:
-                    supply_amount = float(str(row.get("공급가액", 0)).replace(",", ""))
-                except Exception:
-                    supply_amount = 0
+                    try:
+                        quantity = int(
+                            float(str(row.get("수량", 0)).replace(",", ""))
+                        )
+                    except Exception:
+                        quantity = 0
 
-                logistics_center = str(row.get("물류센터", "")).strip()
+                    try:
+                        supply_amount = float(
+                            str(row.get("공급가액", 0)).replace(",", "")
+                        )
+                    except Exception:
+                        supply_amount = 0
 
-                if not sku_id or not product_name or quantity <= 0:
-                    records_skipped += 1
-                    continue
+                    logistics_center = str(row.get("물류센터", "") or "").strip()
 
-                # 중복 체크: 같은 날짜, SKU, 입고시각, 물류센터, 수량의 레코드가 있는지 확인
-                existing_record = FCInboundRecord.objects.filter(
-                    inbound_date=inbound_date,
-                    sku_id=sku_id,
-                    product_name=product_name,
-                    logistics_center=logistics_center,
-                    quantity=quantity,
-                ).first()
+                    if not sku_id or not product_name or quantity <= 0:
+                        records_skipped += 1
+                        continue
 
-                if existing_record:
-                    records_duplicate += 1
-                    continue
+                    # 중복 체크
+                    existing_record = FCInboundRecord.objects.filter(
+                        inbound_date=inbound_date,
+                        sku_id=sku_id,
+                        product_name=product_name,
+                        logistics_center=logistics_center,
+                        quantity=quantity,
+                    ).first()
 
-                # Fetch category from MasterSpec (match by sku_id first, then barcode)
-                category = ""
-                if sku_id:
+                    if existing_record:
+                        records_duplicate += 1
+                        continue
+
+                    # MasterSpec에서 바코드·카테고리 조회 (SKU번호 ≠ 바코드)
+                    category = ""
+                    barcode = ""
                     spec = MasterSpec.objects.filter(sku_id=sku_id).first()
-                    if not spec and barcode:
-                        spec = MasterSpec.objects.filter(barcode=barcode).first()
-                    if spec and spec.category_lg:
-                        category = spec.category_lg
+                    if spec:
+                        barcode = (spec.barcode or "").strip()
+                        if spec.category_lg:
+                            category = spec.category_lg
 
-                FCInboundRecord.objects.create(
-                    inbound_date=inbound_date,
-                    sku_id=sku_id,
-                    barcode=barcode,
-                    product_name=product_name,
-                    category=category,
-                    subcategory="",
-                    color="",
-                    quantity=quantity,
-                    supply_amount=supply_amount,
-                    logistics_center=logistics_center,
+                    FCInboundRecord.objects.create(
+                        inbound_date=inbound_date,
+                        sku_id=sku_id,
+                        barcode=barcode,
+                        product_name=product_name,
+                        category=category,
+                        subcategory="",
+                        color="",
+                        quantity=quantity,
+                        supply_amount=supply_amount,
+                        logistics_center=logistics_center,
+                    )
+                    records_created += 1
+
+                    if sku_id:
+                        processed_skus.add(sku_id)
+                    if barcode:
+                        processed_barcodes.add(barcode)
+
+                except Exception as e:
+                    logger.error(f"Error processing row: {e}")
+                    records_skipped += 1
+                    continue
+
+            # 신규 입고 품목 자동 복구: 3개월 미출고만 해제 (단종은 수동 유지)
+            if processed_skus or processed_barcodes:
+                _clear_no_outbound_3m_on_activity(
+                    barcodes=processed_barcodes, sku_ids=processed_skus
                 )
-                records_created += 1
 
-            except Exception as e:
-                logger.error(f"Error processing row: {e}")
-                records_skipped += 1
-                continue
-
-        # 파일 업로드 이력 저장
-        file_upload = FCInboundFileUpload.objects.create(
-            file_name=file.name,
-            file_hash=file_hash,
-            records_processed=records_processed,
-            records_created=records_created,
-            records_skipped=records_skipped,
-            records_duplicate=records_duplicate,
-            status="completed" if records_created > 0 else "partial",
-        )
+            # 파일 업로드 이력 저장
+            file_upload = FCInboundFileUpload.objects.create(
+                file_name=file.name,
+                file_hash=file_hash,
+                records_processed=records_processed,
+                records_created=records_created,
+                records_skipped=records_skipped,
+                records_duplicate=records_duplicate,
+                status="completed" if records_created > 0 else "partial",
+            )
+            upload_id = str(file_upload.id)
+            file_name = file_upload.file_name
+        else:
+            # 동일 파일 재업로드: 입고 실적은 건너뛰고 단가만 재반영
+            upload_id = str(existing_upload.id) if existing_upload else None
+            file_name = existing_upload.file_name if existing_upload else file.name
+            records_processed = len(df)
+            # 단가 동기화에 쓰인 SKU도 미출고 해제
+            if price_sync.get("success"):
+                skus_in_file = set()
+                for _, row in df.iterrows():
+                    s = str(row.get("SKU번호", "") or "").strip()
+                    if s and s.lower() != "nan":
+                        skus_in_file.add(s)
+                if skus_in_file:
+                    _clear_no_outbound_3m_on_activity(sku_ids=skus_in_file)
 
         return Response(
             {
                 "success": True,
-                "uploadId": str(file_upload.id),
-                "fileName": file_upload.file_name,
+                "uploadId": upload_id,
+                "fileName": file_name,
+                "alreadyUploaded": already_uploaded,
                 "recordsCreated": records_created,
                 "recordsSkipped": records_skipped,
                 "recordsDuplicate": records_duplicate,
                 "totalRows": len(df),
+                "priceSync": {
+                    "success": bool(price_sync.get("success")),
+                    "priceColumn": price_sync.get("price_column"),
+                    "newCreated": price_sync.get("new_created", 0),
+                    "updated": price_sync.get("updated", 0),
+                    "unchanged": price_sync.get("unchanged", 0),
+                    "priceChanged": price_sync.get("price_changed", 0),
+                    "totalItems": price_sync.get("total_items", 0),
+                    "message": price_sync.get("message"),
+                },
             }
         )
 
@@ -8905,6 +9590,14 @@ def sync_fc_inbound_from_sheet(request):
                     batch_size=500,
                 )
                 updated = len(to_update)
+
+            # 신규 입고 품목 자동 복구: 3개월 미출고만 해제 (단종은 수동 유지)
+            inbound_skus = {item.sku_id for item in to_create if item.sku_id} | {item.sku_id for item in to_update if item.sku_id}
+            inbound_barcodes = {item.barcode for item in to_create if item.barcode} | {item.barcode for item in to_update if item.barcode}
+            if inbound_skus or inbound_barcodes:
+                _clear_no_outbound_3m_on_activity(
+                    barcodes=inbound_barcodes, sku_ids=inbound_skus
+                )
 
         return Response(
             {
@@ -9387,6 +10080,11 @@ def outbound_upload_excel(request):
 
             if records:
                 OutboundRecord.objects.bulk_create(records, batch_size=2000)
+
+                # 신규 출고 품목 자동 복구: 3개월 미출고만 해제 (단종은 수동 유지)
+                synced_barcodes = {r.barcode for r in records if r.barcode}
+                if synced_barcodes:
+                    _clear_no_outbound_3m_on_activity(barcodes=synced_barcodes)
 
         logger.info(
             f"Outbound Excel Upload Success: {target_date_str}, {len(records)} rows"

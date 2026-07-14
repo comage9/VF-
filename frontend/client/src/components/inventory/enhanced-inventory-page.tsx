@@ -378,11 +378,10 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
     return inventoryItemsForInventoryTab.filter((item: InventoryItem) => locationConflictBarcodeSet.has(String(item?.barcode || '').trim()));
   }, [inventoryItemsForInventoryTab, locationConflictBarcodeSet, locationConflictOnly]);
 
-  // Calculate Unit Price from Outbound Data (Last 90 days)
+  // 출고 실적 기반 단가 fallback (MasterSpec 단가가 없을 때만 사용)
   const { data: outboundRecords } = useQuery({
     queryKey: ['outbound-for-price-calculation'],
     queryFn: async () => {
-      // Calculate start date (90 days ago)
       const endDate = new Date();
       const startDate = new Date();
       startDate.setDate(endDate.getDate() - 90);
@@ -398,15 +397,11 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
     staleTime: 300000, // 5 minutes
   });
 
-  const priceMap = React.useMemo(() => {
+  const outboundPriceMap = React.useMemo(() => {
     const map = new Map<string, number>();
     if (!outboundRecords) return map;
 
-    // Group by product name -> list of unit prices
-    // We'll take the average of the most recent transactions or just the latest one
-    // Here we use a simple approach: map product/barcode to the latest calculated unit price
-
-    // Sort records by date descending
+    // 최신 출고 기준 단가 (매입가 우선 → 매출/수량)
     const sorted = [...outboundRecords].sort((a: OutboundRecord, b: OutboundRecord) => {
       const dateA = a.outboundDate || a.outbound_date || a.inboundDate || a.inbound_date || 0;
       const dateB = b.outboundDate || b.outbound_date || b.inboundDate || b.inbound_date || 0;
@@ -414,51 +409,83 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
     });
 
     for (const record of sorted) {
-      const name = String(record.productName || record.product_name || '').trim();
+      const name = String(record.productName || (record as any).product_name || '').trim();
       const barcode = String(record.barcode || '').trim();
-      const sales = Number(record.salesAmount || record.sales_amount || 0);
-      // Use boxQuantity first, then quantity
-      const qty = Number(record.boxQuantity || record.box_quantity || record.quantity || 0);
+      const purchase = Number(
+        (record as any).purchasePrice ?? (record as any).purchase_price ?? 0
+      );
+      const unitFromField = Number(record.unitPrice ?? record.unit_price ?? 0);
+      const sales = Number((record as any).salesAmount ?? (record as any).sales_amount ?? 0);
+      const qty = Number(
+        (record as any).boxQuantity ??
+          (record as any).box_quantity ??
+          record.quantity ??
+          0
+      );
 
-      if (sales > 0 && qty > 0) {
-        const unitPrice = sales / qty;
+      let unitPrice = 0;
+      if (purchase > 0) unitPrice = purchase;
+      else if (unitFromField > 0) unitPrice = unitFromField;
+      else if (sales > 0 && qty > 0) unitPrice = sales / qty;
 
-        // Priority: Barcode -> Product Name
-        if (barcode && !map.has(barcode)) {
-          map.set(barcode, unitPrice);
-        }
-        if (name && !map.has(name)) {
-          map.set(name, unitPrice);
-        }
+      if (unitPrice > 0) {
+        if (barcode && !map.has(barcode)) map.set(barcode, unitPrice);
+        if (name && !map.has(name)) map.set(name, unitPrice);
       }
     }
     return map;
   }, [outboundRecords]);
 
-  const statusSummary = React.useMemo(() => {
-    const summary = { critical: 0, low: 0, normal: 0, high: 0, totalValue: 0, totalItems: 0, totalQuantity: 0 };
-    inventoryItemsForInventoryTabDisplayed.forEach((item: InventoryItem) => {
-      const key = item?.stockStatus;
-      if (key === 'critical') summary.critical += 1;
-      else if (key === 'low') summary.low += 1;
-      else if (key === 'high') summary.high += 1;
-      else summary.normal += 1;
-
-      // Calculate total inventory value
-      // Use currentStock from item
-      const stockQty = Number(item?.currentStock || 0);
-
-      // Attempt to find price
+  // 테이블/KPI용: MasterSpec 단가(API) 우선, 없으면 출고 단가 fallback
+  const inventoryItemsWithPrice = React.useMemo(() => {
+    return inventoryItemsForInventoryTabDisplayed.map((item: InventoryItem) => {
       const bc = String(item?.barcode || '').trim();
       const name = String(item?.productName || '').trim();
-      const unitPrice = priceMap.get(bc) || priceMap.get(name) || 0;
+      const apiPrice = Number(item?.price || 0);
+      const fallback = outboundPriceMap.get(bc) || outboundPriceMap.get(name) || 0;
+      const price = apiPrice > 0 ? apiPrice : fallback > 0 ? Math.round(fallback) : 0;
+      if (price === Number(item?.price || 0)) return item;
+      return { ...item, price };
+    });
+  }, [inventoryItemsForInventoryTabDisplayed, outboundPriceMap]);
 
-      summary.totalValue += unitPrice * stockQty;
+  const statusSummary = React.useMemo(() => {
+    const summary = {
+      critical: 0,
+      low: 0,
+      normal: 0,
+      high: 0,
+      criticalQuantity: 0,
+      lowQuantity: 0,
+      totalValue: 0,
+      totalItems: 0,
+      totalQuantity: 0,
+    };
+    inventoryItemsWithPrice.forEach((item: InventoryItem) => {
+      const key = item?.stockStatus || 'normal';
+      const stockQty = Number(item?.currentStock || 0);
+      // 금액·수량 집계는 음수 재고를 0으로 (데이터 오류 방어)
+      const stockPos = Math.max(0, stockQty);
+      const unitPrice = Number(item?.price || 0);
+
+      if (key === 'critical') {
+        summary.critical += 1;
+        summary.criticalQuantity += stockPos;
+      } else if (key === 'low') {
+        summary.low += 1;
+        summary.lowQuantity += stockPos;
+      } else if (key === 'high') {
+        summary.high += 1;
+      } else {
+        summary.normal += 1;
+      }
+
+      summary.totalValue += unitPrice * stockPos;
       summary.totalItems += 1;
-      summary.totalQuantity += stockQty;
+      summary.totalQuantity += stockPos;
     });
     return summary;
-  }, [inventoryItemsForInventoryTabDisplayed, priceMap]);
+  }, [inventoryItemsWithPrice]);
 
   // Format currency for KPI cards
   const formatCurrency = (value: number) => {
@@ -695,7 +722,9 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                         <div>
                           <p className="text-xs font-medium text-red-700 uppercase">위험 품목</p>
                           <h3 className="text-xl font-bold text-red-900">{statusSummary.critical}</h3>
-                          <p className="text-xs text-red-700 mt-1">즉시 보충 필요</p>
+                          <p className="text-xs text-red-700 mt-1">
+                            재고 수량 {statusSummary.criticalQuantity.toLocaleString()}개 · 즉시 보충 필요
+                          </p>
                         </div>
                         <AlertCircle className="w-8 h-8 text-red-600 bg-white rounded-full p-1.5" />
                       </div>
@@ -731,7 +760,9 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                         <div>
                           <p className="text-xs font-medium text-gray-600 uppercase">부족 품목</p>
                           <h3 className="text-xl font-bold text-gray-900">{statusSummary.low}</h3>
-                          <p className="text-xs text-gray-500 mt-1">발주 요청 필요</p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            재고 {(statusSummary.lowQuantity ?? 0).toLocaleString()}개 · 발주 요청 필요
+                          </p>
                         </div>
                         <AlertTriangle className="w-8 h-8 text-amber-500 bg-white rounded-full p-1.5" />
                       </div>
@@ -764,7 +795,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                         </label>
                         <input
                           type="file"
-                          accept=".csv,.xlsx,.xls"
+                          accept=".csv,.xlsx,.xls,.zip"
                           onChange={handleFileSelect}
                           multiple
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1019,7 +1050,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                 {normalizedActiveDate && (
                   <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 flex flex-wrap items-center justify-between gap-3">
                     <div className="text-sm text-blue-900">
-                      {activeDateLabel} 기준 재고 {inventoryItemsForInventoryTabDisplayed.length}건을 표시합니다.
+                      {activeDateLabel} 기준 재고 {inventoryItemsWithPrice.length}건을 표시합니다.
                     </div>
                     <div className="flex items-center gap-2">
                       <button
@@ -1052,7 +1083,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                   </div>
                 ) : (
                   <InventoryTable
-                    data={inventoryItemsForInventoryTabDisplayed}
+                    data={inventoryItemsWithPrice}
                     selectedItems={selectedItems}
                     onSelectionChange={setSelectedItems}
                     onItemUpdate={handleItemUpdate}

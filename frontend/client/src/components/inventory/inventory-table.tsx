@@ -292,6 +292,8 @@ export default function InventoryTable({
                 >
                   현재재고 {sortField === 'currentStock' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">단가</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">재고 금액</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">입고 가능</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">최소재고</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">최대재고</th>
@@ -326,6 +328,19 @@ export default function InventoryTable({
                     {item.inventoryDate ? new Date(item.inventoryDate).toLocaleDateString('ko-KR') : '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.currentStock}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {(() => {
+                      const price = Number(item.price || 0);
+                      return price > 0 ? `${price.toLocaleString('ko-KR')}원` : '0원';
+                    })()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-emerald-600">
+                    {(() => {
+                      const price = Number(item.price || 0);
+                      const amount = Number(item.currentStock || 0) * price;
+                      return price > 0 ? `${amount.toLocaleString('ko-KR')}원` : '0원';
+                    })()}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {(() => {
                       const barcode = item.barcode || '';
