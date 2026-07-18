@@ -3154,33 +3154,21 @@ class Dashboard {
 
     // 🔧 최근 7일 평균 최종값 계산
     calculateRecent7DayAverage() {
-        // 이름 유지, 실제는 이상치 제거 후 중앙값 (현실 기준선)
-        if (!this.data || this.data.length < 2) {
-            console.warn('⚠️ 데이터 부족: 기본값 사용');
-            return null;
-        }
-
-        const recentDays = this.data.slice(-15, -1); // 오늘 제외 최근 ~14일
+        // 이름 유지 — hour_23 중앙값 (total 오염 무시)
+        if (!this.data || this.data.length < 2) return null;
+        const recentDays = this.data.slice(-15, -1);
         const finalValues = [];
         recentDays.forEach(row => {
-            let v = parseInt(row.hour_23) || 0;
-            if (!v) v = parseInt(row.total) || 0;
-            // 명백한 이상치(대량 피크) 제외 — 일반 일 600~800 대비
+            const v = this.getDayFinalQty(row);
             if (v > 0 && v < 2500) finalValues.push(v);
         });
-
-        if (finalValues.length === 0) {
-            console.warn('⚠️ 유효한 최종값 없음');
-            return null;
-        }
-
+        if (!finalValues.length) return null;
         finalValues.sort((a, b) => a - b);
         const mid = Math.floor(finalValues.length / 2);
         const median = finalValues.length % 2 === 0
             ? Math.round((finalValues[mid - 1] + finalValues[mid]) / 2)
             : finalValues[mid];
-
-        console.log(`📊 최근 ${finalValues.length}일 중앙값 최종: ${median}`, finalValues);
+        console.log(`📊 최근 ${finalValues.length}일 hour_23 중앙값: ${median}`);
         return median;
     }
 
@@ -3517,65 +3505,76 @@ class Dashboard {
         return actualValue;
     }
 
-    // 🎯 단순 선형 예측 (현재값 → 최종값)
+    /** 일 마감 출고 SoT = hour_23 (total 이 ~9배로 오염된 날 다수) */
+    getDayFinalQty(row) {
+        if (!row) return 0;
+        const h23 = parseInt(row.hour_23, 10) || 0;
+        if (h23 > 0) return h23;
+        let mx = 0;
+        for (let h = 23; h >= 0; h--) {
+            const v = parseInt(row[`hour_${String(h).padStart(2, '0')}`], 10) || 0;
+            if (v > mx) mx = v;
+        }
+        if (mx > 0) return mx;
+        const t = parseInt(row.total, 10) || 0;
+        return (t > 0 && t < 2500) ? t : 0;
+    }
+
+    getSameDowHour23Median() {
+        try {
+            const cur = this.getCurrentDayData();
+            const refDow = cur && cur.date
+                ? new Date(cur.date + 'T12:00:00').getDay()
+                : new Date().getDay();
+            const vals = [];
+            (this.data || []).forEach(row => {
+                if (!row.date) return;
+                if (new Date(row.date + 'T12:00:00').getDay() !== refDow) return;
+                // 오늘 제외
+                if (cur && row.date === cur.date) return;
+                const f = this.getDayFinalQty(row);
+                if (f > 0 && f < 2500) vals.push(f);
+            });
+            if (!vals.length) return null;
+            vals.sort((a, b) => a - b);
+            const mid = Math.floor(vals.length / 2);
+            return vals.length % 2 === 0
+                ? Math.round((vals[mid - 1] + vals[mid]) / 2)
+                : vals[mid];
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // 🎯 단순 선형 예측 (현재값 → 최종값) — 23시는 반드시 finalValue
     calculateSimplePrediction(currentHour, currentValue, finalValue) {
         console.log(`\n📍 === 단순 선형 예측 시작 (${currentHour}시) ===`);
         console.log(`   현재값: ${currentValue}`);
         console.log(`   최종값: ${finalValue}`);
 
+        const targetFinal = Math.max(Number(finalValue) || 0, Number(currentValue) || 0);
+
         if (currentHour >= 23) {
-            console.log('⏰ 23시 이후, 예측 불필요');
-            return {};
+            return { hour_23: Math.round(targetFinal) };
         }
 
-
-        // Step 1: 시간 계산
-        // currentHour = 마지막 실제 데이터 시간 (예: 14시)
-        // startHour = 다음 시간부터 예측 (예: 15시)
         const startHour = currentHour + 1;
         const endHour = 23;
         const totalHours = endHour - startHour + 1;
+        const totalGrowth = Math.max(0, targetFinal - currentValue);
+        // MAX_INCREMENT 제거: 시간당 100 캡이 23시 최종을 깎아버리던 버그
+        const incrementPerHour = totalHours > 0 ? totalGrowth / totalHours : 0;
 
-        console.log(`   예측 시작: ${startHour}시 (마지막 실제: ${currentHour}시)`);
+        console.log(`   예측 시작: ${startHour}시 / 증가 ${totalGrowth} / 시간당 ${incrementPerHour.toFixed(1)}`);
 
-        // Step 2: 필요한 증가량
-        const totalGrowth = finalValue - currentValue;
-        const incrementPerHour = totalGrowth / totalHours;
-
-        console.log(`   남은 시간: ${totalHours}시간`);
-        console.log(`   필요 증가량: ${totalGrowth}`);
-        console.log(`   시간당 증가: ${incrementPerHour.toFixed(1)}`);
-
-        // Step 3: 기울기 제한 (너무 급격한 증가 방지)
-        const MAX_INCREMENT = 100;
-        let adjustedIncrement = incrementPerHour;
-
-        if (Math.abs(incrementPerHour) > MAX_INCREMENT) {
-            console.warn(`⚠️ 기울기 제한 적용: ${incrementPerHour.toFixed(1)} → ${incrementPerHour > 0 ? MAX_INCREMENT : -MAX_INCREMENT}`);
-            adjustedIncrement = incrementPerHour > 0 ? MAX_INCREMENT : -MAX_INCREMENT;
-        }
-
-        // Step 4: 시간별 예측값 생성
         const predictions = {};
         for (let h = startHour; h <= endHour; h++) {
             const hoursElapsed = h - currentHour;
-            const predictedValue = Math.round(currentValue + (adjustedIncrement * hoursElapsed));
-
-            // 음수 방지 & 현재값보다 작지 않게
-            const safeValue = Math.max(currentValue, predictedValue, 0);
-
-            predictions[`hour_${String(h).padStart(2, '0')}`] = safeValue;
-
-            // 처음/끝 몇 개만 로그
-            if (h <= startHour + 1 || h >= endHour) {
-                console.log(`   ${h}시: ${safeValue}`);
-            } else if (h === startHour + 2) {
-                console.log(`   ...`);
-            }
+            const predictedValue = Math.round(currentValue + (incrementPerHour * hoursElapsed));
+            predictions[`hour_${String(h).padStart(2, '0')}`] = Math.max(currentValue, predictedValue, 0);
         }
-
-        console.log(`✅ 단순 선형 예측 완료`);
-
+        predictions.hour_23 = Math.round(targetFinal);
+        console.log(`✅ 단순 선형 예측 완료 hour_23=${predictions.hour_23}`);
         return predictions;
     }
 
@@ -3616,41 +3615,22 @@ class Dashboard {
             finalTarget = currentValue;
         }
 
-        const totalGrowth = finalTarget - currentValue;
-        const incrementPerHour = totalGrowth / totalHours;
+        const totalGrowth = Math.max(0, finalTarget - currentValue);
+        const incrementPerHour = totalHours > 0 ? totalGrowth / totalHours : 0;
+        // 시간당 상한 제거: 캡 때문에 마지막 값이 finalTarget 보다 낮아지던 오류 수정
 
-        // 검증 3: 기울기 제한
-        const MAX_INCREMENT = 100;  // 시간당 최대 증가
-        const MIN_INCREMENT = -20;  // 시간당 최소 증가 (약간의 감소 허용)
-
-        let adjustedIncrement = incrementPerHour;
-        let wasAdjusted = false;
-
-        if (incrementPerHour > MAX_INCREMENT) {
-            console.warn(`⚠️ 과도한 증가율 감지:`);
-            console.warn(`   현재값: ${currentValue}, 최종값: ${finalTarget}`);
-            console.warn(`   원래 기울기: ${incrementPerHour.toFixed(1)}/시간`);
-            console.warn(`   제한 적용: ${MAX_INCREMENT}/시간`);
-            adjustedIncrement = MAX_INCREMENT;
-            wasAdjusted = true;
-        } else if (incrementPerHour < MIN_INCREMENT) {
-            console.warn(`⚠️ 과도한 감소율 감지:`);
-            console.warn(`   현재값: ${currentValue}, 최종값: ${finalTarget}`);
-            console.warn(`   원래 기울기: ${incrementPerHour.toFixed(1)}/시간`);
-            console.warn(`   현재값 유지로 조정 (증가율: 0)`);
-            adjustedIncrement = 0; // 감소하지 않고 유지
-            wasAdjusted = true;
-        }
-
-        // 궤적 생성
         const trajectory = [];
         for (let i = 1; i <= totalHours; i++) {
-            const value = Math.round(currentValue + (adjustedIncrement * i));
-            // 음수 방지
+            const value = Math.round(currentValue + (incrementPerHour * i));
             trajectory.push(Math.max(0, value));
         }
+        // 마지막은 반드시 목표 마감값
+        if (trajectory.length) {
+            trajectory[trajectory.length - 1] = Math.round(Math.max(finalTarget, currentValue));
+        }
 
-        const actualFinal = trajectory[trajectory.length - 1];
+        const actualFinal = trajectory.length ? trajectory[trajectory.length - 1] : finalTarget;
+        const wasAdjusted = false;
 
         if (wasAdjusted) {
             console.log(`📏 조정된 안전 궤적: ${currentValue} → ${actualFinal} (${adjustedIncrement.toFixed(1)}/시간)`);
@@ -4727,26 +4707,26 @@ class Dashboard {
                     console.log(`🤖 AI 원본 최종값(23시): ${aiFinalValue}`);
 
                     // 🔧 최근 7일 평균과 비교하여 보수적인 값 선택
-                    // 7일 중앙값 기준 클립 (평균 min 선택 제거 — 이상치에 끌리던 문제)
+                    // 7일 hour_23 중앙값 + 동일요일 hour_23 중앙값
                     const recent7DayMed = this.calculateRecent7DayAverage();
+                    const sameDowMed = this.getSameDowHour23Median();
                     let improvedFinalValue = aiFinalValue;
-                    if (recent7DayMed && recent7DayMed > 0) {
-                        const lo = Math.round(recent7DayMed * 0.70);
-                        const hi = Math.round(recent7DayMed * 1.30);
+                    const anchor = sameDowMed || recent7DayMed;
+                    if (anchor && anchor > 0) {
+                        // 하한: 앵커 92% (23시가 너무 낮게 떨어지는 것 방지)
+                        const lo = Math.round(anchor * 0.92);
+                        const hi = Math.round(anchor * 1.30);
                         if (improvedFinalValue < lo || improvedFinalValue > hi) {
-                            console.log(`✅ 7일중앙 클립: ${improvedFinalValue} → [${lo}, ${hi}]`);
+                            console.log(`✅ hour_23 앵커 클립: ${improvedFinalValue} → [${lo}, ${hi}] (anchor=${anchor})`);
                             improvedFinalValue = Math.max(lo, Math.min(hi, improvedFinalValue));
                         }
                     }
 
-                    // 🎯 현재값 정확히 파악
                     const currentValue = this.getCurrentActualValue();
 
-                    // 🔧 최종값 검증 및 보정
                     if (improvedFinalValue < currentValue) {
-                        console.warn(`⚠️ 최종값(${improvedFinalValue})이 현재값(${currentValue})보다 작음`);
-                        const minFinalValue = currentValue + 50; // 최소 50 증가 보장
-                        console.warn(`   보정: ${improvedFinalValue} → ${minFinalValue}`);
+                        const minFinalValue = currentValue + 50;
+                        console.warn(`⚠️ 최종값 < 현재값 보정: ${improvedFinalValue} → ${minFinalValue}`);
                         improvedFinalValue = minFinalValue;
                     }
 
@@ -4820,45 +4800,43 @@ class Dashboard {
                             sourceName = "가속도+패턴";
                         }
 
-                        // 혼합 가중치: 시간이 늦을수록 최근 추세(가속도/패턴)에 더 많은 가중치 (최대 80%)
-                        const trendWeight = Math.min(0.8, Math.max(0.3, lastActualHour / 24));
-                        const blendedFinal = Math.round((finalPredictionSource * trendWeight) + (improvedFinalValue * (1 - trendWeight)));
-
-                        console.log(`   ⚖️ 가중치 적용: ${sourceName}(${Math.round(trendWeight * 100)}%) vs 7일평균(${(1 - trendWeight) * 100}%)`);
-                        console.log(`   🎯 최종 보정값: ${improvedFinalValue} → ${blendedFinal}`);
-
+                        // 오전: 가속도 저평가 → AI/앵커 비중 높게
+                        const trendWeight = lastActualHour < 12
+                            ? 0.15
+                            : Math.min(0.55, Math.max(0.25, (lastActualHour - 12) / 20));
+                        let blendedFinal = Math.round(
+                            (finalPredictionSource * trendWeight) + (improvedFinalValue * (1 - trendWeight))
+                        );
+                        if (anchor && blendedFinal < anchor * 0.92) {
+                            blendedFinal = Math.round(anchor * 0.92);
+                        }
+                        console.log('   blend weight ' + sourceName + ' ' + Math.round(trendWeight * 100) + '% -> ' + blendedFinal);
                         improvedFinalValue = blendedFinal;
 
-                        // 🔄 자가 보정(Self-Correction): 어제 오차율 반영
                         const biasFactor = this.calculateBacktestBias(lastActualHour);
-                        if (biasFactor !== 1.0) {
-                            const correctedFinal = Math.round(improvedFinalValue * biasFactor);
-                            const percent = ((biasFactor - 1) * 100).toFixed(1);
-                            console.log(`   🔄 자가 보정: 어제 ${percent}% 오차 반영 → ${improvedFinalValue}에서 ${correctedFinal}로 보정`);
-                            improvedFinalValue = correctedFinal;
+                        if (biasFactor !== 1.0 && biasFactor > 0.9 && biasFactor < 1.15) {
+                            improvedFinalValue = Math.round(improvedFinalValue * biasFactor);
                         }
-
-                        // 최종값이 현재값보다 작아지지 않도록 재검증
                         if (improvedFinalValue < lastActualValue) {
                             improvedFinalValue = lastActualValue + 50;
-                            console.log(`   🔧 재보정: ${improvedFinalValue}`);
                         }
                     }
 
-                    // 🎯 단순 선형 예측 적용 (마지막 실제 데이터 이후부터)
-
-                    // 🎯 최종 상한 재확인 (어떤 조정过后에도 상한 적용)
-                    if (recent7DayAvg && recent7DayAvg > 0) {
-                        const maxPrediction = Math.round(recent7DayAvg * 1.15);
-                        if (improvedFinalValue > maxPrediction) {
-                            console.log(`⚠️ 최종 상한 적용: ${improvedFinalValue} → ${maxPrediction}`);
-                            improvedFinalValue = maxPrediction;
-                        }
+                    // hour_23 앵커 최종 클램프 (recent7DayAvg undefined bug fixed)
+                    if (anchor && anchor > 0) {
+                        improvedFinalValue = Math.max(
+                            Math.round(anchor * 0.92),
+                            Math.min(Math.round(anchor * 1.30), improvedFinalValue)
+                        );
                     }
+                    improvedFinalValue = Math.max(
+                        improvedFinalValue,
+                        lastActualValue || currentValue || 0
+                    );
 
                     const trajectoryPredictions = this.calculateSimplePrediction(
-                        lastActualHour,     // 실제 데이터의 마지막 시간
-                        lastActualValue,    // 실제 데이터의 마지막 값
+                        lastActualHour,
+                        lastActualValue,
                         improvedFinalValue
                     );
 

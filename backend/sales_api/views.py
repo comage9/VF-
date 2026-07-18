@@ -7369,19 +7369,42 @@ def delivery_notes(request):
     )
 
 
+def _delivery_day_final(record) -> int:
+    """
+    일 마감 출고량 SoT = hour_23 (또는 마지막 누적 hour).
+    주의: 일부 날짜 total 이 hour_23 의 ~9배로 오염됨 → total 신뢰 금지.
+    """
+    hourly = getattr(record, "hourly", None) or {}
+    h23 = int(hourly.get("hour_23") or 0)
+    if h23 > 0:
+        return h23
+    mx = 0
+    for h in range(24):
+        mx = max(mx, int(hourly.get(f"hour_{h:02d}") or 0))
+    if mx > 0:
+        return mx
+    # total 은 hour 와 거의 같을 때만 사용 (오염 방지)
+    t = int(getattr(record, "total", 0) or 0)
+    return t if 0 < t < 2500 else 0
+
+
+def _delivery_hour_value(record, hour: int) -> int:
+    hourly = getattr(record, "hourly", None) or {}
+    return int(hourly.get(f"hour_{hour:02d}") or 0)
+
+
 @api_view(["POST"])
 def ai_predict_hourly(request):
     """
-    시간별 마감(23시) 예측 — 완료비율 + 동일요일 잔여 증가 중앙값.
-    이상치(비정상 총량)에 끌리지 않도록 중앙값·비율 우선.
+    시간별 마감(23시) 예측.
+    - 일 최종 = hour_23 (total 필드 오염 무시)
+    - 완료비율 + 잔여증가 중앙값 블렌드
+    - 동일 요일 hour_23 중앙값으로 하한 보정 (과소 예측 방지)
     """
     import statistics
     from datetime import timedelta
 
     payload = request.data if isinstance(request.data, dict) else {}
-
-    # basePredictions 만 있고 서버 재계산을 건너뛰던 경로 제거:
-    # 클라이언트가 보낸 base 는 참고만 하고 서버가 최종 산출.
 
     current_hour = payload.get("currentHour")
     current_data = (
@@ -7389,35 +7412,41 @@ def ai_predict_hourly(request):
         if isinstance(payload.get("currentData"), dict)
         else {}
     )
-    total = current_data.get("total", 0)
-    # 현재 시각 누적이 currentData.hour_XX 로 올 수도 있음
     try:
-        current_hour_int = int(current_hour)
+        current_hour_int = max(0, min(23, int(current_hour)))
     except Exception:
         current_hour_int = 0
 
+    # 현재 누적: hour_XX 우선, total 은 오염 가능
+    total_int = 0
+    hour_key = f"hour_{current_hour_int:02d}"
     try:
-        total_int = int(float(str(total).replace(",", "")))
+        for h in range(current_hour_int, -1, -1):
+            k = f"hour_{h:02d}"
+            v = int(float(str(current_data.get(k) or 0).replace(",", "")))
+            if v > 0:
+                total_int = v
+                current_hour_int = h
+                break
     except Exception:
         total_int = 0
-
-    hour_key = f"hour_{current_hour_int:02d}"
-    if total_int <= 0 and isinstance(current_data, dict):
+    if total_int <= 0:
         try:
-            total_int = int(float(str(current_data.get(hour_key) or 0).replace(",", "")))
+            t = int(float(str(current_data.get("total") or 0).replace(",", "")))
+            if 0 < t < 2500:
+                total_int = t
         except Exception:
-            total_int = 0
+            pass
 
     today = timezone.localdate()
-    lookback = today - timedelta(days=84)  # ~12주
+    lookback = today - timedelta(days=84)
     past_records = list(
-        DeliveryDailyRecord.objects.filter(
-            date__gte=lookback, date__lt=today, total__gt=0
-        ).order_by("-date")
+        DeliveryDailyRecord.objects.filter(date__gte=lookback, date__lt=today).order_by(
+            "-date"
+        )
     )
 
     current_weekday = today.weekday()
-    current_day = today.day
 
     def get_period(day):
         if day <= 7:
@@ -7426,27 +7455,17 @@ def ai_predict_hourly(request):
             return "month_end"
         return "month_mid"
 
-    current_period = get_period(current_day)
+    current_period = get_period(today.day)
 
-    def _row_final(r):
-        return int(r.total or 0)
-
-    def _row_hour(r, h):
-        hourly = r.hourly or {}
-        return int(hourly.get(f"hour_{h:02d}", 0) or 0)
-
-    # 이상치 필터: 동일 요일 중앙값 대비 3배 초과 제외
     same_day_all = [r for r in past_records if r.date.weekday() == current_weekday]
-    same_finals = sorted(_row_final(r) for r in same_day_all if _row_final(r) > 0)
-    same_med = statistics.median(same_finals) if same_finals else 0
+    same_finals = sorted(
+        f for f in (_delivery_day_final(r) for r in same_day_all) if f > 0
+    )
+    same_med = float(statistics.median(same_finals)) if same_finals else 0.0
 
     def _is_sane(r):
-        f = _row_final(r)
-        if f <= 0:
-            return False
-        if same_med > 0 and f > same_med * 3.0:
-            return False
-        return True
+        f = _delivery_day_final(r)
+        return f > 0 and (same_med <= 0 or f <= same_med * 2.5)
 
     same_day_records = [r for r in same_day_all if _is_sane(r)]
     period_records = [
@@ -7455,86 +7474,90 @@ def ai_predict_hourly(request):
     if len(period_records) < 3:
         period_records = same_day_records
     if len(period_records) < 3:
-        period_records = [r for r in past_records if _is_sane(r)]
+        period_records = [r for r in past_records if _delivery_day_final(r) > 0]
 
-    # ── 1) 완료비율법 ──
+    # ── 1) 완료비율법 (hour_h / hour_23) ──
     ratios = []
     for r in period_records:
-        hv = _row_hour(r, current_hour_int)
-        fv = _row_final(r)
-        if hv > 0 and fv >= hv:
+        hv = _delivery_hour_value(r, current_hour_int)
+        fv = _delivery_day_final(r)
+        if hv > 0 and fv >= hv and fv > 0:
             ratios.append(hv / fv)
 
     predicted_from_ratio = None
     ratio_med = None
     if ratios and total_int > 0:
         ratio_med = statistics.median(ratios)
-        if ratio_med >= 0.08:
+        if 0.05 <= ratio_med <= 0.98:
             predicted_from_ratio = int(round(total_int / ratio_med))
 
     # ── 2) 잔여 증가분 중앙값 ──
     increments = []
     for r in period_records:
-        hv = _row_hour(r, current_hour_int)
-        fv = _row_final(r)
+        hv = _delivery_hour_value(r, current_hour_int)
+        fv = _delivery_day_final(r)
         if hv > 0 and fv > hv:
             inc = fv - hv
-            # 이상 증가 제거
-            if same_med > 0 and inc > same_med * 0.8:
+            if same_med > 0 and inc > same_med * 0.9:
                 continue
-            if inc > 800:
+            if inc > 500:
                 continue
             weight = 2 if (today - r.date).days <= 21 else 1
-            for _ in range(weight):
-                increments.append(inc)
+            increments.extend([inc] * weight)
 
     if increments:
         predicted_increment = int(statistics.median(increments))
     else:
-        day_base = {0: 50, 1: 40, 2: 50, 3: 50, 4: 45, 5: 40, 6: 40}
-        predicted_increment = day_base.get(current_weekday, 45)
+        # 조기 시간대 기본 잔여 (동일 요일 중앙 기준)
+        if same_med > 0 and total_int > 0:
+            predicted_increment = max(30, int(same_med - total_int))
+        else:
+            predicted_increment = 80
 
-    predicted_from_inc = total_int + predicted_increment
+    predicted_from_inc = total_int + max(0, predicted_increment)
 
-    # 블렌드: 비율 가능하면 70% 비율 + 30% 증가분
+    # 블렌드
     if predicted_from_ratio is not None:
-        predicted_total = int(0.7 * predicted_from_ratio + 0.3 * predicted_from_inc)
-        model_name = "completion_ratio_blend_v2"
+        # 오전(비율 불안정)은 잔여/중앙값 비중↑
+        w_ratio = 0.55 if current_hour_int < 12 else 0.75
+        predicted_total = int(
+            w_ratio * predicted_from_ratio + (1 - w_ratio) * predicted_from_inc
+        )
+        model_name = "completion_ratio_h23_v3"
     else:
         predicted_total = predicted_from_inc
-        model_name = "residual_median_v2"
+        model_name = "residual_h23_v3"
 
-    # 상·하한 (동일 요일 중앙값 기준)
-    lo = total_int  # 누적은 감소하지 않음
+    # 동일 요일 hour_23 중앙값 앵커 (과소 예측 핵심 방지)
     if same_med > 0:
-        hi = int(max(total_int * 1.05, same_med * 1.45))
-        lo_target = int(same_med * 0.50)
-        # 현재가 이미 중앙값의 80% 이상이면 과소 예측 방지
-        if total_int >= same_med * 0.8:
-            predicted_total = max(predicted_total, int(total_int * 1.01))
-        predicted_total = max(lo, min(predicted_total, hi))
-        # 너무 낮게 떨어지지 않게 (현재 0에 가까울 때만)
-        if total_int < same_med * 0.3:
-            predicted_total = max(predicted_total, lo_target)
-    else:
-        predicted_total = max(predicted_total, total_int + 5)
+        # 하한: 중앙값의 92% 또는 현재+여유
+        floor = int(max(total_int + 20, same_med * 0.92))
+        # 상한: 중앙값 130%
+        ceil = int(same_med * 1.30)
+        predicted_total = max(floor, min(int(predicted_total), ceil))
+        # 현재 진행이 중앙 대비 빠르면 상향
+        if ratio_med and ratio_med > 0 and total_int > 0:
+            pace = (total_int / max(same_med, 1)) / max(ratio_med, 0.05)
+            if pace > 1.05:
+                predicted_total = max(
+                    predicted_total, int(min(ceil, total_int / ratio_med))
+                )
 
-    # 하루 끝 시각이면 현재값 유지
+    predicted_total = max(int(predicted_total), total_int)
+
     if current_hour_int >= 23 and total_int > 0:
         predicted_total = total_int
 
     return Response(
         {
             "success": True,
-            "predictions": {
-                "hour_23": int(predicted_total),
-            },
+            "predictions": {"hour_23": int(predicted_total)},
             "metadata": {
                 "model": model_name,
                 "period": current_period,
                 "current_hour": current_hour_int,
                 "current_total": total_int,
-                "same_dow_median": int(same_med) if same_med else 0,
+                "same_dow_median_h23": int(same_med) if same_med else 0,
                 "completion_ratio_median": round(float(ratio_med), 4)
                 if ratio_med
                 else None,
@@ -7543,6 +7566,7 @@ def ai_predict_hourly(request):
                 "increment_samples": len(increments),
                 "same_day_records": len(same_day_records),
                 "server_today": today.isoformat(),
+                "note": "day_final=hour_23 (total field ignored when polluted)",
             },
         },
         status=status.HTTP_200_OK,
@@ -8494,11 +8518,15 @@ def delivery_daily_prediction(request):
     else:
         start_date = timezone.localdate() + timedelta(days=1)
 
-    # 학습 데이터 조회
+    # 학습 데이터 조회 (total 오염 가능 → hour_23 기준 필터는 아래에서)
     cutoff = timezone.localdate() - timedelta(days=days_int)
-    records = DeliveryDailyRecord.objects.filter(
-        date__gte=cutoff, date__lt=timezone.localdate(), total__gt=0
-    ).order_by("date")
+    records = list(
+        DeliveryDailyRecord.objects.filter(
+            date__gte=cutoff, date__lt=timezone.localdate()
+        ).order_by("date")
+    )
+    # hour_23 기준 유효 일만
+    records = [r for r in records if _delivery_day_final(r) > 0]
 
     if len(records) < 7:
         return Response(
@@ -8522,8 +8550,9 @@ def delivery_daily_prediction(request):
         return float(np.median(filtered))
 
     def calculate_dynamic_factors(records):
-        """중앙값 기반 요일·월 구간 계수 (이상치에 덜 끌림)."""
-        all_totals = [r.total for r in records if r.total and r.total > 0]
+        """중앙값 기반 요일·월 구간 계수 — day_final=hour_23."""
+        all_totals = [_delivery_day_final(r) for r in records]
+        all_totals = [t for t in all_totals if t > 0]
         if not all_totals:
             return {"month": {}, "dow": {}, "overall_median": 0.0, "overall_avg": 0.0}
 
@@ -8531,15 +8560,23 @@ def delivery_daily_prediction(request):
         overall_avg = float(np.mean(all_totals))
         base = overall_med if overall_med > 0 else overall_avg
 
-        month_start = [r.total for r in records if r.date.day <= 7 and r.total > 0]
-        month_mid = [r.total for r in records if 7 < r.date.day < 22 and r.total > 0]
-        month_end = [r.total for r in records if r.date.day >= 22 and r.total > 0]
+        month_start = [
+            _delivery_day_final(r) for r in records if r.date.day <= 7
+        ]
+        month_mid = [
+            _delivery_day_final(r) for r in records if 7 < r.date.day < 22
+        ]
+        month_end = [
+            _delivery_day_final(r) for r in records if r.date.day >= 22
+        ]
+        month_start = [x for x in month_start if x > 0]
+        month_mid = [x for x in month_mid if x > 0]
+        month_end = [x for x in month_end if x > 0]
 
         def _fac(vals):
             m = _robust_median(vals)
             if base <= 0 or m <= 0:
                 return 1.0
-            # ±25% 이내로 약보정
             return float(np.clip(m / base, 0.75, 1.25))
 
         month_factors = {
@@ -8550,8 +8587,9 @@ def delivery_daily_prediction(request):
 
         dow_totals = {i: [] for i in range(7)}
         for r in records:
-            if r.total and r.total > 0:
-                dow_totals[r.date.weekday()].append(r.total)
+            f = _delivery_day_final(r)
+            if f > 0:
+                dow_totals[r.date.weekday()].append(f)
 
         defaults = {0: 1.05, 1: 1.02, 2: 1.05, 3: 1.02, 4: 1.0, 5: 0.95, 6: 0.95}
         dow_factors = {}
@@ -8566,7 +8604,6 @@ def delivery_daily_prediction(request):
             else:
                 dow_factors[i] = defaults[i]
 
-        # 요일별 중앙값 절대값 (예측 본체용)
         dow_medians = {
             i: int(_robust_median(dow_totals[i])) if dow_totals[i] else 0
             for i in range(7)
@@ -8603,8 +8640,8 @@ def delivery_daily_prediction(request):
             return 0.85
         return 1.00
 
-    # ====== Stage 1: 총량 예측 (동일 요일 중앙값 블렌드) ======
-    all_totals = [r.total for r in records if r.total and r.total > 0]
+    # ====== Stage 1: 총량 예측 (동일 요일 hour_23 중앙값 블렌드) ======
+    all_totals = [_delivery_day_final(r) for r in records if _delivery_day_final(r) > 0]
     recent_28 = all_totals[-28:] if len(all_totals) >= 7 else all_totals
     recent_4week_med = _robust_median(recent_28) if recent_28 else base_median
     recent_4week_avg = float(np.mean(recent_28)) if recent_28 else float(base_average)
@@ -8799,17 +8836,14 @@ def _get_weekday_hourly_cumulative_ratios(target_dow: int, records) -> dict:
             continue
         if record.date.weekday() != target_dow:
             continue
-        total = int(record.total or 0)
-        if total <= 0:
-            continue
-        # 이상치 총량 스킵 (동일 요일 대비는 호출측에서 이미 완화)
-        if total > 3000:
+        # SoT: hour_23 (total 오염 무시)
+        total = _delivery_day_final(record)
+        if total <= 0 or total > 2500:
             continue
         hourly = record.hourly or {}
         prev_r = 0.0
         for h in range(24):
             v = int(hourly.get(f"hour_{h:02d}", 0) or 0)
-            # 누적 필드가 비어 있으면 스킵
             if v <= 0 and h < 12:
                 continue
             r = min(1.0, max(0.0, v / total)) if total else 0.0
