@@ -310,6 +310,12 @@ class Dashboard {
 
         this.maxHourlyDisplayedDate = null;
 
+        // OpenRouter 무료 모델 선택
+        this.freeModels = [];
+        this.selectedFreeModel = null;
+        this.freeModelsLoaded = false;
+        this._aiModelUiBound = false;
+
         // 🎯 예측 곡선 평활화 설정
         this.SMOOTHING_CONFIG = {
             enabled: true,
@@ -318,6 +324,252 @@ class Dashboard {
             movingAverageWindow: 3,
             minIncrementPerHour: 10
         };
+
+        // 오프라인 상태 데이터 동기화 관리자 초기화
+        this.setupOfflineSync();
+    }
+
+    setupOfflineSync() {
+        // 온라인 상태 전환 시 자동 동기화 이벤트 리스너 등록
+        window.addEventListener('online', () => {
+            console.log('🌐 Internet connection restored. Triggering offline data sync...');
+            this.syncOfflineData();
+        });
+
+        // 초기 기동 시 1.5초 뒤 자동 동기화 시도
+        setTimeout(() => {
+            this.syncOfflineData();
+        }, 1500);
+    }
+
+    async syncOfflineData() {
+        if (!navigator.onLine) return;
+
+        let queue = [];
+        try {
+            const rawQueue = localStorage.getItem('offline-delivery-queue');
+            if (rawQueue) {
+                queue = JSON.parse(rawQueue);
+            }
+        } catch (e) {
+            console.error('Failed to parse offline sync queue:', e);
+            return;
+        }
+
+        if (queue.length === 0) return;
+
+        console.log(`[Offline Sync] Found ${queue.length} pending batches to sync with server.`);
+
+        const base = this.apiBase || '';
+        let successCount = 0;
+        let failedBatches = [];
+
+        for (const batch of queue) {
+            try {
+                const response = await fetch(`${base}/api/delivery/hourly`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(batch.entries)
+                });
+
+                if (response.ok) {
+                    successCount++;
+                } else {
+                    console.error('Failed to sync batch:', await response.text());
+                    failedBatches.push(batch);
+                }
+            } catch (err) {
+                console.error('Network error during offline sync:', err);
+                failedBatches.push(batch);
+                break; // 네트워크 끊겼으면 중단
+            }
+        }
+
+        // 남은 큐 보존
+        try {
+            if (failedBatches.length > 0) {
+                localStorage.setItem('offline-delivery-queue', JSON.stringify(failedBatches));
+            } else {
+                localStorage.removeItem('offline-delivery-queue');
+            }
+        } catch (e) {
+            console.error('Failed to save updated sync queue:', e);
+        }
+
+        if (successCount > 0) {
+            alert(`📢 [동기화 완료] 오프라인 상태에서 입력했던 시간별 출고 정보가 서버 컴퓨터에 정상적으로 반영되었습니다! (반영 완료: ${successCount}건)`);
+            await this.loadData();
+        }
+    }
+
+    queueOfflineData(entries) {
+        let queue = [];
+        try {
+            const rawQueue = localStorage.getItem('offline-delivery-queue');
+            if (rawQueue) {
+                queue = JSON.parse(rawQueue);
+            }
+        } catch (e) {
+            console.warn('Failed to parse offline sync queue:', e);
+        }
+
+        queue.push({
+            entries: entries,
+            timestamp: Date.now()
+        });
+
+        try {
+            localStorage.setItem('offline-delivery-queue', JSON.stringify(queue));
+            alert('⚠️ [오프라인 저장] 현재 인터넷 및 VPN 연결이 끊긴 상태입니다. 입력하신 시간별 출고 데이터가 브라우저에 임시 저장되었습니다. 연결이 끊긴 동안에도 작업을 계속하실 수 있으며, 연결이 재복구되는 즉시 서버 컴퓨터로 자동 전송 및 반영됩니다.');
+
+            // UI 폼 리셋 처리
+            const form = document.getElementById('hourly-delivery-form');
+            if (form) {
+                form.reset();
+            }
+        } catch (e) {
+            console.error('Failed to write to localStorage for offline sync:', e);
+            alert('임시 저장 실패: 브라우저 임시 저장소 용량이 초과되었거나 사용 불가능한 상태입니다.');
+        }
+    }
+
+    setAiModelBadge(text, mode = 'llm') {
+        const badge = document.getElementById('ai-model-badge');
+        if (!badge) return;
+        badge.textContent = text || 'OpenRouter · 무료';
+        if (mode === 'stats') {
+            badge.className = 'text-[10px] px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full font-medium';
+        } else if (mode === 'error') {
+            badge.className = 'text-[10px] px-2 py-0.5 bg-red-100 text-red-700 rounded-full font-medium';
+        } else {
+            badge.className = 'text-[10px] px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full font-medium';
+        }
+    }
+
+    isReactFreeModelUi() {
+        const select = document.getElementById('ai-free-model-select');
+        return !!(select && select.getAttribute('data-react-managed') === 'true');
+    }
+
+    bindAiModelUi() {
+        // React(delivery-overview)가 select/버튼을 제어하면 중복 바인딩 금지
+        if (this.isReactFreeModelUi()) {
+            this._aiModelUiBound = true;
+            return;
+        }
+        if (this._aiModelUiBound) return;
+        this._aiModelUiBound = true;
+
+        const select = document.getElementById('ai-free-model-select');
+        const refreshBtn = document.getElementById('ai-free-model-refresh');
+        const rerunBtn = document.getElementById('ai-analyze-rerun');
+
+        if (select) {
+            select.addEventListener('change', async () => {
+                const model = select.value;
+                if (!model) return;
+                try {
+                    const res = await fetch(`${this.apiBase}/api/ai/free-models`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ model }),
+                    });
+                    const json = await res.json();
+                    if (json.success) {
+                        this.selectedFreeModel = model;
+                        this.setAiModelBadge(`OpenRouter · ${model.split('/').pop()}`, 'llm');
+                        this.aiInsightCache = null;
+                        this.lastAIAnalysisHour = null;
+                        localStorage.removeItem('ai_insight_cache');
+                        await this.fetchAIAnalysis({ force: true });
+                    } else {
+                        this.showNotification(json.message || '모델 선택 실패', 'warning');
+                    }
+                } catch (e) {
+                    console.error('모델 선택 실패', e);
+                    this.showNotification('모델 선택 실패', 'error');
+                }
+            });
+        }
+
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', async () => {
+                refreshBtn.disabled = true;
+                try {
+                    await this.loadFreeModels({ force: true });
+                    this.showNotification('무료 모델 목록을 갱신했습니다.', 'info');
+                } catch (e) {
+                    this.showNotification('모델 목록 갱신 실패', 'error');
+                } finally {
+                    refreshBtn.disabled = false;
+                }
+            });
+        }
+
+        if (rerunBtn) {
+            rerunBtn.addEventListener('click', async () => {
+                this.aiInsightCache = null;
+                this.lastAIAnalysisHour = null;
+                localStorage.removeItem('ai_insight_cache');
+                await this.fetchAIAnalysis({ force: true });
+            });
+        }
+    }
+
+    async loadFreeModels({ force = false } = {}) {
+        // React UI가 목록을 관리하면 DOM을 건드리지 않음 (선택값만 유지)
+        if (this.isReactFreeModelUi()) {
+            const select = document.getElementById('ai-free-model-select');
+            if (select && select.value) {
+                this.selectedFreeModel = select.value;
+            }
+            this.freeModelsLoaded = true;
+            return { success: true, selectedModel: this.selectedFreeModel, reactManaged: true };
+        }
+
+        this.bindAiModelUi();
+        const select = document.getElementById('ai-free-model-select');
+        try {
+            const q = force ? '?refresh=1' : '';
+            const base = this.apiBase || '';
+            const res = await fetch(`${base}/api/ai/free-models${q}`, { cache: 'no-store' });
+            const json = await res.json();
+            if (!json.success) {
+                if (select) select.innerHTML = '<option value="">모델 목록 로드 실패</option>';
+                return null;
+            }
+            this.freeModels = Array.isArray(json.models) ? json.models : [];
+            this.selectedFreeModel = json.selectedModel || this.selectedFreeModel;
+            this.freeModelsLoaded = true;
+
+            if (select) {
+                if (!this.freeModels.length) {
+                    select.innerHTML = '<option value="">무료 모델 없음</option>';
+                } else {
+                    select.innerHTML = this.freeModels.map((m) => {
+                        const id = m.id || m;
+                        const name = m.name || id;
+                        const short = String(id).split('/').pop();
+                        const label = name && name !== id ? `${short} — ${name}` : short;
+                        const sel = id === this.selectedFreeModel ? ' selected' : '';
+                        const safeLabel = String(label).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+                        const safeId = String(id).replace(/"/g, '&quot;');
+                        return `<option value="${safeId}"${sel}>${safeLabel}</option>`;
+                    }).join('');
+                }
+            }
+
+            const short = (this.selectedFreeModel || 'free').split('/').pop();
+            this.setAiModelBadge(`OpenRouter · ${short}`, 'llm');
+            return json;
+        } catch (e) {
+            console.error('loadFreeModels failed', e);
+            if (select) select.innerHTML = '<option value="">모델 목록 로드 실패</option>';
+            this.setAiModelBadge('OpenRouter · 연결 실패', 'error');
+            return null;
+        }
     }
 
     // 🎯 AI 분석 결과 localStorage 저장
@@ -371,6 +623,13 @@ class Dashboard {
         // 이벤트 핸들러 설정
         this.setupEventHandlers();
 
+        // OpenRouter 무료 모델 목록 (UI)
+        try {
+            await this.loadFreeModels({ force: false });
+        } catch (e) {
+            console.warn('Failed to load free models:', e);
+        }
+
         // 데이터 로드 및 대시보드 업데이트
         await this.loadData();
 
@@ -403,6 +662,12 @@ class Dashboard {
             return;
         }
 
+        // 오프라인 상태일 경우 즉시 로컬 스토리지 큐에 임시 저장
+        if (!navigator.onLine) {
+            this.queueOfflineData(entries);
+            return;
+        }
+
         try {
             // 구글 시트 사용 중단: 서버 DB API로 저장
             const base = this.apiBase || '';
@@ -430,8 +695,9 @@ class Dashboard {
                 alert(`데이터 제출 실패: ${errorText}`);
             }
         } catch (error) {
-            console.error('Error submitting data:', error);
-            alert('데이터 제출 중 오류가 발생했습니다.');
+            console.error('Error submitting data, falling back to offline queue:', error);
+            // 네트워크 오류(서버 다운, 단선 등) 시에도 오프라인 큐에 백업
+            this.queueOfflineData(entries);
         }
     }
 
@@ -572,7 +838,7 @@ class Dashboard {
             try {
                 contentDiv.innerHTML = '<div class="text-center text-muted-foreground py-4">예측 데이터 로딩중...</div>';
 
-                // 3일 예측 (오늘+내일+모레)
+                // 3일 예측 (기본 API start = 내일 → 내일/모레/글피)
                 const response = await fetch(`${this.apiBase}/api/delivery/daily-prediction?num_days=3`);
                 const result = await response.json();
 
@@ -582,36 +848,49 @@ class Dashboard {
                 }
 
                 const { predictions, hourly_predictions, meta } = result;
+                const todayYmd = this.formatLocalYmd(new Date());
+                const tomorrowYmd = this.addLocalDays(todayYmd, 1);
+                const dayAfterYmd = this.addLocalDays(todayYmd, 2);
 
                 let html = '';
-                // 3일 예측 표시
                 for (const pred of predictions) {
-                    const dayLabel = pred.date === meta.start_date ? '(오늘)' :
-                                     pred.date === this.getTomorrowDate() ? '(내일)' : '';
+                    let dayLabel = '';
+                    if (pred.date === todayYmd) dayLabel = '(오늘)';
+                    else if (pred.date === tomorrowYmd) dayLabel = '(내일)';
+                    else if (pred.date === dayAfterYmd) dayLabel = '(모레)';
+                    const isTomorrow = pred.date === tomorrowYmd;
+                    const periodLabel = pred.period === 'month_start' ? '월초' : pred.period === 'month_mid' ? '월중' : '월말';
+                    const f = pred.factors || {};
                     html += '<div class="flex justify-between items-center py-2 border-b border-border last:border-0">';
                     html += `<div class="text-sm">`;
                     html += `<div class="font-medium">${pred.date} (${pred.day_of_week}) ${dayLabel}</div>`;
-                    html += `<div class="text-xs text-muted-foreground">${pred.period === 'month_start' ? '월초' : pred.period === 'month_mid' ? '월중' : '월말'}</div>`;
-                    html += `</div>`;
+                    html += `<div class="text-xs text-muted-foreground">${periodLabel}`;
+                    if (f.same_dow_median) {
+                        html += ` · 동일요일중앙 ${Number(f.same_dow_median).toLocaleString()}`;
+                    }
+                    if (f.period_factor != null) {
+                        html += ` · 월구간×${f.period_factor}`;
+                    }
+                    html += `</div></div>`;
                     html += `<div class="text-right">`;
-                    html += `<div class="text-lg font-bold ${pred.date === meta.start_date ? 'text-primary' : 'text-foreground'}">${pred.predicted_total.toLocaleString()}</div>`;
-                    html += `<div class="badge badge-xs ${pred.confidence === 'medium' ? 'badge-success' : 'badge-warning'}">${pred.confidence}</div>`;
-                    html += `</div>`;
-                    html += '</div>';
+                    html += `<div class="text-lg font-bold ${isTomorrow ? 'text-primary' : 'text-foreground'}">${pred.predicted_total.toLocaleString()}</div>`;
+                    html += `<div class="badge badge-xs ${pred.confidence === 'high' ? 'badge-success' : 'badge-warning'}">${pred.confidence}</div>`;
+                    html += `</div></div>`;
                 }
 
-                // 기준선 정보
                 html += '<div class="mt-3 pt-2 border-t border-border text-xs text-muted-foreground">';
-                html += `<div>최근 4주 평균: ${meta.recent_4week_avg?.toLocaleString() || '-'}</div>`;
-                html += `<div>학습데이터: ${meta.training_samples}일</div>`;
+                html += `<div>최근 4주 중앙값: ${(meta.recent_4week_median ?? meta.recent_4week_avg)?.toLocaleString?.() || meta.recent_4week_median || meta.recent_4week_avg || '-'}</div>`;
+                html += `<div>전체 강건중앙: ${meta.base_median?.toLocaleString?.() || meta.base_median || '-'}</div>`;
+                html += `<div>학습데이터: ${meta.training_samples}일 · 서버오늘: ${meta.server_today || todayYmd}</div>`;
                 html += '</div>';
 
                 contentDiv.innerHTML = html;
 
-                // 저장
                 if (predictions.length > 0) {
-                    this.tomorrowPrediction = predictions[0].predicted_total;
-                    this.tomorrowHourlyPrediction = hourly_predictions[predictions[0].date];
+                    // 내일 항목 우선 저장
+                    const tom = predictions.find(p => p.date === tomorrowYmd) || predictions[0];
+                    this.tomorrowPrediction = tom.predicted_total;
+                    this.tomorrowHourlyPrediction = hourly_predictions[tom.date];
                 }
 
             } catch (e) {
@@ -620,12 +899,22 @@ class Dashboard {
             }
         };
 
-        // 내일 날짜 계산 헬퍼
-        this.getTomorrowDate = () => {
-            const tomorrow = new Date();
-            tomorrow.setDate(tomorrow.getDate() + 1);
-            return tomorrow.toISOString().split('T')[0];
+        // 로컬(브라우저) YYYY-MM-DD — UTC toISOString 금지 (KST 날짜 밀림 방지)
+        this.formatLocalYmd = (d) => {
+            const x = d instanceof Date ? d : new Date(d);
+            const y = x.getFullYear();
+            const m = String(x.getMonth() + 1).padStart(2, '0');
+            const day = String(x.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
         };
+        this.addLocalDays = (ymd, n) => {
+            const [y, m, d] = String(ymd).split('-').map(Number);
+            const dt = new Date(y, m - 1, d);
+            dt.setDate(dt.getDate() + n);
+            return this.formatLocalYmd(dt);
+        };
+        this.getTomorrowDate = () => this.addLocalDays(this.formatLocalYmd(new Date()), 1);
+        this.getTodayDate = () => this.formatLocalYmd(new Date());
 
         // 초기 로드 및 새로고침 버튼
         if (document.getElementById('daily-prediction-content')) {
@@ -2319,12 +2608,21 @@ class Dashboard {
         return finalPrediction;
     }
 
-    // 특정 시간대에서 유사한 값을 가진 과거 사례 찾기 (매우 정밀한 범위)
+    // 특정 시간대에서 유사한 값을 가진 과거 사례 찾기
     findSimilarValueCasesForHour(targetHour, referenceValue) {
         const similarCases = [];
-        const tolerance = referenceValue * 0.0005; // ±0.05% 범위로 매우 정밀하게
+        // ±8% (최소 ±15) — 기존 0.05%는 사례가 거의 없어 예측 붕괴
+        const tolerance = Math.max(15, Math.abs(referenceValue) * 0.08);
 
         console.log(`${targetHour}시 ${referenceValue}에서 ±${Math.round(tolerance)} 범위로 검색`);
+
+        const refDow = (() => {
+            try {
+                const cur = this.getCurrentDayData();
+                if (cur && cur.date) return new Date(cur.date + 'T12:00:00').getDay();
+            } catch (e) { /* ignore */ }
+            return new Date().getDay();
+        })();
 
         this.data.forEach(row => {
             if (!row.date) return;
@@ -2332,17 +2630,15 @@ class Dashboard {
             const hourKey = `hour_${targetHour.toString().padStart(2, '0')}`;
             const valueAtHour = parseInt(row[hourKey]) || 0;
 
-            // 매우 정밀한 범위 내의 데이터만 선택
             if (valueAtHour > 0 &&
                 Math.abs(valueAtHour - referenceValue) <= tolerance) {
-
-                // 해당 날짜의 모든 시간대 데이터 포함
+                const rowDow = new Date(row.date + 'T12:00:00').getDay();
                 const caseData = {
                     date: row.date,
                     targetHourValue: valueAtHour,
+                    sameDow: rowDow === refDow,
                     similarity: Math.abs(valueAtHour - referenceValue)
                 };
-
                 for (let h = 0; h <= 23; h++) {
                     const hKey = `hour_${h.toString().padStart(2, '0')}`;
                     caseData[`hour_${h}`] = parseInt(row[hKey]) || 0;
@@ -2351,26 +2647,30 @@ class Dashboard {
             }
         });
 
-        // 매우 정밀한 검색으로 사례가 없으면 범위를 점진적으로 확대
-        if (similarCases.length === 0) {
-            const expandedTolerance = referenceValue * 0.005; // ±0.5%로 확대
-            console.log(`정밀 검색 실패, ±${Math.round(expandedTolerance)} 범위로 재검색`);
+        // 동일 요일 우선
+        const sameDowCases = similarCases.filter(c => c.sameDow);
+        if (sameDowCases.length >= 2) {
+            sameDowCases.sort((a, b) => a.similarity - b.similarity);
+            return sameDowCases.slice(0, 20);
+        }
 
+        // 사례 부족 시 범위 확대 ±15%
+        if (similarCases.length < 3) {
+            const expandedTolerance = Math.max(30, Math.abs(referenceValue) * 0.15);
+            console.log(`범위 확대 ±${Math.round(expandedTolerance)} 재검색`);
             this.data.forEach(row => {
                 if (!row.date) return;
-
                 const hourKey = `hour_${targetHour.toString().padStart(2, '0')}`;
                 const valueAtHour = parseInt(row[hourKey]) || 0;
-
-                if (valueAtHour > 0 &&
-                    Math.abs(valueAtHour - referenceValue) <= expandedTolerance) {
-
+                if (valueAtHour > 0 && Math.abs(valueAtHour - referenceValue) <= expandedTolerance) {
+                    if (similarCases.some(c => c.date === row.date)) return;
+                    const rowDow = new Date(row.date + 'T12:00:00').getDay();
                     const caseData = {
                         date: row.date,
                         targetHourValue: valueAtHour,
+                        sameDow: rowDow === refDow,
                         similarity: Math.abs(valueAtHour - referenceValue)
                     };
-
                     for (let h = 0; h <= 23; h++) {
                         const hKey = `hour_${h.toString().padStart(2, '0')}`;
                         caseData[`hour_${h}`] = parseInt(row[hKey]) || 0;
@@ -2380,41 +2680,12 @@ class Dashboard {
             });
         }
 
-        // 여전히 사례가 없으면 최대 5% 범위까지
-        if (similarCases.length === 0) {
-            const maxTolerance = referenceValue * 0.05; // ±5%
-            console.log(`확대 검색 실패, ±${Math.round(maxTolerance)} 범위로 최종 검색`);
-
-            this.data.forEach(row => {
-                if (!row.date) return;
-
-                const hourKey = `hour_${targetHour.toString().padStart(2, '0')}`;
-                const valueAtHour = parseInt(row[hourKey]) || 0;
-
-                if (valueAtHour > 0 &&
-                    Math.abs(valueAtHour - referenceValue) <= maxTolerance) {
-
-                    const caseData = {
-                        date: row.date,
-                        targetHourValue: valueAtHour,
-                        similarity: Math.abs(valueAtHour - referenceValue)
-                    };
-
-                    for (let h = 0; h <= 23; h++) {
-                        const hKey = `hour_${h.toString().padStart(2, '0')}`;
-                        caseData[`hour_${h}`] = parseInt(row[hKey]) || 0;
-                    }
-                    similarCases.push(caseData);
-                }
-            });
-        }
-
-        // 유사도 순으로 정렬 (더 비슷한 값 우선)
-        similarCases.sort((a, b) => a.similarity - b.similarity);
-
-        console.log(`최종 검색 결과: ${similarCases.length}건 (평균 차이: ${similarCases.length > 0 ? Math.round(similarCases.reduce((sum, c) => sum + c.similarity, 0) / similarCases.length) : 0})`);
-
-        return similarCases;
+        similarCases.sort((a, b) => {
+            if (a.sameDow !== b.sameDow) return a.sameDow ? -1 : 1;
+            return a.similarity - b.similarity;
+        });
+        console.log(`최종 검색 결과: ${similarCases.length}건`);
+        return similarCases.slice(0, 25);
     }
 
     // 유사 사례들의 다음 시간 값들 추출
@@ -2883,26 +3154,19 @@ class Dashboard {
 
     // 🔧 최근 7일 평균 최종값 계산
     calculateRecent7DayAverage() {
+        // 이름 유지, 실제는 이상치 제거 후 중앙값 (현실 기준선)
         if (!this.data || this.data.length < 2) {
             console.warn('⚠️ 데이터 부족: 기본값 사용');
             return null;
         }
 
-        // 최근 7일 데이터 (오늘 제외)
-        const recentDays = this.data.slice(-8, -1); // 마지막 8개 중 첫 7개 (오늘 제외)
-
-        if (recentDays.length === 0) {
-            console.warn('⚠️ 최근 데이터 없음');
-            return null;
-        }
-
-        // 각 날의 최종값(23시) 추출
+        const recentDays = this.data.slice(-15, -1); // 오늘 제외 최근 ~14일
         const finalValues = [];
         recentDays.forEach(row => {
-            const val23 = parseInt(row.hour_23);
-            if (val23 && val23 > 0) {
-                finalValues.push(val23);
-            }
+            let v = parseInt(row.hour_23) || 0;
+            if (!v) v = parseInt(row.total) || 0;
+            // 명백한 이상치(대량 피크) 제외 — 일반 일 600~800 대비
+            if (v > 0 && v < 2500) finalValues.push(v);
         });
 
         if (finalValues.length === 0) {
@@ -2910,15 +3174,14 @@ class Dashboard {
             return null;
         }
 
-        // 평균 계산
-        const average = Math.round(
-            finalValues.reduce((sum, val) => sum + val, 0) / finalValues.length
-        );
+        finalValues.sort((a, b) => a - b);
+        const mid = Math.floor(finalValues.length / 2);
+        const median = finalValues.length % 2 === 0
+            ? Math.round((finalValues[mid - 1] + finalValues[mid]) / 2)
+            : finalValues[mid];
 
-        console.log(`📊 최근 ${finalValues.length}일 평균 최종값: ${average}`);
-        console.log(`   개별값: [${finalValues.join(', ')}]`);
-
-        return average;
+        console.log(`📊 최근 ${finalValues.length}일 중앙값 최종: ${median}`, finalValues);
+        return median;
     }
 
     getLastNonZeroHour(row) {
@@ -3948,8 +4211,9 @@ class Dashboard {
     }
 
     // 🤖 AI 분석 요청
-    async fetchAIAnalysis() {
-        console.log('🤖 fetchAIAnalysis called');
+    async fetchAIAnalysis(options = {}) {
+        const force = !!(options && options.force);
+        console.log('🤖 fetchAIAnalysis called', force ? '(force)' : '');
         const container = document.getElementById('ai-insight-container');
         const content = document.getElementById('ai-insight-content');
 
@@ -3960,6 +4224,8 @@ class Dashboard {
             console.warn('🤖 AI container elements not found in DOM');
             return;
         }
+
+        this.bindAiModelUi();
 
         // 🎯 AI 분석 최적화: 새로운 시간대의 데이터가 있을 때만 분석 실행
         const currentData = this.getCurrentDayData();
@@ -3983,7 +4249,7 @@ class Dashboard {
         // 🎯 AI 분석 결과 캐시 확인 (새로고침 시 캐시된 분석 결과 사용)
         // 단, 캐시의 시간과 현재 데이터 시간이 다르면 다시 분석
 
-        if (this.aiInsightCache) {
+        if (!force && this.aiInsightCache) {
             const cachedDate = this.lastAIAnalysisDate;
             const cachedHour = this.lastAIAnalysisHour;
 
@@ -4001,7 +4267,7 @@ class Dashboard {
         }
 
         // 마지막으로 입력된 시간대와 값이 같으면 스킵 (새로운 데이터 입력 없음)
-        if (this.lastAIAnalysisDate === todayStr &&
+        if (!force && this.lastAIAnalysisDate === todayStr &&
             this.lastAIAnalysisHour === lastNonZeroHour &&
             this.lastAIAnalysisValue === lastNonZeroValue) {
             console.log('🤖 AI 분석 스킵: 같은 시간대, 같은 값, 새로운 데이터 없음');
@@ -4067,6 +4333,12 @@ class Dashboard {
             }
 
             // 분석에 필요한 컨텍스트 구성
+            const selectEl = document.getElementById('ai-free-model-select');
+            // React 제어 select 우선, 없으면 인스턴스 선택값
+            const modelFromUi = (selectEl && selectEl.value)
+                || this.selectedFreeModel
+                || null;
+
             const context = {
                 date: currentData.date,
                 dayOfWeek: currentData.dayOfWeek,
@@ -4088,7 +4360,7 @@ class Dashboard {
             const response = await fetch(`${this.apiBase}/api/ai/analyze`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ data: context })
+                body: JSON.stringify({ data: context, model: modelFromUi })
             });
 
             console.log('🤖 Response status:', response.status);
@@ -4097,12 +4369,24 @@ class Dashboard {
 
             if (json.success && json.insight) {
                 console.log('🤖 AI Insight received:', json.insight.substring(0, 100) + '...');
+
+                const mode = json.mode || (json.source === 'stats_fallback' ? 'stats' : 'llm');
+                const modelUsed = json.model || modelFromUi || 'free';
+                const shortModel = String(modelUsed).split('/').pop();
+                if (mode === 'stats') {
+                    this.setAiModelBadge(`통계 간이${json.error ? ' · AI실패' : ''}`, 'stats');
+                } else {
+                    this.setAiModelBadge(`OpenRouter · ${shortModel}`, 'llm');
+                }
                 
-                // 🎯 필터링: 한글 위주, 영어 과다 줄 제거, 라인 접두어 정리
+                // 🎯 필터링: 한글 위주 (통계 간이는 영어 비율 필터 완화)
+                const isStats = mode === 'stats';
                 const filteredInsight = json.insight
                     .split('\n')
                     .map(line => line.replace(/^Line\d+\s*:\s*/i, '').trim())
                     .filter(line => {
+                        if (!line) return true;
+                        if (isStats) return true;
                         const koreanChars = (line.match(/[가-힣]/g) || []).length;
                         const englishWords = (line.match(/[a-zA-Z]+/g) || []).length;
                         // 한글 문자 3개 이상, 영어 단어 수보다 한글이 많은 줄만
@@ -4114,6 +4398,7 @@ class Dashboard {
                 const htmlInsight = filteredInsight
                     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                     .replace(/^## (.*$)/gim, '<h4 class="font-bold mt-2 mb-1 text-indigo-900">$1</h4>')
+                    .replace(/^### (.*$)/gim, '<h5 class="font-semibold mt-2 mb-1 text-indigo-800">$1</h5>')
                     .replace(/- /g, '• ')
                     .replace(/\n/g, '<br>');
 
@@ -4124,6 +4409,7 @@ class Dashboard {
                 this.saveAIInsightToStorage(htmlInsight);
             } else {
                 console.warn('🤖 AI response invalid:', json);
+                this.setAiModelBadge('분석 실패', 'error');
                 content.innerHTML = `
                     <div class="text-gray-500 italic">
                         <i class="fas fa-exclamation-triangle text-yellow-500 mr-1"></i>
@@ -4134,6 +4420,7 @@ class Dashboard {
             }
         } catch (error) {
             console.error('🤖 AI Analysis Error:', error);
+            this.setAiModelBadge('서버 연결 실패', 'error');
             content.innerHTML = `
                 <div class="text-gray-500 italic">
                     <i class="fas fa-wifi text-red-400 mr-1"></i>
@@ -4440,27 +4727,15 @@ class Dashboard {
                     console.log(`🤖 AI 원본 최종값(23시): ${aiFinalValue}`);
 
                     // 🔧 최근 7일 평균과 비교하여 보수적인 값 선택
-                    const recent7DayAvg = this.calculateRecent7DayAverage();
+                    // 7일 중앙값 기준 클립 (평균 min 선택 제거 — 이상치에 끌리던 문제)
+                    const recent7DayMed = this.calculateRecent7DayAverage();
                     let improvedFinalValue = aiFinalValue;
-
-                    if (recent7DayAvg && recent7DayAvg > 0) {
-                        // 🎯 둘 중 더 작은 값 선택 (과대 예측 방지)
-                        improvedFinalValue = Math.min(aiFinalValue, recent7DayAvg);
-                        if (improvedFinalValue === recent7DayAvg) {
-                            console.log(`✅ 보수적 선택: AI(${aiFinalValue}) → 7일평균(${recent7DayAvg})`);
-                        } else {
-                            console.log(`✅ AI 값 사용 (AI ≤ 7일평균): ${aiFinalValue}`);
-                        }
-                    } else {
-                        console.log(`⚠️ 7일 평균 계산 실패, AI 값 사용: ${aiFinalValue}`);
-                    }
-
-                    // 🎯 최종 예측값 상한 설정 (7일 평균의 115%까지만)
-                    if (recent7DayAvg && recent7DayAvg > 0) {
-                        const maxPrediction = Math.round(recent7DayAvg * 1.15);
-                        if (improvedFinalValue > maxPrediction) {
-                            console.log(`⚠️ 예측값 상한 초과: ${improvedFinalValue} → ${maxPrediction}`);
-                            improvedFinalValue = maxPrediction;
+                    if (recent7DayMed && recent7DayMed > 0) {
+                        const lo = Math.round(recent7DayMed * 0.70);
+                        const hi = Math.round(recent7DayMed * 1.30);
+                        if (improvedFinalValue < lo || improvedFinalValue > hi) {
+                            console.log(`✅ 7일중앙 클립: ${improvedFinalValue} → [${lo}, ${hi}]`);
+                            improvedFinalValue = Math.max(lo, Math.min(hi, improvedFinalValue));
                         }
                     }
 

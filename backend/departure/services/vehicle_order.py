@@ -153,44 +153,276 @@ class VehicleOrderService:
         # 5. 다음 번호
         return max(used_hoches) + 1 if used_hoches else 1
 
+    def _normalize_order_text(self, line: str) -> str:
+        s = (line or "").replace("\u00a0", " ").replace("\ufeff", "")
+        out = []
+        for ch in s:
+            o = ord(ch)
+            if 0xFF10 <= o <= 0xFF19:
+                out.append(chr(o - 0xFF10 + ord("0")))
+            elif ch in "：":
+                out.append(":")
+            elif ch in "－–—":
+                out.append("-")
+            else:
+                out.append(ch)
+        return "".join(out).strip()
+
+    def _split_order_tokens(self, text: str) -> List[str]:
+        """탭/쉼표/세미콜론/다중공백 등 다양한 구분자로 토큰 분리."""
+        if not text:
+            return []
+        # 구분자 통일
+        t = text
+        for sep in ("\t", ",", ";", "|", "｜"):
+            t = t.replace(sep, " ")
+        # 2칸 이상 → 단일 공백 토큰 경계 유지 위해 먼저 분리
+        if re.search(r"\s{2,}", t):
+            parts = [p.strip() for p in re.split(r"\s{2,}", t) if p.strip()]
+            # 각 파트 안 단일 공백도 분리
+            tokens: List[str] = []
+            for p in parts:
+                tokens.extend([x for x in re.split(r"\s+", p) if x])
+            return tokens
+        return [x for x in re.split(r"\s+", t) if x]
+
+    def _fmt_phone(self, digits: str) -> str:
+        d = re.sub(r"\D", "", digits or "")
+        if len(d) == 11:
+            return f"{d[:3]}-{d[3:7]}-{d[7:]}"
+        if len(d) == 10:
+            return f"{d[:3]}-{d[3:6]}-{d[6:]}"
+        return digits
+
+    def parse_order_line(self, line: str) -> Optional[Dict[str, Any]]:
+        """
+        다양한 배차/순서 텍스트에서 필요 필드만 추출.
+
+        인식 대상 (위치 무관, 패턴 매칭):
+          - 호차: N호, N호차, [N호]
+          - 차량번호: 한글+숫자 번호판 패턴
+          - 전화: 01x...
+          - 허브: HUB/허브 포함
+          - 톤: 5, 5T, 11T (1~25)
+          - 시간: HH:MM
+          - 기사: 한글 2~4자 (운송사 제외)
+        """
+        line = self._normalize_order_text(line)
+        if not line or line.startswith("#"):
+            return None
+
+        hub = plate = phone = driver = time = ton = ""
+        hoche = 0
+
+        # ── 1) 줄 전체 정규식 선추출 (토큰 깨짐 대비) ──
+        m_hoche = re.search(r"\[(\d{1,2})\s*호(?:차)?\]|(\d{1,2})\s*호(?:차)?", line)
+        if m_hoche:
+            hoche = int(m_hoche.group(1) or m_hoche.group(2))
+
+        m_bracket_hub = re.search(r"\[([^\]]*?HUB[^\]]*)\]", line, re.I)
+        if m_bracket_hub:
+            hub = m_bracket_hub.group(1).strip()
+
+        plate_re = re.compile(r"[가-힣]{1,2}\d{2,3}[가-힣]\d{4}")
+        pm = plate_re.search(re.sub(r"\s+", "", line))
+        if pm:
+            plate = pm.group(0)
+
+        ph = re.search(r"01[016789]\d{7,8}", re.sub(r"[\s\-()]", "", line))
+        if ph:
+            phone = self._fmt_phone(ph.group(0))
+
+        tm = re.search(r"\b(\d{1,2}:\d{2})\b", line)
+        if tm:
+            time = tm.group(1)
+
+        # ── 2) 토큰 단위 보완 ──
+        tokens = self._split_order_tokens(line)
+        phone_re = re.compile(r"^01[016789]-?\d{3,4}-?\d{4}$|^01[016789]\d{7,8}$")
+        time_re = re.compile(r"^\d{1,2}:\d{2}$")
+        ton_re = re.compile(r"^(\d{1,2})\s*T$", re.I)
+        ton_num_re = re.compile(r"^(\d{1,2})$")
+
+        for t in tokens:
+            if t in ("수배중", "수배 중", "-", "–", "—"):
+                continue
+            t_clean = re.sub(r"\s+", "", t)
+
+            # 호차 토큰 단독: "1호", "3호차"
+            mh = re.match(r"^(\d{1,2})\s*호(?:차)?$", t)
+            if mh and not hoche:
+                hoche = int(mh.group(1))
+                continue
+
+            if plate_re.search(t_clean) and not plate:
+                plate = plate_re.search(t_clean).group(0)
+                continue
+            if phone_re.match(t_clean) and not phone:
+                phone = self._fmt_phone(t_clean)
+                continue
+            if time_re.match(t) and not time:
+                time = t
+                continue
+            # 5T / 11T
+            if ton_re.match(t) and not ton:
+                ton = f"{int(re.match(r'(\d+)', t).group(1))}T"
+                continue
+            # 단독 숫자 톤 (호차와 구분: 이미 호차 잡힌 뒤, 또는 1~25)
+            if ton_num_re.match(t) and not ton:
+                tn = int(t)
+                # 호차가 아직 없고 1~9면 호차 후보로도 쓸 수 있음 → 뒤쪽 톤 우선은 차량 있으면 톤
+                if 1 <= tn <= 25:
+                    # 호차 미확정 + 줄 앞에 가까운 작은 숫자는 아래에서 처리
+                    if hoche and tn != hoche:
+                        ton = f"{tn}T"
+                        continue
+                    if hoche and tn == hoche:
+                        continue
+                    if not hoche and tn <= 15:
+                        # 호차 후보로 보류하지 않고, 번호판이 있으면 톤으로
+                        if plate:
+                            ton = f"{tn}T"
+                        else:
+                            hoche = tn
+                        continue
+            if re.search(r"HUB|허브", t, re.I) and not hub:
+                hub = t
+                continue
+            # 운송사/센터 스킵
+            if (
+                re.match(r"^VF\d+", t, re.I)
+                or "유원" in t
+                or re.search(r"VF\d+", t, re.I)
+            ):
+                continue
+            if re.match(r"^[가-힣]{2,4}$", t) and not driver:
+                # 지역명 제외 휴리스틱
+                if t in ("부천", "광주", "경기", "충북", "서울", "인천", "대구", "부산"):
+                    continue
+                driver = t
+
+        # 호차 미검출: 줄 시작 숫자 1~20 + 번호판 있으면 호차로
+        if not hoche:
+            m0 = re.match(r"^(\d{1,2})\b", line)
+            if m0 and plate:
+                cand = int(m0.group(1))
+                if 1 <= cand <= 20:
+                    hoche = cand
+                    # 시작 숫자가 톤으로 잡혔으면 톤 클리어 후 재탐색
+                    if ton == f"{cand}T":
+                        ton = ""
+                        for t in tokens:
+                            if ton_num_re.match(t) and int(t) != cand and 1 <= int(t) <= 25:
+                                ton = f"{int(t)}T"
+                                break
+
+        # 최소 조건: 호차 또는 (번호판+전화)
+        if not hoche:
+            if plate:
+                # 호차 없으면 적용 불가 — 순서를 모름
+                return None
+            return None
+
+        return {
+            "hoche": int(hoche),
+            "hub": hub,
+            "plate": plate,
+            "phone": phone,
+            "driver": driver,
+            "time": time,
+            "ton": ton,
+        }
+
+    def parse_order_text(self, text: str) -> List[Dict[str, Any]]:
+        """
+        여러 줄/혼합 형식 텍스트 전체 파싱 후 호차순 정렬.
+        빈 줄·주석(#) 무시. 동일 호차 중복 시 마지막 값 우선.
+        """
+        text = self._normalize_order_text(text or "")
+        if not text:
+            return []
+        by_hoche: Dict[int, Dict[str, Any]] = {}
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            item = self.parse_order_line(line)
+            if not item or not item.get("hoche"):
+                continue
+            h = int(item["hoche"])
+            # 병합: 비어 있지 않은 필드만 덮어쓰기
+            prev = by_hoche.get(h) or {"hoche": h}
+            for k, v in item.items():
+                if v not in ("", None):
+                    prev[k] = v
+            by_hoche[h] = prev
+        return [by_hoche[h] for h in sorted(by_hoche.keys())]
+
     def reorder_from_input(self, target_date: str, lines: List[str]) -> List[Dict]:
         """
-        차량 순서 입력 모달에서 받은 텍스트로 전체 재정렬
-
-        입력 형식: [허브][호차] 차량번호 연락처
-        예: [부천1HUB][1호] 경기82바3167 010-5216-6253
-
-        반환: 적용된 순서 리스트
+        차량 순서 입력 텍스트로 전체 재정렬 (호차 번호순 정렬 후 DB 반영).
+        다양한 형식 혼합 가능 — parse_order_text 가 필요 필드만 추출.
         """
-        parsed = []
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            match = re.search(r'\[([^\]]+)\]\[(\d+)호\]\s+(\S+)\s+(\S+)', line)
-            if match:
-                hub, hoche_str, plate, phone = match.groups()
-                parsed.append({
-                    "hoche": int(hoche_str),
-                    "plate": plate,
-                    "phone": phone,
-                    "hub": hub
-                })
+        if len(lines) == 1 and "\n" not in lines[0]:
+            # 단일 문자열 블록일 수도 있음
+            parsed = self.parse_order_text(lines[0])
+            if not parsed:
+                parsed = self.parse_order_text("\n".join(lines))
+        else:
+            parsed = self.parse_order_text("\n".join(lines))
 
         if not parsed:
             return []
 
-        # 호차순 정렬
-        parsed.sort(key=lambda x: x["hoche"])
-
-        # DB 업데이트
         for item in parsed:
-            with connection.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE departure_records
-                    SET plate=%s, driver_phone=%s, hub=%s
-                    WHERE date=%s AND hoche=%s
-                """, [item["plate"], item["phone"], item["hub"], target_date, item["hoche"]])
+            hoche = int(item["hoche"])
+            plate = item.get("plate") or ""
+            phone = item.get("phone") or ""
+            hub = item.get("hub") or ""
+            driver = item.get("driver") or ""
+            time = item.get("time") or ""
+            ton = item.get("ton") or ""
+
+            defaults = {}
+            if plate:
+                defaults["plate"] = plate
+            if phone:
+                defaults["driver_phone"] = phone
+            if hub:
+                defaults["hub"] = hub
+            if driver:
+                defaults["driver_name"] = driver
+            if time:
+                defaults["time"] = time
+            if ton:
+                defaults["ton"] = ton
+                defaults["original_ton"] = ton
+
+            from datetime import datetime as _dt
+
+            try:
+                d = _dt.strptime(target_date, "%Y-%m-%d").date()
+            except Exception:
+                d = target_date
+
+            existing = DepartureRecord.objects.filter(date=d, hoche=hoche).first()
+            if existing:
+                for k, v in defaults.items():
+                    if v != "" and v is not None:
+                        setattr(existing, k, v)
+                existing.save()
+            else:
+                DepartureRecord.objects.create(
+                    date=d,
+                    hoche=hoche,
+                    plate=plate,
+                    driver_name=driver,
+                    driver_phone=phone,
+                    hub=hub or "부천1HUB",
+                    ton=ton or ("11T" if hoche == 3 else "5T"),
+                    original_ton=ton or ("11T" if hoche == 3 else "5T"),
+                    time=time or {1: "20:00", 2: "22:00", 3: "23:50"}.get(hoche, "13:00"),
+                )
 
         return parsed
 
@@ -198,22 +430,102 @@ class VehicleOrderService:
     # PDF 파일 관리 (plate + date 기준)
     # ═══════════════════════════════════════════════════════
 
+    def extract_plate_from_pdf(self, pdf_path: str) -> str:
+        """PDF 본문에서 차량번호 추출. 실패 시 빈 문자열."""
+        if not pdf_path or not os.path.isfile(pdf_path):
+            return ""
+        try:
+            import fitz
+            doc = fitz.open(pdf_path)
+            text = ""
+            for page in doc:
+                text += page.get_text()
+            doc.close()
+            m = re.search(r"([가-힣]{2}\d{2}[가-힣]\d{4})", text)
+            if m:
+                return m.group(1).strip()
+            m = re.search(r"([가-힣a-zA-Z0-9]+(?:\d{2}|\d{3})[가-힣]\d{4})", text)
+            if m:
+                return m.group(1).strip()
+        except Exception:
+            pass
+        return ""
+
+    def _pdf_matches_plate(self, pdf_path: str, plate: str) -> bool:
+        """PDF 본문 차량번호가 요청 plate와 일치하는지 (끝 4자리 포함)."""
+        content_plate = self.extract_plate_from_pdf(pdf_path)
+        if not content_plate or not plate:
+            # 본문 파싱 실패 시 파일명 매칭만 허용하지 않음 → False (오인쇄 방지)
+            return False
+        return self._is_plate_match(content_plate, plate)
+
     def get_pdf_path(self, plate: str, target_date: str) -> Optional[str]:
-        """차량별 PDF 경로 조회 (날짜별 폴더 우선, 없으면 공통)"""
+        """
+        차량별 PDF 경로 조회.
+        파일명뿐 아니라 PDF 본문 차량번호가 일치하는 파일만 반환.
+        호차 재정렬로 파일명이 뒤바뀐 경우 날짜 폴더 전체에서 내용 기준으로 탐색.
+        """
         plate_clean = plate.replace(" ", "")
-        # 1. 날짜별 폴더
         date_dir = os.path.join(self.ls_pdfs_dir, target_date)
-        path = os.path.join(date_dir, f"{plate_clean}.pdf")
-        if os.path.isfile(path):
-            return path
-        # 2. 공통 폴더
-        path = os.path.join(self.ls_pdfs_dir, f"{plate_clean}.pdf")
-        if os.path.isfile(path):
-            return path
+
+        # 1. 정상 파일명 후보 (내용 검증 필수)
+        candidates = []
+        named = os.path.join(date_dir, f"{plate_clean}.pdf")
+        if os.path.isfile(named):
+            candidates.append(named)
+        common = os.path.join(self.ls_pdfs_dir, f"{plate_clean}.pdf")
+        if os.path.isfile(common):
+            candidates.append(common)
+
+        for path in candidates:
+            if self._pdf_matches_plate(path, plate_clean):
+                return path
+
+        # 2. 날짜 폴더 전체 스캔 (오명명/교차 저장 복구)
+        if os.path.isdir(date_dir):
+            for fname in os.listdir(date_dir):
+                if not fname.lower().endswith(".pdf"):
+                    continue
+                if ".sealed." in fname.lower() or fname.lower().endswith(".sealed.pdf"):
+                    continue
+                path = os.path.join(date_dir, fname)
+                if not os.path.isfile(path):
+                    continue
+                if self._pdf_matches_plate(path, plate_clean):
+                    # 내용 일치 → 올바른 파일명으로 자동 교정 시도
+                    correct = os.path.join(date_dir, f"{plate_clean}.pdf")
+                    if os.path.normpath(path) != os.path.normpath(correct):
+                        try:
+                            if os.path.isfile(correct) and not self._pdf_matches_plate(correct, plate_clean):
+                                # 잘못된 파일명이 점유 중이면 임시 교체
+                                wrong_tmp = correct + ".wrong.tmp"
+                                os.replace(correct, wrong_tmp)
+                                os.replace(path, correct)
+                                # wrong_tmp 내용 plate로 재명명 시도
+                                wrong_plate = self.extract_plate_from_pdf(wrong_tmp)
+                                if wrong_plate:
+                                    wrong_dest = os.path.join(date_dir, f"{wrong_plate.replace(' ', '')}.pdf")
+                                    if not os.path.isfile(wrong_dest):
+                                        os.replace(wrong_tmp, wrong_dest)
+                                    else:
+                                        os.remove(wrong_tmp)
+                                elif os.path.isfile(wrong_tmp):
+                                    os.remove(wrong_tmp)
+                                return correct
+                            elif not os.path.isfile(correct):
+                                os.replace(path, correct)
+                                return correct
+                        except Exception:
+                            return path  # 교정 실패해도 내용 맞는 파일 반환
+                    return path
+
         return None
 
     def save_pdf(self, source_path: str, plate: str, target_date: str) -> str:
-        """PDF를 plate 기준 파일명으로 저장"""
+        """PDF를 plate 기준 파일명으로 저장. 본문 plate가 있으면 그것을 우선."""
+        content_plate = self.extract_plate_from_pdf(source_path)
+        if content_plate:
+            plate = content_plate
         plate_clean = plate.replace(" ", "")
         date_dir = os.path.join(self.ls_pdfs_dir, target_date)
         os.makedirs(date_dir, exist_ok=True)
@@ -326,21 +638,76 @@ class VehicleOrderService:
                 is_new_vehicle = True
 
             driver = info.get("driver", "") or (matched_master.get("driverName", "") if matched_master else "")
+            # 전화번호: PDF 파싱값 우선, 비어있으면 마스터 DB에서 보완
+            # (PDF에서 줄바꿈 등으로 파싱 실패하는 경우 마스터 값으로 채움)
             phone = info.get("phone", "") or (matched_master.get("driverPhone", "") if matched_master else "")
-            hub = info.get("hub", "부천1 HUB")
+            hub = info.get("hub", "부천1 HUB") or "부천1 HUB"
+            # PDF 오파싱 보정 (Arrival Date/Time 헤더 오인식)
+            hub_up = str(hub).upper()
+            if (
+                hub_up in ("DATE/TIME", "DATE", "TIME")
+                or "DATE" in hub_up
+                or ("TIME" in hub_up and "HUB" not in hub_up)
+                or "HUB" not in hub_up
+            ):
+                hub = "부천1 HUB"
+            elif not re.search(r"\sHUB$", hub, re.I) and re.search(r"HUB$", hub, re.I):
+                hub = re.sub(r"HUB$", " HUB", hub, flags=re.I)
 
-            # DB 저장
-            with connection.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO departure_records
-                    (date, hoche, plate, driver_name, driver_phone, time, ton, original_ton, plt, hub, is_new, slip_no, barcode,
-                     last_seen, total_orders, seal_left_wing, seal_right_wing, seal_back_door, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
-                """, [target_date, hoche, plate, driver, phone, time_val, ton_val, ton_val, 0, hub, is_new_vehicle, slip_no, info.get("barcode", ""),
-                      "-", 0, "", "", ""])
+            # 접안 통계: DB 이력 기준 (해당 일자 이전)
+            last_seen, total_orders, is_new_vehicle = self._compute_dock_stats(
+                plate, target_date
+            )
+
+            # DB 저장 (이미 존재하는 호차인 경우 업데이트, 없으면 생성)
+            try:
+                record = DepartureRecord.objects.get(date=target_date, hoche=hoche)
+                record.plate = plate
+                if driver:
+                    record.driver_name = driver
+                if phone:
+                    record.driver_phone = phone
+                if not record.time:
+                    record.time = time_val
+                if not record.ton:
+                    record.ton = ton_val
+                    record.original_ton = ton_val
+                record.hub = hub
+                record.is_new = is_new_vehicle
+                record.last_seen = last_seen
+                record.total_orders = total_orders
+                record.slip_no = slip_no
+                record.barcode = info.get("barcode", "")
+                record.save()
+            except DepartureRecord.DoesNotExist:
+                DepartureRecord.objects.create(
+                    date=target_date,
+                    hoche=hoche,
+                    plate=plate,
+                    driver_name=driver,
+                    driver_phone=phone,
+                    time=time_val,
+                    ton=ton_val,
+                    original_ton=ton_val,
+                    plt=0,
+                    hub=hub,
+                    is_new=is_new_vehicle,
+                    slip_no=slip_no,
+                    barcode=info.get("barcode", ""),
+                    last_seen=last_seen,
+                    total_orders=total_orders,
+                    seal_left_wing="",
+                    seal_right_wing="",
+                    seal_back_door=""
+                )
 
             # PDF 저장 (plate + date 기준)
             self.save_pdf(pdf_path, plate, target_date)
+
+            # 차량 마스터 dates 동기화
+            self._touch_vehicle_master_dates(
+                plate, target_date, driver=driver, phone=phone, ton=ton_val
+            )
 
             return {"ok": True, "hoche": hoche, "plate": plate}
         except Exception as e:
@@ -359,6 +726,94 @@ class VehicleOrderService:
         if len(n1) >= 4 and len(n2) >= 4 and n1[-4:] == n2[-4:]:
             return True
         return False
+
+    def _compute_dock_stats(self, plate: str, as_of: str):
+        """
+        최근 접안일 / 접안 횟수 (as_of 이전 이력만).
+        returns (last_seen, total_orders, is_new)
+        """
+        plate_clean = (plate or "").replace(" ", "")
+        if not plate_clean or plate_clean in ("수배중", "-"):
+            return "-", 0, True
+        try:
+            as_of_s = str(as_of)[:10]
+            qs = DepartureRecord.objects.exclude(plate="").exclude(plate="수배중")
+            dates = set()
+            for p, d in qs.values_list("plate", "date"):
+                if not self._is_plate_match(p or "", plate_clean):
+                    continue
+                ds = d.isoformat() if hasattr(d, "isoformat") else str(d)[:10]
+                if ds < as_of_s:
+                    dates.add(ds)
+            # 마스터 dates 보완
+            for v in self._load_vehicle_master():
+                if self._is_plate_match(v.get("plateNumber", ""), plate_clean):
+                    for raw in v.get("dates") or []:
+                        ds = str(raw)[:10]
+                        if re.match(r"^\d{4}-\d{2}-\d{2}$", ds) and ds < as_of_s:
+                            dates.add(ds)
+                    break
+            if not dates:
+                return "-", 0, True
+            past = sorted(dates)
+            return past[-1], len(past), False
+        except Exception:
+            return "-", 0, True
+
+    def _touch_vehicle_master_dates(
+        self, plate: str, dock_date: str, *, driver: str = "", phone: str = "", ton: str = ""
+    ):
+        """vehicle_db_merged.json dates 에 접안일 추가 (변경 시만 저장)."""
+        plate_clean = (plate or "").replace(" ", "")
+        ds = str(dock_date or "")[:10]
+        if not plate_clean or plate_clean in ("수배중", "-"):
+            return
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", ds):
+            return
+        master = self._load_vehicle_master()
+        matched = None
+        for v in master:
+            if self._is_plate_match(v.get("plateNumber", ""), plate_clean):
+                matched = v
+                break
+        changed = False
+        if matched is None:
+            master.append(
+                {
+                    "plateNumber": plate_clean,
+                    "driverName": driver or "",
+                    "driverPhone": phone or "",
+                    "ton": ton or "5T",
+                    "dates": [ds],
+                }
+            )
+            changed = True
+        else:
+            dates = set(str(x)[:10] for x in (matched.get("dates") or []) if x)
+            if ds not in dates:
+                dates.add(ds)
+                matched["dates"] = sorted(dates)
+                changed = True
+            if driver and not (matched.get("driverName") or "").strip():
+                matched["driverName"] = driver
+                changed = True
+            if phone and not (matched.get("driverPhone") or "").strip():
+                matched["driverPhone"] = phone
+                changed = True
+        if not changed:
+            return
+        try:
+            with open(self.vehicle_master_path, "w", encoding="utf-8") as f:
+                json.dump(master, f, ensure_ascii=False, indent=2)
+            self._vehicle_master_cache = master
+            # views 모듈 캐시도 갱신
+            try:
+                from departure import views as dep_views
+                dep_views.VEHICLES = master
+            except Exception:
+                pass
+        except Exception:
+            pass
 
 
 # 싱글톤 인스턴스

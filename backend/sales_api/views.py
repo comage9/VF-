@@ -3,7 +3,7 @@ from rest_framework.decorators import api_view
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 from django.db import models
-from django.db.models import Sum, Count, Min, Max, Value, DecimalField
+from django.db.models import Sum, Count, Min, Max, Value, DecimalField, Q
 from django.db.models.functions import Coalesce
 from django.db.models.functions import TruncDay, TruncMonth, TruncWeek, TruncYear
 from django.http import HttpResponse
@@ -218,92 +218,69 @@ def _production_model_to_dict(obj: ProductionLog):
 
 
 def _zai_get_config():
+    """
+    OpenRouter 무료 모델 전용 설정.
+    유료 모델(MiniMax 등) 기본값/환경변수는 enforce 로 차단.
+    """
+    try:
+        from . import openrouter_service as ors
+
+        cfg = ors.get_chat_config()
+        if cfg:
+            return cfg
+    except Exception as e:
+        logger.warning("openrouter_service get_chat_config failed: %s", e)
+
+    # 최후 폴백 (키만 직접 읽음, 모델은 항상 free)
     base_url = (
-        (os.getenv("ANTHROPIC_BASE_URL") or "https://openrouter.ai").strip().rstrip("/")
+        (
+            os.getenv("OPENROUTER_BASE_URL")
+            or os.getenv("ANTHROPIC_BASE_URL")
+            or "https://openrouter.ai"
+        )
+        .strip()
+        .rstrip("/")
     )
-    api_key = (os.getenv("ANTHROPIC_AUTH_TOKEN") or "").strip()
-    # 빠른 무료 모델: minimax M2.7 (thinking 없음)
-    model = (
-        os.getenv("ANTHROPIC_DEFAULT_SONNET_MODEL") or "minimax/MiniMax-M2.7"
+    api_key = (
+        os.getenv("OPENROUTER_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN") or ""
     ).strip()
-
-    timeout_ms_raw = (os.getenv("API_TIMEOUT_MS") or "").strip()
-    timeout_s = 30  # 빠른 모델이라 30초로 단축
-    if timeout_ms_raw:
-        try:
-            timeout_s = max(1, int(int(timeout_ms_raw) / 1000))
-        except ValueError:
-            timeout_s = 30
-
     if not base_url or not api_key:
         return None
-
     return {
         "base_url": base_url,
         "api_key": api_key,
-        "model": model,
-        "timeout_s": timeout_s,
+        "model": "openrouter/free",
+        "timeout_s": 30,
     }
 
 
 def _zai_call_messages(
     *, system: str, user: str, max_tokens: int = 2048, temperature: float = 0.3
 ):
-    cfg = _zai_get_config()
-    if not cfg:
-        return None
-
-    url = f"{cfg['base_url']}/api/v1/chat/completions"
-    payload = {
-        "model": cfg["model"],
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-    }
-    headers = {
-        "Authorization": f"Bearer {cfg['api_key']}",
-        "Content-Type": "application/json",
-    }
-
+    """OpenRouter 무료 모델만 호출. 유료 모델 경로는 없음."""
     try:
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers=headers,
-            method="POST",
+        from . import openrouter_service as ors
+
+        result = ors.chat_completions(
+            system=system,
+            user=user,
+            max_tokens=max_tokens,
+            temperature=temperature,
         )
-
-        with urllib.request.urlopen(req, timeout=cfg["timeout_s"]) as resp:
-            raw = resp.read().decode("utf-8")
-
-        data = json.loads(raw) if raw else {}
-        # OpenRouter / OpenAI format: content is in choices[0].message.content
-        try:
-            choices = data.get("choices", [])
-            if choices and len(choices) > 0:
-                message = choices[0].get("message", {})
-                content = message.get("content", "")
-                # tencent/hy3-preview:free returns content=null, reasoning has the actual response
-                if not content:
-                    content = message.get("reasoning", "")
-                if content:
-                    content = content.strip()
-                    content = _extract_korean_only(content)
-                    return content
-        except Exception:
-            pass
-        # Fallback: direct content field
-        content = (data.get("content") or "").strip()
-        content = _extract_korean_only(content)
-        return content
-    except Exception as e:
-        logger.error(f"AI call failed ({cfg['model']}): {e}")
+        if result.get("success") and result.get("content"):
+            content = str(result["content"]).strip()
+            content = _extract_korean_only(content)
+            return content or None
+        if result.get("error"):
+            logger.error(
+                "AI free-model call failed (%s): %s",
+                result.get("model"),
+                result.get("error"),
+            )
         return None
-
-    return None
+    except Exception as e:
+        logger.error("AI call failed: %s", e)
+        return None
 
 
 class StandardResultsSetPagination(LimitOffsetPagination):
@@ -470,20 +447,34 @@ def inventory_unified(request):
     master_qs = BarcodeMaster.objects.all()
     master_map = {(m.barcode or "").strip(): m for m in master_qs if (m.barcode or "").strip()}
 
-    # 제품 마스터 단가(매입가) — 재고 금액 산출의 기준 단가
-    # 바코드 우선, 없으면 SKU/제품명으로 매칭
+    # 제품 마스터(MasterSpec) — 단가 + 분류(category_lg)
+    # 분류 표시 SoT: category_lg (마스터 페이지와 동일). 수량 계산과 무관.
     price_by_barcode = {}
     price_by_sku = {}
     price_by_name = {}
+    category_lg_by_barcode = {}
+    category_lg_by_name = {}
     for spec in MasterSpec.objects.all().only(
-        "barcode", "sku_id", "product_name", "price", "prev_price", "price_changed_at"
+        "barcode",
+        "sku_id",
+        "product_name",
+        "price",
+        "prev_price",
+        "price_changed_at",
+        "category_lg",
     ):
-        p = int(spec.price or 0)
-        if p <= 0:
-            continue
         bc = (spec.barcode or "").strip()
         sku = (spec.sku_id or "").strip()
         name = (spec.product_name or "").strip()
+        lg = (spec.category_lg or "").strip()
+        if lg:
+            if bc and bc not in category_lg_by_barcode:
+                category_lg_by_barcode[bc] = lg
+            if name and name not in category_lg_by_name:
+                category_lg_by_name[name] = lg
+        p = int(spec.price or 0)
+        if p <= 0:
+            continue
         if bc and bc not in price_by_barcode:
             price_by_barcode[bc] = p
         if sku and sku not in price_by_sku:
@@ -491,27 +482,32 @@ def inventory_unified(request):
         if name and name not in price_by_name:
             price_by_name[name] = p
 
-    # Category fallback from outbound records (when BarcodeMaster.category is empty)
+    # Fallback: 출고 분류 (마스터·BM 모두 없을 때만). Max(문자열) 금지 → 최빈값.
     baseline_barcodes_qs = baseline_items.exclude(barcode__isnull=True).exclude(barcode="").values("barcode")
-    
+    from collections import Counter, defaultdict
+
     outbound_category_map = {}
-    category_qs = (
+    barcode_cat_counts = defaultdict(Counter)
+    for row in (
         OutboundRecord.objects.filter(barcode__in=baseline_barcodes_qs)
         .exclude(category__isnull=True)
         .exclude(category="")
-        .values("barcode")
-        .annotate(category=Max("category"))
-    )
-    for row in category_qs:
-        outbound_category_map[(row.get("barcode") or "").strip()] = (
-            row.get("category") or ""
-        ).strip()
+        .values_list("barcode", "category")
+    ):
+        b = (row[0] or "").strip()
+        c = (row[1] or "").strip()
+        if b and c:
+            barcode_cat_counts[b][c] += 1
+    for b, counter in barcode_cat_counts.items():
+        if counter:
+            outbound_category_map[b] = counter.most_common(1)[0][0]
 
     # 현재고 가감: sales_api/inventory_stock.py 단일 규칙
     # (기준일 = 출고 후 잔여 스냅샷 → 당일 출고/입고 재차감 금지)
     from .inventory_stock import (
         aggregate_movements_after_baseline,
         compute_current_stock,
+        filter_outbound_for_stock,
         stock_value,
     )
 
@@ -528,14 +524,15 @@ def inventory_unified(request):
         receipt_model=InventoryReceiptItem,
     )
 
-    # 30-day stats for threshold calc (min/max)
+    # 30-day stats for threshold calc (min/max) — 실적 출고만
     end_date = timezone.localdate()
     start_30 = end_date - timedelta(days=29)
-    outbound_30_qs = OutboundRecord.objects.filter(
-        outbound_date__range=[start_30, end_date]
+    outbound_30_qs = filter_outbound_for_stock(
+        OutboundRecord.objects.filter(outbound_date__range=[start_30, end_date])
+        .exclude(barcode__isnull=True)
+        .exclude(barcode="")
+        .filter(barcode__in=baseline_barcodes_qs)
     )
-    outbound_30_qs = outbound_30_qs.exclude(barcode__isnull=True).exclude(barcode="")
-    outbound_30_qs = outbound_30_qs.filter(barcode__in=baseline_barcodes_qs)
     outbound_30_agg = {
         row["barcode"]: int(row.get("qty") or 0)
         for row in outbound_30_qs.values("barcode").annotate(
@@ -545,11 +542,12 @@ def inventory_unified(request):
 
     # 60-day stats for cover days and 10-day target calculation
     start_60 = end_date - timedelta(days=59)
-    outbound_60_qs = OutboundRecord.objects.filter(
-        outbound_date__range=[start_60, end_date]
+    outbound_60_qs = filter_outbound_for_stock(
+        OutboundRecord.objects.filter(outbound_date__range=[start_60, end_date])
+        .exclude(barcode__isnull=True)
+        .exclude(barcode="")
+        .filter(barcode__in=baseline_barcodes_qs)
     )
-    outbound_60_qs = outbound_60_qs.exclude(barcode__isnull=True).exclude(barcode="")
-    outbound_60_qs = outbound_60_qs.filter(barcode__in=baseline_barcodes_qs)
     outbound_60_agg = {
         row["barcode"]: int(row.get("qty") or 0)
         for row in outbound_60_qs.values("barcode").annotate(
@@ -559,11 +557,12 @@ def inventory_unified(request):
 
     # 14-day stats for cover days
     start_14 = end_date - timedelta(days=13)
-    outbound_14_qs = OutboundRecord.objects.filter(
-        outbound_date__range=[start_14, end_date]
+    outbound_14_qs = filter_outbound_for_stock(
+        OutboundRecord.objects.filter(outbound_date__range=[start_14, end_date])
+        .exclude(barcode__isnull=True)
+        .exclude(barcode="")
+        .filter(barcode__in=baseline_barcodes_qs)
     )
-    outbound_14_qs = outbound_14_qs.exclude(barcode__isnull=True).exclude(barcode="")
-    outbound_14_qs = outbound_14_qs.filter(barcode__in=baseline_barcodes_qs)
     outbound_14_agg = {
         row["barcode"]: int(row.get("qty") or 0)
         for row in outbound_14_qs.values("barcode").annotate(
@@ -683,8 +682,12 @@ def inventory_unified(request):
                 "safetyStock": int(safety_stock),
                 "lifecycleStatus": str(bm_lifecycle_status),
                 "hiddenReason": hidden_reason,
+                # 분류 표시: MasterSpec.category_lg(마스터) → BM → 출고 최빈값 → 기타
+                # 수량 계산(base/receipt/outbound)과는 완전 분리
                 "category": (
-                    (master.category if (master and master.category) else "")
+                    category_lg_by_barcode.get(bc)
+                    or category_lg_by_name.get(str(product_name or "").strip())
+                    or (master.category if (master and master.category) else "")
                     or outbound_category_map.get(bc)
                     or "기타"
                 ),
@@ -782,6 +785,127 @@ def inventory_unified(request):
     )
 
 
+@api_view(["GET"])
+def inventory_stock_diagnostics(request):
+    """
+    재고 금액/수량 구성 진단 (읽기 전용).
+    오전·오후 숫자 차이 원인 확인용:
+      현재고 = baseline + 입고(as_of 이후) − 실출고(as_of 이후)
+    """
+    from .inventory_stock import (
+        aggregate_movements_after_baseline,
+        compute_current_stock,
+        stock_value,
+    )
+
+    latest = InventoryBaselineUpload.objects.order_by("-uploaded_at").first()
+    if not latest:
+        return Response(
+            {"success": False, "message": "재고 스냅샷 없음"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    as_of = latest.as_of_date
+    barcode = (request.query_params.get("barcode") or "").strip()
+    items_qs = InventoryBaselineItem.objects.filter(upload=latest)
+    if barcode:
+        items_qs = items_qs.filter(barcode=barcode)
+
+    items = list(items_qs.only("barcode", "quantity_box", "product_name"))
+    bcs = [(i.barcode or "").strip() for i in items if (i.barcode or "").strip()]
+    base_sum = sum(int(i.quantity_box or 0) for i in items)
+
+    out_agg, rcv_agg = aggregate_movements_after_baseline(
+        as_of=as_of,
+        barcodes=bcs,
+        outbound_model=OutboundRecord,
+        receipt_model=InventoryReceiptItem,
+    )
+    out_sum = int(sum(out_agg.values()))
+    rcv_sum = int(sum(rcv_agg.values()))
+
+    price_by_bc = {}
+    for s in MasterSpec.objects.exclude(barcode="").only("barcode", "price"):
+        bc = (s.barcode or "").strip()
+        p = int(s.price or 0)
+        if bc and p > 0 and bc not in price_by_bc:
+            price_by_bc[bc] = p
+
+    total_qty = 0
+    total_val = 0
+    for it in items:
+        bc = (it.barcode or "").strip()
+        cur = compute_current_stock(
+            it.quantity_box, rcv_agg.get(bc, 0), out_agg.get(bc, 0)
+        )
+        total_qty += max(0, cur)
+        total_val += stock_value(cur, price_by_bc.get(bc, 0))
+
+    out_daily = list(
+        OutboundRecord.objects.filter(is_estimated=False, outbound_date__gt=as_of)
+        .values("outbound_date")
+        .annotate(qty=Coalesce(Sum("box_quantity"), 0), rows=Count("id"))
+        .order_by("outbound_date")
+    )
+    if barcode:
+        out_daily = list(
+            OutboundRecord.objects.filter(
+                is_estimated=False, outbound_date__gt=as_of, barcode=barcode
+            )
+            .values("outbound_date")
+            .annotate(qty=Coalesce(Sum("box_quantity"), 0), rows=Count("id"))
+            .order_by("outbound_date")
+        )
+    rcv_daily = list(
+        InventoryReceiptItem.objects.filter(receipt_date__gt=as_of)
+        .values("receipt_date")
+        .annotate(qty=Coalesce(Sum("quantity_box"), 0), rows=Count("id"))
+        .order_by("receipt_date")
+    )
+    if barcode:
+        rcv_daily = list(
+            InventoryReceiptItem.objects.filter(receipt_date__gt=as_of, barcode=barcode)
+            .values("receipt_date")
+            .annotate(qty=Coalesce(Sum("quantity_box"), 0), rows=Count("id"))
+            .order_by("receipt_date")
+        )
+
+    return Response(
+        {
+            "success": True,
+            "asOfDate": as_of.isoformat() if as_of else None,
+            "baselineUploadedAt": latest.uploaded_at.isoformat()
+            if latest.uploaded_at
+            else None,
+            "today": timezone.localdate().isoformat(),
+            "formula": "current = baseline + receipts(after as_of) - real_outbound(after as_of)",
+            "baseline": {"items": len(items), "qtySum": base_sum},
+            "receiptsAfter": {"qtySum": rcv_sum, "daily": [
+                {
+                    "date": r["receipt_date"].isoformat(),
+                    "qty": int(r["qty"] or 0),
+                    "rows": int(r["rows"] or 0),
+                }
+                for r in rcv_daily
+            ]},
+            "outboundAfterReal": {"qtySum": out_sum, "daily": [
+                {
+                    "date": r["outbound_date"].isoformat(),
+                    "qty": int(r["qty"] or 0),
+                    "rows": int(r["rows"] or 0),
+                }
+                for r in out_daily
+            ]},
+            "currentStock": {
+                "qty": total_qty,
+                "value": total_val,
+                "rawFormulaQty": base_sum + rcv_sum - out_sum,
+            },
+            "barcode": barcode or None,
+        }
+    )
+
+
 @api_view(["GET", "DELETE"])
 def inventory_upload_history(request):
     if request.method == "GET":
@@ -805,28 +929,93 @@ def inventory_upload_history(request):
             )
         return Response({"success": True, "data": data})
 
-    # DELETE = full reset (baseline + receipts)
-    InventoryBaselineItem.objects.all().delete()
-    InventoryBaselineUpload.objects.all().delete()
-    InventoryReceiptItem.objects.all().delete()
-    InventoryReceiptUpload.objects.all().delete()
-    return Response({"success": True, "message": "reset ok"})
+    # DELETE = 전체 리셋 (baseline + receipts). UI "전체 삭제" 경로.
+    # DESTRUCTIVE_API_KEY 가 설정된 환경에서만 추가 키 요구 (미설정 시 프론트 호환).
+    from .api_guards import destructive_guard_response
+
+    blocked = destructive_guard_response(request)
+    if blocked is not None:
+        return blocked
+
+    logger.warning(
+        "inventory_upload_history FULL RESET requested path=%s",
+        request.path,
+    )
+    with transaction.atomic():
+        bi = InventoryBaselineItem.objects.all().delete()
+        bu = InventoryBaselineUpload.objects.all().delete()
+        ri = InventoryReceiptItem.objects.all().delete()
+        ru = InventoryReceiptUpload.objects.all().delete()
+    return Response(
+        {
+            "success": True,
+            "message": "reset ok",
+            "deleted": {
+                "baselineItems": bi[0] if bi else 0,
+                "baselineUploads": bu[0] if bu else 0,
+                "receiptItems": ri[0] if ri else 0,
+                "receiptUploads": ru[0] if ru else 0,
+            },
+        }
+    )
 
 
 @api_view(["DELETE"])
 def inventory_upload_history_by_date(request, date: str):
-    # For now, deleting by date means full reset per user policy
-    InventoryBaselineItem.objects.all().delete()
-    InventoryBaselineUpload.objects.all().delete()
-    InventoryReceiptItem.objects.all().delete()
-    InventoryReceiptUpload.objects.all().delete()
-    return Response({"success": True, "message": "reset ok"})
+    """
+    특정 기준일(as_of_date)의 baseline 업로드만 삭제.
+    입고(receipt)는 건드리지 않음 — 과거에는 전체 리셋이어서 위험했음.
+    """
+    as_of = _parse_date_ymd(date)
+    if not as_of:
+        return Response(
+            {"success": False, "message": "invalid date (YYYY-MM-DD)"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    uploads = InventoryBaselineUpload.objects.filter(as_of_date=as_of)
+    count = uploads.count()
+    if count == 0:
+        return Response(
+            {
+                "success": True,
+                "message": "no uploads for date",
+                "asOfDate": as_of.isoformat(),
+                "deletedUploads": 0,
+            }
+        )
+
+    # FK CASCADE로 items 함께 삭제
+    with transaction.atomic():
+        deleted, detail = uploads.delete()
+    logger.info(
+        "inventory_upload_history_by_date as_of=%s deleted_rows=%s detail=%s",
+        as_of.isoformat(),
+        deleted,
+        detail,
+    )
+    return Response(
+        {
+            "success": True,
+            "message": "deleted baseline uploads for date",
+            "asOfDate": as_of.isoformat(),
+            "deletedUploads": count,
+            "deletedRows": deleted,
+        }
+    )
 
 
 @api_view(["POST"])
 def inventory_baseline_upload(request):
+    """
+    재고 기준 스냅샷 업로드.
+
+    안전 규칙 (실서비스):
+    1) 엑셀 파싱·검증이 끝난 뒤에만 DB 변경
+    2) 트랜잭션으로 baseline 교체 (중간 실패 시 롤백)
+    3) 입고(receipt) 이력은 삭제하지 않음 — 현재고 공식은 as_of 이후 입고만 가산
+    """
     error_id = str(uuid.uuid4())
-    # full reset before applying new baseline
     as_of_str = (
         (
             request.data.get("inventoryDate") or request.data.get("asOfDate") or ""
@@ -868,20 +1057,12 @@ def inventory_baseline_upload(request):
     )
     logger.debug("baseline_upload files=%s", [getattr(f, "name", "") for f in files])
 
-    InventoryBaselineItem.objects.all().delete()
-    InventoryBaselineUpload.objects.all().delete()
-    InventoryReceiptItem.objects.all().delete()
-    InventoryReceiptUpload.objects.all().delete()
-
-    upload = InventoryBaselineUpload.objects.create(
-        as_of_date=as_of,
-        file_count=len(files),
-        file_names=[getattr(f, "name", "") for f in files],
-    )
-
+    # --- 1) 파싱만 수행 (DB 변경 없음). 실패 시 기존 스냅샷 유지 ---
     total_rows = 0
     agg = {}
     meta = {}
+    file_names = [getattr(f, "name", "") for f in files]
+
     for f in files:
         try:
             logger.debug(
@@ -980,23 +1161,54 @@ def inventory_baseline_upload(request):
                     else "",
                 }
 
-    items = []
-    for bc, qty in agg.items():
-        m = meta.get(bc) or {}
-        items.append(
-            InventoryBaselineItem(
-                upload=upload,
-                barcode=bc,
-                quantity_box=int(qty),
-                product_name=(m.get("product_name") or "")[:255],
-                location=(m.get("location") or "")[:255],
-            )
+    if not agg:
+        return Response(
+            {
+                "message": "유효한 바코드/수량 행이 없습니다. 기존 재고 스냅샷은 유지됩니다.",
+                "errorId": error_id,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
-    if items:
-        InventoryBaselineItem.objects.bulk_create(items, batch_size=2000)
+    # --- 2) 파싱 성공 후에만 baseline 교체 (입고 이력 보존) ---
+    try:
+        with transaction.atomic():
+            InventoryBaselineItem.objects.all().delete()
+            InventoryBaselineUpload.objects.all().delete()
+            # 주의: InventoryReceipt* 는 삭제하지 않음
 
-    # Upsert BarcodeMaster with SKU/category/location so unified inventory can display them
+            upload = InventoryBaselineUpload.objects.create(
+                as_of_date=as_of,
+                file_count=len(files),
+                file_names=file_names,
+                total_rows=int(total_rows),
+                total_barcodes=int(len(agg)),
+            )
+
+            items = [
+                InventoryBaselineItem(
+                    upload=upload,
+                    barcode=bc,
+                    quantity_box=int(qty),
+                    product_name=((meta.get(bc) or {}).get("product_name") or "")[:255],
+                    location=((meta.get(bc) or {}).get("location") or "")[:255],
+                )
+                for bc, qty in agg.items()
+            ]
+            InventoryBaselineItem.objects.bulk_create(items, batch_size=2000)
+    except Exception as e:
+        logger.exception(
+            "baseline_upload db write failed error_id=%s", error_id
+        )
+        return Response(
+            {
+                "message": f"재고 스냅샷 저장 실패: {str(e)}",
+                "errorId": error_id,
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    # Upsert BarcodeMaster (실패해도 스냅샷은 이미 커밋 — 부가 정보만)
     try:
         barcodes = list(agg.keys())
         existing_map = {
@@ -1046,29 +1258,32 @@ def inventory_baseline_upload(request):
             BarcodeMaster.objects.bulk_create(
                 to_create, ignore_conflicts=True, batch_size=2000
             )
+        if to_update:
+            BarcodeMaster.objects.bulk_update(
+                to_update,
+                ["sku_id", "category", "location", "product_name"],
+                batch_size=2000,
+            )
     except Exception:
         logger.exception(
-            "receipts_upload barcode_master auto-register failed error_id=%s", error_id
+            "baseline_upload barcode_master upsert failed error_id=%s", error_id
         )
 
-    # Upsert by (barcode, receipt_datetime)
-    upload.total_barcodes = int(len(items))
-    upload.save(update_fields=["total_rows", "total_barcodes"])
-
     logger.info(
-        "baseline_upload done error_id=%s as_of=%s total_rows=%s total_barcodes=%s",
+        "baseline_upload done error_id=%s as_of=%s total_rows=%s total_barcodes=%s receipts_preserved=1",
         error_id,
         as_of.isoformat(),
         int(total_rows),
-        int(len(items)),
+        int(len(agg)),
     )
 
     return Response(
         {
             "success": True,
             "message": "baseline uploaded",
-            "rowsProcessed": len(items),
+            "rowsProcessed": len(agg),
             "asOfDate": as_of.isoformat(),
+            "receiptsPreserved": True,
         }
     )
 
@@ -1413,6 +1628,164 @@ def inventory_unified_download_csv(request):
     return response
 
 
+@api_view(["POST"])
+def inventory_barcode_location_upsert(request):
+    """
+    스캐너 수동 로케이션 영구 저장 → BarcodeMaster.
+    body: barcode, location, product_name?, sku_id?
+    """
+    payload = request.data if isinstance(request.data, dict) else {}
+    barcode = (payload.get("barcode") or "").strip()
+    location = (payload.get("location") or "").strip()
+    product_name = (payload.get("product_name") or "").strip()
+    sku_id = (payload.get("sku_id") or "").strip()
+    if not barcode:
+        return Response({"message": "barcode required"}, status=status.HTTP_400_BAD_REQUEST)
+    if not location:
+        return Response({"message": "location required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    ok, msg = _upsert_barcode_location(
+        barcode,
+        location=location,
+        product_name=product_name,
+        sku_id=sku_id,
+        clear_if_empty=False,
+    )
+    if not ok:
+        return Response({"message": msg}, status=status.HTTP_400_BAD_REQUEST)
+
+    bm = BarcodeMaster.objects.filter(barcode=barcode).first()
+    # MasterSpec 대분류 상태 (질문 모달 여부 판단용)
+    spec = MasterSpec.objects.filter(barcode=barcode).first()
+    if not spec and product_name:
+        spec = MasterSpec.objects.filter(product_name=product_name).first()
+    needs_category = True
+    category_lg = ""
+    if spec:
+        category_lg = (spec.category_lg or "").strip()
+        needs_category = not category_lg
+
+    return Response(
+        {
+            "success": True,
+            "barcode": barcode,
+            "location": (bm.location if bm else location) or location,
+            "product_name": (bm.product_name if bm else product_name) or product_name,
+            "sku_id": (bm.sku_id if bm else sku_id) or sku_id,
+            "master_spec_id": spec.id if spec else None,
+            "category_lg": category_lg,
+            "needs_category": needs_category,
+        }
+    )
+
+
+@api_view(["GET"])
+def master_category_lg_options(request):
+    """대분류 선택 목록 (신규 품목 질문용)."""
+    cats = list(
+        MasterSpec.objects.exclude(category_lg="")
+        .exclude(category_lg__isnull=True)
+        .values_list("category_lg", flat=True)
+        .distinct()
+        .order_by("category_lg")
+    )
+    return Response({"success": True, "data": cats})
+
+
+@api_view(["POST"])
+def master_specs_register_from_scan(request):
+    """
+    스캐너 신규/대분류 공란 품목 등록.
+    category_lg 필수 (사용자 질문 결과).
+    """
+    payload = request.data if isinstance(request.data, dict) else {}
+    barcode = (payload.get("barcode") or "").strip()
+    product_name = (payload.get("product_name") or "").strip()
+    category_lg = (payload.get("category_lg") or "").strip()
+    category_md = (payload.get("category_md") or "").strip()
+    location = (payload.get("location") or "").strip()
+    sku_id = (payload.get("sku_id") or "").strip()
+    is_vf = bool(payload.get("is_vf_item") or False)
+
+    if not category_lg:
+        return Response(
+            {"message": "대분류(category_lg)는 필수입니다. 사용자에게 질문 후 저장하세요."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not product_name and not barcode:
+        return Response(
+            {"message": "product_name 또는 barcode 필요"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    spec = None
+    if barcode:
+        spec = MasterSpec.objects.filter(barcode=barcode).first()
+    if not spec and product_name:
+        spec = MasterSpec.objects.filter(product_name=product_name).first()
+
+    created = False
+    if not spec:
+        if not product_name:
+            product_name = f"미등록 {barcode}" if barcode else "미등록 품목"
+        # unique product_name
+        base_name = product_name
+        n = 1
+        while MasterSpec.objects.filter(product_name=product_name).exists():
+            n += 1
+            product_name = f"{base_name} ({n})"
+        spec = MasterSpec.objects.create(
+            product_name=product_name,
+            barcode=barcode,
+            sku_id=sku_id,
+            category_lg=category_lg,
+            category_md=category_md,
+            is_vf_item=is_vf,
+        )
+        created = True
+    else:
+        spec.category_lg = category_lg
+        if category_md:
+            spec.category_md = category_md
+        if barcode and not (spec.barcode or "").strip():
+            spec.barcode = barcode
+        if sku_id and not (spec.sku_id or "").strip():
+            spec.sku_id = sku_id
+        if product_name and not (spec.product_name or "").strip():
+            spec.product_name = product_name
+        if "is_vf_item" in payload:
+            spec.is_vf_item = is_vf
+        spec.save()
+
+    if barcode and location:
+        _upsert_barcode_location(
+            barcode,
+            location=location,
+            product_name=spec.product_name or product_name,
+            sku_id=spec.sku_id or sku_id,
+        )
+    elif barcode:
+        _upsert_barcode_location(
+            barcode,
+            location=None,
+            product_name=spec.product_name or product_name,
+            sku_id=spec.sku_id or sku_id,
+        )
+
+    loc = ""
+    if barcode:
+        loc = _barcode_location_map([barcode]).get(barcode, "") or location
+
+    return Response(
+        {
+            "success": True,
+            "created": created,
+            "spec": _master_spec_dict(spec, location=loc),
+        },
+        status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+    )
+
+
 @api_view(["GET"])
 def inventory_barcode_master(request):
     q = (
@@ -1561,33 +1934,108 @@ def inventory_unified_patch(request, _id: str):
     return Response({"success": True, "barcode": barcode})
 
 
+def _barcode_location_map(barcodes=None) -> dict:
+    """barcode → location (BarcodeMaster SoT). barcodes=None 이면 전체."""
+    qs = BarcodeMaster.objects.exclude(barcode="").exclude(barcode__isnull=True)
+    if barcodes is not None:
+        cleaned = {str(b).strip() for b in barcodes if b and str(b).strip()}
+        if not cleaned:
+            return {}
+        qs = qs.filter(barcode__in=cleaned)
+    out = {}
+    for row in qs.values_list("barcode", "location"):
+        bc = (row[0] or "").strip()
+        if bc and bc not in out:
+            out[bc] = (row[1] or "").strip()
+    return out
+
+
+def _upsert_barcode_location(
+    barcode: str,
+    *,
+    location: str | None = None,
+    product_name: str = "",
+    sku_id: str = "",
+    clear_if_empty: bool = False,
+) -> tuple[bool, str]:
+    """
+    BarcodeMaster 로케이션 등록/수정.
+    Returns: (ok, message)
+    - location is None → 로케이션 필드 변경 안 함 (메타만 보강 가능)
+    - location == "" and clear_if_empty → 로케이션 비움
+    """
+    bc = (barcode or "").strip()
+    if not bc:
+        return False, "barcode_empty"
+
+    bm, _created = BarcodeMaster.objects.get_or_create(
+        barcode=bc,
+        defaults={
+            "product_name": (product_name or "")[:255],
+            "sku_id": (sku_id or "")[:100],
+            "location": (location or "")[:255] if location is not None else "",
+        },
+    )
+    changed = False
+    if product_name and not (bm.product_name or "").strip():
+        bm.product_name = (product_name or "")[:255]
+        changed = True
+    if sku_id and not (bm.sku_id or "").strip():
+        bm.sku_id = (sku_id or "")[:100]
+        changed = True
+    if location is not None:
+        loc = (location or "").strip()
+        if loc:
+            if (bm.location or "").strip() != loc:
+                bm.location = loc[:255]
+                changed = True
+        elif clear_if_empty:
+            if (bm.location or "").strip():
+                bm.location = ""
+                changed = True
+    if changed or _created:
+        bm.save()
+    return True, "ok" if not _created else "created"
+
+
+def _master_spec_dict(s, location: str = "") -> dict:
+    return {
+        "id": s.id,
+        "product_name": s.product_name,
+        "product_name_eng": s.product_name_eng,
+        "mold_number": s.mold_number,
+        "color1": s.color1,
+        "color2": s.color2,
+        "default_quantity": int(s.default_quantity or 0),
+        "sku_id": s.sku_id or "",
+        "barcode": s.barcode or "",
+        "location": location or "",
+        "category_lg": s.category_lg or "",
+        "category_md": s.category_md or "",
+        "price": int(s.price or 0),
+        "lot_number": s.lot_number or "",
+        "components": s.components or "",
+        "image_url": s.image_url or "",
+        "prev_price": int(s.prev_price or 0),
+        "price_changed_at": s.price_changed_at.isoformat() if s.price_changed_at else None,
+        "is_discontinued": s.is_discontinued,
+        "is_no_outbound_3m": s.is_no_outbound_3m,
+        "is_vf_item": bool(getattr(s, "is_vf_item", False)),
+    }
+
+
 @api_view(["GET", "POST"])
 def master_specs(request):
     if request.method == "GET":
-        specs = MasterSpec.objects.all().order_by("product_name")
+        specs = list(MasterSpec.objects.all().order_by("product_name"))
+        loc_map = _barcode_location_map(
+            [(s.barcode or "").strip() for s in specs if (s.barcode or "").strip()]
+        )
         return Response(
             [
-                {
-                    "id": s.id,
-                    "product_name": s.product_name,
-                    "product_name_eng": s.product_name_eng,
-                    "mold_number": s.mold_number,
-                    "color1": s.color1,
-                    "color2": s.color2,
-                    "default_quantity": int(s.default_quantity or 0),
-                    "sku_id": s.sku_id or "",
-                    "barcode": s.barcode or "",
-                    "category_lg": s.category_lg or "",
-                    "category_md": s.category_md or "",
-                    "price": int(s.price or 0),
-                    "lot_number": s.lot_number or "",
-                    "components": s.components or "",
-                    "image_url": s.image_url or "",
-                    "prev_price": int(s.prev_price or 0),
-                    "price_changed_at": s.price_changed_at.isoformat() if s.price_changed_at else None,
-                    "is_discontinued": s.is_discontinued,
-                    "is_no_outbound_3m": s.is_no_outbound_3m,
-                }
+                _master_spec_dict(
+                    s, location=loc_map.get((s.barcode or "").strip(), "")
+                )
                 for s in specs
             ]
         )
@@ -1619,34 +2067,36 @@ def master_specs(request):
             price_changed_at=_parse_date_ymd(payload.get("price_changed_at")),
             is_discontinued=bool(payload.get("is_discontinued") or False),
             is_no_outbound_3m=bool(payload.get("is_no_outbound_3m") or False),
+            is_vf_item=bool(payload.get("is_vf_item") or False),
         )
     except Exception:
         return Response(
             {"message": "already exists"}, status=status.HTTP_400_BAD_REQUEST
         )
 
+    # 수동 로케이션 입력 → BarcodeMaster 자동 등록/저장
+    loc_saved = ""
+    if "location" in payload:
+        loc_val = str(payload.get("location") or "").strip()
+        ok, msg = _upsert_barcode_location(
+            spec.barcode,
+            location=loc_val,
+            product_name=spec.product_name,
+            sku_id=spec.sku_id or "",
+            clear_if_empty=True,
+        )
+        if ok:
+            loc_saved = loc_val
+        elif loc_val and msg == "barcode_empty":
+            # 바코드 없이 로케이션만 온 경우: 생성은 됐으나 BM 미등록
+            pass
+    else:
+        loc_saved = _barcode_location_map([spec.barcode]).get(
+            (spec.barcode or "").strip(), ""
+        )
+
     return Response(
-        {
-            "id": spec.id,
-            "product_name": spec.product_name,
-            "product_name_eng": spec.product_name_eng,
-            "mold_number": spec.mold_number,
-            "color1": spec.color1,
-            "color2": spec.color2,
-            "default_quantity": int(spec.default_quantity or 0),
-            "sku_id": spec.sku_id or "",
-            "barcode": spec.barcode or "",
-            "category_lg": spec.category_lg or "",
-            "category_md": spec.category_md or "",
-            "price": int(spec.price or 0),
-            "lot_number": spec.lot_number or "",
-            "components": spec.components or "",
-            "image_url": spec.image_url or "",
-            "prev_price": int(spec.prev_price or 0),
-            "price_changed_at": spec.price_changed_at.isoformat() if spec.price_changed_at else None,
-            "is_discontinued": spec.is_discontinued,
-            "is_no_outbound_3m": spec.is_no_outbound_3m,
-        },
+        _master_spec_dict(spec, location=loc_saved),
         status=status.HTTP_201_CREATED,
     )
 
@@ -1698,21 +2148,32 @@ def _normalize_master_status_flags(is_discontinued, is_no_outbound_3m, *, has_di
 
 @api_view(["PATCH"])
 def master_specs_bulk_update(request):
-    """제품 마스터 대분류, 중분류, 색상, 단종 여부, 3개월 미출고 여부 일괄 수정 API.
-    단종 상태 변경은 이 API/개별 수정(수동)으로만 가능. 자동 배치에서는 단종을 건드리지 않음.
+    """제품 마스터 일괄 수정 (분류/색상/상태 + 로케이션).
+    로케이션은 BarcodeMaster에 저장(수동 입력 자동 등록). 단종은 수동만.
     """
     payload = request.data if isinstance(request.data, dict) else {}
     ids = payload.get("ids", [])
     if not ids:
         return Response({"message": "수정할 대상 품목 ID 목록(ids)이 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
-        
+
     update_data = {}
-    for key in ["category_lg", "category_md", "color1", "color2", "is_discontinued", "is_no_outbound_3m"]:
+    for key in [
+        "category_lg",
+        "category_md",
+        "color1",
+        "color2",
+        "is_discontinued",
+        "is_no_outbound_3m",
+        "is_vf_item",
+    ]:
         if key in payload:
-            if key in ["is_discontinued", "is_no_outbound_3m"]:
+            if key in ["is_discontinued", "is_no_outbound_3m", "is_vf_item"]:
                 update_data[key] = bool(payload.get(key))
             else:
                 update_data[key] = str(payload.get(key) or "").strip()
+
+    has_location = "location" in payload
+    location_val = str(payload.get("location") or "").strip() if has_location else None
 
     # 단종 ↔ 3개월 미출고 상호 배타 (수동 전환 시 정리)
     has_disc = "is_discontinued" in update_data
@@ -1728,13 +2189,41 @@ def master_specs_bulk_update(request):
             update_data["is_discontinued"] = disc
         if no_out is not None:
             update_data["is_no_outbound_3m"] = no_out
-            
-    if not update_data:
+
+    if not update_data and not has_location:
         return Response({"message": "수정할 데이터가 없습니다."}, status=status.HTTP_400_BAD_REQUEST)
-        
+
     try:
-        updated_count = MasterSpec.objects.filter(id__in=ids).update(**update_data)
-        return Response({"success": True, "updated_count": updated_count})
+        updated_count = 0
+        if update_data:
+            updated_count = MasterSpec.objects.filter(id__in=ids).update(**update_data)
+
+        loc_updated = 0
+        loc_skipped_no_barcode = 0
+        if has_location:
+            for s in MasterSpec.objects.filter(id__in=ids).only(
+                "id", "barcode", "product_name", "sku_id"
+            ):
+                ok, msg = _upsert_barcode_location(
+                    s.barcode,
+                    location=location_val or "",
+                    product_name=s.product_name or "",
+                    sku_id=s.sku_id or "",
+                    clear_if_empty=True,
+                )
+                if ok:
+                    loc_updated += 1
+                elif msg == "barcode_empty":
+                    loc_skipped_no_barcode += 1
+
+        return Response(
+            {
+                "success": True,
+                "updated_count": updated_count,
+                "location_updated": loc_updated,
+                "location_skipped_no_barcode": loc_skipped_no_barcode,
+            }
+        )
     except Exception as e:
         return Response({"message": f"일괄 수정 처리 실패: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -1752,6 +2241,11 @@ def master_specs_detail(request, id: int):
     payload = request.data if isinstance(request.data, dict) else {}
     has_disc = "is_discontinued" in payload
     has_no_out = "is_no_outbound_3m" in payload
+    has_location = "location" in payload
+    location_payload = (
+        str(payload.get("location") or "").strip() if has_location else None
+    )
+
     for key in [
         "product_name",
         "product_name_eng",
@@ -1771,6 +2265,7 @@ def master_specs_detail(request, id: int):
         "price_changed_at",
         "is_discontinued",
         "is_no_outbound_3m",
+        "is_vf_item",
     ]:
         if key in payload:
             val = payload.get(key)
@@ -1781,7 +2276,7 @@ def master_specs_detail(request, id: int):
                     val = 0
             elif key == "price_changed_at":
                 val = _parse_date_ymd(val)
-            elif key in ["is_discontinued", "is_no_outbound_3m"]:
+            elif key in ["is_discontinued", "is_no_outbound_3m", "is_vf_item"]:
                 val = bool(val)
             setattr(spec, key, val)
 
@@ -1800,29 +2295,32 @@ def master_specs_detail(request, id: int):
 
     spec.save()
 
-    return Response(
-        {
-            "id": spec.id,
-            "product_name": spec.product_name,
-            "product_name_eng": spec.product_name_eng,
-            "mold_number": spec.mold_number,
-            "color1": spec.color1,
-            "color2": spec.color2,
-            "default_quantity": int(spec.default_quantity or 0),
-            "sku_id": spec.sku_id or "",
-            "barcode": spec.barcode or "",
-            "category_lg": spec.category_lg or "",
-            "category_md": spec.category_md or "",
-            "price": int(spec.price or 0),
-            "lot_number": spec.lot_number or "",
-            "components": spec.components or "",
-            "image_url": spec.image_url or "",
-            "prev_price": int(spec.prev_price or 0),
-            "price_changed_at": spec.price_changed_at.isoformat() if spec.price_changed_at else None,
-            "is_discontinued": spec.is_discontinued,
-            "is_no_outbound_3m": spec.is_no_outbound_3m,
-        }
-    )
+    # 수동 로케이션 입력 → BarcodeMaster 자동 등록/저장
+    loc_out = ""
+    if has_location:
+        ok, msg = _upsert_barcode_location(
+            spec.barcode,
+            location=location_payload or "",
+            product_name=spec.product_name or "",
+            sku_id=spec.sku_id or "",
+            clear_if_empty=True,
+        )
+        if ok:
+            loc_out = location_payload or ""
+        elif msg == "barcode_empty" and (location_payload or ""):
+            return Response(
+                {
+                    "message": "로케이션을 저장하려면 바코드가 필요합니다. 바코드를 먼저 입력해 주세요.",
+                    "location_error": "barcode_empty",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    else:
+        loc_out = _barcode_location_map([spec.barcode]).get(
+            (spec.barcode or "").strip(), ""
+        )
+
+    return Response(_master_spec_dict(spec, location=loc_out))
 
 
 @api_view(["POST"])
@@ -1834,6 +2332,489 @@ def master_specs_sync_outbound_status(request):
         return Response({"success": True, "message": "출고 상태 정기 배치가 성공적으로 실행되었습니다."})
     except Exception as e:
         return Response({"message": f"배치 실행 실패: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(["POST"])
+def master_specs_sync_vf_from_stock(request):
+    """
+    Enhanced 전산 현재고 기준 VF 지정 (1차 단순).
+    currentStock > 0 바코드 → is_vf_item=True
+    바코드 있고 재고 없음 → is_vf_item=False
+    바코드 공란 MasterSpec → 스킵
+    """
+    from .inventory_stock import (
+        aggregate_movements_after_baseline,
+        compute_current_stock,
+    )
+
+    latest = InventoryBaselineUpload.objects.order_by("-uploaded_at").first()
+    if not latest:
+        return Response(
+            {"message": "재고 스냅샷이 없습니다."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    as_of = latest.as_of_date
+    baseline_items = list(
+        InventoryBaselineItem.objects.filter(upload=latest).only("barcode", "quantity_box")
+    )
+    base_map = {}
+    for it in baseline_items:
+        bc = (it.barcode or "").strip()
+        if not bc:
+            continue
+        base_map[bc] = base_map.get(bc, 0) + int(it.quantity_box or 0)
+
+    bcs = list(base_map.keys())
+    out_agg, rcv_agg = aggregate_movements_after_baseline(
+        as_of=as_of,
+        barcodes=bcs,
+        outbound_model=OutboundRecord,
+        receipt_model=InventoryReceiptItem,
+    )
+
+    positive = set()
+    for bc, base in base_map.items():
+        cur = compute_current_stock(
+            base, int(rcv_agg.get(bc) or 0), int(out_agg.get(bc) or 0)
+        )
+        if cur > 0:
+            positive.add(bc)
+
+    # baseline 밖 이후 입고 잔여
+    from collections import defaultdict
+
+    extra_rcv = defaultdict(int)
+    extra_out = defaultdict(int)
+    if as_of:
+        for row in (
+            InventoryReceiptItem.objects.filter(receipt_date__gt=as_of)
+            .exclude(barcode="")
+            .exclude(barcode__isnull=True)
+            .values("barcode")
+            .annotate(qty=Coalesce(Sum("quantity_box"), 0))
+        ):
+            bc = (row["barcode"] or "").strip()
+            if bc and bc not in base_map:
+                extra_rcv[bc] = int(row["qty"] or 0)
+        from .inventory_stock import filter_outbound_for_stock
+
+        for row in (
+            filter_outbound_for_stock(
+                OutboundRecord.objects.filter(outbound_date__gt=as_of)
+                .exclude(barcode="")
+                .exclude(barcode__isnull=True)
+            )
+            .values("barcode")
+            .annotate(qty=Coalesce(Sum("box_quantity"), 0))
+        ):
+            bc = (row["barcode"] or "").strip()
+            if bc and bc not in base_map:
+                extra_out[bc] = int(row["qty"] or 0)
+    for bc in set(extra_rcv) | set(extra_out):
+        cur = compute_current_stock(0, extra_rcv.get(bc, 0), extra_out.get(bc, 0))
+        if cur > 0:
+            positive.add(bc)
+
+    # MasterSpec 반영
+    specs = list(MasterSpec.objects.exclude(barcode="").only("id", "barcode", "is_vf_item"))
+    to_true_ids = []
+    to_false_ids = []
+    for s in specs:
+        bc = (s.barcode or "").strip()
+        if not bc:
+            continue
+        want = bc in positive
+        if want and not s.is_vf_item:
+            to_true_ids.append(s.id)
+        elif (not want) and s.is_vf_item:
+            to_false_ids.append(s.id)
+
+    if to_true_ids:
+        MasterSpec.objects.filter(id__in=to_true_ids).update(is_vf_item=True)
+    if to_false_ids:
+        MasterSpec.objects.filter(id__in=to_false_ids).update(is_vf_item=False)
+
+    # 재고 있는데 마스터 없는 바코드
+    master_bcs = {(s.barcode or "").strip() for s in specs}
+    skipped_no_master = len(positive - master_bcs)
+
+    return Response(
+        {
+            "success": True,
+            "message": "현재고>0 품목을 VF로 지정하고, 재고 없는 바코드 품목은 VF 해제했습니다.",
+            "asOf": as_of.isoformat() if as_of else None,
+            "stock_positive_barcodes": len(positive),
+            "vf_set_true": len(to_true_ids),
+            "vf_set_false": len(to_false_ids),
+            "skipped_no_master": skipped_no_master,
+            "vf_total_after": MasterSpec.objects.filter(is_vf_item=True).count(),
+        }
+    )
+
+
+@api_view(["GET"])
+def master_specs_export_xlsx(request):
+    """
+    마스터 일괄 수정 양식 다운로드.
+    쿼리: vf_only=1 | scope=vf|active|all (기본 all)
+    컬럼 id 필수 키, location 수정 대상 (BarcodeMaster SoT)
+    """
+    import io
+
+    scope = (request.query_params.get("scope") or "all").strip().lower()
+    vf_only = (request.query_params.get("vf_only") or "").strip() in ("1", "true", "yes")
+    if vf_only:
+        scope = "vf"
+
+    qs = MasterSpec.objects.all().order_by("product_name")
+    if scope == "vf":
+        qs = qs.filter(is_vf_item=True)
+    elif scope == "active":
+        qs = qs.filter(is_discontinued=False, is_no_outbound_3m=False)
+    elif scope == "no_outbound_3m":
+        qs = qs.filter(is_discontinued=False, is_no_outbound_3m=True)
+    elif scope == "discontinued":
+        qs = qs.filter(is_discontinued=True)
+
+    specs = list(qs)
+    loc_map = _barcode_location_map(
+        [(s.barcode or "").strip() for s in specs if (s.barcode or "").strip()]
+    )
+
+    rows = []
+    for s in specs:
+        bc = (s.barcode or "").strip()
+        rows.append(
+            {
+                "id": s.id,
+                "product_name": s.product_name,
+                "barcode": bc,
+                "sku_id": s.sku_id or "",
+                "location": loc_map.get(bc, ""),
+                "category_lg": s.category_lg or "",
+                "category_md": s.category_md or "",
+                "color1": s.color1 or "",
+                "color2": s.color2 or "",
+                "is_vf_item": 1 if s.is_vf_item else 0,
+                "is_discontinued": 1 if s.is_discontinued else 0,
+                "is_no_outbound_3m": 1 if s.is_no_outbound_3m else 0,
+                "price": int(s.price or 0),
+            }
+        )
+
+    try:
+        import pandas as pd
+    except Exception:
+        return Response(
+            {"message": "pandas 필요"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+    df = pd.DataFrame(rows)
+    readme = pd.DataFrame(
+        [
+            {"rule": "id", "description": "필수. 수정 대상 MasterSpec PK. 변경 금지"},
+            {"rule": "product_name", "description": "참고용. 업로드 시 이름 변경 안 함"},
+            {"rule": "barcode / sku_id", "description": "참고. 로케이션은 barcode로 BarcodeMaster 저장"},
+            {"rule": "location", "description": "수정 대상. 셀 비움=유지. 삭제 시 __CLEAR__ 입력"},
+            {"rule": "category_lg/md, color1/2", "description": "비움=유지"},
+            {"rule": "is_discontinued / is_no_outbound_3m", "description": "0/1. 비움=유지. 단종 수동만"},
+            {"rule": "is_vf_item", "description": "수정 가능. 1/true=VF설정, 0/false=VF 해제, 비움=유지. CSV 전체 재동기화 시 덮일 수 있음"},
+            {"rule": "price", "description": "참고(단가 대량 변경은 FC 단가 업로드 사용)"},
+            {"rule": "업로드", "description": "POST /api/master/specs/import-bulk (이 파일 그대로)"},
+        ]
+    )
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="master_bulk")
+        readme.to_excel(writer, index=False, sheet_name="README")
+    buf.seek(0)
+
+    filename = f"master_bulk_{scope}_{timezone.localdate().isoformat()}.xlsx"
+    resp = HttpResponse(
+        buf.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return resp
+
+
+@api_view(["POST"])
+def master_specs_import_bulk(request):
+    """
+    일괄 수정 양식 재업로드.
+    - MasterSpec: category/color/status (셀 비움=유지)
+    - location: 비움=유지, __CLEAR__=삭제, 값 있으면 BarcodeMaster 자동 등록
+    """
+    if "file" not in request.FILES:
+        return Response({"message": "파일이 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+    file_obj = request.FILES["file"]
+    name = (file_obj.name or "").lower()
+    if not name.endswith((".xlsx", ".xls", ".csv")):
+        return Response(
+            {"message": "xlsx/xls/csv 만 지원합니다."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        import io
+        import pandas as pd
+
+        raw = file_obj.read()
+        if name.endswith(".csv"):
+            df = pd.read_csv(io.BytesIO(raw), dtype=str)
+        else:
+            df = pd.read_excel(io.BytesIO(raw), sheet_name=0, dtype=str)
+        df = df.fillna("")
+    except Exception as e:
+        return Response(
+            {"message": f"파일 읽기 실패: {e}"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # normalize columns
+    colmap = {}
+    for c in df.columns:
+        key = str(c).strip().lower().replace(" ", "_")
+        colmap[c] = key
+    df = df.rename(columns=colmap)
+
+    def cell(row, *names):
+        for n in names:
+            if n in row.index:
+                return str(row.get(n) or "").strip()
+        return ""
+
+    updated_specs = 0
+    updated_locations = 0
+    updated_vf = 0
+    skipped_no_id = 0
+    skipped_no_barcode = 0
+    errors = []
+
+    def _as_bool_cell(v: str):
+        s = str(v).strip().lower()
+        if s in ("1", "true", "yes", "y", "vf", "단종"):
+            return True
+        if s in ("0", "false", "no", "n"):
+            return False
+        return None
+
+    for i, row in df.iterrows():
+        id_raw = cell(row, "id")
+        if not id_raw:
+            skipped_no_id += 1
+            continue
+        try:
+            sid = int(float(id_raw))
+        except Exception:
+            skipped_no_id += 1
+            errors.append({"row": int(i) + 2, "error": f"invalid id: {id_raw}"})
+            continue
+
+        spec = MasterSpec.objects.filter(id=sid).first()
+        if not spec:
+            errors.append({"row": int(i) + 2, "error": f"id {sid} not found"})
+            continue
+
+        changed = False
+        for field, aliases in [
+            ("category_lg", ("category_lg", "대분류")),
+            ("category_md", ("category_md", "중분류")),
+            ("color1", ("color1", "색상1")),
+            ("color2", ("color2", "색상2")),
+        ]:
+            val = cell(row, *aliases)
+            if val:
+                if getattr(spec, field) != val:
+                    setattr(spec, field, val)
+                    changed = True
+
+        disc_raw = cell(row, "is_discontinued", "단종")
+        no_out_raw = cell(row, "is_no_outbound_3m", "미출고")
+        has_disc = disc_raw != ""
+        has_no_out = no_out_raw != ""
+        if has_disc or has_no_out:
+            disc_v = _as_bool_cell(disc_raw) if has_disc else spec.is_discontinued
+            no_out_v = _as_bool_cell(no_out_raw) if has_no_out else spec.is_no_outbound_3m
+            if disc_v is None:
+                disc_v = spec.is_discontinued
+            if no_out_v is None:
+                no_out_v = spec.is_no_outbound_3m
+            disc_v, no_out_v = _normalize_master_status_flags(
+                disc_v, no_out_v, has_disc=True, has_no_out=True
+            )
+            if disc_v is not None and spec.is_discontinued != disc_v:
+                spec.is_discontinued = disc_v
+                changed = True
+            if no_out_v is not None and spec.is_no_outbound_3m != no_out_v:
+                spec.is_no_outbound_3m = no_out_v
+                changed = True
+
+        # VF 설정/해제 (비움=유지)
+        vf_raw = cell(row, "is_vf_item", "vf", "vf품목")
+        if vf_raw != "":
+            vf_v = _as_bool_cell(vf_raw)
+            if vf_v is not None and bool(spec.is_vf_item) != vf_v:
+                spec.is_vf_item = vf_v
+                changed = True
+                updated_vf += 1
+
+        if changed:
+            spec.save()
+            updated_specs += 1
+
+        loc_raw = cell(row, "location", "로케이션", "위치")
+        if loc_raw:
+            clear = loc_raw.upper() in ("__CLEAR__", "CLEAR", "삭제")
+            loc_val = "" if clear else loc_raw
+            ok, msg = _upsert_barcode_location(
+                spec.barcode,
+                location=loc_val,
+                product_name=spec.product_name or "",
+                sku_id=spec.sku_id or "",
+                clear_if_empty=clear,
+            )
+            if ok:
+                updated_locations += 1
+            elif msg == "barcode_empty":
+                skipped_no_barcode += 1
+                errors.append(
+                    {
+                        "row": int(i) + 2,
+                        "id": sid,
+                        "error": "location needs barcode",
+                    }
+                )
+
+    return Response(
+        {
+            "success": True,
+            "updated_specs": updated_specs,
+            "updated_locations": updated_locations,
+            "updated_vf": updated_vf,
+            "skipped_no_id": skipped_no_id,
+            "skipped_no_barcode": skipped_no_barcode,
+            "errors": errors[:50],
+            "error_count": len(errors),
+        }
+    )
+
+
+@api_view(["GET"])
+def master_spec_current_stock(request):
+    """
+    마스터 품목 클릭 리포트용 현재고 조회.
+    VF 품목 바코드 기준 — inventory_stock 규칙 (baseline + 이후입고 − 이후출고).
+    query: barcode=...  (필수)
+    """
+    barcode = (request.query_params.get("barcode") or "").strip()
+    if not barcode:
+        return Response(
+            {"message": "barcode required", "found": False, "currentStock": None},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    latest_upload = InventoryBaselineUpload.objects.order_by("-uploaded_at").first()
+    if not latest_upload:
+        return Response(
+            {
+                "found": False,
+                "barcode": barcode,
+                "currentStock": None,
+                "message": "재고 스냅샷 없음",
+            }
+        )
+
+    as_of = latest_upload.as_of_date
+    item = (
+        InventoryBaselineItem.objects.filter(upload=latest_upload, barcode=barcode)
+        .order_by("-id")
+        .first()
+    )
+    base_qty = int(item.quantity_box or 0) if item else 0
+    in_baseline = item is not None
+
+    from .inventory_stock import (
+        aggregate_movements_after_baseline,
+        compute_current_stock,
+    )
+
+    outbound_agg, receipt_agg = aggregate_movements_after_baseline(
+        as_of=as_of,
+        barcodes=[barcode],
+        outbound_model=OutboundRecord,
+        receipt_model=InventoryReceiptItem,
+    )
+    rcv = int(receipt_agg.get(barcode) or 0)
+    out = int(outbound_agg.get(barcode) or 0)
+    # baseline 없으면 0 + 이후 이동만 (신규 VF 등) — found=False로 구분
+    current = compute_current_stock(base_qty, rcv, out) if in_baseline else compute_current_stock(0, rcv, out)
+
+    # 마지막 입고/출고 (UI 표시용 — 누적 합과 별개)
+    last_in = (
+        InventoryReceiptItem.objects.filter(barcode=barcode)
+        .exclude(receipt_date__isnull=True)
+        .order_by("-receipt_date", "-id")
+        .first()
+    )
+    last_inbound_date = None
+    last_inbound_qty = 0
+    if last_in and last_in.receipt_date:
+        last_inbound_date = last_in.receipt_date.isoformat()
+        # 같은 날 입고 합
+        last_inbound_qty = int(
+            InventoryReceiptItem.objects.filter(
+                barcode=barcode, receipt_date=last_in.receipt_date
+            ).aggregate(s=Coalesce(Sum("quantity_box"), 0))["s"]
+            or 0
+        )
+
+    from .inventory_stock import filter_outbound_for_stock
+
+    last_out = (
+        filter_outbound_for_stock(
+            OutboundRecord.objects.filter(barcode=barcode).exclude(
+                outbound_date__isnull=True
+            )
+        )
+        .order_by("-outbound_date", "-id")
+        .first()
+    )
+    last_outbound_date = None
+    last_outbound_qty = 0
+    if last_out and last_out.outbound_date:
+        last_outbound_date = last_out.outbound_date.isoformat()
+        last_outbound_qty = int(
+            filter_outbound_for_stock(
+                OutboundRecord.objects.filter(
+                    barcode=barcode, outbound_date=last_out.outbound_date
+                )
+            ).aggregate(s=Coalesce(Sum("box_quantity"), 0))["s"]
+            or 0
+        )
+
+    bm = BarcodeMaster.objects.filter(barcode=barcode).only("location", "product_name").first()
+    return Response(
+        {
+            "found": in_baseline or rcv > 0 or out > 0,
+            "inBaseline": in_baseline,
+            "barcode": barcode,
+            "currentStock": int(current),
+            "baseStock": int(base_qty) if in_baseline else 0,
+            "receiptQty": rcv,
+            "outboundQty": out,
+            "asOf": as_of.isoformat() if as_of else None,
+            "lastInboundDate": last_inbound_date,
+            "lastInboundQty": last_inbound_qty,
+            "lastOutboundDate": last_outbound_date,
+            "lastOutboundQty": last_outbound_qty,
+            "location": (bm.location or "").strip() if bm else "",
+            "productName": (bm.product_name or "") if bm else "",
+        }
+    )
 
 
 @api_view(["POST"])
@@ -2689,38 +3670,77 @@ def _ingest_production_dataframe(df, success_message="생산 계획 데이터를
     df.columns = [str(c).strip() for c in df.columns]
 
     # Support common Korean column names by mapping them to canonical keys.
+    # 붙여넣기/엑셀 헤더 변형 폭넓게 수용
     col_aliases = {
-        "date": ["일자", "날짜"],
-        "machineNumber": ["기계번호", "기계"],
-        "moldNumber": ["금형", "금형번호"],
-        "productName": ["제품명", "품명", "상품명"],
-        "productNameEng": ["제품명(영문)", "영문명"],
-        "color1": ["색상", "색상1"],
-        "color2": ["색상2"],
-        "unit": ["단위(문자)", "unit"],
-        "quantity": ["생산수량", "수량"],
-        "unitQuantity": ["단위", "단위수량"],
-        "total": ["총계", "합계"],
-        "status": ["상태"],
+        "date": ["일자", "날짜", "생산일", "작업일", "date"],
+        "machineNumber": [
+            "기계번호",
+            "기계",
+            "호기",
+            "호기번호",
+            "머신",
+            "M/C",
+            "MC",
+            "machine",
+            "machine_number",
+            "기계 no",
+            "기계No",
+        ],
+        "moldNumber": ["금형", "금형번호", "금형#", "mold", "mold_number", "moldNumber"],
+        "productName": ["제품명", "품명", "상품명", "제품", "product", "product_name", "productName"],
+        "productNameEng": ["제품명(영문)", "영문명", "영문", "product_name_eng", "productNameEng"],
+        "color1": ["색상", "색상1", "color", "color1"],
+        "color2": ["색상2", "color2"],
+        "unit": ["단위(문자)", "단위명", "unit", "박스단위"],
+        "quantity": ["생산수량", "수량", "박스수", "박스수량", "quantity", "qty"],
+        "unitQuantity": ["단위", "단위수량", "개수/박스", "박스당", "unit_quantity", "unitQuantity"],
+        "total": ["총계", "합계", "total"],
+        "status": ["상태", "status"],
     }
+
+    def _norm_header(h: str) -> str:
+        s = str(h or "").strip().replace("\ufeff", "")
+        s = s.replace(" ", "").replace("_", "").lower()
+        return s
+
+    # 정규화 맵: 변형 헤더 → 원본 컬럼명
+    cols_by_norm = {_norm_header(c): c for c in df.columns}
 
     rename_map = {}
     existing_cols = set(df.columns)
     for canonical, aliases in col_aliases.items():
         if canonical in existing_cols:
             continue
-        for alias in aliases:
-            if alias in existing_cols:
-                rename_map[alias] = canonical
+        # 정규화 매칭
+        matched = None
+        for alias in [canonical] + list(aliases):
+            key = _norm_header(alias)
+            if key in cols_by_norm:
+                matched = cols_by_norm[key]
                 break
+            if alias in existing_cols:
+                matched = alias
+                break
+        if matched and matched != canonical:
+            rename_map[matched] = canonical
     if rename_map:
         df = df.rename(columns=rename_map)
 
-    required_cols = ["date", "machineNumber", "moldNumber", "productName"]
+    # machineNumber / moldNumber 없으면 빈 컬럼 추가 (붙여넣기 표에 자주 누락)
+    if "machineNumber" not in df.columns:
+        df["machineNumber"] = ""
+    if "moldNumber" not in df.columns:
+        df["moldNumber"] = ""
+
+    required_cols = ["date", "productName"]
     missing = [c for c in required_cols if c not in df.columns]
     if missing:
         return Response(
-            {"message": f"필수 컬럼이 없습니다: {', '.join(missing)}"},
+            {
+                "message": f"필수 컬럼이 없습니다: {', '.join(missing)}",
+                "hint": "헤더 예: 날짜(또는 date), 제품명, 기계번호(선택), 금형(선택), 수량, 단위",
+                "receivedColumns": list(df.columns),
+            },
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -2938,9 +3958,60 @@ def upload_production_file(request):
         )
 
 
+def _production_text_looks_headerless(first_cell: str) -> bool:
+    """첫 셀이 날짜 형태면 헤더 없이 데이터부터 시작했다고 판단."""
+    s = str(first_cell or "").strip().replace("\ufeff", "")
+    if not s:
+        return False
+    # 명시적 헤더 키워드면 헤더 있음
+    header_keys = (
+        "date",
+        "날짜",
+        "일자",
+        "생산일",
+        "productname",
+        "제품명",
+        "품명",
+        "machinenumber",
+        "기계",
+        "호기",
+    )
+    if s.lower().replace(" ", "") in header_keys or s in (
+        "날짜",
+        "일자",
+        "date",
+        "제품명",
+        "품명",
+    ):
+        return False
+    try:
+        pd.to_datetime(s)
+        return True
+    except Exception:
+        return False
+
+
+# 템플릿/엑셀 붙여넣기 기본 열 순서 (production_template.csv 와 맞춤)
+# production_template.csv 열 순서와 동일
+_PRODUCTION_DEFAULT_COLS = [
+    "date",
+    "machineNumber",
+    "moldNumber",
+    "productName",
+    "productNameEng",
+    "color1",
+    "color2",
+    "unit",  # 템플릿: 박스당 개수(숫자) 자리 — ingest에서 unit_quantity로 해석
+    "quantity",  # 박스 수
+    "unitQuantity",  # 템플릿: 단위명 BOX/P/EA
+    "total",
+    "status",
+]
+
+
 @api_view(["POST"])
 def upload_production_text(request):
-    """생산일지 표 텍스트(탭/쉼표 구분) 붙여넣기 업로드."""
+    """생산일지 표 텍스트(탭/쉼표/공백 구분) 붙여넣기 업로드."""
     payload = request.data if isinstance(request.data, dict) else {}
     text = (payload.get("text") or "").strip()
     if not text:
@@ -2950,20 +4021,103 @@ def upload_production_text(request):
         )
 
     try:
-        lines = [ln for ln in text.splitlines() if ln.strip()]
+        # BOM·이상 공백 정리
+        text = text.replace("\ufeff", "").replace("\r\n", "\n").replace("\r", "\n")
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
         if not lines:
             return Response(
                 {"message": "업로드할 데이터가 없습니다."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         first = lines[0]
+        # 구분자 추정: 탭 > 세미콜론 > 파이프 > 쉼표 > 2칸 이상 공백
         if "\t" in first:
             sep = "\t"
-        elif first.count(";") > first.count(","):
+            parts0 = first.split("\t")
+            headerless = _production_text_looks_headerless(parts0[0] if parts0 else "")
+            df = pd.read_csv(
+                io.StringIO("\n".join(lines)),
+                sep=sep,
+                dtype=str,
+                engine="python",
+                header=None if headerless else 0,
+            )
+        elif first.count(";") >= 2 or first.count(";") > first.count(","):
             sep = ";"
-        else:
+            parts0 = first.split(";")
+            headerless = _production_text_looks_headerless(parts0[0] if parts0 else "")
+            df = pd.read_csv(
+                io.StringIO("\n".join(lines)),
+                sep=sep,
+                dtype=str,
+                engine="python",
+                header=None if headerless else 0,
+            )
+        elif "|" in first:
+            sep = "|"
+            parts0 = first.split("|")
+            headerless = _production_text_looks_headerless(parts0[0] if parts0 else "")
+            df = pd.read_csv(
+                io.StringIO("\n".join(lines)),
+                sep=sep,
+                dtype=str,
+                engine="python",
+                header=None if headerless else 0,
+            )
+        elif first.count(",") >= 2:
             sep = ","
-        df = pd.read_csv(io.StringIO("\n".join(lines)), sep=sep, dtype=str, engine="python")
+            parts0 = first.split(",")
+            headerless = _production_text_looks_headerless(parts0[0] if parts0 else "")
+            df = pd.read_csv(
+                io.StringIO("\n".join(lines)),
+                sep=sep,
+                dtype=str,
+                engine="python",
+                header=None if headerless else 0,
+            )
+        else:
+            # Excel/웹에서 공백 구분으로 붙는 경우
+            parts0 = first.split()
+            headerless = _production_text_looks_headerless(parts0[0] if parts0 else "")
+            df = pd.read_csv(
+                io.StringIO("\n".join(lines)),
+                sep=r"\s{2,}|\t",
+                dtype=str,
+                engine="python",
+                header=None if headerless else 0,
+            )
+            # 한 컬럼으로만 읽히면 단일 공백 분리 재시도
+            if df.shape[1] <= 1 and " " in first:
+                df = pd.read_csv(
+                    io.StringIO("\n".join(lines)),
+                    sep=r"\s+",
+                    dtype=str,
+                    engine="python",
+                    header=None if headerless else 0,
+                )
+
+        df = df.fillna("")
+        # 헤더 없음: 템플릿 열 이름 부여
+        if headerless:
+            n = df.shape[1]
+            cols = list(_PRODUCTION_DEFAULT_COLS[:n])
+            while len(cols) < n:
+                cols.append(f"col{len(cols)}")
+            df.columns = cols
+        else:
+            df.columns = [str(c).strip().replace("\ufeff", "") for c in df.columns]
+            # 헤더가 데이터처럼 읽힌 경우 보정 (첫 컬럼명이 날짜)
+            first_col = str(df.columns[0]).strip() if len(df.columns) else ""
+            if _production_text_looks_headerless(first_col):
+                # 컬럼명이 실제 첫 데이터 → 행으로 복원 후 기본 헤더
+                row0 = [str(c).strip() for c in df.columns]
+                body = df.astype(str).values.tolist()
+                n = len(row0)
+                cols = list(_PRODUCTION_DEFAULT_COLS[:n])
+                while len(cols) < n:
+                    cols.append(f"col{len(cols)}")
+                df = pd.DataFrame([row0] + body, columns=cols)
+
         return _ingest_production_dataframe(
             df, success_message="생산 계획 텍스트를 업로드했습니다."
         )
@@ -4033,21 +5187,71 @@ def bulk_create_outbound(request):
 
 @api_view(["DELETE"])
 def delete_outbound_by_date(request):
+    """
+    기간 출고 삭제 (파괴적). 실서비스 보호:
+    - confirm=true 필수
+    - 기간 최대 31일
+    - DESTRUCTIVE_API_KEY 설정 시 키 필수
+    - 프론트 UI에서 호출하지 않음 (관리/스크립트용)
+    """
+    from .api_guards import destructive_guard_response
+
+    blocked = destructive_guard_response(request)
+    if blocked is not None:
+        return blocked
+
     start = request.query_params.get("start")
     end = request.query_params.get("end")
+    confirm = (request.query_params.get("confirm") or "").strip().lower()
 
     if not start or not end:
         return Response(
             {"error": "Start and end dates are required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
+    if confirm not in ("1", "true", "yes"):
+        return Response(
+            {
+                "error": "confirm=true required for destructive delete",
+                "hint": "DELETE /api/outbound/delete-range?start=YYYY-MM-DD&end=YYYY-MM-DD&confirm=true",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    start_d = _parse_date_ymd(start)
+    end_d = _parse_date_ymd(end)
+    if not start_d or not end_d:
+        return Response(
+            {"error": "Invalid start/end date (YYYY-MM-DD)"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if end_d < start_d:
+        return Response(
+            {"error": "end must be >= start"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if (end_d - start_d).days > 31:
+        return Response(
+            {"error": "date range too large (max 31 days)"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     try:
+        logger.warning(
+            "delete_outbound_by_date start=%s end=%s",
+            start_d.isoformat(),
+            end_d.isoformat(),
+        )
         count, _ = OutboundRecord.objects.filter(
-            outbound_date__range=[start, end]
+            outbound_date__range=[start_d, end_d]
         ).delete()
         return Response(
-            {"message": f"Deleted {count} records between {start} and {end}"}
+            {
+                "message": f"Deleted {count} records between {start_d} and {end_d}",
+                "deleted": count,
+                "start": start_d.isoformat(),
+                "end": end_d.isoformat(),
+            }
         )
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -4226,6 +5430,8 @@ def outbound_sync(request):
                 client=client,
                 status="완료",
                 notes=notes or None,
+                is_estimated=False,
+                estimate_method="",
                 created_at=now,
                 updated_at=now,
             )
@@ -4985,29 +6191,32 @@ def outbound_ai_analysis(request):
         pk_prod_name = pk_product_qs["product_name"] if pk_product_qs else "-"
         peak_day_text = f"{pk_date} (당일 매출: {pk_sales:,.0f}원, 출고량: {pk_qty:,} Box, 최고 공헌 품목: {pk_prod_name})"
 
-    # 일자별 집계 통계
-    daily_stats = (
-        queryset.values("outbound_date")
-        .annotate(
-            daily_sales=Coalesce(Sum("sales_amount"), Decimal("0")),
-            daily_qty=Coalesce(Sum("box_quantity"), 0),
+    # 일자 수 (전체 일자 집계 로드 없이 count 만)
+    try:
+        days_count = (
+            queryset.values("outbound_date")
+            .exclude(outbound_date__isnull=True)
+            .distinct()
+            .count()
         )
-        .order_by("outbound_date")
-    )
-    
-    days_count = len(daily_stats)
+    except Exception:
+        days_count = 0
     avg_sales = (total_sales / days_count) if days_count > 0 else 0
-    avg_qty = (float((summary_stats or {}).get("totalQty") or 0) / days_count) if days_count > 0 else 0
+    avg_qty = (
+        (float((summary_stats or {}).get("totalQty") or 0) / days_count)
+        if days_count > 0
+        else 0
+    )
 
     system_prompt = (
         "당신은 보노하우스(BONOHOUSE)의 출고 및 매출 데이터를 분석하는 비즈니스 데이터 과학자이자 물류 전략 컨설턴트입니다. "
-        "전달된 실데이터 수치(원화 매출액, 제품명, 출고량 등)를 마크다운 형식으로 매우 상세하고 정량적으로 분석하여 보고서를 작성하세요. "
-        "추측성 표현은 지양하고, 반드시 전달된 데이터에 기재된 정확한 이름과 수치들을 인용하여 비즈니스 분석 의견을 제공해야 합니다."
-        "한국어로만 정중하고 전문적인 어조로 답변하세요."
+        "전달된 실데이터 수치(원화 매출액, 제품명, 출고량 등)를 마크다운 형식으로 상세하고 정량적으로 분석하여 보고서를 작성하세요. "
+        "추측성 표현은 지양하고, 반드시 전달된 데이터에 기재된 정확한 이름과 수치들을 인용하세요. "
+        "한국어로만 정중하고 전문적인 어조로 답변하세요. 각 주제는 2~4문장으로 간결하게."
     )
 
     user_prompt = (
-        "다음 조건의 출고 및 매출 실데이터 통계를 바탕으로 상세 분석 보고서를 작성해 주세요.\n\n"
+        "다음 조건의 출고 및 매출 실데이터 통계를 바탕으로 분석 보고서를 작성해 주세요.\n\n"
         "### 1. 분석 기본 조건\n"
         f"- 분석 기간: {start_date or '-'} ~ {end_date or '-'}\n"
         f"- 카테고리 필터: {category or '전체(all)'}\n"
@@ -5025,20 +6234,32 @@ def outbound_ai_analysis(request):
         f"{top_products_text or '자료 없음'}\n"
         "### 5. 최고 매출 피크일 (Peak Day)\n"
         f"- {peak_day_text}\n\n"
-        "### [작성 가이드라인 및 형식]\n"
-        "아래 4개 대주제로 구분하여 각 주제별로 2~3문단 이상 매우 풍부하고 구체적인 수치 분석과 실무 전략 제안을 작성하세요:\n"
-        "1. **출고 및 매출 종합 성과 진단** (총 성과, 일평균 추이 분석 및 실적 평가)\n"
-        "2. **품목 및 카테고리 기여도 상세 분석** (어떤 제품/분류가 매출과 수량을 견인했는지 실데이터 기반 정량 평가)\n"
-        "3. **판매 안정성 및 리스크 조기 진단** (최고 피크일 특이사항, 매출 쏠림 현상 또는 공급 지연 위험성 진단)\n"
-        "4. **물류 효율성 제고 및 차기 액션 제안** (재고 회전율 개선, 베스트셀러 배치 최적화, 출고 예측 기반의 3~4가지 실무 제안)\n"
+        "### [작성 형식]\n"
+        "아래 4개 대주제로 구분하여 각각 2~4문장으로 작성하세요:\n"
+        "1. **출고 및 매출 종합 성과 진단**\n"
+        "2. **품목 및 카테고리 기여도**\n"
+        "3. **판매 안정성 및 리스크**\n"
+        "4. **물류 효율 및 액션 제안** (2~3가지)\n"
     )
 
     try:
         zai_text = _zai_call_messages(
-            system=system_prompt, user=user_prompt, max_tokens=2048, temperature=0.2
+            system=system_prompt, user=user_prompt, max_tokens=600, temperature=0.2
         )
         if isinstance(zai_text, str) and zai_text.strip():
             return Response({"analysis": zai_text})
+        # 외부 AI 무응답 → 로컬 정량 요약 (프록시 끊김/대기 대신 즉시 응답)
+        local = (
+            f"### 출고 AI 분석 (로컬 요약)\n\n"
+            f"외부 AI 응답이 없거나 지연되어 **DB 집계 기반 요약**을 표시합니다.\n\n"
+            f"**기간:** {start_date or '-'} ~ {end_date or '-'} ({days_count}일)\n\n"
+            f"- 총 매출: **{total_sales:,.0f}원** / 일평균 {avg_sales:,.0f}원\n"
+            f"- 총 출고: **{float((summary_stats or {}).get('totalQty') or 0):,.0f} Box** / 일평균 {avg_qty:,.1f} Box\n\n"
+            f"**카테고리 TOP**\n{top_categories_text or '- 없음'}\n"
+            f"**품목 TOP**\n{top_products_text or '- 없음'}\n"
+            f"**피크일:** {peak_day_text}\n"
+        )
+        return Response({"analysis": local, "source": "local-fallback"})
     except urllib.error.HTTPError as e:
         try:
             err_body = e.read().decode("utf-8")
@@ -5060,21 +6281,11 @@ def outbound_ai_analysis(request):
                 "analysis": (
                     "### AI 서버 연결 실패\n\n"
                     f"- 사유: {str(e)}\n\n"
-                    "(환경변수/네트워크 상태를 확인하세요.)"
+                    "(환경변수/네트워크 상태를 확인하세요. 백엔드 `runserver`가 하나만 떠 있는지 확인.)"
                 )
             },
             status=status.HTTP_200_OK,
         )
-
-    analysis = (
-        f"### AI 분석 결과\n\n"
-        f"현재 데이터(총 매출: {total_sales:,.0f}원)에 따르면 전반적인 출고량이 안정적인 추세를 보이고 있습니다.\n\n"
-        f"**주요 인사이트:**\n"
-        f"- 주말 대비 평일 출고량이 높을 가능성이 있습니다.\n"
-        f"- 특정 카테고리의 매출 비중이 상승하고 있을 수 있습니다.\n\n"
-        f"(이 분석은 현재 시뮬레이션된 결과입니다. 실제 AI 연동이 필요합니다.)"
-    )
-    return Response({"analysis": analysis})
 
 
 @api_view(["POST"])
@@ -5623,7 +6834,7 @@ def ai_chat(request):
         # Call AI
         try:
             ai_response = _zai_call_messages(
-                system=system_prompt, user=user_prompt, max_tokens=2048, temperature=0.3
+                system=system_prompt, user=user_prompt, max_tokens=700, temperature=0.3
             )
             if isinstance(ai_response, str) and ai_response.strip():
                 return Response({"answer": ai_response})
@@ -6161,21 +7372,16 @@ def delivery_notes(request):
 @api_view(["POST"])
 def ai_predict_hourly(request):
     """
-    개선된 시간별 예측 API - 백테스트 최고 성능 모델 적용
-    - 알고리즘: 같은 요일 + 같은 기간(월초/월말/월중) 데이터 중간값
-    - conservative 예측: 중간값 사용하여 과대 예측 방지
+    시간별 마감(23시) 예측 — 완료비율 + 동일요일 잔여 증가 중앙값.
+    이상치(비정상 총량)에 끌리지 않도록 중앙값·비율 우선.
     """
     import statistics
     from datetime import timedelta
 
     payload = request.data if isinstance(request.data, dict) else {}
 
-    base_predictions = payload.get("basePredictions")
-    if isinstance(base_predictions, dict) and base_predictions:
-        return Response(
-            {"success": True, "predictions": base_predictions},
-            status=status.HTTP_200_OK,
-        )
+    # basePredictions 만 있고 서버 재계산을 건너뛰던 경로 제거:
+    # 클라이언트가 보낸 base 는 참고만 하고 서버가 최종 산출.
 
     current_hour = payload.get("currentHour")
     current_data = (
@@ -6184,7 +7390,7 @@ def ai_predict_hourly(request):
         else {}
     )
     total = current_data.get("total", 0)
-
+    # 현재 시각 누적이 currentData.hour_XX 로 올 수도 있음
     try:
         current_hour_int = int(current_hour)
     except Exception:
@@ -6195,125 +7401,148 @@ def ai_predict_hourly(request):
     except Exception:
         total_int = 0
 
+    hour_key = f"hour_{current_hour_int:02d}"
+    if total_int <= 0 and isinstance(current_data, dict):
+        try:
+            total_int = int(float(str(current_data.get(hour_key) or 0).replace(",", "")))
+        except Exception:
+            total_int = 0
+
     today = timezone.localdate()
-    four_weeks_ago = today - timedelta(days=28)
-    past_records = DeliveryDailyRecord.objects.filter(
-        date__gte=four_weeks_ago, date__lt=today
-    ).order_by("-date")
+    lookback = today - timedelta(days=84)  # ~12주
+    past_records = list(
+        DeliveryDailyRecord.objects.filter(
+            date__gte=lookback, date__lt=today, total__gt=0
+        ).order_by("-date")
+    )
 
     current_weekday = today.weekday()
     current_day = today.day
 
-    # 🎯 월초/월말/월중 구분
-    if current_day <= 5:
-        current_period = "month_start"
-    elif current_day >= 26:
-        current_period = "month_end"
-    else:
-        current_period = "month_mid"
-
-    # 같은 요일 + 같은 기간 데이터 필터링
-    same_day_records = [
-        r
-        for r in past_records
-        if r.date.weekday() == current_weekday and r.total and r.total > 0
-    ]
-
-    # 기간별 분류
     def get_period(day):
-        if day <= 5:
+        if day <= 7:
             return "month_start"
-        elif day >= 26:
+        if day >= 22:
             return "month_end"
         return "month_mid"
 
+    current_period = get_period(current_day)
+
+    def _row_final(r):
+        return int(r.total or 0)
+
+    def _row_hour(r, h):
+        hourly = r.hourly or {}
+        return int(hourly.get(f"hour_{h:02d}", 0) or 0)
+
+    # 이상치 필터: 동일 요일 중앙값 대비 3배 초과 제외
+    same_day_all = [r for r in past_records if r.date.weekday() == current_weekday]
+    same_finals = sorted(_row_final(r) for r in same_day_all if _row_final(r) > 0)
+    same_med = statistics.median(same_finals) if same_finals else 0
+
+    def _is_sane(r):
+        f = _row_final(r)
+        if f <= 0:
+            return False
+        if same_med > 0 and f > same_med * 3.0:
+            return False
+        return True
+
+    same_day_records = [r for r in same_day_all if _is_sane(r)]
     period_records = [
         r for r in same_day_records if get_period(r.date.day) == current_period
     ]
-
-    # 기간별 데이터가 부족하면 같은 요일 전체 사용
     if len(period_records) < 3:
         period_records = same_day_records
-
     if len(period_records) < 3:
-        # 데이터 부족 시 전체 데이터 사용
-        period_records = [r for r in past_records if r.total and r.total > 0]
+        period_records = [r for r in past_records if _is_sane(r)]
 
+    # ── 1) 완료비율법 ──
+    ratios = []
+    for r in period_records:
+        hv = _row_hour(r, current_hour_int)
+        fv = _row_final(r)
+        if hv > 0 and fv >= hv:
+            ratios.append(hv / fv)
+
+    predicted_from_ratio = None
+    ratio_med = None
+    if ratios and total_int > 0:
+        ratio_med = statistics.median(ratios)
+        if ratio_med >= 0.08:
+            predicted_from_ratio = int(round(total_int / ratio_med))
+
+    # ── 2) 잔여 증가분 중앙값 ──
     increments = []
-    for record in period_records:
-        hourly = record.hourly or {}
-        current_hour_key = f"hour_{current_hour_int:02d}"
-        current_hour_value = int(hourly.get(current_hour_key, 0))
-        final_value = int(record.total or 0)
-
-        if current_hour_value > 0 and final_value > current_hour_value:
-            increment = final_value - current_hour_value
-
-            # 이상치 제거 (동일 요일 5개 이상 시 300 이상 증가 제거)
-            if len(period_records) > 5 and increment > 300:
+    for r in period_records:
+        hv = _row_hour(r, current_hour_int)
+        fv = _row_final(r)
+        if hv > 0 and fv > hv:
+            inc = fv - hv
+            # 이상 증가 제거
+            if same_med > 0 and inc > same_med * 0.8:
                 continue
+            if inc > 800:
+                continue
+            weight = 2 if (today - r.date).days <= 21 else 1
+            for _ in range(weight):
+                increments.append(inc)
 
-            # 최근 데이터 가중치 (21일 이내 2배)
-            days_diff = (today - record.date).days
-            if days_diff <= 21:
-                increments.append(increment)
-                increments.append(increment)
-            else:
-                increments.append(increment)
-
-    if not increments:
-        # 保守적 기본값 (낮게 설정)
-        day_base_increments = {
-            0: 60,  # 월요일
-            1: 30,  # 화요일
-            2: 60,  # 수요일
-            3: 60,  # 목요일
-            4: 50,  # 금요일
-            5: 80,  # 토요일
-            6: 40,  # 일요일
-        }
-        predicted_increment = day_base_increments.get(current_weekday, 50)
+    if increments:
+        predicted_increment = int(statistics.median(increments))
     else:
-        # 🎯 중간값 사용 (평균보다 보수적)
-        increments.sort()
-        if len(increments) > 10:
-            trim_count = len(increments) // 10
-            increments = increments[trim_count:-trim_count]
+        day_base = {0: 50, 1: 40, 2: 50, 3: 50, 4: 45, 5: 40, 6: 40}
+        predicted_increment = day_base.get(current_weekday, 45)
 
-        predicted_increment = statistics.median(increments)
+    predicted_from_inc = total_int + predicted_increment
 
-    # 🎯 보수적 예측: 계산값의 85%만 적용 (과대 예측 방지)
-    # 추가: 현재값이 최근 평균보다 낮으면 더 보수적으로
-    recent_avg = sum(
-        [int(r.total or 0) for r in past_records[:7] if r.total and r.total > 0]
-    ) / min(7, len([r for r in past_records if r.total and r.total > 0]))
-    if total_int < recent_avg * 0.9:
-        # 현재값이 낮으면 보정 계수 더 낮게
-        predicted_increment = int(predicted_increment * 0.8)
+    # 블렌드: 비율 가능하면 70% 비율 + 30% 증가분
+    if predicted_from_ratio is not None:
+        predicted_total = int(0.7 * predicted_from_ratio + 0.3 * predicted_from_inc)
+        model_name = "completion_ratio_blend_v2"
     else:
-        predicted_increment = int(predicted_increment * 0.85)
+        predicted_total = predicted_from_inc
+        model_name = "residual_median_v2"
 
-    predicted_total = total_int + predicted_increment
+    # 상·하한 (동일 요일 중앙값 기준)
+    lo = total_int  # 누적은 감소하지 않음
+    if same_med > 0:
+        hi = int(max(total_int * 1.05, same_med * 1.45))
+        lo_target = int(same_med * 0.50)
+        # 현재가 이미 중앙값의 80% 이상이면 과소 예측 방지
+        if total_int >= same_med * 0.8:
+            predicted_total = max(predicted_total, int(total_int * 1.01))
+        predicted_total = max(lo, min(predicted_total, hi))
+        # 너무 낮게 떨어지지 않게 (현재 0에 가까울 때만)
+        if total_int < same_med * 0.3:
+            predicted_total = max(predicted_total, lo_target)
+    else:
+        predicted_total = max(predicted_total, total_int + 5)
 
-    # 최소 보장
-    predicted_total = max(predicted_total, total_int + 10)
+    # 하루 끝 시각이면 현재값 유지
+    if current_hour_int >= 23 and total_int > 0:
+        predicted_total = total_int
 
     return Response(
         {
             "success": True,
             "predictions": {
-                "hour_23": predicted_total,
+                "hour_23": int(predicted_total),
             },
             "metadata": {
-                "model": "conservative_median_period_adjusted",
+                "model": model_name,
                 "period": current_period,
-                "data_points": len(increments) // 2 if increments else 0,
-                "adjustment_factor": 0.85,
-                "same_day_records": len(
-                    [r for r in period_records if r.total and r.total > 0]
-                ),
-                "backtest_mae": 34.3,
-                "backtest_mape": 6.2,
+                "current_hour": current_hour_int,
+                "current_total": total_int,
+                "same_dow_median": int(same_med) if same_med else 0,
+                "completion_ratio_median": round(float(ratio_med), 4)
+                if ratio_med
+                else None,
+                "predicted_from_ratio": predicted_from_ratio,
+                "predicted_from_increment": predicted_from_inc,
+                "increment_samples": len(increments),
+                "same_day_records": len(same_day_records),
+                "server_today": today.isoformat(),
             },
         },
         status=status.HTTP_200_OK,
@@ -6346,6 +7575,7 @@ def get_outbound_stats(request):
     category = request.query_params.get("category")
     search = request.query_params.get("search")
     product = request.query_params.get("product")
+    barcode = (request.query_params.get("barcode") or "").strip()
 
     queryset = OutboundRecord.objects.all()
 
@@ -6370,12 +7600,16 @@ def get_outbound_stats(request):
         queryset = queryset.filter(product_name__icontains=search)
     if product:
         queryset = queryset.filter(product_name=product)
+    if barcode:
+        queryset = queryset.filter(barcode=barcode)
 
     # 1. Summary
     summary = queryset.aggregate(
         totalCount=Count("id"),
         totalQuantity=Coalesce(Sum("box_quantity"), 0),
         totalSalesAmount=Coalesce(Sum("sales_amount"), Decimal("0")),
+        estimatedCount=Count("id", filter=Q(is_estimated=True)),
+        estimatedDays=Count("outbound_date", filter=Q(is_estimated=True), distinct=True),
     )
 
     # 2. Daily Trend (Group By)
@@ -6394,19 +7628,31 @@ def get_outbound_stats(request):
         .annotate(
             quantity=Coalesce(Sum("box_quantity"), 0),
             salesAmount=Coalesce(Sum("sales_amount"), Decimal("0")),
+            estimated_count=Count("id", filter=Q(is_estimated=True)),
+            real_count=Count("id", filter=Q(is_estimated=False)),
         )
         .order_by("date")
     )
 
     # Format date for frontend
+    # isEstimated: 해당 버킷이 예측 보정만 있음 (전부 노랑)
+    # hasEstimated: 실적+보정이 섞임 (노랑 표시 + "포함" 안내)
     trend_data = []
     for item in daily_trend:
         if item["date"]:
+            est_n = int(item.get("estimated_count") or 0)
+            real_n = int(item.get("real_count") or 0)
+            is_est_only = est_n > 0 and real_n == 0
+            has_est = est_n > 0 and real_n > 0
             trend_data.append(
                 {
                     "date": item["date"].strftime("%Y-%m-%d"),
                     "quantity": item["quantity"] or 0,
                     "salesAmount": item["salesAmount"] or 0,
+                    "isEstimated": is_est_only,
+                    "hasEstimated": has_est,
+                    "is_estimated": is_est_only,
+                    "has_estimated": has_est,
                 }
             )
 
@@ -6487,6 +7733,12 @@ def get_outbound_stats(request):
                 "totalCount": summary["totalCount"] or 0,
                 "totalQuantity": summary["totalQuantity"] or 0,
                 "totalSalesAmount": summary["totalSalesAmount"] or 0,
+                "estimatedCount": summary.get("estimatedCount") or 0,
+                "estimatedDays": summary.get("estimatedDays") or 0,
+            },
+            "estimateMeta": {
+                "rows": summary.get("estimatedCount") or 0,
+                "days": summary.get("estimatedDays") or 0,
             },
             "dailyTrend": trend_data,
             "prevYearTrend": prev_year_trend,
@@ -7254,146 +8506,113 @@ def delivery_daily_prediction(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    def _robust_median(values):
+        """이상치 완화 중앙값 (IQR 밖 제거 후 median, 부족하면 원본 median)."""
+        xs = [float(v) for v in values if v is not None and v > 0]
+        if not xs:
+            return 0.0
+        if len(xs) < 5:
+            return float(np.median(xs))
+        q1, q3 = np.percentile(xs, [25, 75])
+        iqr = max(q3 - q1, 1.0)
+        lo, hi = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+        filtered = [v for v in xs if lo <= v <= hi]
+        if len(filtered) < 3:
+            filtered = xs
+        return float(np.median(filtered))
+
     def calculate_dynamic_factors(records):
-        """최근 데이터를 분석하여 요일 및 월초말 가중치를 동적으로 계산"""
+        """중앙값 기반 요일·월 구간 계수 (이상치에 덜 끌림)."""
         all_totals = [r.total for r in records if r.total and r.total > 0]
         if not all_totals:
-            return {"month": {}, "dow": {}}
+            return {"month": {}, "dow": {}, "overall_median": 0.0, "overall_avg": 0.0}
 
-        overall_avg = np.mean(all_totals)
+        overall_med = _robust_median(all_totals)
+        overall_avg = float(np.mean(all_totals))
+        base = overall_med if overall_med > 0 else overall_avg
 
-        # 1. 월초말계수 계산
         month_start = [r.total for r in records if r.date.day <= 7 and r.total > 0]
         month_mid = [r.total for r in records if 7 < r.date.day < 22 and r.total > 0]
         month_end = [r.total for r in records if r.date.day >= 22 and r.total > 0]
 
+        def _fac(vals):
+            m = _robust_median(vals)
+            if base <= 0 or m <= 0:
+                return 1.0
+            # ±25% 이내로 약보정
+            return float(np.clip(m / base, 0.75, 1.25))
+
         month_factors = {
-            "month_start": round(np.mean(month_start) / overall_avg, 3)
-            if month_start
-            else 1.0,
-            "month_mid": round(np.mean(month_mid) / overall_avg, 3)
-            if month_mid
-            else 1.0,
-            "month_end": round(np.mean(month_end) / overall_avg, 3)
-            if month_end
-            else 1.0,
+            "month_start": round(_fac(month_start), 3),
+            "month_mid": round(_fac(month_mid), 3),
+            "month_end": round(_fac(month_end), 3),
         }
 
-        # 2. 요일계수 계산 (0:월, 1:화, ..., 6:일)
         dow_totals = {i: [] for i in range(7)}
         for r in records:
-            if r.total > 0:
+            if r.total and r.total > 0:
                 dow_totals[r.date.weekday()].append(r.total)
 
+        defaults = {0: 1.05, 1: 1.02, 2: 1.05, 3: 1.02, 4: 1.0, 5: 0.95, 6: 0.95}
         dow_factors = {}
         for i in range(7):
             if dow_totals[i]:
-                dow_factors[i] = round(np.mean(dow_totals[i]) / overall_avg, 3)
+                m = _robust_median(dow_totals[i])
+                dow_factors[i] = (
+                    round(float(np.clip(m / base, 0.70, 1.35)), 3)
+                    if base > 0
+                    else defaults[i]
+                )
             else:
-                # 데이터가 없는 요일은 기본값 사용
-                default_factors = {
-                    0: 1.05,
-                    1: 1.10,
-                    2: 1.15,
-                    3: 1.10,
-                    4: 1.0,
-                    5: 0.6,
-                    6: 0.5,
-                }
-                dow_factors[i] = default_factors.get(i, 1.0)
+                dow_factors[i] = defaults[i]
 
-        return {"month": month_factors, "dow": dow_factors, "overall_avg": overall_avg}
+        # 요일별 중앙값 절대값 (예측 본체용)
+        dow_medians = {
+            i: int(_robust_median(dow_totals[i])) if dow_totals[i] else 0
+            for i in range(7)
+        }
+
+        return {
+            "month": month_factors,
+            "dow": dow_factors,
+            "dow_medians": dow_medians,
+            "overall_median": overall_med,
+            "overall_avg": overall_avg,
+        }
 
     factors_data = calculate_dynamic_factors(records)
     month_period_factors = factors_data["month"]
     dynamic_dow_factors = factors_data["dow"]
-    base_average = factors_data["overall_avg"]
+    dow_medians = factors_data.get("dow_medians") or {}
+    base_median = factors_data.get("overall_median") or 0
+    base_average = factors_data.get("overall_avg") or base_median
 
-    # ====== [개선 2] 이동 평균 + 절사 평균 계산 ======
-    def calculate_base_average(daily_totals):
-        """데이터 개수에 따른 분기 처리된 기본 평균 계산"""
-        n = len(daily_totals)
-        if n == 0:
-            return 0
-
-        # 이상치 탐지 (상한: 평균의 200%, 하한: 평균의 30%)
-        avg = np.mean(daily_totals)
-        upper_threshold = avg * 2.0
-        lower_threshold = avg * 0.3
-
-        filtered = [
-            v for v in daily_totals if v <= upper_threshold and v >= lower_threshold
-        ]
-
-        # 필터링 후 데이터가 부족하면 원본 사용
-        if len(filtered) < 3:
-            filtered = daily_totals
-
-        # 이동 평균 (EWMA - 지수적 가중)
-        ewma = np.average(filtered, weights=np.exp(np.linspace(-1, 0, len(filtered))))
-
-        # 절사 평균 - 데이터 개수에 따라 분기
-        if n >= 30:
-            # 30개 이상: 상하위 10% 절사
-            trim_count = len(filtered) // 10
-            if trim_count > 0 and len(filtered) > trim_count * 2:
-                trimmed = sorted(filtered)[trim_count:-trim_count]
-                trimmed_mean = np.mean(trimmed) if trimmed else ewma
-            else:
-                trimmed_mean = ewma
-            weight_ewma = 0.5
-            weight_trimmed = 0.5
-        elif n >= 14:
-            # 14~29개: 상하위 1개만 절사
-            if len(filtered) > 2:
-                trimmed = sorted(filtered)[1:-1]
-                trimmed_mean = np.mean(trimmed) if trimmed else ewma
-            else:
-                trimmed_mean = ewma
-            weight_ewma = 0.6
-            weight_trimmed = 0.4
-        else:
-            # 14개 미만: 이동 평균만 사용
-            return int(ewma)
-
-        return int(weight_ewma * ewma + weight_trimmed * trimmed_mean)
-
-    # ====== [개선 3] 요일계수 (동적 가중치 사용) ======
-    DAY_OF_WEEK_FACTORS = dynamic_dow_factors
-
-    # ====== [개선 4] 휴일계수 ======
     HOLIDAYS = ["01-01", "03-01", "05-05", "06-06", "08-15", "10-03", "10-09", "12-25"]
 
     def get_holiday_factor(date):
-        """휴일 및 전후 기간 계수"""
         date_str = f"{date.month:02d}-{date.day:02d}"
         if date_str in HOLIDAYS:
-            return 0.50  # 휴일当天
-        # 前一天
+            return 0.50
         prev_date = date - timedelta(days=1)
         prev_str = f"{prev_date.month:02d}-{prev_date.day:02d}"
         if prev_str in HOLIDAYS:
             return 0.75
-        # 다음날
         next_date = date + timedelta(days=1)
         next_str = f"{next_date.month:02d}-{next_date.day:02d}"
         if next_str in HOLIDAYS:
             return 0.85
         return 1.00
 
-    # ====== Stage 1: 총량 예측 ======
-    # 모든 유효 데이터의 총량 추출 (사용자 제안: 최근 3개월(90일) 단순 평균 사용)
-    # base_average는 위 calculate_dynamic_factors에서 이미 overall_avg로 산출됨
-
-    # 최근 4주 평균 (기준선 유지는 하되 예측 공식에는 base_average 사용)
+    # ====== Stage 1: 총량 예측 (동일 요일 중앙값 블렌드) ======
     all_totals = [r.total for r in records if r.total and r.total > 0]
-    recent_4week_avg = (
-        np.mean(all_totals[-28:]) if len(all_totals) >= 28 else np.mean(all_totals)
-    )
+    recent_28 = all_totals[-28:] if len(all_totals) >= 7 else all_totals
+    recent_4week_med = _robust_median(recent_28) if recent_28 else base_median
+    recent_4week_avg = float(np.mean(recent_28)) if recent_28 else float(base_average)
+    base_trim = _robust_median(all_totals) if all_totals else base_median
 
     day_names = ["월", "화", "수", "목", "금", "토", "일"]
+    server_today = timezone.localdate()
 
-    # 각 예측 날짜마다 예측 수행
     predictions = []
     hourly_predictions = {}
 
@@ -7402,51 +8621,83 @@ def delivery_daily_prediction(request):
         target_dow = target_date.weekday()
         target_day = target_date.day
 
-        # 월초말 계수 (동적)
         if target_day <= 7:
-            period_factor = month_period_factors["month_start"]
+            period_factor = month_period_factors.get("month_start", 1.0)
             target_period = "month_start"
         elif target_day >= 22:
-            period_factor = month_period_factors["month_end"]
+            period_factor = month_period_factors.get("month_end", 1.0)
             target_period = "month_end"
         else:
-            period_factor = month_period_factors["month_mid"]
+            period_factor = month_period_factors.get("month_mid", 1.0)
             target_period = "month_mid"
 
-        # 요일계수
-        dow_factor = DAY_OF_WEEK_FACTORS.get(target_dow, 1.0)
+        # 동일 요일 절대 중앙값 (최근 학습 구간)
+        same_dow_med = float(dow_medians.get(target_dow) or 0)
+        if same_dow_med <= 0:
+            same_dow_med = base_trim if base_trim > 0 else recent_4week_med
 
-        # 휴일계수
+        # 블렌드: 동일요일 55% + 최근28일 중앙 25% + 전체 강건 중앙 20%
+        blended = (
+            0.55 * same_dow_med
+            + 0.25 * (recent_4week_med or same_dow_med)
+            + 0.20 * (base_trim or same_dow_med)
+        )
+
+        # 월 구간은 약보정만 (이미 중앙값 기반 factor, 1.0 근처)
         holiday_factor = get_holiday_factor(target_date)
+        predicted_total = blended * float(period_factor) * float(holiday_factor)
 
-        # ====== 예측 공식 (v2.1 가중치 적용) ======
-        # 예측_총량 = 3개월전체평균 × 요일계수 × 월초말계수 × 휴일계수
-        predicted_total = base_average * dow_factor * period_factor * holiday_factor
+        # 클립: 동일 요일 중앙값 기준 0.55~1.45
+        if same_dow_med > 0:
+            predicted_total = float(
+                np.clip(predicted_total, same_dow_med * 0.55, same_dow_med * 1.45)
+            )
+        predicted_total = int(max(1, round(predicted_total)))
 
-        # [변경] 보수적 보정(0.85) 제거 및 클리핑 완화
-        # 상한: 3개월 평균의 160%까지 (유연성 확보)
-        predicted_total = min(predicted_total, int(base_average * 1.6))
-        # 하충: 3개월 평균의 40% 이상 (533 고정 문제 해결)
-        predicted_total = int(max(predicted_total, int(base_average * 0.4)))
+        # 표시용 요일 계수 = 동일요일중앙 / 전체중앙
+        dow_factor = dynamic_dow_factors.get(target_dow, 1.0)
 
-        # Stage 2: 시간대별 비율로 분포 예측
         weekday_ratios = _get_weekday_hourly_ratios(target_dow, records)
 
+        # 누적 곡선: 비율을 누적 점유율로 해석할 수 있게 정규화
+        # (기존 코드는 hour 합 = total 이 되도록 스케일)
         hourly_prediction = {}
         for h in range(24):
             ratio = weekday_ratios.get(f"hour_{h:02d}", 0.01)
-            hourly_prediction[f"hour_{h:02d}"] = int(predicted_total * ratio)
+            hourly_prediction[f"hour_{h:02d}"] = max(0, int(predicted_total * ratio))
 
-        # 23시 누적값이 예측 총량과 일치하도록 보정
-        predicted_23 = sum(hourly_prediction.values())
-        if predicted_23 > 0:
-            ratio = predicted_total / predicted_23
+        predicted_sum = sum(hourly_prediction.values())
+        if predicted_sum > 0 and predicted_total > 0:
+            scale = predicted_total / predicted_sum
             for h in range(24):
-                hourly_prediction[f"hour_{h:02d}"] = int(
-                    hourly_prediction[f"hour_{h:02d}"] * ratio
-                )
+                key = f"hour_{h:02d}"
+                hourly_prediction[key] = int(hourly_prediction[key] * scale)
+            # 누적 단조 증가 보정
+            running = 0
+            for h in range(24):
+                key = f"hour_{h:02d}"
+                # ratios 가 증분인지 누적인지 불명 → 증분 가정 시 누적으로 재구성
+                running = max(running, hourly_prediction[key])
+            # 비율 합이 1에 가깝다면 증분; 아니면 누적값으로 재스케일
+            # 안전하게: 시간 순 누적 최대가 predicted_total 이 되도록 선형 보간 곡선
+            # 동일 요일 평균 누적 비율 재계산
+            pass
 
-        # ====== [신규] Stage 2: 품목별 배분 ======
+        # Stage 2 재구성: 누적 비율 기반
+        cum_ratios = _get_weekday_hourly_cumulative_ratios(target_dow, records)
+        if cum_ratios:
+            hourly_prediction = {}
+            for h in range(24):
+                cr = cum_ratios.get(f"hour_{h:02d}", (h + 1) / 24.0)
+                hourly_prediction[f"hour_{h:02d}"] = int(round(predicted_total * cr))
+            # 단조 증가
+            prev = 0
+            for h in range(24):
+                key = f"hour_{h:02d}"
+                hourly_prediction[key] = max(prev, hourly_prediction[key])
+                prev = hourly_prediction[key]
+            hourly_prediction["hour_23"] = predicted_total
+
         product_ratios = _get_product_ratios()
         product_prediction_list = []
         for p in product_ratios:
@@ -7460,8 +8711,6 @@ def delivery_daily_prediction(request):
                         "predicted_quantity": qty,
                     }
                 )
-
-        # 상위 10개 품목만 포함 (데이터량 최적화)
         product_prediction_list = sorted(
             product_prediction_list, key=lambda x: x["predicted_quantity"], reverse=True
         )[:10]
@@ -7478,10 +8727,14 @@ def delivery_daily_prediction(request):
                 else "low",
                 "period": target_period,
                 "factors": {
-                    "base_average": int(base_average),
+                    "same_dow_median": int(same_dow_med),
+                    "recent_4week_median": int(recent_4week_med or 0),
+                    "base_median": int(base_trim or 0),
+                    "base_average": int(base_average or 0),
                     "dow_factor": round(float(dow_factor), 2),
                     "period_factor": round(float(period_factor), 2),
                     "holiday_factor": round(float(holiday_factor), 2),
+                    "blended_before_period": int(blended),
                 },
                 "product_predictions": product_prediction_list,
             }
@@ -7496,75 +8749,98 @@ def delivery_daily_prediction(request):
             "hourly_predictions": hourly_predictions,
             "meta": {
                 "start_date": start_date.isoformat(),
+                "server_today": server_today.isoformat(),
                 "num_days": num_days,
                 "training_samples": len(all_totals),
-                "base_average": int(base_average),
+                "base_average": int(base_average or 0),
+                "base_median": int(base_trim or 0),
                 "month_period_factors": month_period_factors,
-                "recent_4week_avg": int(recent_4week_avg),
+                "dow_factors": {str(k): v for k, v in dynamic_dow_factors.items()},
+                "dow_medians": {str(k): v for k, v in dow_medians.items()},
+                "recent_4week_avg": int(recent_4week_avg or 0),
+                "recent_4week_median": int(recent_4week_med or 0),
+                "model": "same_dow_median_blend_v3",
             },
         }
     )
 
 
 def _get_weekday_hourly_ratios(target_dow: int, records) -> dict:
-    """요일별 시간대별 비율 계산"""
-    # 0=월, 6=일 기준 정정
-    day_names = ["월", "화", "수", "목", "금", "토", "일"]
-    target_day_name = day_names[target_dow]
+    """요일별 시간대별 비율 계산 (값/일총량 평균 — 레거시 호환)."""
+    cum = _get_weekday_hourly_cumulative_ratios(target_dow, records)
+    if not cum:
+        return {f"hour_{h:02d}": round(1.0 / 24, 4) for h in range(24)}
+    # 누적 → 대략 증분
+    ratios = {}
+    prev = 0.0
+    for h in range(24):
+        c = float(cum.get(f"hour_{h:02d}", 0))
+        ratios[f"hour_{h:02d}"] = round(max(0.0, c - prev), 4)
+        prev = c
+    s = sum(ratios.values()) or 1.0
+    return {k: round(v / s, 4) for k, v in ratios.items()}
 
-    # 최근 4주 데이터에서 해당 요일 집계
+
+def _get_weekday_hourly_cumulative_ratios(target_dow: int, records) -> dict:
+    """
+    동일 요일 시간대 누적 비율 중앙값.
+    hour_h / day_total 의 중앙값, 단조 증가·hour_23=1.0 정규화.
+    """
+    from datetime import timedelta
+    import statistics as _stats
+
     today = timezone.localdate()
-    four_weeks_ago = today - timedelta(days=28)
+    four_weeks_ago = today - timedelta(days=84)
 
-    weekday_hourly_sums = [0] * 24
-    weekday_total = 0
-
+    # hour -> list of ratios
+    by_hour = {h: [] for h in range(24)}
     for record in records:
         if record.date < four_weeks_ago:
             continue
         if record.date.weekday() != target_dow:
             continue
-        if not record.total or record.total <= 0:
+        total = int(record.total or 0)
+        if total <= 0:
             continue
-
-        weekday_total += record.total
+        # 이상치 총량 스킵 (동일 요일 대비는 호출측에서 이미 완화)
+        if total > 3000:
+            continue
         hourly = record.hourly or {}
+        prev_r = 0.0
         for h in range(24):
-            weekday_hourly_sums[h] += int(hourly.get(f"hour_{h:02d}", 0))
+            v = int(hourly.get(f"hour_{h:02d}", 0) or 0)
+            # 누적 필드가 비어 있으면 스킵
+            if v <= 0 and h < 12:
+                continue
+            r = min(1.0, max(0.0, v / total)) if total else 0.0
+            r = max(prev_r, r)
+            by_hour[h].append(r)
+            prev_r = r
 
-    if weekday_total <= 0:
-        # 기본 비율 반환
-        return {
-            "hour_00": 0.01,
-            "hour_01": 0.01,
-            "hour_02": 0.01,
-            "hour_03": 0.01,
-            "hour_04": 0.01,
-            "hour_05": 0.01,
-            "hour_06": 0.02,
-            "hour_07": 0.03,
-            "hour_08": 0.04,
-            "hour_09": 0.05,
-            "hour_10": 0.06,
-            "hour_11": 0.07,
-            "hour_12": 0.08,
-            "hour_13": 0.07,
-            "hour_14": 0.06,
-            "hour_15": 0.05,
-            "hour_16": 0.06,
-            "hour_17": 0.08,
-            "hour_18": 0.07,
-            "hour_19": 0.05,
-            "hour_20": 0.04,
-            "hour_21": 0.03,
-            "hour_22": 0.02,
-            "hour_23": 0.02,
-        }
+    if not any(by_hour[h] for h in range(24)):
+        # 기본 S-curve 누적
+        return {f"hour_{h:02d}": round((h + 1) / 24.0, 4) for h in range(24)}
 
     ratios = {}
+    prev = 0.0
     for h in range(24):
-        ratios[f"hour_{h:02d}"] = round(weekday_hourly_sums[h] / weekday_total, 4)
-
+        xs = by_hour[h]
+        if xs:
+            med = float(_stats.median(xs))
+        else:
+            med = prev if h > 0 else 0.05
+        med = max(prev, min(1.0, med))
+        ratios[f"hour_{h:02d}"] = round(med, 4)
+        prev = med
+    # 23시 = 1.0
+    ratios["hour_23"] = 1.0
+    # 재단조
+    prev = 0.0
+    for h in range(24):
+        key = f"hour_{h:02d}"
+        ratios[key] = round(max(prev, float(ratios[key])), 4)
+        prev = ratios[key]
+    ratios["hour_23"] = 1.0
     return ratios
 
 
@@ -9624,9 +10900,17 @@ def sync_fc_inbound_from_sheet(request):
 @api_view(["DELETE"])
 def delete_fc_inbound_uploaded_data(request):
     """
-    업로드된 FC 입고 데이터를 모두 삭제
+    업로드된 FC 입고 데이터를 모두 삭제.
+    DESTRUCTIVE_API_KEY 설정 시 키 필수.
     """
+    from .api_guards import destructive_guard_response
+
+    blocked = destructive_guard_response(request)
+    if blocked is not None:
+        return blocked
+
     try:
+        logger.warning("delete_fc_inbound_uploaded_data FULL WIPE")
         deleted_count = FCInboundRecord.objects.all().delete()[0]
 
         # 업로드 이력도 삭제

@@ -5,168 +5,207 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VF 출차 관리 대시보드</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Segoe UI','Noto Sans KR',sans-serif;background:#f0f2f5;color:#1f2937;padding:20px;font-size:14px}
+.departure-root{font-family:'Segoe UI','Noto Sans KR',sans-serif;background:transparent;color:#1f2937;padding:0;margin:0;font-size:14px;width:100%;max-width:100%;box-sizing:border-box}.departure-root *,.departure-root *::before,.departure-root *::after{box-sizing:border-box}html.departure-standalone,html.departure-standalone body{margin:0;min-height:100%;background:#f0f2f5}html.departure-standalone .departure-root{padding:24px}
 
 /* ── HEADER ── */
-.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #e5e7eb}
-.header h1{font-size:22px;color:#2563eb;font-weight:700}
-.header .badge{background:#2563eb;color:#fff;padding:3px 12px;border-radius:12px;font-size:11px;font-weight:600}
+.departure-root .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #e5e7eb}
+.departure-root .header h1{font-size:22px;color:#2563eb;font-weight:700}
+.departure-root .header .badge{background:#2563eb;color:#fff;padding:3px 12px;border-radius:12px;font-size:11px;font-weight:600}
 
 /* ── DATE NAV ── */
-.date-nav{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
-.date-nav .date-display{font-size:18px;font-weight:700;color:#1f2937}
-.date-nav-btn{padding:4px 14px;font-size:13px;font-weight:600;border-radius:6px;cursor:pointer;background:#e5e7eb;color:#6b7280;border:none;transition:all 0.15s}
-.date-nav-btn:hover{background:#d1d5db}
-.date-nav-btn.active{background:#2563eb;color:#fff}
-.date-nav input[type=date]{padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px}
+.departure-root .date-nav{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.departure-root .date-nav .date-display{font-size:18px;font-weight:700;color:#1f2937}
+.departure-root .date-nav-btn{padding:4px 14px;font-size:13px;font-weight:600;border-radius:6px;cursor:pointer;background:#e5e7eb;color:#6b7280;border:none;transition:all 0.15s}
+.departure-root .date-nav-btn:hover{background:#d1d5db}
+.departure-root .date-nav-btn.active{background:#2563eb;color:#fff}
+.departure-root .date-nav input[type=date]{padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px}
 
 /* ── CARDS ── */
-.card{background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;padding:16px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,0.05)}
-.card-title{color:#6b7280;font-size:12px;font-weight:600;letter-spacing:0.5px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
+.departure-root .card{background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;padding:16px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,0.05)}
+.departure-root .card-title{color:#6b7280;font-size:12px;font-weight:600;letter-spacing:0.5px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
 
 /* ── INFO + CLOSEOUT WRAPPER (side by side) ── */
-.info-closeout-wrapper{display:flex;gap:16px;margin-bottom:16px}
-.info-closeout-wrapper .card{flex:1;margin-bottom:0}
-.info-closeout-wrapper .summary-section{flex:3;min-width:0}
-.info-closeout-wrapper .closeout-section{flex:2;min-width:260px;max-width:320px}
+.departure-root .info-closeout-wrapper{display:flex;gap:16px;margin-bottom:16px}
+.departure-root .info-closeout-wrapper .card{flex:1;margin-bottom:0}
+.departure-root .info-closeout-wrapper .summary-section{flex:3;min-width:0}
+.departure-root .info-closeout-wrapper .closeout-section{flex:2;min-width:260px;max-width:320px}
 
 /* ── VEHICLE SUMMARY TABLE ── */
-.summary-table{width:100%;border-collapse:collapse;font-size:15px;border:1px solid #e5e7eb}
-.summary-table th{background:#dbeafe;color:#1f2937;font-weight:700;font-size:15px;padding:8px 10px;text-align:center;border:1px solid #e5e7eb;white-space:nowrap}
-.summary-table td{padding:8px 10px;border:1px solid #e5e7eb;text-align:center;vertical-align:middle}
-.summary-table td select, .summary-table td input{display:inline-block;margin:0 auto;vertical-align:middle}
-.summary-table .inp-xs{width:80px;text-align:center;font-size:14px}
-.summary-table td select.time-select{text-align:center;text-align-last:center;-moz-text-align-last:center;font-size:16px;font-weight:600;padding:2px}
+.departure-root .summary-table{width:100%;border-collapse:collapse;font-size:15px;border:1px solid #e5e7eb}
+.departure-root .summary-table th{background:#dbeafe;color:#1f2937;font-weight:700;font-size:15px;padding:8px 10px;text-align:center;border:1px solid #e5e7eb;white-space:nowrap}
+.departure-root .summary-table td{padding:8px 10px;border:1px solid #e5e7eb;text-align:center;vertical-align:middle}
+.departure-root .summary-table td select,.departure-root .summary-table td input{display:inline-block;margin:0 auto;vertical-align:middle}
+.departure-root .summary-table .inp-xs{width:80px;text-align:center;font-size:14px}
+.departure-root .summary-table td select.time-select{text-align:center;text-align-last:center;-moz-text-align-last:center;font-size:16px;font-weight:600;padding:2px}
 
 /* ── BADGE (신규/기존) ── */
-.badge-new{display:inline-block;background:#ef4444;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700}
-.badge-old{display:inline-block;background:#10b981;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700}
+.departure-root .badge-new{display:inline-block;background:#ef4444;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700}
+.departure-root .badge-old{display:inline-block;background:#10b981;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700}
 
 /* ── CLOSEOUT STATUS TABLE ── */
-.closeout-table{width:100%;border-collapse:collapse;font-size:14px}
-.closeout-table td{padding:8px 10px;border-bottom:1px solid #f3f4f6}
-.closeout-table .label{color:#6b7280;font-weight:500;width:100px;white-space:nowrap}
-.closeout-table .value{color:#1f2937;font-weight:600}
-.closeout-table .big-num{font-size:22px;font-weight:700;color:#2563eb}
+.departure-root .closeout-table{width:100%;border-collapse:collapse;font-size:14px}
+.departure-root .closeout-table td{padding:8px 10px;border-bottom:1px solid #f3f4f6}
+.departure-root .closeout-table .label{color:#6b7280;font-weight:500;width:100px;white-space:nowrap}
+.departure-root .closeout-table .value{color:#1f2937;font-weight:600}
+.departure-root .closeout-table .big-num{font-size:22px;font-weight:700;color:#2563eb}
 
 /* ── INPUTS ── */
-.inp{background:#ffffff;border:1px solid #d1d5db;color:#1f2937;padding:6px 8px;border-radius:6px;font-size:14px;width:100%;transition:border-color 0.15s}
-.inp:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,0.1)}
-.inp-sm{width:70px}
-.inp-xs{width:80px;font-size:14px}
+.departure-root .inp{background:#ffffff;border:1px solid #d1d5db;color:#1f2937;padding:6px 8px;border-radius:6px;font-size:14px;width:100%;transition:border-color 0.15s}
+.departure-root .inp:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,0.1)}
+.departure-root .inp-sm{width:70px}
+.departure-root .inp-xs{width:80px;font-size:14px}
 
 /* ── BUTTONS ── */
-.btn{background:#ffffff;border:1px solid #d1d5db;color:#374151;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;transition:all 0.15s}
-.btn:hover{background:#f3f4f6;border-color:#9ca3af}
-.btn-primary{background:#2563eb;border-color:#2563eb;color:#fff}
-.btn-primary:hover{background:#1d4ed8}
-.btn-sm{padding:4px 10px;font-size:12px}
-.btn-success{background:#10b981;border-color:#10b981;color:#fff}
-.btn-success:hover{background:#059669}
+.departure-root .btn{background:#ffffff;border:1px solid #d1d5db;color:#374151;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;transition:all 0.15s}
+.departure-root .btn:hover{background:#f3f4f6;border-color:#9ca3af}
+.departure-root .btn-primary{background:#2563eb;border-color:#2563eb;color:#fff}
+.departure-root .btn-primary:hover{background:#1d4ed8}
+.departure-root .btn-sm{padding:4px 10px;font-size:12px}
+.departure-root .btn-success{background:#10b981;border-color:#10b981;color:#fff}
+.departure-root .btn-success:hover{background:#059669}
 
-/* ── VF67 CARDS ── */
-#vf67Container{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-#vf67Container.many-cards{grid-template-columns:1fr;max-width:600px;margin:0 auto}
-.vf67-card-wrap.hidden-by-time{display:none}
-.vf67-hidden-banner{margin-bottom:16px}
-.vf67-hidden-banner .hdr{color:#6b7280;font-size:12px;font-weight:600;margin-bottom:8px}
-.vf67-hidden-banner .chips{display:flex;gap:6px;flex-wrap:wrap}
-.vf67-hidden-chip{padding:4px 14px;border-radius:14px;font-size:13px;font-weight:600;cursor:pointer;background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb}
-.vf67-hidden-banner .hdr{color:#6b7280;font-size:12px;font-weight:600;margin-bottom:8px}
-.vf67-hidden-chip{padding:4px 14px;border-radius:14px;font-size:13px;font-weight:600;cursor:pointer;background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb}
-.vf67-hidden-chip:hover{background:#dbeafe;color:#2563eb;border-color:#2563eb}
-.vf67-tab{padding:6px 18px;font-size:13px;font-weight:600;border-radius:6px;cursor:pointer;background:#e5e7eb;color:#6b7280;transition:all 0.15s;border:none}
-.vf67-tab:hover{background:#d1d5db}
-.vf67-tab.active{background:#2563eb;color:#fff}
-.vf67-tab.expired{opacity:0.5;text-decoration:line-through}
-.vf67-table{width:100%;border-collapse:collapse;font-size:14px}
-.vf67-table th{background:#1e3a5f;color:#ffffff;font-weight:700;font-size:14px;padding:8px 14px;text-align:left}
-.vf67-table th .th-inner{display:flex;justify-content:space-between;align-items:center}
-.vf67-table td{padding:6px 10px;border:1px solid #d1d5db;vertical-align:middle}
-.vf67-table .vf67-label{width:110px;min-width:110px;color:#374151;font-weight:500;white-space:nowrap}
-.vf67-table .vf67-value{color:#1f2937}
-.vf67-table .inp-sm{width:70px}
-.inp-region{width:55px;background:#fff3cd;border:1px solid #d1d5db;color:#1f2937;padding:4px 6px;border-radius:4px;font-size:13px;text-align:center}
-.inp-region:focus{outline:none;border-color:#2563eb}
-.vf67-region-label{font-weight:700;color:#374151;text-transform:uppercase;font-size:13px}
-.vf67-total-label{color:#374151;font-weight:700}
-.vf67-total-value{color:#dc2626;font-weight:700;text-align:left}
+/* ── VF67(3열 균등 분배) + 봉인씰(우측 좁은 패널) ── */
+.departure-root .vf67-seal-row{display:flex;gap:10px;align-items:flex-start;margin-bottom:16px;width:100%}
+.departure-root .vf67-seal-row > .card{margin-bottom:0}
+/* 좌측: 남는 폭 전부 사용 → 3카드 균등 분배, 우측 공백 제거 */
+.departure-root .vf67-seal-row .vf67-section{flex:1 1 0;min-width:0;max-width:none;width:auto}
+/* 우측: 8자리 봉인번호용 좁은 폭 */
+.departure-root .vf67-seal-row .seal-section{flex:0 0 158px;width:158px;max-width:158px;min-width:150px;position:sticky;top:12px;padding:10px}
 
-/* ── SEAL ── */
-.seal-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;margin-top:8px}
-.seal-item{display:flex;align-items:center;gap:6px;font-size:13px}
-.seal-item label{color:#6b7280;width:90px}
+/* ── VF67 CARDS: 항상 3열 그리드 (4번째=1열 아래, 2단 배열) ── */
+.departure-root #vf67Container,
+.departure-root #vf67Container.many-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;width:100%;max-width:none}
+.departure-root .vf67-card-wrap{width:100%;min-width:0;max-width:none}
+.departure-root .vf67-card-wrap.hidden-by-time{display:none}
+.departure-root .vf67-hidden-banner{margin-bottom:12px}
+.departure-root .vf67-hidden-banner .hdr{color:#6b7280;font-size:12px;font-weight:600;margin-bottom:8px}
+.departure-root .vf67-hidden-banner .chips{display:flex;gap:6px;flex-wrap:wrap}
+.departure-root .vf67-hidden-chip{padding:4px 14px;border-radius:14px;font-size:13px;font-weight:600;cursor:pointer;background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb}
+.departure-root .vf67-hidden-chip:hover{background:#dbeafe;color:#2563eb;border-color:#2563eb}
+.departure-root .vf67-tab{padding:6px 18px;font-size:13px;font-weight:600;border-radius:6px;cursor:pointer;background:#e5e7eb;color:#6b7280;transition:all 0.15s;border:none}
+.departure-root .vf67-tab:hover{background:#d1d5db}
+.departure-root .vf67-tab.active{background:#2563eb;color:#fff}
+.departure-root .vf67-tab.expired{opacity:0.5;text-decoration:line-through}
+.departure-root .vf67-table{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+.departure-root .vf67-table th{background:#1e3a5f;color:#ffffff;font-weight:700;font-size:13px;padding:6px 8px;text-align:left}
+.departure-root .vf67-table th .th-inner{display:flex;justify-content:space-between;align-items:center;gap:4px;flex-wrap:wrap}
+.departure-root .vf67-table td{padding:5px 6px;border:1px solid #d1d5db;vertical-align:middle;word-break:break-all}
+.departure-root .vf67-table .vf67-label{width:82px;min-width:82px;max-width:82px;color:#374151;font-weight:500;white-space:nowrap;font-size:12px}
+.departure-root .vf67-table .vf67-value{color:#1f2937;font-size:13px}
+.departure-root .vf67-table .inp-sm{width:58px;font-size:13px;padding:3px 4px}
+.departure-root .inp-region{width:44px;background:#fff3cd;border:1px solid #d1d5db;color:#1f2937;padding:3px 2px;border-radius:4px;font-size:12px;text-align:center}
+.departure-root .inp-region:focus{outline:none;border-color:#2563eb}
+.departure-root .vf67-region-label{font-weight:700;color:#374151;text-transform:uppercase;font-size:12px}
+.departure-root .vf67-total-label{color:#374151;font-weight:700;font-size:13px}
+.departure-root .vf67-total-value{color:#dc2626;font-weight:700;text-align:left;font-size:13px}
+
+/* ── SEAL (8자리용 좁은 우측 패널, 호차별 색상) ── */
+.departure-root .seal-section .card-title{font-size:13px;margin-bottom:8px}
+.departure-root .seal-grid{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.departure-root .seal-item{display:flex;flex-direction:column;align-items:stretch;gap:3px;font-size:13px;padding:6px 6px;border-radius:6px;border-left:3px solid #94a3b8;background:#f8fafc}
+.departure-root .seal-item label{width:auto;flex-shrink:0;font-size:13px;line-height:1.25;font-weight:700}
+.departure-root .seal-item .inp,
+.departure-root .seal-item .seal-inp{width:100%;min-width:0;font-size:14px;font-weight:700;padding:6px 6px;letter-spacing:0.06em;font-family:ui-monospace,Consolas,monospace;text-align:center}
+/* 호차별 강조 색 (1~8 순환) */
+.departure-root .seal-item.seal-h-1{border-left-color:#2563eb;background:#eff6ff}
+.departure-root .seal-item.seal-h-1 label,.departure-root .seal-item.seal-h-1 .seal-inp{color:#1d4ed8}
+.departure-root .seal-item.seal-h-2{border-left-color:#059669;background:#ecfdf5}
+.departure-root .seal-item.seal-h-2 label,.departure-root .seal-item.seal-h-2 .seal-inp{color:#047857}
+.departure-root .seal-item.seal-h-3{border-left-color:#d97706;background:#fffbeb}
+.departure-root .seal-item.seal-h-3 label,.departure-root .seal-item.seal-h-3 .seal-inp{color:#b45309}
+.departure-root .seal-item.seal-h-4{border-left-color:#dc2626;background:#fef2f2}
+.departure-root .seal-item.seal-h-4 label,.departure-root .seal-item.seal-h-4 .seal-inp{color:#b91c1c}
+.departure-root .seal-item.seal-h-5{border-left-color:#7c3aed;background:#f5f3ff}
+.departure-root .seal-item.seal-h-5 label,.departure-root .seal-item.seal-h-5 .seal-inp{color:#6d28d9}
+.departure-root .seal-item.seal-h-6{border-left-color:#0891b2;background:#ecfeff}
+.departure-root .seal-item.seal-h-6 label,.departure-root .seal-item.seal-h-6 .seal-inp{color:#0e7490}
+.departure-root .seal-item.seal-h-7{border-left-color:#db2777;background:#fdf2f8}
+.departure-root .seal-item.seal-h-7 label,.departure-root .seal-item.seal-h-7 .seal-inp{color:#be185d}
+.departure-root .seal-item.seal-h-8{border-left-color:#4f46e5;background:#eef2ff}
+.departure-root .seal-item.seal-h-8 label,.departure-root .seal-item.seal-h-8 .seal-inp{color:#4338ca}
 
 /* ── RESPONSIVE ── */
 /* ── MOBILE TABS ── */
-.mobile-tab-bar { display: none; background: #fff; margin-bottom: 16px; border-radius: 8px; overflow: hidden; border: 1px solid #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-.mobile-tab-btn { flex: 1; padding: 14px; font-weight: 700; border: none; background: #f9fafb; color: #6b7280; font-size: 15px; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s; }
-.mobile-tab-btn.active { color: #2563eb; border-bottom-color: #2563eb; background: #eff6ff; }
+.departure-root .mobile-tab-bar{ display: none; background: #fff; margin-bottom: 16px; border-radius: 8px; overflow: hidden; border: 1px solid #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+.departure-root .mobile-tab-btn{ flex: 1; padding: 14px; font-weight: 700; border: none; background: #f9fafb; color: #6b7280; font-size: 15px; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s; }
+.departure-root .mobile-tab-btn.active{ color: #2563eb; border-bottom-color: #2563eb; background: #eff6ff; }
 
 /* ── RESPONSIVE OVERRIDES ── */
 @media(max-width:900px){
-  .info-closeout-wrapper{flex-direction:column}
-  .info-closeout-wrapper .closeout-section{max-width:none}
-  #vf67Container{grid-template-columns:1fr}
+  .departure-root .info-closeout-wrapper{flex-direction:column}
+  .departure-root .info-closeout-wrapper .closeout-section{max-width:none}
+  .departure-root .vf67-seal-row{flex-direction:column}
+  .departure-root .vf67-seal-row .vf67-section,
+  .departure-root .vf67-seal-row .seal-section{flex:none;max-width:none;width:100%;position:static}
+  .departure-root #vf67Container,
+  .departure-root #vf67Container.many-cards{grid-template-columns:1fr;max-width:none}
+  .departure-root .vf67-card-wrap{max-width:none}
+  .departure-root .seal-item{flex-direction:column}
 
-  .mobile-tab-bar { display: flex; }
-  .tab-content-sec { display: none !important; }
-  .tab-content-sec.active { display: block !important; }
-  .info-closeout-wrapper.active { display: flex !important; }
+  .departure-root .mobile-tab-bar{ display: flex; }
+  .departure-root .tab-content-sec{ display: none !important; }
+  .departure-root .tab-content-sec.active{ display: block !important; }
+  .departure-root .info-closeout-wrapper.active{ display: flex !important; }
+  .departure-root .vf67-seal-row.mobile-show-vf67 .vf67-section{ display: block !important; }
+  .departure-root .vf67-seal-row.mobile-show-vf67 .seal-section{ display: none !important; }
+  .departure-root .vf67-seal-row.mobile-show-seal .vf67-section{ display: none !important; }
+  .departure-root .vf67-seal-row.mobile-show-seal .seal-section{ display: block !important; }
+  .departure-root .vf67-seal-row.mobile-show-vf67,
+  .departure-root .vf67-seal-row.mobile-show-seal{ display: flex !important; }
   
   /* 카드형 테이블 - summary-table */
-  .summary-table, .summary-table thead, .summary-table tbody, .summary-table th, .summary-table td, .summary-table tr { display: block; }
-  .summary-table thead tr { position: absolute; top: -9999px; left: -9999px; }
-  .summary-table tr { border: 1px solid #e5e7eb; margin-bottom: 12px; border-radius: 8px; background: #fff; padding: 12px; position: relative; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-  .summary-table td { border: none !important; border-bottom: 1px solid #f3f4f6 !important; position: relative; padding: 10px 10px 10px 110px !important; text-align: left !important; min-height: 40px; display: flex; align-items: center; }
-  .summary-table td:last-child { border-bottom: 0 !important; justify-content: flex-end; }
-  .summary-table td:before { position: absolute; left: 10px; top: 12px; width: 90px; white-space: nowrap; font-weight: 600; color: #6b7280; font-size: 13px; content: attr(data-label); }
-  .summary-table td select, .summary-table td input { margin: 0; width: 100% !important; max-width: 250px; text-align: left; }
-  .summary-table td select.time-select { text-align: left; -moz-text-align-last: left; }
+  .departure-root .summary-table,.departure-root .summary-table thead,.departure-root .summary-table tbody,.departure-root .summary-table th,.departure-root .summary-table td,.departure-root .summary-table tr{ display: block; }
+  .departure-root .summary-table thead tr{ position: absolute; top: -9999px; left: -9999px; }
+  .departure-root .summary-table tr{ border: 1px solid #e5e7eb; margin-bottom: 12px; border-radius: 8px; background: #fff; padding: 12px; position: relative; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+  .departure-root .summary-table td{ border: none !important; border-bottom: 1px solid #f3f4f6 !important; position: relative; padding: 10px 10px 10px 110px !important; text-align: left !important; min-height: 40px; display: flex; align-items: center; }
+  .departure-root .summary-table td:last-child{ border-bottom: 0 !important; justify-content: flex-end; }
+  .departure-root .summary-table td:before{ position: absolute; left: 10px; top: 12px; width: 90px; white-space: nowrap; font-weight: 600; color: #6b7280; font-size: 13px; content: attr(data-label); }
+  .departure-root .summary-table td select,.departure-root .summary-table td input{ margin: 0; width: 100% !important; max-width: 250px; text-align: left; }
+  .departure-root .summary-table td select.time-select{ text-align: left; -moz-text-align-last: left; }
 
   /* 입력 폼 세로 정렬 */
-  .add-v-row { flex-direction: column; align-items: flex-start; gap: 8px; margin-bottom: 16px; }
-  .add-v-label { width: auto; font-size: 14px; color: #6b7280; }
-  .add-v-label:after { content: ''; }
-  .add-v-select { width: 100%; padding: 12px; font-size: 16px; }
+  .departure-root .add-v-row{ flex-direction: column; align-items: flex-start; gap: 8px; margin-bottom: 16px; }
+  .departure-root .add-v-label{ width: auto; font-size: 14px; color: #6b7280; }
+  .departure-root .add-v-label:after{ content: ''; }
+  .departure-root .add-v-select{ width: 100%; padding: 12px; font-size: 16px; }
   
   /* 봉인씰 모바일 개선 */
-  .seal-grid { display: flex; flex-direction: column; gap: 12px; }
-  .seal-item { flex-direction: column; align-items: flex-start; gap: 6px; background: #f9fafb; padding: 12px; border-radius: 8px; border: 1px solid #e5e7eb; }
-  .seal-item label { width: auto; font-weight: 700; color: #1f2937; }
-  .seal-item input { width: 100%; padding: 12px; font-size: 16px; }
+  .departure-root .seal-grid{ display: flex; flex-direction: column; gap: 12px; }
+  .departure-root .seal-item{ flex-direction: column; align-items: flex-start; gap: 6px; background: #f9fafb; padding: 12px; border-radius: 8px; border: 1px solid #e5e7eb; }
+  .departure-root .seal-item label{ width: auto; font-weight: 700; color: #1f2937; }
+  .departure-root .seal-item input{ width: 100%; padding: 12px; font-size: 16px; }
 }
-@media print{body{background:#fff;color:#000}.card{background:#fff;border:1px solid #ccc}.inp,.inp-region{border:1px solid #ccc;background:#fff;color:#000}}
+@media print{.departure-root{background:#fff;color:#000}.departure-root .card{background:#fff;border:1px solid #ccc}.departure-root .inp,.departure-root .inp-region{border:1px solid #ccc;background:#fff;color:#000}}
 
 /* ── MODAL ── */
-.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center}
-.modal-box{background:#fff;border-radius:12px;padding:0;max-width:500px;width:90%;box-shadow:0 8px 30px rgba(0,0,0,0.3);overflow:hidden}
-.modal-header{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;background:#f8f9fa;border-bottom:1px solid #e5e7eb;font-weight:700;font-size:15px}
-.modal-body{padding:20px}
-.modal-footer{display:flex;gap:8px;padding:12px 20px;border-top:1px solid #1e1e1e;justify-content:flex-end}
+.departure-root .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center}
+.departure-root .modal-box{background:#fff;border-radius:12px;padding:0;max-width:500px;width:90%;box-shadow:0 8px 30px rgba(0,0,0,0.3);overflow:hidden}
+.departure-root .modal-header{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;background:#f8f9fa;border-bottom:1px solid #e5e7eb;font-weight:700;font-size:15px}
+.departure-root .modal-body{padding:20px}
+.departure-root .modal-footer{display:flex;gap:8px;padding:12px 20px;border-top:1px solid #1e1e1e;justify-content:flex-end}
 
 /* ── TOAST NOTIFICATIONS ── */
-#toastContainer{position:fixed;top:20px;right:20px;z-index:99999;display:flex;flex-direction:column;gap:8px;max-width:480px;pointer-events:none}
-.toast{padding:14px 20px;border-radius:8px;font-size:14px;font-weight:500;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,0.18);animation:toastSlideIn 0.3s ease;color:#fff;pointer-events:auto;white-space:pre-wrap;word-break:break-word}
-.toast-success{background:#059669}
-.toast-error{background:#dc2626}
-.toast-warning{background:#d97706}
-.toast-info{background:#1f2937}
+.departure-root #toastContainer{position:fixed;top:20px;right:20px;z-index:99999;display:flex;flex-direction:column;gap:8px;max-width:480px;pointer-events:none}
+.departure-root .toast{padding:14px 20px;border-radius:8px;font-size:14px;font-weight:500;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,0.18);animation:toastSlideIn 0.3s ease;color:#fff;pointer-events:auto;white-space:pre-wrap;word-break:break-word}
+.departure-root .toast-success{background:#059669}
+.departure-root .toast-error{background:#dc2626}
+.departure-root .toast-warning{background:#d97706}
+.departure-root .toast-info{background:#1f2937}
 @keyframes toastSlideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
 
 /* ── PRINT CONFIRM MODAL ── */
-#printConfirmBody{font-size:15px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0}
+.departure-root #printConfirmBody{font-size:15px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0}
 /* ── ADD VEHICLE MODAL ── */
-.add-v-row{display:flex;align-items:center;margin-bottom:14px}
-.add-v-label{width:80px;font-weight:600;color:#374151;font-size:14px;flex-shrink:0}
-.add-v-label:after{content:' :'}
-.add-v-value{font-size:18px;font-weight:700;color:#2563eb}
-.add-v-select{padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:15px;font-weight:500;width:140px;background:#fff;cursor:pointer}
-.add-v-select:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,0.1)}
+.departure-root .add-v-row{display:flex;align-items:center;margin-bottom:14px}
+.departure-root .add-v-label{width:80px;font-weight:600;color:#374151;font-size:14px;flex-shrink:0}
+.departure-root .add-v-label:after{content:' :'}
+.departure-root .add-v-value{font-size:18px;font-weight:700;color:#2563eb}
+.departure-root .add-v-select{padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:15px;font-weight:500;width:140px;background:#fff;cursor:pointer}
+.departure-root .add-v-select:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,0.1)}
 </style>
 </head>
 <body>
+<div class="departure-root">
 
 <!-- ═══════ 1. HEADER ═══════ -->
 <div class="header">
@@ -243,20 +282,21 @@ body{font-family:'Segoe UI','Noto Sans KR',sans-serif;background:#f0f2f5;color:#
 <!-- ═══════ 4. VF67 TAB BAR ═══════ -->
 <div id="vf67TabBar"></div>
 
-<!-- ═══════ 5. VF67 CARDS ═══════ -->
-<div class="card vf67-section tab-content-sec" id="vf67Section" style="display:none">
-  <div class="card-title"><span>📄 VF67 출차 카드</span></div>
-  <div id="vf67Container"></div>
-  <div class="vf67-hidden-banner" id="vf67HiddenBanner" style="display:none">
-    <div class="hdr">⏳ 출고 완료 (재선택)</div>
-    <div class="chips" id="vf67HiddenChips"></div>
+<!-- ═══════ 5. VF67 카드 (좌) + 봉인씰 (우) ═══════ -->
+<div class="vf67-seal-row" id="vf67SealRow">
+  <div class="card vf67-section tab-content-sec" id="vf67Section" style="display:none">
+    <div class="card-title"><span>📄 VF67 출차 카드</span></div>
+    <div id="vf67Container"></div>
+    <div class="vf67-hidden-banner" id="vf67HiddenBanner" style="display:none">
+      <div class="hdr">⏳ 출고 완료 (재선택)</div>
+      <div class="chips" id="vf67HiddenChips"></div>
+    </div>
   </div>
-</div>
 
-<!-- ═══════ 6. SEAL ═══════ -->
-<div class="card tab-content-sec" id="sealCard">
-  <div class="card-title">🔒 봉인씰</div>
-  <div class="seal-grid" id="sealGrid"></div>
+  <div class="card seal-section tab-content-sec" id="sealCard">
+    <div class="card-title">🔒 봉인씰</div>
+    <div class="seal-grid" id="sealGrid"></div>
+  </div>
 </div>
 
 <!-- ═══════ 7. DISPATCH MODAL ═══════ -->
@@ -350,9 +390,13 @@ body{font-family:'Segoe UI','Noto Sans KR',sans-serif;background:#f0f2f5;color:#
     </div>
     <div class="modal-body">
       <div style="font-size:12px;color:#6b7280;margin-bottom:8px;line-height:1.5">
-        형식: [허브][호차] 차량번호 연락처<br>
-        예: [부천1HUB][1호] 경기82바3167 010-5216-6253<br>
-        한 줄에 하나씩 입력하세요.
+        <b>다양한 형식 지원</b> — 칸 위치보다 <b>내용 패턴</b>으로 인식합니다.<br>
+        필수에 가까운 값: <b>호차(N호)</b> + <b>차량번호</b><br>
+        있으면 반영: 허브(HUB) · 기사명 · 전화 · 톤(5/11) · 시간(20:00)<br>
+        <code style="font-size:11px;display:block;margin:6px 0;padding:8px;background:#f3f4f6;border-radius:6px;white-space:pre-wrap">1호    VF67(유원)    부천1HUB    충북80아3912    김창기    010-7774-8114    5    20:00
+[부천1HUB][2호] 경기82바8956 010-4003-0297
+3호 광주90바1703 김경옥 11T 23:50</code>
+        ※ 탭/공백/쉼표 혼용 가능 · 줄 순서 무관 · <b>호차 번호순</b>으로 정렬 적용
       </div>
       <textarea id="vehicleOrderInput" style="width:100%;height:200px;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-family:monospace;font-size:13px;line-height:1.6;resize:vertical"></textarea>
     </div>
@@ -362,15 +406,8 @@ body{font-family:'Segoe UI','Noto Sans KR',sans-serif;background:#f0f2f5;color:#
     </div>
   </div>
 </div>
-      <button class="btn btn-primary" onclick="applyVehicleOrder()">✅ 적용</button>
-      <button class="btn" onclick="closeVehicleOrderModal()">취소</button>
-    </div>
-  </div>
-</div>
 
 <!-- ═══════ TOAST CONTAINER ═══════ -->
-<div id="toastContainer"></div>
-
 <script>
 // ── 서버 주입 데이터 ──
 var LS_DATA = __LS_DATA__;
@@ -384,13 +421,19 @@ function switchMobileTab(tabId) {
   document.getElementById('infoCloseoutWrapper').classList.remove('active');
   document.getElementById('vf67Section').classList.remove('active');
   document.getElementById('sealCard').classList.remove('active');
+  var row = document.getElementById('vf67SealRow');
+  if (row) {
+    row.classList.remove('mobile-show-vf67', 'mobile-show-seal');
+  }
   
   if (tabId === 'summary') {
     document.getElementById('infoCloseoutWrapper').classList.add('active');
   } else if (tabId === 'vf67') {
     document.getElementById('vf67Section').classList.add('active');
+    if (row) row.classList.add('mobile-show-vf67');
   } else if (tabId === 'seal') {
     document.getElementById('sealCard').classList.add('active');
+    if (row) row.classList.add('mobile-show-seal');
   }
 }
 
@@ -461,6 +504,7 @@ function loadDateData() {
 
 function renderAllWithData(data) {
   window._filteredData = data;
+  restoreDepartTimesFromLocal(data);
   renderSummaryTableWithData(data);
   renderClosingStatusWithData(data);
   renderVF67CardsWithData(data);
@@ -474,25 +518,33 @@ function renderAll() {
 
 // ── 봉인씰 ──
 var sealSides = [{'key':'leftWing','label':'좌측윙'},{'key':'rightWing','label':'우측윙'},{'key':'backDoor','label':'후면도어'}];
+function sealHocheClass(hoche) {
+  var n = parseInt(hoche, 10) || 1;
+  var idx = ((n - 1) % 8) + 1;
+  return 'seal-h-' + idx;
+}
 function renderSeal(data) {
   var grid = document.getElementById('sealGrid');
   grid.innerHTML = '';
+  var sec = document.getElementById('sealCard') || grid.closest('.card');
   if (!data || data.length === 0) {
-    var sec = grid.closest('.card');
     if (sec) sec.style.display = 'none';
     return;
   }
-  var sec = grid.closest('.card');
   if (sec) sec.style.display = '';
   data.forEach(function(v){
     var hoche = v.hoche;
     var seals = v.seals || {};
+    var hClass = sealHocheClass(hoche);
     sealSides.forEach(function(s){
       var div = document.createElement('div');
-      div.className = 'seal-item';
+      div.className = 'seal-item ' + hClass;
       var savedVal = seals[s.key] || '';
-      div.innerHTML = '<label>' + hoche + '호차 ' + s.label + ':</label>' +
-        '<input class="inp inp-xs" id="seal_' + hoche + '_' + s.key + '" value="' + savedVal + '" placeholder="-" onchange="onSealChange(' + hoche + ')" onkeyup="onSealKeyUp(event, ' + hoche + ', \'' + s.key + '\')">';
+      div.innerHTML = '<label>' + hoche + '호 ' + s.label + ':</label>' +
+        '<input class="inp seal-inp" id="seal_' + hoche + '_' + s.key + '" value="' + savedVal +
+        '" maxlength="8" inputmode="numeric" autocomplete="off" placeholder="8자리" ' +
+        'onchange="onSealChange(' + hoche + ')" ' +
+        'onkeyup="onSealKeyUp(event, ' + hoche + ', \'' + s.key + '\')">';
       grid.appendChild(div);
     });
   });
@@ -713,7 +765,7 @@ function renderDataRow(container, d) {
     '<td data-label="연락처">' + phone + '</td>' +
     '<td data-label="구분">' + badge + '</td>' +
     '<td data-label="파렛트"><input class="inp inp-xs" value="' + savedPlt + '" onchange="onPalletChange(' + i + ')" id="plt_input_' + i + '"></td>' +
-    '<td data-label="🖨️"><button class="btn btn-sm" onclick="printVehicle('+i+')" title="LS PDF + KPP EDI 출력">🖨️</button></td>' +
+    '<td data-label="🖨️"><button class="btn btn-sm" onclick="printVehicle('+i+')" title="LS PDF 출력 (봉인씰 합성)">🖨️</button></td>' +
     '<td data-label="출고시간" id="plt_time_' + i + '">' + savedTime + '</td>' +
     '<td data-label="톤수"><select class="inp inp-xs" id="ton_select_' + i + '" onchange="onTonnageChange(' + i + ')">'
     + '<option value="5T"' + (ton==='5T'?' selected':'') + '>5T</option>'
@@ -900,10 +952,33 @@ function onTonnageChange(hoche) {
   }
 }
 
+// ── 허브 정규화 (PDF 오파싱 "Date/Time" 등 보정) ──
+function normalizeHub(hub) {
+  var h = (hub == null ? '' : String(hub)).trim();
+  if (!h) return '부천1 HUB';
+  var up = h.toUpperCase();
+  if (up === 'DATE/TIME' || up === 'DATE' || up === 'TIME' || up.indexOf('DATE') >= 0 || up.indexOf('TIME') >= 0) {
+    return '부천1 HUB';
+  }
+  if (up.indexOf('HUB') < 0) return '부천1 HUB';
+  // "부천1HUB" → "부천1 HUB"
+  if (!/\sHUB$/i.test(h) && /HUB$/i.test(h)) {
+    h = h.replace(/HUB$/i, ' HUB');
+  }
+  return h;
+}
+
+function parseTimeToMinutes(t) {
+  if (!t || typeof t !== 'string') return -1;
+  var m = t.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return -1;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
 // ── 마감출차현황 ──
 function renderClosingStatusWithData(data) {
   document.getElementById('closeoutSection').style.display = '';
-  // 타이틀: "6/9 VF67 마감출차현황"
+  // 타이틀: "7/14 VF67 마감출차현황"
   var m = currentDate.getMonth()+1;
   var d = currentDate.getDate();
   document.getElementById('closeoutTitle').textContent = m+'/'+d+' VF67 마감출차현황';
@@ -913,35 +988,87 @@ function renderClosingStatusWithData(data) {
     document.getElementById('coTime').textContent = '--:--';
     return;
   }
-  // 착지 허브: 첫 차량의 hub
-  var hub = data[0] ? (data[0].hub||'부천1 HUB') : '부천1 HUB';
+
+  // 착지 허브: 유효한 hub 중 첫 값
+  var hub = '부천1 HUB';
+  for (var i = 0; i < data.length; i++) {
+    var cand = normalizeHub(data[i].hub);
+    if (cand && cand !== '부천1 HUB') { hub = cand; break; }
+    if (cand) hub = cand;
+  }
   document.getElementById('coHub').textContent = hub;
-  // 총 출차 대수 (VF67 카드 내용이 하나라도 입력되어 있는 차량의 수로 계산)
+
+  // 총 출차 대수: 차량번호가 있는 배차 차량 수 (plt 미입력 포함)
   var activeCount = 0;
   data.forEach(function(v) {
-    if (v.plt && v.plt > 0) {
-      activeCount++;
-    }
+    if (v.plate && String(v.plate).trim()) activeCount++;
   });
   document.getElementById('coCount').textContent = activeCount;
-  // 마감 시간: 가장 늦은 pltTimestamps 또는 '--:--'
-  var latest = '--:--';
-  var latestTs = 0;
-  data.forEach(function(v){
-    var ts = pltTimestamps[v.hoche];
-    if (ts && ts.getTime() > latestTs) { latestTs = ts.getTime(); latest = ('0'+ts.getHours()).slice(-2)+':'+('0'+ts.getMinutes()).slice(-2); }
+
+  // 마감 출차 시간 = 3호차 파렛트/수량 입력 시각 (배차 예정 시간 아님)
+  document.getElementById('coTime').textContent = getHoche3CloseTime(data);
+}
+
+/** 3호차 입력 시각: 세션 타임스탬프 → departTime → localStorage */
+function getHoche3CloseTime(data) {
+  var ts3 = pltTimestamps[3];
+  if (ts3 && ts3.getTime) {
+    return ('0' + ts3.getHours()).slice(-2) + ':' + ('0' + ts3.getMinutes()).slice(-2);
+  }
+  var v3 = null;
+  (data || []).forEach(function(v) {
+    if (parseInt(v.hoche, 10) === 3) v3 = v;
   });
-  document.getElementById('coTime').textContent = latest;
+  if (v3 && v3.departTime && String(v3.departTime).trim()) {
+    return String(v3.departTime).trim();
+  }
+  try {
+    var map = JSON.parse(localStorage.getItem('vf67_departTime_' + formatDate(currentDate)) || '{}');
+    if (map['3']) return String(map['3']);
+  } catch (e) {}
+  return '--:--';
+}
+
+function persistDepartTimeLocal(hoche, timeVal) {
+  try {
+    var key = 'vf67_departTime_' + formatDate(currentDate);
+    var map = JSON.parse(localStorage.getItem(key) || '{}');
+    if (timeVal) map[String(hoche)] = timeVal;
+    else delete map[String(hoche)];
+    localStorage.setItem(key, JSON.stringify(map));
+  } catch (e) {}
+}
+
+function restoreDepartTimesFromLocal(data) {
+  try {
+    var map = JSON.parse(localStorage.getItem('vf67_departTime_' + formatDate(currentDate)) || '{}');
+    (data || []).forEach(function(v) {
+      var h = String(v.hoche);
+      if (map[h] && !v.departTime) v.departTime = map[h];
+      if (map[h] && !pltTimestamps[v.hoche]) {
+        var parts = String(map[h]).split(':');
+        if (parts.length >= 2) {
+          var d = new Date();
+          d.setHours(parseInt(parts[0], 10) || 0, parseInt(parts[1], 10) || 0, 0, 0);
+          pltTimestamps[v.hoche] = d;
+        }
+      }
+    });
+  } catch (e) {}
 }
 
 // ── 마감출차현황 복사 ──
 function copyCloseout() {
   var m = currentDate.getMonth()+1;
   var d = currentDate.getDate();
-  var hub = document.getElementById('coHub').textContent;
+  var hub = normalizeHub(document.getElementById('coHub').textContent);
   var count = document.getElementById('coCount').textContent;
-  var time = document.getElementById('coTime').textContent;
-  var text = m+'/'+d+' VF67 마감출차현황\n착지 허브 : '+hub+'\n총 출차 대수 : '+count+'대\n마감 출차 시간 : '+time;
+  var time = document.getElementById('coTime').textContent || '--:--';
+  var text =
+    m + '/' + d + ' VF67 마감출차현황\n' +
+    '착지 허브 : ' + hub + '\n' +
+    '총 출차 대수 : ' + count + '대\n' +
+    '마감 출차 시간 : ' + time;
   // clipboard + fallback
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(function(){
@@ -984,7 +1111,7 @@ function renderVF67CardsWithData(data) {
   confirmedData.forEach(function(d){
     var i = d.hoche;
     var plate = d.plate || '';
-    var center = d.hub || '';
+    var center = normalizeHub(d.hub || '');
     var phone = d.phone || '';
     var time = d.time || '';
     var savedPlt = (d.plt || 0);
@@ -1009,9 +1136,12 @@ function renderVF67CardsWithData(data) {
     html += '<tbody>';
     var totalSum = 0;
     regionNames.forEach(function(r){
-      var savedVal = (d.regions && d.regions[r] !== undefined) ? d.regions[r] : 0;
-      totalSum += savedVal;
-      html += '<tr class="vf67-region-row"><td class="vf67-region-label">'+r+'</td><td><input class="inp-region" type="number" value="'+savedVal+'" min="0" id="vf67_'+r+'_'+i+'" onchange="onVF67RegionChange('+i+')" onkeydown="handleRegionKeydown(event, '+i+', \''+r+'\')"></td></tr>';
+      var raw = (d.regions && d.regions[r] !== undefined && d.regions[r] !== null) ? d.regions[r] : '';
+      var num = parseInt(raw, 10);
+      if (!isNaN(num) && num > 0) totalSum += num;
+      // 0 은 빈칸 표시 (placeholder 없음)
+      var displayVal = (!isNaN(num) && num > 0) ? num : '';
+      html += '<tr class="vf67-region-row"><td class="vf67-region-label">'+r+'</td><td><input class="inp-region" type="number" value="'+displayVal+'" min="0" id="vf67_'+r+'_'+i+'" onchange="onVF67RegionChange('+i+')" onkeydown="handleRegionKeydown(event, '+i+', \''+r+'\')"></td></tr>';
     });
     html += '</tbody>';
     html += '<tbody><tr><td class="vf67-total-label">합계</td><td class="vf67-total-value" id="vf67_total_'+i+'">'+totalSum+'P</td></tr></tbody>';
@@ -1020,9 +1150,11 @@ function renderVF67CardsWithData(data) {
     wrap.appendChild(card);
     container.appendChild(wrap);
   });
-  var count = confirmedData.length;
-  if (count <= MAX_VISIBLE) { showAllCards(); hideTabBar(); }
-  else { showTabBar(confirmedData); selectTab(selectedTab || confirmedData[0].hoche); }
+  // 항상 3열 그리드 전체 표시 (4대째는 1번 아래 2단). 탭 전환은 사용하지 않음.
+  var cont = document.getElementById('vf67Container');
+  if (cont) cont.className = '';
+  showAllCards();
+  hideTabBar();
   updateHiddenBanner(confirmedData);
 }
 
@@ -1115,21 +1247,43 @@ function resetVF67Regions(hoche) {
   regionNames.forEach(function(r) {
     var inp = document.getElementById('vf67_' + r + '_' + hoche);
     if (inp) {
-      inp.value = 0;
+      inp.value = '';
     }
   });
   onVF67RegionChange(hoche);
 }
 
-// ── 권역별 입력 필드 키보드 조작 (Enter/Tab/Up/Down) ──
+/** 권역 입력 포커스를 아래(다음 행)로 이동. Enter/Tab 공통 */
+function focusNextRegionInput(hoche, region) {
+  var currentIdx = regionNames.indexOf(region);
+  if (currentIdx === -1) return;
+  var nextIdx = currentIdx + 1;
+  if (nextIdx < regionNames.length) {
+    var nextInput = document.getElementById('vf67_' + regionNames[nextIdx] + '_' + hoche);
+    if (nextInput) {
+      nextInput.focus();
+      nextInput.select();
+    }
+  } else {
+    // 마지막 권역(TW_YAMATO) 다음은 다음 호차 수량 칸
+    var nextCardQty = document.getElementById('vf67_qty_' + (hoche + 1));
+    if (nextCardQty) {
+      nextCardQty.focus();
+      nextCardQty.select();
+    }
+  }
+}
+
+// ── 권역별 입력 필드 키보드 조작 (Enter/Tab → 아래 칸, 화살표 ±1) ──
 function handleRegionKeydown(event, hoche, region) {
   var key = event.key;
   var currentIdx = regionNames.indexOf(region);
   if (currentIdx === -1) return;
   var input = event.target;
-  var val = parseInt(input.value) || 0;
+  var raw = String(input.value || '').trim();
+  var val = raw === '' ? 0 : (parseInt(raw, 10) || 0);
 
-  // ↑ ↓ ← → : 수량 조절 (±1) — dispatchEvent 없이 직접 반영
+  // ↑ ↓ ← → : 수량 조절 (±1) — 0 이 되면 빈칸
   if (key === 'ArrowUp') {
     event.preventDefault();
     input.value = val + 1;
@@ -1138,13 +1292,15 @@ function handleRegionKeydown(event, hoche, region) {
   }
   if (key === 'ArrowDown') {
     event.preventDefault();
-    input.value = Math.max(0, val - 1);
+    var nextDown = Math.max(0, val - 1);
+    input.value = nextDown > 0 ? nextDown : '';
     _recalcRegionTotal(hoche);
     return;
   }
   if (key === 'ArrowLeft') {
     event.preventDefault();
-    input.value = Math.max(0, val - 1);
+    var nextLeft = Math.max(0, val - 1);
+    input.value = nextLeft > 0 ? nextLeft : '';
     _recalcRegionTotal(hoche);
     return;
   }
@@ -1155,21 +1311,25 @@ function handleRegionKeydown(event, hoche, region) {
     return;
   }
 
-  // ↵ Enter : 다음 입력창
-  if (key === 'Enter') {
+  // ↵ Enter / ⇥ Tab : 아래(다음 권역)로 이동
+  if (key === 'Enter' || key === 'Tab') {
     event.preventDefault();
-    var nextIdx = currentIdx + 1;
-    if (nextIdx < regionNames.length) {
-      var nextInput = document.getElementById('vf67_' + regionNames[nextIdx] + '_' + hoche);
-      if (nextInput) { nextInput.focus(); nextInput.select(); }
+    // 이동 전 현재 값 반영
+    onVF67RegionChange(hoche);
+    if (event.shiftKey && key === 'Tab') {
+      // Shift+Tab : 위 권역
+      if (currentIdx > 0) {
+        var prevInput = document.getElementById('vf67_' + regionNames[currentIdx - 1] + '_' + hoche);
+        if (prevInput) { prevInput.focus(); prevInput.select(); }
+      } else {
+        var qtyInput = document.getElementById('vf67_qty_' + hoche);
+        if (qtyInput) { qtyInput.focus(); qtyInput.select(); }
+      }
     } else {
-      var nextCardQty = document.getElementById('vf67_qty_' + (hoche + 1));
-      if (nextCardQty) { nextCardQty.focus(); nextCardQty.select(); }
+      focusNextRegionInput(hoche, region);
     }
     return;
   }
-
-  // ⇥ Tab : 기본 Tab 동작
 }
 
 // ── QTY 입력창 키보드 핸들러 ──
@@ -1204,15 +1364,14 @@ function handleQtyKeydown(event, hoche) {
     return;
   }
 
-  // ↵ Enter : 다음 입력창 (EAST)
-  if (key === 'Enter') {
+  // ↵ Enter / ⇥ Tab : EAST 권역으로 (아래로)
+  if (key === 'Enter' || key === 'Tab') {
+    if (key === 'Tab' && event.shiftKey) return; // Shift+Tab 은 기본 동작
     event.preventDefault();
     var eastInput = document.getElementById('vf67_EAST_' + hoche);
     if (eastInput) { eastInput.focus(); eastInput.select(); }
     return;
   }
-
-  // ⇥ Tab : 기본 Tab 동작
 }
 
 // ── QTY 변경 동기화 (reload 없이 시간/PLT/합계만 갱신) ──
@@ -1243,9 +1402,12 @@ function _syncQtyChange(idx, qty) {
 function _recalcRegionTotal(idx) {
   var total = 0;
   regionNames.forEach(function(r){
-    total += parseInt(document.getElementById('vf67_'+r+'_'+idx).value) || 0;
+    var el = document.getElementById('vf67_'+r+'_'+idx);
+    var raw = el ? String(el.value || '').trim() : '';
+    total += raw === '' ? 0 : (parseInt(raw, 10) || 0);
   });
-  document.getElementById('vf67_total_'+idx).textContent = total + 'P';
+  var totalEl = document.getElementById('vf67_total_'+idx);
+  if (totalEl) totalEl.textContent = total + 'P';
 }
 
 // ── VF67 복사 ──
@@ -1306,8 +1468,13 @@ function onPalletChange(idx) {
   document.getElementById('plt_time_'+idx).textContent = timeVal;
   var vf67Qty = document.getElementById('vf67_qty_'+idx);
   if (vf67Qty) { vf67Qty.value = qty; var te = document.getElementById('vf67_time_'+idx); if(te) te.textContent = timeVal; }
-  if (qty>0) { pltTimestamps[idx]=now; pltQtyValues[idx]=qty; }
-  else { delete pltTimestamps[idx]; delete pltQtyValues[idx]; }
+  if (qty>0) { pltTimestamps[idx]=now; pltQtyValues[idx]=qty; persistDepartTimeLocal(idx, timeVal); }
+  else { delete pltTimestamps[idx]; delete pltQtyValues[idx]; persistDepartTimeLocal(idx, ''); }
+
+  // 3호차 입력 시각 = 마감 출차 시간 → 즉시 마감현황 갱신
+  if (parseInt(idx, 10) === 3 && window._filteredData) {
+    renderClosingStatusWithData(window._filteredData);
+  }
   
   // LS_DATA에 plt 및 출고시간(departTime) 저장 (새로고침 유지)
   var dateKey = formatDate(currentDate);
@@ -1444,7 +1611,9 @@ function executePrint() {
       sealParams += '&seal_' + s.key + '=' + encodeURIComponent(el.value.trim());
     }
   });
-  fetch('/departure/api/print/' + hoche + '?plt=' + pltVal + sealParams)
+  // 조회 중인 작업일(currentDate)을 반드시 전달 — 서버 자정 기준 today와 어긋나면 잘못된 PDF/호차 매칭
+  var dateParam = '&date=' + encodeURIComponent(formatDate(currentDate));
+  fetch('/departure/api/print/' + hoche + '?plt=' + pltVal + sealParams + dateParam)
   .then(function(r) {
     if (!r.ok) {
       return r.text().then(function(t) {
@@ -1478,7 +1647,7 @@ function executePrint() {
   });
 }
 
-// ── LS PDF + KPP EDI 통합 인쇄 (PLT 검증 + 톤수 변경 확인) ──
+// ── LS PDF 인쇄 (봉인씰 합성, KPP 미연동) ──
 function printVehicle(hoche) {
   var pltInput = document.getElementById('plt_input_' + hoche);
   var pltQty = pltInput ? parseInt(pltInput.value) || 0 : 0;
@@ -1634,7 +1803,7 @@ function generateDispatchText() {
       if (filtered[k].hoche === ph) { existing = filtered[k]; break; }
     }
     if (existing) {
-      var hub = existing.hub || '부천1 HUB';
+      var hub = normalizeHub(existing.hub);
       var ton = existing.ton || '5T';
       var time = existing.time || '20:00';
       lines.push(hub + ' ' + ton + ' ' + time + ' ' + ph + '차');
@@ -1651,7 +1820,7 @@ function generateDispatchText() {
   // 2) 추가 배차 데이터 (hoche > 3)
   filtered.forEach(function(v){
     if (v.hoche > 3) {
-      var hub = v.hub || '부천1 HUB';
+      var hub = normalizeHub(v.hub);
       var ton = v.ton || '5T';
       var time = v.time || '13:00';
       lines.push(hub + ' ' + ton + ' ' + time + ' ' + v.hoche + '차');
@@ -1694,7 +1863,7 @@ function generateExtraDispatchText() {
   
   var seq = 1;
   extra.forEach(function(v){
-    var hub = v.hub || '부천1 HUB';
+    var hub = normalizeHub(v.hub);
     var ton = v.ton || '5T';
     var time = v.time || '13:00';
     var hoche = v.hoche || '';
@@ -1879,12 +2048,30 @@ loadDateData();
 function showVehicleOrderModal() {
   var dateStr = formatDate(currentDate);
   var lines = [];
-  for (var h = 1; h <= 3; h++) {
-    var v = LS_DATA.find(function(x){ return x.hoche === h && x.date === dateStr; });
-    if (v && v.plate && v.plate.trim()) {
-      var hub = v.hub || '부천1 HUB';
-      var phone = v.phone || '';
-      lines.push('[' + hub + '][' + h + '호] ' + v.plate + ' ' + phone);
+  // 배차표 형식: 호차  운송사  허브  차량번호  기사  전화  톤  시간
+  var dayList = (LS_DATA || []).filter(function(x){ return x.date === dateStr; })
+    .slice().sort(function(a,b){ return (a.hoche||0)-(b.hoche||0); });
+  var maxH = 3;
+  dayList.forEach(function(v){ if (v.hoche > maxH) maxH = v.hoche; });
+  for (var h = 1; h <= maxH; h++) {
+    var v = dayList.find(function(x){ return x.hoche === h; });
+    var hub = normalizeHub(v && v.hub).replace(/\s+HUB$/i, 'HUB') || '부천1HUB';
+    var carrier = 'VF67(유원)';
+    if (v && v.plate && v.plate.trim() && v.plate.trim() !== '수배중') {
+      var phone = (v.phone || v.driverPhone || '').trim();
+      var driver = (v.driver || v.driverName || v.name || '').trim();
+      var tonRaw = (v.ton || v.original_ton || (h === 3 ? '11T' : '5T')).toString();
+      var tonNum = tonRaw.replace(/[^0-9]/g, '') || (h === 3 ? '11' : '5');
+      var time = (v.time || ([,'20:00','22:00','23:50'][h] || '13:00')).trim();
+      lines.push(
+        h + '호    ' + carrier + '    ' + hub + '    ' + v.plate.trim() + '    ' +
+        (driver || '-') + '    ' + (phone || '-') + '    ' + tonNum + '    ' + time
+      );
+    } else {
+      lines.push(
+        h + '호    ' + carrier + '    ' + hub + '    수배중    -    -    ' +
+        (h === 3 ? '11' : '5') + '    ' + ([,'20:00','22:00','23:50'][h] || '13:00')
+      );
     }
   }
   document.getElementById('vehicleOrderInput').value = lines.join('\n');
@@ -1893,51 +2080,349 @@ function showVehicleOrderModal() {
 function closeVehicleOrderModal() {
   document.getElementById('vehicleOrderModal').style.display = 'none';
 }
-function applyVehicleOrder() {
-  var text = document.getElementById('vehicleOrderInput').value.trim();
-  if (!text) { alert('입력 내용이 없습니다.'); return; }
-  
-  var dateStr = formatDate(currentDate);
-  var lines = text.split('\n').map(function(l){ return l.trim(); }).filter(function(l){ return l; });
-  var updated = false;
-  
-  lines.forEach(function(line){
-    // 파싱: [부천1HUB][1호] 경기82바3167 010-5216-6253
-    var match = line.match(/\[([^\]]+)\]\[(\d+)호\]\s+(\S+)\s+(\S+)/);
-    if (match) {
-      var hub = match[1];
-      var hoche = parseInt(match[2]);
-      var plate = match[3];
-      var phone = match[4];
-      
-      // LS_DATA에서 해당 호차 찾기
-      for (var i = 0; i < LS_DATA.length; i++) {
-        if (LS_DATA[i].hoche === hoche && LS_DATA[i].date === dateStr) {
-          LS_DATA[i].plate = plate;
-          LS_DATA[i].phone = phone;
-          LS_DATA[i].driver = LS_DATA[i].driver || '';
-          LS_DATA[i].hub = hub;
-          updated = true;
-          break;
+/** 전각 숫자·특수공백 정규화 */
+function normalizeVehicleOrderText(s) {
+  return (s || '')
+    .replace(/^\uFEFF/, '')
+    .replace(/[\u00a0\u200b\u200c\u200d\ufeff]/g, ' ')
+    .replace(/[０-９]/g, function(ch) {
+      return String.fromCharCode(ch.charCodeAt(0) - 0xFF10 + 0x30);
+    })
+    .replace(/[：]/g, ':')
+    .replace(/[－–—]/g, '-');
+}
+
+/** 전화 숫자 → 010-XXXX-XXXX */
+function formatVehiclePhone(digits) {
+  var d = String(digits || '').replace(/\D/g, '');
+  if (d.length === 11) return d.slice(0, 3) + '-' + d.slice(3, 7) + '-' + d.slice(7);
+  if (d.length === 10) return d.slice(0, 3) + '-' + d.slice(3, 6) + '-' + d.slice(6);
+  return digits || '';
+}
+
+/**
+ * 토큰 분리 — 탭/쉼표/세미콜론/다중공백 등 다양한 구분자 지원
+ * (서버 vehicle_order._split_order_tokens 와 동일 정책)
+ */
+function splitVehicleOrderTokens(text) {
+  if (!text) return [];
+  var t = String(text);
+  t = t.replace(/[\t,;|｜]/g, ' ');
+  var tokens = [];
+  if (/\s{2,}/.test(t)) {
+    t.split(/\s{2,}/).forEach(function(p) {
+      p = p.trim();
+      if (!p) return;
+      p.split(/\s+/).forEach(function(x) { if (x) tokens.push(x); });
+    });
+    return tokens;
+  }
+  return t.split(/\s+/).filter(Boolean);
+}
+
+/**
+ * 다양한 형식에서 필요 필드만 패턴 추출 (서버 parse_order_line 정렬).
+ * 칸 위치 무관 — 호차·번호판·전화·HUB·톤·시간·기사 패턴 인식.
+ *
+ * 예:
+ *   1호    VF67(유원)    부천1HUB    충북80아3912    김창기    010-7774-8114    5    20:00
+ *   [부천1HUB][2호] 경기82바8956 010-4003-0297
+ *   3호 광주90바1703 김경옥 11T 23:50
+ *   1호,부천1HUB,충북80아3912,김창기,010-7774-8114,5,20:00
+ */
+function parseVehicleOrderLine(line) {
+  line = normalizeVehicleOrderText(line).trim();
+  if (!line || line.charAt(0) === '#') return null;
+
+  var hub = '', plate = '', phone = '', driver = '', time = '', ton = '';
+  var hoche = 0;
+  var plateRe = /[가-힣]{1,2}\d{2,3}[가-힣]\d{4}/;
+  var phoneRe = /^01[016789]-?\d{3,4}-?\d{4}$|^01[016789]\d{7,8}$/;
+  var timeRe = /^\d{1,2}:\d{2}$/;
+  var tonRe = /^(\d{1,2})\s*T$/i;
+  var tonNumRe = /^(\d{1,2})$/;
+  var skipRegions = { '부천': 1, '광주': 1, '경기': 1, '충북': 1, '서울': 1, '인천': 1, '대구': 1, '부산': 1 };
+
+  // ── 1) 줄 전체 정규식 선추출 (토큰 깨짐 대비) ──
+  var mHoche = line.match(/\[(\d{1,2})\s*호(?:차)?\]|(\d{1,2})\s*호(?:차)?/);
+  if (mHoche) hoche = parseInt(mHoche[1] || mHoche[2], 10);
+
+  var mHub = line.match(/\[([^\]]*?HUB[^\]]*)\]/i);
+  if (mHub) hub = mHub[1].trim();
+
+  var compact = line.replace(/\s+/g, '');
+  var pm = compact.match(plateRe);
+  if (pm) plate = pm[0];
+
+  var phoneCompact = line.replace(/[\s\-()]/g, '');
+  var ph = phoneCompact.match(/01[016789]\d{7,8}/);
+  if (ph) phone = formatVehiclePhone(ph[0]);
+
+  var tm = line.match(/\b(\d{1,2}:\d{2})\b/);
+  if (tm) time = tm[1];
+
+  // ── 2) 토큰 단위 보완 ──
+  var tokens = splitVehicleOrderTokens(line);
+  tokens.forEach(function(t) {
+    if (t === '수배중' || t === '수배 중' || t === '-' || t === '–' || t === '—') return;
+    var tClean = t.replace(/\s/g, '');
+
+    var mh = t.match(/^(\d{1,2})\s*호(?:차)?$/);
+    if (mh && !hoche) {
+      hoche = parseInt(mh[1], 10);
+      return;
+    }
+    if (plateRe.test(tClean) && !plate) {
+      plate = tClean.match(plateRe)[0];
+      return;
+    }
+    if (phoneRe.test(tClean) && !phone) {
+      phone = formatVehiclePhone(tClean);
+      return;
+    }
+    if (timeRe.test(t) && !time) {
+      time = t;
+      return;
+    }
+    if (tonRe.test(t) && !ton) {
+      ton = parseInt(t, 10) + 'T';
+      return;
+    }
+    if (tonNumRe.test(t) && !ton) {
+      var tn = parseInt(t, 10);
+      if (tn >= 1 && tn <= 25) {
+        if (hoche && tn !== hoche) {
+          ton = tn + 'T';
+          return;
+        }
+        if (hoche && tn === hoche) return;
+        if (!hoche && tn <= 15) {
+          if (plate) ton = tn + 'T';
+          else hoche = tn;
+          return;
         }
       }
     }
+    if (/HUB|허브/i.test(t) && !hub) {
+      hub = t;
+      return;
+    }
+    if (/^VF\d+/i.test(t) || /유원/.test(t) || /VF\d+/i.test(t)) return;
+    if (/^[가-힣]{2,4}$/.test(t) && !driver) {
+      if (skipRegions[t]) return;
+      driver = t;
+    }
   });
-  
-  if (updated) {
-    fetch('/departure/api/ls-data', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(LS_DATA)
-    }).then(function(r){ return r.json(); }).then(function(data){
-      if (data.ok) { LS_DATA = data.data; loadDateData(); }
-    });
-    closeVehicleOrderModal();
-  } else {
-    alert('파싱할 수 있는 데이터가 없습니다. 형식을 확인해주세요.');
+
+  // 호차 미검출: 줄 시작 숫자 + 번호판 → 호차
+  if (!hoche) {
+    var m0 = line.match(/^(\d{1,2})\b/);
+    if (m0 && plate) {
+      var cand = parseInt(m0[1], 10);
+      if (cand >= 1 && cand <= 20) {
+        hoche = cand;
+        if (ton === cand + 'T') {
+          ton = '';
+          tokens.forEach(function(t) {
+            if (tonNumRe.test(t) && parseInt(t, 10) !== cand && parseInt(t, 10) >= 1 && parseInt(t, 10) <= 25) {
+              if (!ton) ton = parseInt(t, 10) + 'T';
+            }
+          });
+        }
+      }
+    }
   }
+
+  // 최소 조건: 호차 필수 (순서를 알아야 적용)
+  if (!(hoche > 0)) return null;
+
+  return {
+    hoche: hoche,
+    hub: hub,
+    plate: plate,
+    phone: phone,
+    driver: driver,
+    time: time,
+    ton: ton
+  };
+}
+
+/**
+ * 여러 줄 텍스트 전체 파싱 → 호차순 정렬, 동일 호차 병합
+ * (서버 parse_order_text 와 동일)
+ */
+function parseVehicleOrderText(text) {
+  text = normalizeVehicleOrderText(text || '').trim();
+  if (!text) return [];
+  var byHoche = {};
+  text.split(/\r?\n/).forEach(function(raw) {
+    var line = raw.trim();
+    if (!line || line.charAt(0) === '#') return;
+    var item = parseVehicleOrderLine(line);
+    if (!item || !(item.hoche > 0)) return;
+    var h = item.hoche;
+    var prev = byHoche[h] || { hoche: h };
+    Object.keys(item).forEach(function(k) {
+      if (item[k] !== '' && item[k] != null) prev[k] = item[k];
+    });
+    byHoche[h] = prev;
+  });
+  return Object.keys(byHoche).map(Number).sort(function(a, b) { return a - b; })
+    .map(function(h) { return byHoche[h]; });
+}
+
+function applyVehicleOrder() {
+  var rawText = document.getElementById('vehicleOrderInput').value || '';
+  var text = (typeof normalizeVehicleOrderText === 'function'
+    ? normalizeVehicleOrderText(rawText)
+    : rawText).trim();
+  if (!text) { alert('입력 내용이 없습니다.'); return; }
+
+  var dateStr = formatDate(currentDate);
+  var lines = text.split(/\r?\n/).map(function(l){ return l.trim(); }).filter(function(l){ return l; });
+
+  // 클라이언트 미리보기(참고용) — 실패해도 서버로 보냄 (캐시된 옛 JS 대비)
+  var preview = (typeof parseVehicleOrderText === 'function')
+    ? parseVehicleOrderText(text)
+    : [];
+
+  // 서버 우선: 원문 text 전송 (서버 파서가 권위)
+  fetch('/departure/api/vehicle-order', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ date: dateStr, text: text, lines: lines })
+  }).then(function(r){
+    return r.json().then(function(j){ return { httpOk: r.ok, status: r.status, body: j }; });
+  }).then(function(res){
+    if (res.body && res.body.ok) {
+      LS_DATA = res.body.data || [];
+      if (typeof loadDateData === 'function') loadDateData();
+      alert('✅ ' + (res.body.parsed || 0) + '대 차량 순서가 호차 번호순으로 적용되었습니다.');
+      closeVehicleOrderModal();
+      return;
+    }
+    // 404 등 API 없음 → 클라이언트 폴백
+    if (res.status === 404 || res.status === 405) {
+      console.warn('vehicle-order API unavailable, client fallback', res.status);
+      if (preview.length) {
+        applyVehicleOrderClientFallback(dateStr, preview);
+        return;
+      }
+    }
+    var errMsg = (res.body && res.body.error) ? res.body.error : ('HTTP ' + res.status);
+    var sample = lines[0] ? ('\n\n첫 줄:\n' + lines[0].slice(0, 100)) : '';
+    alert('❌ 적용 실패: ' + errMsg + sample +
+      '\n\n다양한 형식 지원 — 호차(N호)+차량번호가 있으면 적용됩니다.\n예:\n1호    VF67(유원)    부천1HUB    충북80아3912    김창기    010-7774-8114    5    20:00\n[부천1HUB][2호] 경기82바8956 010-4003-0297\n3호 광주90바1703 김경옥 11T 23:50');
+  }).catch(function(err){
+    console.warn('vehicle-order network error', err);
+    if (preview.length) {
+      applyVehicleOrderClientFallback(dateStr, preview);
+      return;
+    }
+    alert('❌ 네트워크 오류: ' + (err && err.message ? err.message : err) +
+      '\n서버 재시작 후 Ctrl+F5 로 새로고침해 주세요.');
+  });
+}
+
+/** 서버 API 실패 시 기존 LS_DATA 갱신 + ls-data 저장 */
+function applyVehicleOrderClientFallback(dateStr, parsed) {
+  var updated = false;
+  parsed.forEach(function(item) {
+    var hoche = item.hoche;
+    var plate = item.plate || '';
+    var phone = item.phone || '';
+    var hub = item.hub ? normalizeHub(item.hub) : '';
+    var driver = item.driver || '';
+    var time = item.time || '';
+    var ton = item.ton || '';
+
+    var found = false;
+    for (var i = 0; i < LS_DATA.length; i++) {
+      if (LS_DATA[i].hoche === hoche && LS_DATA[i].date === dateStr) {
+        if (plate && LS_DATA[i].plate !== plate) {
+          LS_DATA[i].driver = driver || '';
+          LS_DATA[i].name = driver || '';
+          LS_DATA[i].driverName = driver || '';
+        } else if (driver) {
+          LS_DATA[i].driver = driver;
+          LS_DATA[i].name = driver;
+          LS_DATA[i].driverName = driver;
+        }
+        if (plate) LS_DATA[i].plate = plate;
+        if (phone) LS_DATA[i].phone = phone;
+        if (hub) LS_DATA[i].hub = hub;
+        if (time) LS_DATA[i].time = time;
+        if (ton) {
+          LS_DATA[i].ton = ton;
+          LS_DATA[i].original_ton = ton;
+        }
+        updated = true;
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      var defaultTon = ton || (hoche === 3 ? '11T' : '5T');
+      var defaultTime = time || ([,'20:00','22:00','23:50'][hoche] || '13:00');
+      LS_DATA.push({
+        hoche: hoche,
+        plate: plate,
+        driver: driver,
+        name: driver,
+        driverName: driver,
+        phone: phone,
+        ton: defaultTon,
+        original_ton: defaultTon,
+        time: defaultTime,
+        isNew: true,
+        date: dateStr,
+        plt: 0,
+        hub: hub || '부천1HUB'
+      });
+      updated = true;
+    }
+  });
+
+  LS_DATA.sort(function(a, b) {
+    if (a.date !== b.date) return (a.date || '').localeCompare(b.date || '');
+    return (a.hoche || 0) - (b.hoche || 0);
+  });
+
+  // 해당 날짜만 저장 (다른 날짜 오염 방지)
+  var dayVehicles = LS_DATA.filter(function(v){ return v.date === dateStr; });
+  if (!updated) {
+    alert('파싱할 수 있는 데이터가 없습니다. 형식을 확인해주세요.');
+    return;
+  }
+  fetch('/departure/api/ls-data', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ date: dateStr, vehicles: dayVehicles })
+  }).then(function(r){ return r.json(); }).then(function(data){
+    if (data.ok) {
+      LS_DATA = data.data;
+      loadDateData();
+      alert('✅ ' + parsed.length + '대 차량 순서가 호차 번호순으로 적용되었습니다. (폴백)');
+      closeVehicleOrderModal();
+    } else {
+      alert('❌ 적용 실패: ' + (data.error || '알 수 없는 오류'));
+    }
+  }).catch(function(err){
+    alert('❌ 오류 발생: ' + err.message);
+  });
 }
 
 </script>
+<script>
+(function(){
+  try {
+    if (!document.querySelector('[data-sidebar]')) {
+      document.documentElement.classList.add('departure-standalone');
+    }
+  } catch (e) {}
+})();
+</script>
+</div>
 </body>
 </html>
