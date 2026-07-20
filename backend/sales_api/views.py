@@ -517,11 +517,49 @@ def inventory_unified(request):
         .values_list("barcode", flat=True)
         .distinct()
     )
+    # 바코드→상품명 (별칭 출고 통합 차감용)
+    name_by_barcode = {}
+    base_qty_by_barcode = {}
+    for row in baseline_items.exclude(barcode__isnull=True).exclude(barcode="").values(
+        "barcode", "product_name", "quantity_box"
+    ):
+        bc = (row["barcode"] or "").strip()
+        if not bc:
+            continue
+        base_qty_by_barcode[bc] = base_qty_by_barcode.get(bc, 0) + int(
+            row.get("quantity_box") or 0
+        )
+        if row.get("product_name") and bc not in name_by_barcode:
+            name_by_barcode[bc] = (row["product_name"] or "").strip()
+    # BarcodeMaster / MasterSpec 이름 보강
+    extra_names = {}
+    try:
+        for bm in BarcodeMaster.objects.exclude(barcode="").only("barcode", "product_name"):
+            b = (bm.barcode or "").strip()
+            if b and (bm.product_name or "").strip():
+                extra_names[b] = bm.product_name.strip()
+                if b not in name_by_barcode:
+                    name_by_barcode[b] = bm.product_name.strip()
+    except Exception:
+        pass
+    try:
+        for ms in MasterSpec.objects.exclude(barcode="").only("barcode", "product_name"):
+            b = (ms.barcode or "").strip()
+            if b and (ms.product_name or "").strip() and b not in name_by_barcode:
+                name_by_barcode[b] = ms.product_name.strip()
+                extra_names[b] = ms.product_name.strip()
+    except Exception:
+        pass
+
     outbound_agg, receipt_agg = aggregate_movements_after_baseline(
         as_of=as_of,
         barcodes=baseline_barcode_list,
         outbound_model=OutboundRecord,
         receipt_model=InventoryReceiptItem,
+        name_by_barcode=name_by_barcode,
+        extra_name_by_barcode=extra_names,
+        base_qty_by_barcode=base_qty_by_barcode,
+        apply_aliases=True,
     )
 
     # 30-day stats for threshold calc (min/max) — 실적 출고만
