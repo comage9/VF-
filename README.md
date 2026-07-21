@@ -12,6 +12,7 @@
 | **기본 포트** | API **5176** · UI **5174** |
 
 > 에이전트·개발 규칙 요약: [`CLAUDE.md`](CLAUDE.md)  
+> 진행/수정 계획: [`PROGRESS_AND_PLANS.md`](PROGRESS_AND_PLANS.md)  
 > 디렉터리 상세: [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md)  
 > VF 발주서 컬럼: [`docs/VF_ORDER_XLSX_MAPPING.md`](docs/VF_ORDER_XLSX_MAPPING.md)  
 > 출고 대시보드: [`docs/OUTBOUND_DASHBOARD_README.md`](docs/OUTBOUND_DASHBOARD_README.md)  
