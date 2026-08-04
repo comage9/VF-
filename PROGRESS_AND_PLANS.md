@@ -251,9 +251,16 @@
 5. 기존 downloader_parser.py가 자동 처리
 
 실행 모드:
-- python ls_automation.py - 1회 실행
-- python ls_automation.py --watch - 정기 실행 (15:00~23:00, 30분 간격)
+- python ls_automation.py - 1회 실행 (다운로드 직후 Departure 등록 스캔)
+- python ls_automation.py --watch - 정기 실행 (15:00~23:00, **기본 10분** 간격, 23시까지 추가 배차 감시)
 - python ls_automation.py --date 2026-07-20 - 특정 날짜 지정
+- start_ls_watch.ps1 / start_ls_watch.bat - Windows 감시 전용
+- start_server.py + env `LS_AUTO_WATCH=1` - 서버와 동시 기동 (선택)
+
+파이프라인 보강 (2026-07-21):
+1. 기본 감시 간격 30분 → **10분**
+2. PDF 다운로드 후 **즉시** `scan_downloads_folder` + 기사명 백필
+3. 배정 3대 완료 후에도 23시까지 감시 유지 (조기 종료는 `--stop-when-complete`)
 
 **호차 배정 로직 개선 (downloader_parser.py)**
 

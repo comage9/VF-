@@ -1,0 +1,8 @@
+as_of=2026-07-14
+match=788 mismatch=3
+only_wh=0 only_sys=5
+total_wh=7668 total_sys=7656
+
+R000240980020	58	29	-29	base=31	rcv=0	out=2	슬림 서랍장 6단 화이트
+R015858070008	22	26	4	base=26	rcv=0	out=0	보노하우스 클래식 수납정리함 13리터 화이트 4개 1팩
+R001327720038	9	6	-3	base=2	rcv=4	out=0	BOX_모던 해피박스 4P 바이올렛2개+아이보리2개

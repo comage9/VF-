@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { UnifiedInventoryResponseEnhanced } from '../../types/enhanced-inventory';
+import { matchesSearchInFields } from '@/lib/searchMatch';
 
 interface InboundOrderLine {
   id: string;
@@ -22,6 +23,8 @@ interface InventoryTableProps {
   onSelectionChange: (selected: Set<string>) => void;
   stockStatusFilter?: string | null;
   onToggleStockStatus?: (status: string) => void;
+  /** 품목명 클릭 → 출고/현재고 리포트 팝업 */
+  onProductClick?: (item: UnifiedInventoryResponseEnhanced['data'][number]) => void;
 }
 
 export default function InventoryTable({
@@ -31,6 +34,7 @@ export default function InventoryTable({
   onSelectionChange,
   stockStatusFilter,
   onToggleStockStatus,
+  onProductClick,
 }: InventoryTableProps) {
   const [sortField, setSortField] = useState<string>('location');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -150,11 +154,12 @@ export default function InventoryTable({
       const matchesCategory = !filterCategory || item.category === filterCategory;
       const matchesLocation = !filterLocation || item.location === filterLocation;
       const matchesStockStatus = !stockStatusFilter || (item.stockStatus || 'normal') === stockStatusFilter;
-      const matchesSearch = !searchTerm ||
-        item.productName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.barcode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.skuId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.location?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch =
+        !searchTerm.trim() ||
+        matchesSearchInFields(
+          [item.productName, item.barcode, item.skuId, item.location],
+          searchTerm
+        );
 
       return matchesCategory && matchesLocation && matchesStockStatus && matchesSearch;
     });
@@ -319,8 +324,24 @@ export default function InventoryTable({
                     />
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">{item.productName}</div>
-                    <div className="text-sm text-gray-500">{item.category}</div>
+                    {onProductClick ? (
+                      <button
+                        type="button"
+                        onClick={() => onProductClick(item)}
+                        className="text-left group"
+                        title="클릭: 출고 수량·전산 재고 리포트"
+                      >
+                        <div className="text-sm font-medium text-gray-900 group-hover:text-indigo-700 group-hover:underline underline-offset-2">
+                          {item.productName}
+                        </div>
+                        <div className="text-sm text-gray-500">{item.category}</div>
+                      </button>
+                    ) : (
+                      <>
+                        <div className="text-sm font-medium text-gray-900">{item.productName}</div>
+                        <div className="text-sm text-gray-500">{item.category}</div>
+                      </>
+                    )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.barcode || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.skuId || '-'}</td>

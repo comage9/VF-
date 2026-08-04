@@ -1,8 +1,9 @@
 import React, { useMemo, useRef, useState, useCallback } from "react";
 import type { ChangeEvent } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { FileText, Plus, Trash2, Upload, Loader2, Edit, Play, CheckCircle, Clock, RotateCcw, Package, TrendingUp, BarChart3, GripVertical, Star, Lightbulb } from "lucide-react";
+import { FileText, Plus, Trash2, Upload, Loader2, Edit, Play, CheckCircle, Clock, RotateCcw, Package, TrendingUp, BarChart3, GripVertical, Star, Lightbulb, ClipboardPaste, Calendar, Filter, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { matchesSearchInFields } from "@/lib/searchMatch";
 import {
   DndContext,
   closestCenter,
@@ -22,12 +23,13 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -50,6 +52,7 @@ import { MobileFilterDrawer } from "@/components/MobileFilterDrawer";
 import { useInventory, useUpdateInventory, useOutboundStats } from '@/components/shared/api';
 import type { ProductionItem as SharedProductionItem, ProductionDraft as SharedProductionDraft, OutboundData } from '@/components/shared/types';
 import { OutboundStatsPanel } from '@/components/shared/outbound-stats-panel';
+import { ProductionStatsPanel } from '@/components/production/production-stats-panel';
 
 interface ProductionItem {
   id: number;
@@ -643,6 +646,9 @@ export default function ProductionPlan() {
   const [isSaving, setIsSaving] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isPasteOpen, setIsPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState('');
+  const [isPasting, setIsPasting] = useState(false);
   const [isDeletingDate, setIsDeletingDate] = useState(false);
   const [bulkStatus, setBulkStatus] = useState<ProductionStatus>('pending');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
@@ -820,15 +826,20 @@ export default function ProductionPlan() {
   }, [normalizedRows]);
 
   const filteredRows = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
     const dateToMatch = selectedDate === 'latest' ? latestDate : selectedDate === 'all' ? null : selectedDate;
 
     const rows = normalizedRows.filter((row) => {
       if (dateToMatch && row.date !== dateToMatch) return false;
       if (machineFilter !== 'all' && row.machineNumber !== machineFilter) return false;
-      if (keyword) {
-        const haystack = [row.productName, row.productNameEng, row.color1, row.color2].filter(Boolean).join(' ').toLowerCase();
-        if (!haystack.includes(keyword)) return false;
+      if (search.trim()) {
+        if (
+          !matchesSearchInFields(
+            [row.productName, row.productNameEng, row.color1, row.color2],
+            search
+          )
+        ) {
+          return false;
+        }
       }
       return true;
     });
@@ -973,8 +984,16 @@ export default function ProductionPlan() {
       }
 
       const result = await response.json();
-      toast({ title: '업로드 완료', description: result?.message || '생산 계획 데이터를 업로드했습니다.' });
+      const warnCount = Array.isArray(result?.warnings) ? result.warnings.length : 0;
+      toast({
+        title: '파일 업로드 완료',
+        description: `${result?.message || '생산 계획 데이터를 업로드했습니다.'}${warnCount ? ` (경고 ${warnCount}건)` : ''}`,
+      });
       await queryClient.invalidateQueries({ queryKey: ["/api/production"] });
+      await queryClient.invalidateQueries({ queryKey: ["production-meta"] });
+      if (result?.latestDate) {
+        setSelectedDate(result.latestDate);
+      }
     } catch (error) {
       console.error('생산 계획 업로드 오류:', error);
       toast({ title: '업로드 실패', description: error instanceof Error ? error.message : '업로드 처리 중 문제가 발생했습니다.', variant: 'destructive' });
@@ -983,6 +1002,58 @@ export default function ProductionPlan() {
       if (event.target) {
         event.target.value = '';
       }
+    }
+  };
+
+  const handlePasteUpload = async () => {
+    const text = pasteText.trim();
+    if (!text) {
+      toast({ title: '내용 없음', description: '생산일지 텍스트를 붙여넣어 주세요.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      setIsPasting(true);
+      const response = await fetch('/api/upload-production-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({ message: '텍스트 업로드에 실패했습니다.' }));
+        const hint = payload.hint ? ` ${payload.hint}` : '';
+        const cols = Array.isArray(payload.receivedColumns)
+          ? ` (인식 컬럼: ${payload.receivedColumns.join(', ')})`
+          : '';
+        throw new Error(
+          (payload.error || payload.message || '텍스트 업로드에 실패했습니다.') + hint + cols
+        );
+      }
+
+      const result = await response.json();
+      const warnCount = Array.isArray(result?.warnings) ? result.warnings.length : 0;
+      toast({
+        title: '텍스트 업로드 완료',
+        description: `${result?.message || '생산 계획 텍스트를 업로드했습니다.'}${warnCount ? ` (경고 ${warnCount}건)` : ''}`,
+      });
+      setIsPasteOpen(false);
+      setPasteText('');
+      await queryClient.invalidateQueries({ queryKey: ["/api/production"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/production-meta"] });
+      await queryClient.invalidateQueries({ queryKey: ["production-meta"] });
+      if (result?.latestDate) {
+        setSelectedDate(result.latestDate);
+      }
+    } catch (error) {
+      console.error('생산 계획 텍스트 업로드 오류:', error);
+      toast({
+        title: '텍스트 업로드 실패',
+        description: error instanceof Error ? error.message : '텍스트 처리 중 문제가 발생했습니다.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsPasting(false);
     }
   };
 
@@ -1331,48 +1402,56 @@ export default function ProductionPlan() {
         )}
       </div>
 
-      {/* 모바일 최소 헤더 - Drawer 열기 */}
-      <div className="md:hidden sticky top-0 z-20 bg-card border-b border-border flex flex-col backdrop-blur-sm bg-card/95 shadow-sm">
+      {/* 모바일 최소 헤더 - 출고 대시보드와 동일 계열 sticky 틀고정 */}
+      <div className="md:hidden sticky top-0 z-30 relative flex flex-col rounded-xl border-2 border-indigo-200/90 bg-gradient-to-r from-indigo-100 via-sky-50 to-violet-100 shadow-[0_8px_28px_-6px_rgba(49,46,129,0.28)] ring-1 ring-indigo-300/50 before:absolute before:inset-x-0 before:bottom-0 before:h-0.5 before:bg-gradient-to-r before:from-indigo-500 before:via-blue-500 before:to-violet-500">
         <div className="p-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               size="sm"
               onClick={() => setIsDrawerOpen(true)}
-              className="h-9 w-9 p-0"
+              className="h-9 w-9 p-0 bg-white border-indigo-200 shadow-sm"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
             </Button>
-            <span className="text-sm font-semibold">생산 계획</span>
-            <button onClick={() => document.body.classList.toggle('monochrome')} className="ml-2 text-xs px-2 py-0.5 rounded border hover:bg-muted" title="모노크롬 전환">◐</button>
+            <Filter className="w-4 h-4 text-indigo-600" />
+            <span className="text-sm font-bold text-indigo-900">생산 계획</span>
+            <button onClick={() => document.body.classList.toggle('monochrome')} className="ml-1 text-xs px-2 py-0.5 rounded-md border border-indigo-200 bg-white shadow-sm hover:bg-indigo-50" title="모노크롬 전환">◐</button>
             {selectedIds.length > 0 && (
-              <Badge variant="secondary" className="text-xs">{selectedIds.length}건 선택</Badge>
+              <Badge className="text-xs bg-indigo-600 text-white">{selectedIds.length}건 선택</Badge>
             )}
           </div>
         </div>
-        <div className="flex border-t border-border">
-          <button onClick={() => setMobileMainTab('monitoring')} className={`flex-1 py-2.5 text-sm font-semibold border-b-2 transition-colors ${mobileMainTab === 'monitoring' ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-muted-foreground hover:bg-muted/50'}`}>📈 모니터링</button>
-          <button onClick={() => setMobileMainTab('plans')} className={`flex-1 py-2.5 text-sm font-semibold border-b-2 transition-colors ${mobileMainTab === 'plans' ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-muted-foreground hover:bg-muted/50'}`}>📋 계획표</button>
+        <div className="flex border-t border-indigo-200/80 bg-white/40 rounded-b-xl">
+          <button onClick={() => setMobileMainTab('monitoring')} className={`flex-1 py-2.5 text-sm font-semibold border-b-2 transition-colors ${mobileMainTab === 'monitoring' ? 'border-indigo-600 text-indigo-800 bg-white/70' : 'border-transparent text-slate-600 hover:bg-white/50'}`}>📈 모니터링</button>
+          <button onClick={() => setMobileMainTab('plans')} className={`flex-1 py-2.5 text-sm font-semibold border-b-2 transition-colors ${mobileMainTab === 'plans' ? 'border-indigo-600 text-indigo-800 bg-white/70' : 'border-transparent text-slate-600 hover:bg-white/50'}`}>📋 계획표</button>
         </div>
       </div>
 
-      {/* 데스크탑 필터 패널 - 스크롤해도 고정 */}
-      <div className="hidden md:block bg-card border border-border rounded-lg p-4 space-y-4 sticky top-0 z-10 backdrop-blur-sm bg-card/95">
+      {/* 데스크탑 필터 패널 — 출고(outbound) sticky 필터와 동일 계열 틀고정 */}
+      <div className="hidden md:block sticky top-0 z-30 relative -mx-1 px-4 py-3.5 space-y-3 rounded-xl border-2 border-indigo-200/90 bg-gradient-to-r from-indigo-100 via-sky-50 to-violet-100 shadow-[0_8px_28px_-6px_rgba(49,46,129,0.28)] ring-1 ring-indigo-300/50 before:absolute before:inset-x-0 before:bottom-0 before:h-0.5 before:bg-gradient-to-r before:from-indigo-500 before:via-blue-500 before:to-violet-500">
         <div className="flex items-center justify-between gap-2">
-          <div className="text-sm text-muted-foreground">
-            {selectedIds.length > 0 ? `선택 ${selectedIds.length}건` : ''}
+          <div className="flex items-center gap-2 text-sm font-bold text-indigo-900">
+            <Filter className="w-4 h-4 text-indigo-600" />
+            필터 · 생산 계획
+            {selectedIds.length > 0 && (
+              <Badge className="text-xs bg-indigo-600 text-white ml-1">선택 {selectedIds.length}건</Badge>
+            )}
           </div>
+          <span className="text-[10px] font-medium text-indigo-600/80 hidden lg:inline">스크롤 시 상단 고정</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="flex flex-col space-y-1.5">
-            <Label htmlFor="date-filter">날짜 선택</Label>
+        {/* 핵심 필터 1행: 날짜 · 기계번호 · 검색 · 이월 */}
+        <div className="flex flex-col sm:flex-row sm:items-end gap-2 sm:gap-3">
+          <div className="flex flex-col gap-1 min-w-0 sm:w-[180px] shrink-0">
+            <Label htmlFor="date-filter" className="text-[11px] text-indigo-800 font-medium flex items-center gap-1">
+              <Calendar className="w-3.5 h-3.5" />
+              날짜
+            </Label>
             <Select value={selectedDate} onValueChange={(value) => {
-              // Check if selected date is a past date with pending records
               const today = new Date().toISOString().split('T')[0];
               if (value !== 'latest' && value !== 'all' && value < today) {
-                // Check if there are pending records for this date
                 const pendingForDate = normalizedRows.filter(r => r.date === value && r.status === 'pending');
                 if (pendingForDate.length > 0) {
                   setMoveConfirmDate(value);
@@ -1381,7 +1460,7 @@ export default function ProductionPlan() {
               }
               setSelectedDate(value);
             }}>
-              <SelectTrigger id="date-filter">
+              <SelectTrigger id="date-filter" className="h-9 bg-white border-indigo-200/80 shadow-sm hover:border-indigo-300">
                 <SelectValue placeholder="날짜 선택" />
               </SelectTrigger>
               <SelectContent>
@@ -1392,23 +1471,12 @@ export default function ProductionPlan() {
                 ))}
               </SelectContent>
             </Select>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={carryForwardMutation.isPending}
-              onClick={() => carryForwardMutation.mutate()}
-              className="mt-2"
-              data-testid="carry-forward-button"
-            >
-              {carryForwardMutation.isPending ? '이월 중...' : '이월 (어제 → 오늘)'}
-            </Button>
           </div>
 
-          <div className="flex flex-col space-y-1.5">
-            <Label htmlFor="machine-filter">기계번호</Label>
+          <div className="flex flex-col gap-1 min-w-0 sm:w-[140px] shrink-0">
+            <Label htmlFor="machine-filter" className="text-[11px] text-indigo-800 font-medium">기계번호</Label>
             <Select value={machineFilter} onValueChange={setMachineFilter}>
-              <SelectTrigger id="machine-filter">
+              <SelectTrigger id="machine-filter" className="h-9 bg-white border-indigo-200/80 shadow-sm hover:border-indigo-300">
                 <SelectValue placeholder="전체" />
               </SelectTrigger>
               <SelectContent>
@@ -1420,31 +1488,54 @@ export default function ProductionPlan() {
             </Select>
           </div>
 
-          <div className="flex flex-col space-y-1.5">
-            <Label htmlFor="search">검색</Label>
+          <div className="flex flex-col gap-1 min-w-0 flex-1">
+            <Label htmlFor="search" className="text-[11px] text-indigo-800 font-medium flex items-center gap-1">
+              <Search className="w-3.5 h-3.5" />
+              검색
+            </Label>
             <Input
               id="search"
-              placeholder="품목명, 색상명 등"
+              placeholder="품목·색상"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              className="h-9 bg-white border-indigo-200/80 shadow-sm"
             />
           </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={carryForwardMutation.isPending}
+            onClick={() => carryForwardMutation.mutate()}
+            className="h-9 shrink-0 bg-white border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-900 shadow-sm"
+            data-testid="carry-forward-button"
+          >
+            {carryForwardMutation.isPending ? '이월 중...' : '이월 (어제 → 오늘)'}
+          </Button>
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={handleTemplateDownload}>
+          <Button variant="outline" size="sm" onClick={handleTemplateDownload} className="bg-white border-indigo-200 text-slate-700 hover:bg-indigo-50 shadow-sm">
             <FileText className="w-4 h-4 mr-2" />
             양식
           </Button>
 
-          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading || isPasting}
+            className="bg-white border-indigo-200 text-slate-700 hover:bg-indigo-50 shadow-sm"
+            title="생산 계획 전용. 쿠팡 입고·단가 파일은 출고→FC 입고·단가 탭에 올리세요."
+          >
             {isUploading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Upload className="w-4 h-4 mr-2" />}
-            업로드
+            생산 파일 업로드
           </Button>
           <input
             ref={fileInputRef}
             type="file"
-            accept=".csv,.xlsx,.xls"
+            accept=".csv,.xlsx,.xls,.txt,.tsv"
             className="hidden"
             onChange={handleUploadChange}
           />
@@ -1452,8 +1543,55 @@ export default function ProductionPlan() {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => setIsPasteOpen(true)}
+            disabled={isUploading || isPasting}
+            className="bg-white border-indigo-200 text-slate-700 hover:bg-indigo-50 shadow-sm"
+          >
+            <ClipboardPaste className="w-4 h-4 mr-2" />
+            텍스트 붙여넣기
+          </Button>
+
+          <Dialog open={isPasteOpen} onOpenChange={(open) => { if (!isPasting) setIsPasteOpen(open); }}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>생산일지 텍스트 붙여넣기</DialogTitle>
+                <DialogDescription>
+                  엑셀 표를 복사해 붙여넣으세요. 헤더 포함을 권장하며, 헤더 없이 데이터만 붙여넣어도 템플릿 열 순서로 인식합니다.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">
+                <Label htmlFor="production-paste-text">붙여넣기 내용</Label>
+                <Textarea
+                  id="production-paste-text"
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  placeholder={"date\tmachineNumber\tmoldNumber\tproductName\t...\n2026-07-10\t1\t56\t바퀴\t..."}
+                  className="min-h-[240px] font-mono text-xs"
+                  disabled={isPasting}
+                />
+                <p className="text-xs text-muted-foreground">
+                  필수: 날짜·제품명. 헤더 없을 때 열 순서: 날짜, 기계, 금형, 제품명, 영문, 색상1, 색상2, 단위수량, 수량, 단위, 합계.
+                  탭/쉼표 구분. 백엔드 수정 반영을 위해 서버 재시작이 필요할 수 있습니다.
+                </p>
+              </div>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button variant="outline" onClick={() => setIsPasteOpen(false)} disabled={isPasting}>
+                  취소
+                </Button>
+                <Button onClick={handlePasteUpload} disabled={isPasting || !pasteText.trim()}>
+                  {isPasting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <ClipboardPaste className="w-4 h-4 mr-2" />}
+                  업로드
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Button
+            variant="outline"
+            size="sm"
             onClick={fetchAIRecommendations}
             disabled={aiLoading}
+            className="bg-white border-indigo-200 text-slate-700 hover:bg-indigo-50 shadow-sm"
           >
             {aiLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Lightbulb className="w-4 h-4 mr-2" />}
             AI 추천
@@ -1941,7 +2079,7 @@ export default function ProductionPlan() {
 
           <div className="flex flex-wrap items-center gap-2 ml-auto">
             <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v as ProductionStatus)}>
-              <SelectTrigger className="h-9 w-[140px]">
+              <SelectTrigger className="h-9 w-[140px] bg-white border-indigo-200/80 shadow-sm">
                 <SelectValue placeholder="상태 선택" />
               </SelectTrigger>
               <SelectContent>
@@ -1959,6 +2097,7 @@ export default function ProductionPlan() {
                 if (!confirm(`선택된 ${selectedIds.length}건의 상태를 변경하시겠습니까?`)) return;
                 bulkStatusMutation.mutate({ ids: selectedIds, status: bulkStatus });
               }}
+              className="bg-white border-indigo-200 text-slate-700 hover:bg-indigo-50 shadow-sm"
             >
               선택 상태 변경
             </Button>
@@ -1973,6 +2112,7 @@ export default function ProductionPlan() {
                 if (!confirm(`${date} 날짜 전체 상태를 변경하시겠습니까?`)) return;
                 bulkStatusMutation.mutate({ date, status: bulkStatus });
               }}
+              className="bg-white border-indigo-200 text-slate-700 hover:bg-indigo-50 shadow-sm"
             >
               일자 상태 변경
             </Button>
@@ -1985,6 +2125,7 @@ export default function ProductionPlan() {
                 if (!confirm(`전체 데이터 상태를 변경하시겠습니까?`)) return;
                 bulkStatusMutation.mutate({ scope: 'all', status: bulkStatus });
               }}
+              className="bg-white border-indigo-200 text-slate-700 hover:bg-indigo-50 shadow-sm"
             >
               전체 상태 변경
             </Button>
@@ -1992,60 +2133,53 @@ export default function ProductionPlan() {
         </div>
       </div>
 
-      {/* KPI Overview - Z-Layout 기반 (2x2 그리드) */}
-      <div className={`grid grid-cols-2 gap-3 ${mobileMainTab === 'monitoring' ? 'grid' : 'hidden md:grid'}`}>
-        {/* 1순위: 총 수량 - 가장 강조 */}
-        <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-blue-700 uppercase">총 수량</p>
-                <h3 className="text-xl font-bold text-blue-900">{NUMBER_FORMATTER.format(summary.totalQuantity)}</h3>
-                <p className="text-xs text-blue-700 mt-1">전체 생산 수량</p>
+      {/* KPI — 모바일 2×2 / 데스크탑 1행 4열 컴팩트 */}
+      <div className={`grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3 ${mobileMainTab === 'monitoring' ? 'grid' : 'hidden md:grid'}`}>
+        <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 shadow-sm">
+          <CardContent className="px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[10px] font-medium text-blue-700 uppercase">총 수량</p>
+                <h3 className="text-lg font-bold text-blue-900 tabular-nums leading-tight">{NUMBER_FORMATTER.format(summary.totalQuantity)}</h3>
+                <p className="text-[10px] text-blue-600/80 truncate">전체 생산 수량</p>
               </div>
-              <Package className="w-8 h-8 text-blue-600 bg-white rounded-full p-1.5" />
+              <Package className="w-6 h-6 text-blue-600 bg-white rounded-full p-1 shrink-0" />
             </div>
           </CardContent>
         </Card>
-
-        {/* 2순위: 총 단위수량 - 강조 */}
-        <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100 border-2 border-emerald-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-emerald-700 uppercase">총 단위수량</p>
-                <h3 className="text-xl font-bold text-emerald-900">{NUMBER_FORMATTER.format(summary.totalUnitQuantity)}</h3>
-                <p className="text-xs text-emerald-700 mt-1">누적 단위 생산</p>
+        <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100 border border-emerald-200 shadow-sm">
+          <CardContent className="px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[10px] font-medium text-emerald-700 uppercase">총 단위수량</p>
+                <h3 className="text-lg font-bold text-emerald-900 tabular-nums leading-tight">{NUMBER_FORMATTER.format(summary.totalUnitQuantity)}</h3>
+                <p className="text-[10px] text-emerald-600/80 truncate">누적 단위 생산</p>
               </div>
-              <BarChart3 className="w-8 h-8 text-emerald-600 bg-white rounded-full p-1.5" />
+              <BarChart3 className="w-6 h-6 text-emerald-600 bg-white rounded-full p-1 shrink-0" />
             </div>
           </CardContent>
         </Card>
-
-        {/* 3순위: 총 레코드 */}
-        <Card className="bg-gray-50 border border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-gray-600 uppercase">총 레코드</p>
-                <h3 className="text-xl font-bold text-gray-900">{NUMBER_FORMATTER.format(summary.totalRecords)}</h3>
-                <p className="text-xs text-gray-500 mt-1">생산 계획 수</p>
+        <Card className="bg-white border border-slate-200 shadow-sm">
+          <CardContent className="px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[10px] font-medium text-gray-600 uppercase">총 레코드</p>
+                <h3 className="text-lg font-bold text-gray-900 tabular-nums leading-tight">{NUMBER_FORMATTER.format(summary.totalRecords)}</h3>
+                <p className="text-[10px] text-gray-500 truncate">생산 계획 수</p>
               </div>
-              <FileText className="w-8 h-8 text-gray-500 bg-white rounded-full p-1.5" />
+              <FileText className="w-6 h-6 text-gray-500 bg-slate-50 rounded-full p-1 shrink-0" />
             </div>
           </CardContent>
         </Card>
-
-        {/* 4순위: 총계 */}
-        <Card className="bg-gray-50 border border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-gray-600 uppercase">총 생산량</p>
-                <h3 className="text-xl font-bold text-gray-900">{NUMBER_FORMATTER.format(summary.totalOutput)}</h3>
-                <p className="text-xs text-gray-500 mt-1">전체 생산 완료</p>
+        <Card className="bg-white border border-slate-200 shadow-sm">
+          <CardContent className="px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[10px] font-medium text-gray-600 uppercase">총 생산량</p>
+                <h3 className="text-lg font-bold text-gray-900 tabular-nums leading-tight">{NUMBER_FORMATTER.format(summary.totalOutput)}</h3>
+                <p className="text-[10px] text-gray-500 truncate">전체 생산 완료</p>
               </div>
-              <TrendingUp className="w-8 h-8 text-amber-500 bg-white rounded-full p-1.5" />
+              <TrendingUp className="w-6 h-6 text-amber-500 bg-amber-50 rounded-full p-1 shrink-0" />
             </div>
           </CardContent>
         </Card>
@@ -2215,10 +2349,12 @@ export default function ProductionPlan() {
         </div>
       )}
 
-      {/* 생산계획 탭이 아닐 때만 출고량 통계 + 생산 목록 표시 */}
+      {/* 생산계획: 좌 리스트 + 우 통계 (재고 탭 제외) */}
       {activeTab !== 'inventory' && (
-        <>
-          {/* 출고량 통계 패널 */}
+        <div className="flex flex-col lg:flex-row gap-3 lg:gap-4 items-start">
+          {/* 좌측: 목록 */}
+          <div className="w-full lg:flex-[1.6] min-w-0 space-y-3">
+          {/* 출고량 통계 패널 (모니터링/데스크탑) */}
           <div className={`${mobileMainTab === 'monitoring' ? 'block' : 'hidden md:block'}`}>
             <OutboundStatsPanel />
           </div>
@@ -2308,7 +2444,105 @@ export default function ProductionPlan() {
           {renderDragOverlay()}
         </DragOverlay>
       </DndContext>
-        </>
+
+      {/* 데스크탑 뷰 (테이블) — 좌측 컬럼 내 */}
+      <div className="hidden md:block bg-card border border-border rounded-lg overflow-hidden">
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-muted/40">
+                <tr className="text-left text-muted-foreground">
+                  <th className="py-2 px-3 w-10">
+                    <Checkbox
+                      checked={selectedIds.length === displayRows.length && displayRows.length > 0}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedIds(displayRows.map(row => row.id));
+                        } else {
+                          setSelectedIds([]);
+                        }
+                      }}
+                    />
+                  </th>
+                  <th className="py-2 px-3">상태</th>
+                  <th className="py-2 px-3">일자</th>
+                  <th className="py-2 px-3">기계</th>
+                  <th className="py-2 px-3">금형</th>
+                  <th className="py-2 px-3">제품명</th>
+                  <th className="py-2 px-3 hidden xl:table-cell">영문명</th>
+                  <th className="py-2 px-3">색상</th>
+                  <th className="py-2 px-3 hidden xl:table-cell">롯트번호</th>
+                  <th className="py-2 px-3 text-right">단위</th>
+                  <th className="py-2 px-3 text-right">생산수량</th>
+                  <th className="py-2 px-3 text-right">생산단위</th>
+                  <th className="py-2 px-3 text-right hidden lg:table-cell">작업예정</th>
+                  <th className="py-2 px-3 text-center">작업</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={14} className="text-center py-10 text-muted-foreground">
+                      데이터가 없습니다.
+                    </td>
+                  </tr>
+                ) : (
+                  <SortableContext items={sortableItems} strategy={verticalListSortingStrategy}>
+                    {machineGroupEntries.map(([machineNumber, rows]) => (
+                        <React.Fragment key={machineNumber}>
+                          <tr className={cn("border-t-2 border-border/80", getMachineAccent(machineNumber).headerBg)}>
+                            <td colSpan={14} className="py-2 px-3 font-semibold text-sm">
+                              기계번호: {machineNumber} ({rows.length}건)
+                            </td>
+                          </tr>
+                          {rows.map((row, rowIdx) => {
+                            const displayIndex = displayRows.findIndex(r => r.id === row.id) + 1;
+                            const prevRow = rowIdx > 0 ? rows[rowIdx - 1] : null;
+                            const showSep = prevRow && prevRow.moldNumber !== row.moldNumber;
+                            return (
+                            <SortableRow
+                              key={row.id}
+                              row={row}
+                              index={displayIndex}
+                              isSelected={selectedIds.includes(row.id)}
+                              onToggleSelect={(id, checked) => {
+                                if (checked) {
+                                  setSelectedIds([...selectedIds, id]);
+                                } else {
+                                  setSelectedIds(selectedIds.filter(selectedId => selectedId !== id));
+                                }
+                              }}
+                              onStatusChange={handleStatusChange}
+                              onStatusReset={handleStatusReset}
+                              onEdit={handleEditClick}
+                              onDelete={handleDeleteClick}
+                              onMachineNumberChange={handleMachineNumberChange}
+                              getStatusBadge={getStatusBadge}
+                              getMachineAccent={getMachineAccent}
+                              weeklyOutbound={productOutboundMap.get(row.productName)}
+                              showSeparator={showSep}
+                            />
+                            );
+                          })}
+                        </React.Fragment>
+                    ))}
+                  </SortableContext>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </DndContext>
+      </div>
+          </div>{/* end left column */}
+
+          {/* 우측: 생산 통계 */}
+          <aside className="w-full lg:flex-1 lg:max-w-md lg:sticky lg:top-28 space-y-3">
+            <ProductionStatsPanel
+              rows={displayRows}
+              onMachineClick={(m) => setMachineFilter(m)}
+            />
+          </aside>
+        </div>
       )}
 
       <div className={`md:hidden fixed bottom-0 left-0 right-0 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 z-20 ${mobileMainTab === 'plans' ? 'block' : 'hidden'}`}>
@@ -2381,97 +2615,6 @@ export default function ProductionPlan() {
         </div>
       </div>
 
-      {/* 데스크탑 뷰 (테이블) */}
-      <div className="hidden md:block bg-card border border-border rounded-lg overflow-hidden">
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-muted/40">
-                <tr className="text-left text-muted-foreground">
-                  <th className="py-3 px-4 w-10">
-                    <Checkbox
-                      checked={selectedIds.length === displayRows.length && displayRows.length > 0}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setSelectedIds(displayRows.map(row => row.id));
-                        } else {
-                          setSelectedIds([]);
-                        }
-                      }}
-                    />
-                  </th>
-                  <th className="py-3 px-4">상태</th>
-                  <th className="py-3 px-4">일자</th>
-                  <th className="py-3 px-4">기계</th>
-                  <th className="py-3 px-4">금형</th>
-                  <th className="py-3 px-4">제품명</th>
-                  <th className="py-3 px-4">영문명</th>
-                  <th className="py-3 px-4">색상</th>
-                  <th className="py-3 px-4">롯트번호</th>
-                  <th className="py-3 px-4 text-right">단위</th>
-                  <th className="py-3 px-4 text-right">생산수량</th>
-                  <th className="py-3 px-4 text-right">생산단위</th>
-                  <th className="py-3 px-4 text-right">작업예정 수량(낱개)</th>
-                  <th className="py-3 px-4 text-center">작업</th>
-                </tr>
-              </thead>
-              <tbody>
-                {displayRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={13} className="text-center py-10 text-muted-foreground">
-                      데이터가 없습니다.
-                    </td>
-                  </tr>
-                ) : (
-                  <SortableContext items={sortableItems} strategy={verticalListSortingStrategy}>
-                    {(() => {
-                      let globalIndex = 0;
-                      return machineGroupEntries.map(([machineNumber, rows]) => (
-                        <React.Fragment key={machineNumber}>
-                          <tr className={cn("border-t-2 border-border/80", getMachineAccent(machineNumber).headerBg)}>
-                            <td colSpan={12} className="py-2 px-4 font-semibold text-sm">
-                              기계번호: {machineNumber} ({rows.length}건)
-                            </td>
-                          </tr>
-                          {rows.map((row, rowIdx) => {
-                            const displayIndex = displayRows.findIndex(r => r.id === row.id) + 1;
-                            const prevRow = rowIdx > 0 ? rows[rowIdx - 1] : null;
-                            const showSep = prevRow && prevRow.moldNumber !== row.moldNumber;
-                            return (
-                            <SortableRow
-                              key={row.id}
-                              row={row}
-                              index={displayIndex}
-                              isSelected={selectedIds.includes(row.id)}
-                              onToggleSelect={(id, checked) => {
-                                if (checked) {
-                                  setSelectedIds([...selectedIds, id]);
-                                } else {
-                                  setSelectedIds(selectedIds.filter(selectedId => selectedId !== id));
-                                }
-                              }}
-                              onStatusChange={handleStatusChange}
-                              onStatusReset={handleStatusReset}
-                              onEdit={handleEditClick}
-                              onDelete={handleDeleteClick}
-                              onMachineNumberChange={handleMachineNumberChange}
-                              getStatusBadge={getStatusBadge}
-                              getMachineAccent={getMachineAccent}
-                              weeklyOutbound={productOutboundMap.get(row.productName)}
-                              showSeparator={showSep}
-                            />
-                            );
-                          })}
-                        </React.Fragment>
-                      ));
-                    })()}
-                  </SortableContext>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </DndContext>
-
       {/* 모바일 필터 Drawer */}
       <MobileFilterDrawer
         open={isDrawerOpen}
@@ -2490,7 +2633,6 @@ export default function ProductionPlan() {
         selectedIds={selectedIds}
         onClearSelection={() => setSelectedIds([])}
       />
-      </div>
     </div>
   );
 }

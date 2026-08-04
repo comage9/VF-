@@ -11,6 +11,8 @@ export interface SidebarItem {
   icon: string;
   description?: string;
   externalUrl?: string;
+  /** 사이드바 메뉴 항목 옆에 표시할 작은 배지 (예: "NEW") */
+  badge?: string;
 }
 
 interface SidebarProps {
@@ -68,6 +70,14 @@ function NavContent({ items, activeKey, collapsed, onItemClick }: SidebarProps &
             >
               <i className={`fas ${item.icon} ${collapsed ? '' : 'mr-3'} w-5 text-center shrink-0`}></i>
               {!collapsed && <span className="flex-1">{item.label}</span>}
+              {!collapsed && item.badge && (
+                <span className="ml-1.5 inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 shrink-0">
+                  {item.badge}
+                </span>
+              )}
+              {collapsed && item.badge && (
+                <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-amber-500" title={item.badge}></span>
+              )}
               {!collapsed && <i className="fas fa-external-link-alt ml-2 text-xs opacity-50"></i>}
               {collapsed && <span className="hidden lg:group-hover:block absolute left-full ml-2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50 shadow-lg">{item.label}</span>}
             </a>
@@ -81,6 +91,14 @@ function NavContent({ items, activeKey, collapsed, onItemClick }: SidebarProps &
           >
             <i className={`fas ${item.icon} ${collapsed ? '' : 'mr-3'} w-5 text-center shrink-0`}></i>
             {!collapsed && <span className="flex-1">{item.label}</span>}
+            {!collapsed && item.badge && (
+              <span className="ml-1.5 inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 shrink-0">
+                {item.badge}
+              </span>
+            )}
+            {collapsed && item.badge && (
+              <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-amber-500" title={item.badge}></span>
+            )}
             {collapsed && <span className="hidden lg:group-hover:block absolute left-full ml-2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50 shadow-lg">{item.label}</span>}
             {activeKey === item.key && (
               <i className="fas fa-chevron-right ml-2 text-xs opacity-70"></i>

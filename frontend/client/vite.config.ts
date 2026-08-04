@@ -44,14 +44,22 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // precache: 빌드 결과물(HTML/JS/CSS/폰트) 자동 캐싱
+        // precache: 빌드 결과물 (스캐너 HTML 은 로직 자주 바뀌므로 제외)
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2}'],
-        // SPA 라우팅 오프라인 새로고침 시 index.html 서빙 가이드 지정
+        globIgnores: ['**/barcode_scanner.html', '**/barcode_scanner*.html'],
         navigateFallback: '/index.html',
-        // API 요청은 index.html 서빙에서 제외 (원래 에러로 Fallback)
-        navigateFallbackDenylist: [/^\/api\/.*/, /^\/departure\/api\/.*/, /^\/truck-freight\/api\/.*/],
-        // API는 온라인 우선, 실패 시 캐시 (오프라인에서 마지막 데이터 표시)
+        navigateFallbackDenylist: [
+          /^\/api\/.*/,
+          /^\/departure\/api\/.*/,
+          /^\/truck-freight\/api\/.*/,
+          /barcode_scanner/,
+        ],
         runtimeCaching: [
+          {
+            // 스캐너: 항상 네트워크 (캐시하면 기간 입고가능 로직 수정이 안 보임)
+            urlPattern: /barcode_scanner.*\.html/i,
+            handler: 'NetworkOnly',
+          },
           {
             urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
             handler: 'CacheFirst',
@@ -59,7 +67,7 @@ export default defineConfig({
               cacheName: 'google-fonts-cache',
               expiration: {
                 maxEntries: 20,
-                maxAgeSeconds: 60 * 60 * 24 * 365, // 1년
+                maxAgeSeconds: 60 * 60 * 24 * 365,
               },
               cacheableResponse: { statuses: [0, 200] },
             },
@@ -69,10 +77,10 @@ export default defineConfig({
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',
-              networkTimeoutSeconds: 5, // 5초 내 응답 없으면 캐시 사용
+              networkTimeoutSeconds: 5,
               expiration: {
                 maxEntries: 100,
-                maxAgeSeconds: 60 * 60 * 24, // 24시간
+                maxAgeSeconds: 60 * 60 * 24,
               },
               cacheableResponse: { statuses: [0, 200] },
             },
@@ -100,7 +108,9 @@ export default defineConfig({
         ],
       },
       devOptions: {
-        enabled: true, // 개발 환경(npm run dev)에서도 PWA 서비스 워커가 동작하도록 강제 활성화
+        // dev 에서 SW 켜면 public/barcode_scanner.html 등 정적 파일이 캐시되어
+        // 로직 수정이 화면에 안 반영되는 문제가 반복됨 → 개발 중 비활성
+        enabled: false,
       },
     }),
   ],
@@ -132,7 +142,31 @@ export default defineConfig({
     // 허용할 호스트 주소 추가 (모든 호스트 허용)
     allowedHosts: true,
     proxy: {
-      // Windows에서 localhost → ::1 이슈 완화: 127.0.0.1 고정
+      // Windows: 127.0.0.1 고정
+      // ═══════════════════════════════════════════════════════════
+      // VF-new 운영 프론트 → Django(:5176) 만 사용.
+      // VF-go(:5177) 와 섞지 않음. Go 패리티는 curl/check_parity 로 별도 검증.
+      // (과거 Go 시험 프록시는 혼선·ECONNREFUSED 유발 → 제거)
+      // ═══════════════════════════════════════════════════════════
+      '/api/master': {
+        target: 'http://127.0.0.1:5176',
+        changeOrigin: true,
+        timeout: 120000,
+        proxyTimeout: 120000,
+      },
+      // 재고 기준 스냅샷: 엑셀/ZIP 파싱·DB 교체 — 일반 API보다 여유
+      '/api/inventory/baseline-upload': {
+        target: 'http://127.0.0.1:5176',
+        changeOrigin: true,
+        timeout: 300000,
+        proxyTimeout: 300000,
+      },
+      '/api/inventory/receipts-upload': {
+        target: 'http://127.0.0.1:5176',
+        changeOrigin: true,
+        timeout: 300000,
+        proxyTimeout: 300000,
+      },
       '/api': {
         target: 'http://127.0.0.1:5176',
         changeOrigin: true,

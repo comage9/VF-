@@ -443,10 +443,128 @@ async function resolveApiBase(): Promise<string> {
   return "";
 }
 
+type FreeModelItem = {
+  id: string;
+  name?: string;
+  context_length?: number | null;
+};
+
 function DeliveryOverview() {
   const dashboardRef = useRef<any>(null);
   const initializedRef = useRef(false);
+  const apiBaseRef = useRef<string>("");
   const [mobileTab, setMobileTab] = useState<'chart' | 'barcodes' | 'inputs'>('chart');
+  const [freeModels, setFreeModels] = useState<FreeModelItem[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>("");
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
+  const [modelBadge, setModelBadge] = useState("OpenRouter · 무료");
+
+  const shortModelName = (id: string) => {
+    if (!id) return "무료";
+    const parts = id.split("/");
+    return parts[parts.length - 1] || id;
+  };
+
+  const loadFreeModels = async (opts?: { force?: boolean; base?: string }) => {
+    const base = opts?.base ?? apiBaseRef.current ?? "";
+    const force = !!opts?.force;
+    setModelsLoading(true);
+    setModelsError(null);
+    try {
+      const q = force ? "?refresh=1" : "";
+      // base 비어있으면 Vite 프록시 상대경로 사용
+      const url = `${base}/api/ai/free-models${q}`;
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const json = await res.json();
+      if (!json?.success) {
+        throw new Error(json?.message || json?.error || "목록 로드 실패");
+      }
+      const models: FreeModelItem[] = Array.isArray(json.models)
+        ? json.models
+            .map((m: any) => ({
+              id: String(m?.id || m || "").trim(),
+              name: m?.name ? String(m.name) : undefined,
+              context_length: m?.context_length ?? null,
+            }))
+            .filter((m: FreeModelItem) => !!m.id)
+        : [];
+      const selected = String(json.selectedModel || models[0]?.id || "");
+      setFreeModels(models);
+      setSelectedModel(selected);
+      setModelBadge(`OpenRouter · ${shortModelName(selected)}`);
+
+      // dashboard.js 인스턴스와 동기화 (분석 시 동일 모델 사용)
+      const dash = dashboardRef.current || (window as any).dashboard;
+      if (dash) {
+        dash.selectedFreeModel = selected;
+        dash.freeModels = models;
+        dash.freeModelsLoaded = true;
+        if (typeof dash.setAiModelBadge === "function") {
+          dash.setAiModelBadge(`OpenRouter · ${shortModelName(selected)}`, "llm");
+        }
+      }
+      return { models, selected };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "목록 로드 실패";
+      console.error("free models load failed:", e);
+      setModelsError(msg);
+      setFreeModels([]);
+      setModelBadge("OpenRouter · 목록 실패");
+      return null;
+    } finally {
+      setModelsLoading(false);
+    }
+  };
+
+  const handleModelChange = async (modelId: string) => {
+    setSelectedModel(modelId);
+    setModelBadge(`OpenRouter · ${shortModelName(modelId)}`);
+    const base = apiBaseRef.current || "";
+    try {
+      await fetch(`${base}/api/ai/free-models`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: modelId }),
+      });
+    } catch (e) {
+      console.warn("model select save failed", e);
+    }
+    const dash = dashboardRef.current || (window as any).dashboard;
+    if (dash) {
+      dash.selectedFreeModel = modelId;
+      dash.aiInsightCache = null;
+      dash.lastAIAnalysisHour = null;
+      try {
+        localStorage.removeItem("ai_insight_cache");
+      } catch {
+        /* ignore */
+      }
+      if (typeof dash.fetchAIAnalysis === "function") {
+        await dash.fetchAIAnalysis({ force: true });
+      }
+    }
+  };
+
+  const handleRerunAnalysis = async () => {
+    const dash = dashboardRef.current || (window as any).dashboard;
+    if (!dash || typeof dash.fetchAIAnalysis !== "function") {
+      alert("대시보드가 아직 준비되지 않았습니다. 잠시 후 다시 시도하세요.");
+      return;
+    }
+    dash.selectedFreeModel = selectedModel || dash.selectedFreeModel;
+    dash.aiInsightCache = null;
+    dash.lastAIAnalysisHour = null;
+    try {
+      localStorage.removeItem("ai_insight_cache");
+    } catch {
+      /* ignore */
+    }
+    await dash.fetchAIAnalysis({ force: true });
+  };
 
   useEffect(() => {
     // In React dev StrictMode, effects can run mount -> cleanup -> mount.
@@ -462,13 +580,21 @@ function DeliveryOverview() {
         await ensureChartScripts();
         // NOTE: dashboard.js에는 top-level let/const 전역 바인딩이 있어
         // SPA 재진입 시 스크립트를 재주입/재실행하면 SyntaxError로 평가가 중단될 수 있다.
-        // 따라서 세션당 1회만 로드하고 이후에는 전역(window.Dashboard)을 재사용한다.
+        // 모델 선택/목록은 React가 담당. dashboard.js는 캐시 버스팅 버전으로 1회 로드.
+        const DASHBOARD_JS_VER = "20260710-free-models-v3";
         const w = window as any;
-        if (!w.__deliveryDashboardScriptPromise) {
-          w.__deliveryDashboardScriptPromise = (async () => {
-            if (typeof w.Dashboard === 'function') return;
-            await loadScript(`/js/dashboard.js?v=${Date.now()}`, { async: false });
-          })();
+        if (!w.__deliveryDashboardScriptPromise || w.__deliveryDashboardJsVer !== DASHBOARD_JS_VER) {
+          w.__deliveryDashboardJsVer = DASHBOARD_JS_VER;
+          // 구버전 Dashboard 제거 후 재로드
+          try {
+            delete w.Dashboard;
+          } catch {
+            w.Dashboard = undefined;
+          }
+          w.__deliveryDashboardScriptPromise = loadScript(
+            `/js/dashboard.js?v=${DASHBOARD_JS_VER}`,
+            { async: false }
+          );
         }
         await w.__deliveryDashboardScriptPromise;
 
@@ -485,6 +611,18 @@ function DeliveryOverview() {
         }
 
         const apiBase = await resolveApiBase();
+        apiBaseRef.current = apiBase || "";
+
+        // 무료 모델 목록 — React에서 직접 로드 (dashboard.js 캐시 무관)
+        let modelsResult: { models: FreeModelItem[]; selected: string } | null = null;
+        if (mounted) {
+          modelsResult = await loadFreeModels({ base: apiBase || "", force: false });
+          // 실패 시 1회 강제 갱신
+          if (!modelsResult || !modelsResult.models.length) {
+            modelsResult = await loadFreeModels({ base: apiBase || "", force: true });
+          }
+        }
+
         // 테스트 데이터 설정
         if (typeof window !== 'undefined') {
           window.testDeliveryData = [
@@ -501,7 +639,16 @@ function DeliveryOverview() {
         });
         (window as any).dashboard = dashboard;
         dashboardRef.current = dashboard;
+        if (modelsResult?.selected) {
+          dashboard.selectedFreeModel = modelsResult.selected;
+          dashboard.freeModels = modelsResult.models;
+          dashboard.freeModelsLoaded = true;
+        }
         await dashboard.init();
+        // init 안 loadFreeModels가 select를 비울 수 있어 React 상태 재동기화
+        if (modelsResult?.selected) {
+          dashboard.selectedFreeModel = modelsResult.selected;
+        }
         dashboard.startAutoRefresh(600000);
       } catch (error) {
         console.error("대시보드 초기화 실패:", error);
@@ -740,11 +887,69 @@ function DeliveryOverview() {
                 <div className="p-2 bg-white rounded-full shadow-sm text-indigo-600">
                   <i className="fas fa-robot text-xl"></i>
                 </div>
-                <div className="flex-1">
-                  <h3 className="text-sm font-bold text-indigo-900 mb-1 flex items-center gap-2">
-                    AI 배송 예측 분석
-                    <span className="text-[10px] px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full">AI (MiniMax M2.7)</span>
-                  </h3>
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 mb-2">
+                    <h3 className="text-sm font-bold text-indigo-900 flex items-center gap-2">
+                      AI 배송 예측 분석
+                      <span id="ai-model-badge" className="text-[10px] px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full font-medium">
+                        {modelBadge}
+                      </span>
+                    </h3>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    <label htmlFor="ai-free-model-select" className="text-[11px] text-indigo-700 whitespace-nowrap">
+                      무료 모델
+                    </label>
+                    <select
+                      id="ai-free-model-select"
+                      data-react-managed="true"
+                      className="text-xs border border-indigo-200 rounded-md bg-white px-2 py-1 max-w-[min(100%,320px)] text-indigo-900"
+                      value={selectedModel}
+                      disabled={modelsLoading || freeModels.length === 0}
+                      onChange={(e) => handleModelChange(e.target.value)}
+                    >
+                      {modelsLoading && freeModels.length === 0 && (
+                        <option value="">모델 불러오는 중...</option>
+                      )}
+                      {!modelsLoading && freeModels.length === 0 && (
+                        <option value="">{modelsError ? `로드 실패: ${modelsError}` : "모델 없음 — 목록 갱신 클릭"}</option>
+                      )}
+                      {freeModels.map((m) => {
+                        const short = shortModelName(m.id);
+                        const label = m.name && m.name !== m.id ? `${short} — ${m.name}` : short;
+                        return (
+                          <option key={m.id} value={m.id}>
+                            {label}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <button
+                      type="button"
+                      id="ai-free-model-refresh"
+                      className="text-[11px] px-2 py-1 rounded-md border border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+                      title="OpenRouter 무료 모델 목록 갱신"
+                      disabled={modelsLoading}
+                      onClick={() => loadFreeModels({ force: true })}
+                    >
+                      {modelsLoading ? "갱신 중..." : "목록 갱신"}
+                    </button>
+                    <button
+                      type="button"
+                      id="ai-analyze-rerun"
+                      className="text-[11px] px-2 py-1 rounded-md bg-indigo-600 text-white hover:bg-indigo-700"
+                      title="선택 모델로 분석 다시 실행"
+                      onClick={() => handleRerunAnalysis()}
+                    >
+                      다시 분석
+                    </button>
+                    {modelsError && (
+                      <span className="text-[11px] text-red-600 w-full">{modelsError}</span>
+                    )}
+                    {!modelsLoading && freeModels.length > 0 && (
+                      <span className="text-[11px] text-indigo-600/80">{freeModels.length}개</span>
+                    )}
+                  </div>
                   <div id="ai-insight-content" className="text-sm text-indigo-800 leading-relaxed whitespace-pre-line">
                     데이터 분석 중...
                   </div>

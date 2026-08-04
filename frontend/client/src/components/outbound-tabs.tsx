@@ -129,7 +129,8 @@ export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, 
 
       toast({
         title: '업로드 성공',
-        description: `총 ${result.count}개 레코드가 처리되었습니다.`,
+        description: result.message
+          || `총 ${result.created ?? result.count ?? 0}개 레코드가 처리되었습니다.`,
       });
 
       // 관련 쿼리 무효화
@@ -237,49 +238,49 @@ export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, 
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2">
-            <label htmlFor="uploadDate" className="text-sm font-medium">
-              데이터 날짜:
-            </label>
-            <input
-              id="uploadDate"
-              type="date"
-              value={uploadDate}
-              onChange={(e) => setUploadDate(e.target.value)}
-              className="px-3 py-1 border rounded-md text-sm"
-            />
-          </div>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleSync}
-            disabled={isSyncing}
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
-            {isSyncing ? '동기화 중...' : '동기화'}
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            asChild
-          >
-            <label htmlFor="file-upload" className="cursor-pointer">
-              <Package className="h-4 w-4 mr-2" />
-              파일 업로드
+        {/* 상단 버튼은 탭별로 분리 — FC 입고 파일은 본문 업로드 카드에만 */}
+        {activeTab === 'vf-outbound' ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <label htmlFor="uploadDate" className="text-sm font-medium">
+                데이터 날짜:
+              </label>
               <input
-                id="file-upload"
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                className="hidden"
-                onChange={handleFileUpload}
-                disabled={isSyncing}
+                id="uploadDate"
+                type="date"
+                value={uploadDate}
+                onChange={(e) => setUploadDate(e.target.value)}
+                className="px-3 py-1 border rounded-md text-sm"
               />
-            </label>
-          </Button>
-        </div>
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSync}
+              disabled={isSyncing}
+              title="Google Sheets VF 출고 동기화"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
+              {isSyncing ? '동기화 중...' : '출고 동기화'}
+            </Button>
+
+            <Button variant="outline" size="sm" asChild title="VF 출고 엑셀/CSV 업로드 (쿠팡 입고 파일 아님)">
+              <label htmlFor="file-upload" className="cursor-pointer">
+                <Package className="h-4 w-4 mr-2" />
+                VF 출고 파일 업로드
+                <input
+                  id="file-upload"
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                  disabled={isSyncing}
+                />
+              </label>
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       <div className="border-b">
@@ -301,8 +302,9 @@ export default function OutboundTabs({ initialTab = 'vf-outbound', onTabChange, 
                 ? 'border-b-2 border-primary text-primary'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
+            title="쿠팡 입고 엑셀 → 입고 실적 + 단가 동기화"
           >
-            FC 입고
+            FC 입고·단가
           </button>
         </nav>
       </div>

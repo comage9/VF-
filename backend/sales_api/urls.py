@@ -55,6 +55,11 @@ urlpatterns = [
     ),
     path("inventory/unified", views.inventory_unified, name="inventory-unified"),
     path(
+        "inventory/stock-diagnostics",
+        views.inventory_stock_diagnostics,
+        name="inventory-stock-diagnostics",
+    ),
+    path(
         "inventory/unified/download.csv",
         views.inventory_unified_download_csv,
         name="inventory-unified-download-csv",
@@ -85,9 +90,24 @@ urlpatterns = [
         name="inventory-receipts-upload",
     ),
     path(
+        "inventory/wms-reconcile",
+        views.inventory_wms_reconcile,
+        name="inventory-wms-reconcile",
+    ),
+    path(
+        "inventory/variance-check",
+        views.inventory_variance_check,
+        name="inventory-variance-check",
+    ),
+    path(
         "inventory/barcode-master",
         views.inventory_barcode_master,
         name="inventory-barcode-master",
+    ),
+    path(
+        "inventory/barcode-location",
+        views.inventory_barcode_location_upsert,
+        name="inventory-barcode-location",
     ),
     path(
         "inventory/inbound/upload",
@@ -100,6 +120,21 @@ urlpatterns = [
         name="inbound-order-latest",
     ),
     path("inventory/inbound/policy", views.inbound_policy, name="inbound-policy"),
+    path(
+        "inventory/inbound/restrictions/resolve",
+        views.inbound_product_restrictions_resolve,
+        name="inbound-product-restrictions-resolve",
+    ),
+    path(
+        "inventory/inbound/restrictions",
+        views.inbound_product_restrictions,
+        name="inbound-product-restrictions",
+    ),
+    path(
+        "inventory/inbound/restrictions/<str:barcode>",
+        views.inbound_product_restriction_detail,
+        name="inbound-product-restriction-detail",
+    ),
     path("outbound/bulk", views.bulk_create_outbound, name="bulk-create-outbound"),
     path(
         "outbound/delete-range",
@@ -120,6 +155,7 @@ urlpatterns = [
     path("google-sheets/proxy", views.google_sheets_proxy, name="google-sheets-proxy"),
     path("ai/predict-hourly", views.ai_predict_hourly, name="ai-predict-hourly"),
     path("ai/analyze", views.ai_analyze, name="ai-analyze"),
+    path("ai/free-models", views.ai_free_models, name="ai-free-models"),
     path("ai/chat", views.ai_chat, name="ai-chat"),
     path("ai/agent-chat", agent_views.ai_agent_chat, name="ai-agent-chat"),
     path("ai/agent-status", agent_views.ai_agent_status, name="ai-agent-status"),
@@ -201,6 +237,11 @@ urlpatterns = [
         views.upload_production_file,
         name="upload-production-file",
     ),
+    path(
+        "upload-production-text",
+        views.upload_production_text,
+        name="upload-production-text",
+    ),
     # Machine User & Plan APIs (모바일 웹앱)
     path("machine/login", views.machine_login, name="machine-login"),
     path("machine/logout", views.machine_logout, name="machine-logout"),
@@ -227,6 +268,30 @@ urlpatterns = [
     path("ai/production-forecast", views.ai_production_forecast, name="ai-production-forecast"),
     path("ai/production-forecast/<str:product_name>", views.ai_production_forecast_by_product, name="ai-production-forecast-by-product"),
     path("master/specs", views.master_specs, name="master-specs"),
+    path("master/specs/bulk-update", views.master_specs_bulk_update, name="master-specs-bulk-update"),
+    path("master/specs/sync-outbound-status", views.master_specs_sync_outbound_status, name="master-specs-sync-outbound-status"),
+    path("master/specs/sync-vf-from-stock", views.master_specs_sync_vf_from_stock, name="master-specs-sync-vf-from-stock"),
+    path(
+        "master/specs/sync-vf-from-outbound",
+        views.master_specs_sync_vf_from_outbound,
+        name="master-specs-sync-vf-from-outbound",
+    ),
+    path("master/specs/export.xlsx", views.master_specs_export_xlsx, name="master-specs-export-xlsx"),
+    path("master/specs/import-bulk", views.master_specs_import_bulk, name="master-specs-import-bulk"),
+    path("master/specs/current-stock", views.master_spec_current_stock, name="master-specs-current-stock"),
+    path("master/category-lg-options", views.master_category_lg_options, name="master-category-lg-options"),
+    path("master/specs/register-from-scan", views.master_specs_register_from_scan, name="master-specs-register-from-scan"),
+    path(
+        "master/specs/upload-image",
+        views.master_spec_upload_image,
+        name="master-specs-upload-image",
+    ),
+    path(
+        "master/specs/upload-excel",
+        views.master_spec_upload_excel,
+        name="master-specs-upload-excel",
+    ),
+    # <int:id> 는 정적 경로 뒤에 두어 export/import 와 충돌 방지
     path(
         "master/specs/<int:id>", views.master_specs_detail, name="master-specs-detail"
     ),

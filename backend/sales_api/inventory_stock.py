@@ -5,30 +5,33 @@ Enhanced 재고 현재고 산출 규칙 (단일 진실 공급원)
 ⚠️ 이 파일의 규칙을 바꾸지 말고 views.py 등에 인라인 재구현하지 말 것.
    inventory_unified / 입고 반영 / 집계는 모두 여기를 사용한다.
 
-## 비즈니스 정의 (2026-07-15 확정)
+## 비즈니스 정의 (2026-07-27 확정 — 현장 운영, 단순 장부)
 
-업로드 재고 스냅샷(as_of_date)의 의미:
-  → 해당 일자 **출고가 반영된 이후 남은 재고** (클로징/잔여 스냅샷)
+1) 재고 데이터 업로드 = 기준 수량 (그 시점 정답). 전일 출고를 다시 계산하지 않음.
+2) 입고 데이터 업로드(InventoryReceiptItem) = 기준에 가산 (+). 기준일(as_of) 당일 입고도 포함.
+3) 출고 = 일자 맞춰 차감. 당일 출고 합계는 보통 익일 집계되지만,
+   데이터가 들어오면 outbound_date 가 as_of 이상인 분을 그대로 뺌.
+   → (오늘 기준재고 + 오늘 입고) − 오늘 출고 = 내일로 이어지는 장부.
+4) 입고 가능 탭 발주서(InboundOrderLine) · FC 입고 실적(FCInboundRecord)은
+   이 공식에 **직접 포함하지 않음**. 발주 업로드의 전산 가산은 기본 OFF.
 
-따라서:
+공식:
   current_stock = baseline_qty
-                + receipts with receipt_date  > as_of_date
-                - outbound  with outbound_date > as_of_date
+                + receipts  with receipt_date  >= as_of_date   # 당일 입고 포함 가산
+                - outbound  with outbound_date >= as_of_date   # 당일 출고 차감
                   (실적만: is_estimated=False)
+                + adjustments with adjustment_date > as_of_date
 
-기준일 당일(as_of) 출고·입고를 다시 가감하면 이중 반영 → 위험/금액 오류가 반복됨.
-예측 보정 출고(is_estimated=True)는 재고 차감·임계 산출에 포함하지 않는다.
+예) as_of=7/27 스냅샷 100, 7/27 입고 +10, 7/27 출고 −3
+    → 현재고 107. 별도 +1일 보정·우회 없음.
 
-## 연속 일치가 깨지는 구조적 원인 (2026-07-20)
+예측 보정 출고(is_estimated=True)는 재고 차감에 포함하지 않는다.
 
-시스템은 쿠팡 WMS 실물을 직접 읽지 않고 **장부 재구성**만 한다.
-  스냅샷 + (업로드된 입고) − (시트 동기화 매출 출고)
-아래가 빠지면 시간이 지날수록 창고 실물과 어긋나 **압축 파일 재업로드**로만 맞춰진다.
-  1) 입고 미업로드
-  2) 매출 외 재고 변동(파손·실사·등급변경·이동) 미기록
-  3) 같은 상품·다른 바코드로 출고/재고가 갈라짐 (별칭 미통합)
+## 연속 일치가 깨지는 구조적 원인
 
-(3) 은 아래 alias 통합 차감으로 완화한다. (1)(2) 는 데이터 파이프라인·조정 전표가 필요.
+시스템은 WMS 실물을 직접 읽지 않고 장부만 재구성한다.
+  스냅샷 + 입고(as_of~) − 출고(as_of~) + 조정
+빠지면 어긋남: ① 입고 미업로드 ② 스냅샷 미갱신 ③ 바코드 불일치
 """
 from __future__ import annotations
 
@@ -40,8 +43,13 @@ from django.db.models import Sum
 from django.db.models.functions import Coalesce
 
 
-# 클로징 스냅샷: 기준일 당일 이동은 스냅샷에 이미 포함
-SNAPSHOT_INCLUDES_AS_OF_DAY_MOVEMENTS = True
+# 스냅샷 = 업로드 시점 기준 수량만. 당일 입고는 스냅샷에 없다 → 입고 업로드로 가산.
+# 당일 출고도 스냅샷에 없다 → 출고 실적으로 차감. (일자만 맞추면 됨)
+SNAPSHOT_INCLUDES_AS_OF_DAY_RECEIPTS = False
+SNAPSHOT_INCLUDES_AS_OF_DAY_OUTBOUND = False
+
+# 하위 호환 별칭 (False = 당일 입고도 가산 창에 포함)
+SNAPSHOT_INCLUDES_AS_OF_DAY_MOVEMENTS = SNAPSHOT_INCLUDES_AS_OF_DAY_RECEIPTS
 
 # 재고/커버리지 산출 시 예측 출고 제외
 STOCK_EXCLUDES_ESTIMATED_OUTBOUND = True
@@ -49,33 +57,76 @@ STOCK_EXCLUDES_ESTIMATED_OUTBOUND = True
 # 같은 상품명 바코드끼리 출고·입고를 묶어 차감 (연속 드리프트 완화)
 STOCK_USES_PRODUCT_NAME_ALIASES = True
 
+# 조정 전표(WMS 대조·파손 등)를 현재고에 반영
+STOCK_INCLUDES_ADJUSTMENTS = True
 
-def movement_after_baseline_lookup(as_of: date) -> str:
+
+def outbound_after_baseline_lookup(as_of: date | None = None) -> str:
     """
-    Django 룩업 접미사 반환.
-    - 클로징 스냅샷(기본): 'gt'  → date > as_of
-    - 시초 스냅샷(미사용): 'gte' → date >= as_of
+    출고 Django 룩업.
+    당일 출고는 스냅샷에 없음 → 'gte' (outbound_date >= as_of)
     """
-    if SNAPSHOT_INCLUDES_AS_OF_DAY_MOVEMENTS:
+    if SNAPSHOT_INCLUDES_AS_OF_DAY_OUTBOUND:
         return "gt"
     return "gte"
 
 
+def receipt_after_baseline_lookup(as_of: date | None = None) -> str:
+    """
+    입고 Django 룩업.
+    스냅샷에 당일 입고 없음 → 'gte' (receipt_date >= as_of)
+    """
+    if SNAPSHOT_INCLUDES_AS_OF_DAY_RECEIPTS:
+        return "gt"
+    return "gte"
+
+
+def adjustment_after_baseline_lookup(as_of: date | None = None) -> str:
+    """조정 전표: 기준일 다음날부터 (gt). 당일 조정은 스냅샷에 넣지 않는 전제."""
+    return "gt"
+
+
+def movement_after_baseline_lookup(
+    as_of: date | None = None,
+    kind: str = "receipt",
+) -> str:
+    """
+    kind: 'outbound' | 'receipt' | 'adjustment'
+    기본 receipt (입고 업로드 등 기존 호출 호환).
+    """
+    k = (kind or "receipt").lower()
+    if k in ("out", "outbound", "출고"):
+        return outbound_after_baseline_lookup(as_of)
+    if k in ("adj", "adjustment", "조정"):
+        return adjustment_after_baseline_lookup(as_of)
+    return receipt_after_baseline_lookup(as_of)
+
+
 def is_movement_date_applicable(movement_date: date, as_of: date) -> bool:
-    """입고 업로드 등에서 기준일 대비 반영 여부 판정."""
+    """입고 업로드: 기준일(as_of) 당일부터 가산 허용 (스냅샷 이전 일자만 제외)."""
     if movement_date is None or as_of is None:
         return False
-    if SNAPSHOT_INCLUDES_AS_OF_DAY_MOVEMENTS:
+    if SNAPSHOT_INCLUDES_AS_OF_DAY_RECEIPTS:
         return movement_date > as_of
     return movement_date >= as_of
+
+
+def is_outbound_date_applicable(outbound_date: date, as_of: date) -> bool:
+    """실출고: 기준일 당일부터 차감 (다음날 입력되는 당일 출고 포함)."""
+    if outbound_date is None or as_of is None:
+        return False
+    if SNAPSHOT_INCLUDES_AS_OF_DAY_OUTBOUND:
+        return outbound_date > as_of
+    return outbound_date >= as_of
 
 
 def compute_current_stock(
     base_qty: int,
     receipt_qty_after: int = 0,
     outbound_qty_after: int = 0,
+    adjustment_qty_after: int = 0,
 ) -> int:
-    """현재고 = 기준 스냅샷 + 이후 입고 − 이후 출고."""
+    """현재고 = 기준 스냅샷 + 이후 입고 − 이후 출고 + 이후 조정."""
     try:
         base = int(base_qty or 0)
     except (TypeError, ValueError):
@@ -88,7 +139,13 @@ def compute_current_stock(
         out = int(outbound_qty_after or 0)
     except (TypeError, ValueError):
         out = 0
-    return base + rcv - out
+    try:
+        adj = int(adjustment_qty_after or 0)
+    except (TypeError, ValueError):
+        adj = 0
+    if not STOCK_INCLUDES_ADJUSTMENTS:
+        adj = 0
+    return base + rcv - out + adj
 
 
 def stock_value(qty: int, unit_price: int) -> int:
@@ -306,9 +363,10 @@ def aggregate_movements_after_baseline(
             bc_list, names, extra_names=extra_name_by_barcode
         )
 
-    lookup = movement_after_baseline_lookup(as_of)
-    out_filter = {f"outbound_date__{lookup}": as_of}
-    rcv_filter = {f"receipt_date__{lookup}": as_of}
+    out_lookup = outbound_after_baseline_lookup(as_of)
+    rcv_lookup = receipt_after_baseline_lookup(as_of)
+    out_filter = {f"outbound_date__{out_lookup}": as_of}
+    rcv_filter = {f"receipt_date__{rcv_lookup}": as_of}
 
     out_qs = (
         outbound_model.objects.filter(**out_filter)
@@ -358,3 +416,36 @@ def aggregate_movements_after_baseline(
         receipt_raw=receipt_raw,
         name_by_barcode=names,
     )
+
+
+def aggregate_adjustments_after_baseline(
+    *,
+    as_of: date,
+    barcodes: Iterable[str],
+    adjustment_model,
+) -> Dict[str, int]:
+    """
+    기준일 이후 조정 전표 합계 (바코드 → qty_delta 합).
+    adjustment_date > as_of.
+    """
+    if not STOCK_INCLUDES_ADJUSTMENTS or not as_of:
+        return {}
+    bc_list = [str(b).strip() for b in barcodes if b and str(b).strip()]
+    if not bc_list:
+        return {}
+    lookup = adjustment_after_baseline_lookup(as_of)
+    filt = {f"adjustment_date__{lookup}": as_of}
+    try:
+        rows = (
+            adjustment_model.objects.filter(**filt)
+            .filter(barcode__in=bc_list)
+            .values("barcode")
+            .annotate(qty=Coalesce(Sum("qty_delta"), 0))
+        )
+    except Exception:
+        return {}
+    return {
+        str(row["barcode"]).strip(): int(row.get("qty") or 0)
+        for row in rows
+        if row.get("barcode")
+    }

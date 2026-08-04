@@ -1,17 +1,19 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, lazy, Suspense } from "react";
 import { useLocation } from "wouter";
-import { useEffect } from "react";
 import Sidebar, { SidebarItem, MobileNav } from "@/components/sidebar";
 import OutboundTabs from "@/components/outbound-tabs";
 import InventoryTab, { type InventoryTabKey } from "@/components/inventory-tab";
 import DeliveryOverview from "@/pages/delivery-overview";
 import DepartureDashboard from "@/pages/departure-dashboard";
 import ProductionPlan from "@/pages/production-plan";
-
 import ProductMaster from "@/pages/product-master";
-import TruckFreightPage from "@/pages/truck-freight";
 import NotFound from "@/pages/not-found";
 import { AIChatWidget } from "@/components/ai-chatbot";
+import { useFreightSummary } from "@/components/shared/truck-freight-api";
+import { ErrorBoundary } from "@/components/error-boundary";
+
+/** 트럭 운송비 — lazy 로드 (해당 페이지 오류가 전체 대시보드를 깨지 않도록) */
+const TruckFreightPage = lazy(() => import("@/pages/truck-freight"));
 
 interface PageMeta {
   key: string;
@@ -186,6 +188,21 @@ export default function Dashboard() {
   const activeKey = resolveActiveKey(normalizedPath);
   const meta = PAGE_META[activeKey] || PAGE_META.delivery;
 
+  // 트럭 운송비: 최근 7일 내 신규 등록 건수 → 사이드바 메뉴 NEW 표시
+  // 요약 API 실패해도 화면 전체가 비지 않도록 (throwOnError 없음)
+  const { data: freightSummary } = useFreightSummary();
+  const navItems = useMemo(() => {
+    try {
+      const hasFreightNew = (freightSummary?.recent_new_count ?? 0) > 0;
+      if (!hasFreightNew) return NAV_ITEMS;
+      return NAV_ITEMS.map((it) =>
+        it.key === "truck-freight" ? { ...it, badge: "✨ NEW" } : it
+      );
+    } catch {
+      return NAV_ITEMS;
+    }
+  }, [freightSummary?.recent_new_count]);
+
   // 페이지 제목 설정
   useEffect(() => {
     document.title = meta.title ? `${meta.title} | VF 보노하우스` : 'VF 보노하우스';
@@ -253,13 +270,25 @@ export default function Dashboard() {
       case "/scanner":
         return (
           <iframe
-            src="/barcode_scanner.html"
+            // SW/브라우저 캐시 우회 — 버전 문자열 변경 시 강제 갱신
+            key="scanner-upload-display-20260731"
+            src="/barcode_scanner.html?v=loc-seq-save-fix-20260731"
             className="w-full h-full border-0"
             title="VF 입고 바코드"
           />
         );
       case "/truck-freight":
-        return <TruckFreightPage />;
+        return (
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center p-12 text-muted-foreground text-sm">
+                운송비 페이지 로딩…
+              </div>
+            }
+          >
+            <TruckFreightPage />
+          </Suspense>
+        );
       default:
         return <NotFound />;
     }
@@ -267,12 +296,12 @@ export default function Dashboard() {
 
   return (
     <div className="flex h-screen bg-background">
-      <Sidebar items={NAV_ITEMS} activeKey={activeKey === "unknown" ? "delivery" : activeKey} collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
+      <Sidebar items={navItems} activeKey={activeKey === "unknown" ? "delivery" : activeKey} collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="bg-card border-b border-border px-6 py-4 flex items-center justify-between">
           <div className="flex items-center">
-            <MobileNav items={NAV_ITEMS} activeKey={activeKey === "unknown" ? "delivery" : activeKey} />
+            <MobileNav items={navItems} activeKey={activeKey === "unknown" ? "delivery" : activeKey} />
             <div>
               <h2 className="text-lg font-bold text-foreground" data-testid="content-title">
                 {meta.title}
@@ -288,8 +317,10 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto p-6">
-          {renderContent()}
+        <div className="flex-1 overflow-auto p-6 min-h-0">
+          <ErrorBoundary label="page-content" key={normalizedPath}>
+            {renderContent()}
+          </ErrorBoundary>
         </div>
 
         {/* Global AI Chatbot Widget */}

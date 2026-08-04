@@ -9,3 +9,8 @@ psycopg2-binary==2.9.12
 openpyxl>=3.1
 python-dotenv>=1.0
 requests
+# Scrapling — LS/KPP 조회 (https://github.com/D4Vinci/Scrapling)
+# fetchers 설치 후: scrapling install  (브라우저 바이너리)
+scrapling[fetchers]>=0.4.0
+websocket-client>=1.0
+curl_cffi>=0.6

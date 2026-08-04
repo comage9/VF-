@@ -2,7 +2,8 @@ from rest_framework import serializers
 from .models import (
     OutboundRecord, InventoryItem, DataSource, DeliveryDailyRecord,
     BarcodeTransferRecord, DeliverySpecialNote, InboundOrderUpload,
-    InboundOrderLine, InboundPolicy, FCInboundRecord, FCInboundFileUpload,
+    InboundOrderLine, InboundPolicy, InboundProductRestriction,
+    FCInboundRecord, FCInboundFileUpload,
     ProductionLog
 )
 
@@ -55,6 +56,12 @@ class InboundOrderLineSerializer(serializers.ModelSerializer):
 class InboundPolicySerializer(serializers.ModelSerializer):
     class Meta:
         model = InboundPolicy
+        fields = '__all__'
+
+
+class InboundProductRestrictionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InboundProductRestriction
         fields = '__all__'
 
 

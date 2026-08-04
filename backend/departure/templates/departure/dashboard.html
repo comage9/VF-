@@ -255,8 +255,9 @@
           <th>연락처</th>
           <th>구분</th>
           <th>파렛트</th>
-          <th>🖨️</th>
-          <th>출고시간</th>
+          <th title="LS 출차확인서">LS</th>
+          <th title="KPP EDI 전표">KPP</th>
+          <th title="파렛트 수량 입력 시각">출고시간</th>
           <th>톤수</th>
           <th>관리</th>
         </tr>
@@ -407,6 +408,29 @@
   </div>
 </div>
 
+<!-- ═══════ LS > 차량정보 확인 모달 ═══════ -->
+<div id="lsConfirmModal" class="modal-overlay" style="display:none;z-index:10050">
+  <div class="modal-box" style="max-width:480px">
+    <div class="modal-header">
+      <span>⚠️ LS 배차 대수 확인</span>
+      <button type="button" onclick="closeLsConfirmModal()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#6b7280">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="lsConfirmSummary" style="margin:0 0 12px;font-size:14px;line-height:1.55;color:#1f2937"></p>
+      <div style="font-size:12px;color:#6b7280;margin-bottom:8px">LS에만 있는 차량 (추가 예정)</div>
+      <pre id="lsConfirmExtra" style="background:#f3f4f6;padding:12px;border-radius:8px;font-size:12px;line-height:1.6;max-height:180px;overflow:auto;margin:0"></pre>
+      <p style="margin:12px 0 0;font-size:12px;color:#6b7280;line-height:1.5">
+        <b>예</b>: 기존 입력(파렛트·봉인·기사 등)은 유지하고, 빈 칸·미등록 차량만 LS 기준으로 채웁니다.<br>
+        <b>대기</b>: 지금은 추가하지 않고, 주기 조회만 계속합니다.
+      </p>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      <button type="button" class="btn btn-primary" onclick="confirmLsApplyMerge()">✅ LS 기준으로 반영</button>
+      <button type="button" class="btn" onclick="deferLsMerge()">대기</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════ TOAST CONTAINER ═══════ -->
 <script>
 // ── 서버 주입 데이터 ──
@@ -439,10 +463,203 @@ function switchMobileTab(tabId) {
 
 // ── 상태 관리 ──
 var MAX_VISIBLE = 4;
-var pltTimestamps = {};
+/** 권역(EAST/WEST/…) 수치 입력 시각 → 출차카드 「출차시간」· departTime */
+var departTimestamps = {};
+/** 파렛트 수량 입력 시각 → 차량정보 표 「출고시간」· pltTime */
+var pltInputTimestamps = {};
+// 하위 호환: 예전 코드가 pltTimestamps 를 참조해도 권역(출차) 시각을 보도록 별칭
+var pltTimestamps = departTimestamps;
 var pltQtyValues = {};
+var _qtyAlreadySynced = {};  // Enter/Tab 시 onchange 중복 실행 방지
 var selectedTab = null;
 var regionNames = ['EAST','WEST','MIDDLE','GMH','DGU','GWJ','TW_YAMATO'];
+/** 호차별 파렛트·권역 수량 서버 저장 (vehicle_extras_{date}.json) */
+var _vehicleExtras = {};
+
+function _hhmmFromDate(d) {
+  if (!d || !d.getTime) return '';
+  return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+}
+function _dateFromHhmm(hhmm) {
+  var parts = String(hhmm || '').split(':');
+  if (parts.length < 2) return null;
+  var d = new Date();
+  d.setHours(parseInt(parts[0], 10) || 0, parseInt(parts[1], 10) || 0, 0, 0);
+  return d;
+}
+
+function mergeExtrasIntoLsData(dateStr) {
+  var extras = _vehicleExtras || {};
+  var day = dateStr || formatDate(currentDate);
+  (LS_DATA || []).forEach(function(v) {
+    var vd = v.date != null ? String(v.date).slice(0, 10) : day;
+    if (vd && vd !== day) return;
+    var ex = extras[String(v.hoche)] || extras[v.hoche];
+    if (!ex || typeof ex !== 'object') return;
+    if (ex.plt != null && ex.plt !== '') {
+      var p = parseInt(ex.plt, 10);
+      if (!isNaN(p)) v.plt = p;
+    }
+    // 출차카드: 권역 입력 시각
+    if (ex.departTime) v.departTime = ex.departTime;
+    // 차량정보 출고시간: 파렛트 입력 시각
+    if (ex.pltTime) v.pltTime = ex.pltTime;
+    v.regions = v.regions || {};
+    if (ex.regions && typeof ex.regions === 'object') {
+      Object.keys(ex.regions).forEach(function(k) {
+        if (ex.regions[k] != null && ex.regions[k] !== '') v.regions[k] = ex.regions[k];
+      });
+    }
+    regionNames.forEach(function(r) {
+      if (ex[r] != null && ex[r] !== '') v.regions[r] = ex[r];
+    });
+  });
+}
+
+function collectExtrasForHoche(hoche) {
+  var regions = {};
+  regionNames.forEach(function(r) {
+    var el = document.getElementById('vf67_' + r + '_' + hoche);
+    if (el) {
+      var raw = String(el.value || '').trim();
+      if (raw !== '') {
+        var num = parseInt(raw, 10);
+        if (!isNaN(num) && num > 0) regions[r] = num;
+      }
+    }
+  });
+  var dateKey = formatDate(currentDate);
+  // DOM에 없으면 LS_DATA.regions 사용
+  if (Object.keys(regions).length === 0) {
+    for (var i = 0; i < (LS_DATA || []).length; i++) {
+      var v = LS_DATA[i];
+      if (v.hoche === hoche && String(v.date || dateKey).slice(0, 10) === dateKey && v.regions) {
+        regionNames.forEach(function(r) {
+          if (v.regions[r] != null && Number(v.regions[r]) > 0) regions[r] = Number(v.regions[r]);
+        });
+        break;
+      }
+    }
+  }
+  var pltEl = document.getElementById('vf67_qty_' + hoche) || document.getElementById('plt_input_' + hoche);
+  var plt = 0;
+  if (pltEl && String(pltEl.value || '').trim() !== '') {
+    plt = parseInt(pltEl.value, 10) || 0;
+  } else if (pltQtyValues[hoche] != null) {
+    plt = parseInt(pltQtyValues[hoche], 10) || 0;
+  } else {
+    for (var j = 0; j < (LS_DATA || []).length; j++) {
+      if (LS_DATA[j].hoche === hoche && String(LS_DATA[j].date || dateKey).slice(0, 10) === dateKey) {
+        plt = parseInt(LS_DATA[j].plt, 10) || 0;
+        break;
+      }
+    }
+  }
+  // 출차시간 = 권역 입력 시각
+  var departTime = '';
+  if (departTimestamps[hoche]) {
+    departTime = _hhmmFromDate(departTimestamps[hoche]);
+  } else {
+    for (var k = 0; k < (LS_DATA || []).length; k++) {
+      if (LS_DATA[k].hoche === hoche && LS_DATA[k].departTime) {
+        departTime = LS_DATA[k].departTime;
+        break;
+      }
+    }
+  }
+  // 출고시간(표) = 파렛트 입력 시각
+  var pltTime = '';
+  if (pltInputTimestamps[hoche]) {
+    pltTime = _hhmmFromDate(pltInputTimestamps[hoche]);
+  } else {
+    for (var m = 0; m < (LS_DATA || []).length; m++) {
+      if (LS_DATA[m].hoche === hoche && LS_DATA[m].pltTime) {
+        pltTime = LS_DATA[m].pltTime;
+        break;
+      }
+    }
+  }
+  var out = {
+    plt: plt,
+    departTime: departTime || '',
+    pltTime: pltTime || '',
+    regions: regions
+  };
+  regionNames.forEach(function(r) {
+    if (regions[r] != null) out[r] = regions[r];
+  });
+  return out;
+}
+
+/** 호차별 수량/권역을 서버 vehicle-extras 에 저장 (새로고침 유지) */
+function persistVehicleExtras(hoche) {
+  var dateStr = formatDate(currentDate);
+  _vehicleExtras = _vehicleExtras || {};
+  var ex = collectExtrasForHoche(hoche);
+  _vehicleExtras[String(hoche)] = ex;
+  // 메모리 LS_DATA 반영
+  var dateKey = dateStr;
+  for (var i = 0; i < (LS_DATA || []).length; i++) {
+    if (LS_DATA[i].hoche === hoche && String(LS_DATA[i].date || dateKey).slice(0, 10) === dateKey) {
+      LS_DATA[i].plt = ex.plt || 0;
+      LS_DATA[i].departTime = ex.departTime || '';
+      LS_DATA[i].pltTime = ex.pltTime || '';
+      LS_DATA[i].regions = ex.regions || {};
+      break;
+    }
+  }
+  return fetch('/departure/api/vehicle-extras', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ date: dateStr, extras: _vehicleExtras })
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data || !data.ok) console.warn('[departure] vehicle-extras 저장 실패', data);
+      return data;
+    })
+    .catch(function(err) {
+      console.error('[departure] vehicle-extras 저장 오류', err);
+    });
+}
+
+function loadVehicleExtras(dateStr, callback) {
+  var day = dateStr || formatDate(currentDate);
+  fetch('/departure/api/vehicle-extras?date=' + encodeURIComponent(day))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      // 파일 포맷 호환: {1:{...}} 또는 중첩 {extras:{1:{...}}}
+      var raw = (data && data.extras) ? data.extras : {};
+      if (raw && raw.extras && typeof raw.extras === 'object' && !raw['1'] && !raw[1]) {
+        raw = raw.extras;
+      }
+      _vehicleExtras = raw || {};
+      mergeExtrasIntoLsData(day);
+      // pltQtyValues / 파렛트·권역 시각 복원
+      Object.keys(_vehicleExtras).forEach(function(hk) {
+        var ex = _vehicleExtras[hk];
+        var h = parseInt(hk, 10);
+        if (!h || !ex) return;
+        if (ex.plt != null && Number(ex.plt) > 0) pltQtyValues[h] = Number(ex.plt);
+        // 권역 → 출차시간
+        if (ex.departTime && !departTimestamps[h]) {
+          var dd = _dateFromHhmm(ex.departTime);
+          if (dd) departTimestamps[h] = dd;
+        }
+        // 파렛트 → 출고시간 (구버전: pltTime 없고 departTime 만 있으면 출고시간에는 넣지 않음)
+        if (ex.pltTime && !pltInputTimestamps[h]) {
+          var pd = _dateFromHhmm(ex.pltTime);
+          if (pd) pltInputTimestamps[h] = pd;
+        }
+      });
+      if (callback) callback();
+    })
+    .catch(function(err) {
+      console.warn('[departure] vehicle-extras 로드 실패', err);
+      _vehicleExtras = {};
+      if (callback) callback();
+    });
+}
 
 // ── 작업일 계산: 06:00 기준 (자정 넘어도 3호차는 전날 작업일) ──
 function getWorkDate(d) {
@@ -456,9 +673,47 @@ function getTodayWorkDate() {
   return getWorkDate(new Date());
 }
 
-var currentDate = getTodayWorkDate();  // 조회 중인 날짜 (06:00 기준 작업일)
-
 // ── 날짜 관리 ──
+// 우선순위: URL ?date= → localStorage 마지막 선택 → 오늘 작업일(06:00 보정)
+// 새로고침 시 선택 날짜·해당일 차량/카드 유지 (데이터 유실 아님 — 날짜 리셋이 원인)
+var _DEP_DATE_KEY = 'departure_selected_date';
+function _parseYmdToDate(ymd) {
+  if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+  var d = new Date(ymd + 'T00:00:00');
+  return isNaN(d.getTime()) ? null : d;
+}
+function _restoreSelectedDate() {
+  var todayWork = formatDate(getTodayWorkDate());
+  try {
+    // 1) URL 쿼리 (공유·북마크) — 오늘 작업일과 같은 날짜만 복원
+    var q = (typeof location !== 'undefined' && location.search)
+      ? new URLSearchParams(location.search).get('date')
+      : null;
+    var fromQ = _parseYmdToDate(q);
+    if (fromQ && formatDate(fromQ) === todayWork) return fromQ;
+  } catch (e1) {}
+  try {
+    // 2) localStorage (새로고침 유지) — 오늘 작업일과 같은 날짜만 복원
+    var saved = localStorage.getItem(_DEP_DATE_KEY);
+    var fromLs = _parseYmdToDate(saved);
+    if (fromLs && formatDate(fromLs) === todayWork) return fromLs;
+  } catch (e2) {}
+  // 3) 기본: 오늘 작업일 (과거 날짜는 무시)
+  return getTodayWorkDate();
+}
+function _persistSelectedDate(dateStr) {
+  try { localStorage.setItem(_DEP_DATE_KEY, dateStr); } catch (e) {}
+  // SPA URL 동기화 (히스토리만, 리로드 없음)
+  try {
+    if (typeof history !== 'undefined' && history.replaceState) {
+      var u = new URL(location.href);
+      u.searchParams.set('date', dateStr);
+      history.replaceState(null, '', u.pathname + u.search + u.hash);
+    }
+  } catch (e3) {}
+}
+var currentDate = _restoreSelectedDate();
+
 function formatDate(d) {
   var y = d.getFullYear();
   var m = ('0'+(d.getMonth()+1)).slice(-2);
@@ -479,6 +734,8 @@ function updateDateDisplay() {
   document.getElementById('dateBtnPrev').textContent = '◀ 이전';
   document.getElementById('dateBtnNext').textContent = '다음 ▶';
   document.getElementById('dateBtnToday').classList.toggle('active', isToday);
+  // 선택 날짜 영속화 (새로고침 유지)
+  _persistSelectedDate(formatDate(currentDate));
 }
 function shiftDate(delta) {
   currentDate = new Date(currentDate.getTime() + delta*86400000);
@@ -498,7 +755,14 @@ function onDatePick() {
 // ── 날짜별 데이터 로드 ──
 function loadDateData() {
   var sel = formatDate(currentDate);
-  var filtered = LS_DATA.filter(function(v){ return v.date === sel; });
+  var filtered = (LS_DATA || []).filter(function(v) {
+    var d = (v && v.date != null) ? String(v.date).slice(0, 10) : '';
+    // 날짜 없거나 선택일과 같으면 표시 (누락 date 로 3호 탈락 방지)
+    return !d || d === sel;
+  });
+  // (제거) 필터 결과가 비었으면 LS_DATA 전체를 사용하던 폴백:
+  //   이전 날짜의 데이터가 새 날짜 화면에 잔존하는 원인이 됨.
+  //   선택한 날짜에 데이터가 없으면 빈 화면이 정상 동작.
   renderAllWithData(filtered);
 }
 
@@ -614,12 +878,17 @@ function onSealChange(hoche) {
     }
   }
   if (updated) {
+    // 전체 LS_DATA POST 시 서버가 merge+전체 목록 반환 (부분 목록으로 3호 삭제 방지)
+    var dayPayload = LS_DATA.filter(function(v){ return v.date === dateKey; });
     fetch('/departure/api/ls-data?date=' + dateKey, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(LS_DATA)
+      body: JSON.stringify({ date: dateKey, vehicles: dayPayload })
     }).then(function(r){ return r.json(); }).then(function(data){
-      if(data.ok) { LS_DATA = data.data; }
+      if (data.ok && data.data) {
+        // 응답은 해당 날짜 전체 — 다른 날짜 항목 유지하며 교체
+        LS_DATA = (LS_DATA || []).filter(function(v){ return v.date !== dateKey; }).concat(data.data);
+      }
     }).catch(function(){});
   }
 }
@@ -672,10 +941,18 @@ function renderSummaryTableWithData(data) {
     renderItems.push({ hoche: d.hoche, existing: d, isExtra: true, sortTime: t });
   });
   
-  // 3) 호차순 정렬 (시간순 정렬 제거 - 호차 1,2,3 순서 고정)
-    renderItems.sort(function(a, b) {
-      return a.hoche - b.hoche;
-    });
+  // 접안 시간 순 정렬 (시간 같으면 호차 순). 1호=가장 이른 접안 원칙과 맞춤
+  renderItems.sort(function(a, b) {
+    function mins(t) {
+      if (!t || t === '99:99') return 9999;
+      var p = String(t).split(':');
+      if (p.length < 2) return 9999;
+      return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0);
+    }
+    var d = mins(a.sortTime) - mins(b.sortTime);
+    if (d !== 0) return d;
+    return a.hoche - b.hoche;
+  });
   
   renderItems.forEach(function(item) {
     if (!item.isExtra) {
@@ -721,8 +998,9 @@ function renderPlaceholderRow(container, ph, optTime, optTon) {
     '<td data-label="기사님"><input class="inp inp-xs" id="driver_input_'+ph+'" onchange="savePlaceholderVehicle('+ph+')"></td>' +
     '<td data-label="연락처"><input class="inp inp-xs" id="phone_input_'+ph+'" onchange="savePlaceholderVehicle('+ph+')"></td>' +
     '<td data-label="구분"><span class="badge-new">🆕 신규</span></td>' +
-    '<td data-label="파렛트"><input class="inp inp-xs" value="0" id="plt_input_'+ph+'"></td>' +
-    '<td data-label="🖨️"><button class="btn btn-sm" onclick="printVehicle('+ph+')" style="opacity:0.4;cursor:not-allowed" disabled title="차량 정보 입력 필요">🖨️</button></td>' +
+    '<td data-label="파렛트"><input class="inp inp-xs" type="number" min="0" value="" placeholder="" id="plt_input_'+ph+'" inputmode="numeric"></td>' +
+    '<td data-label="LS"><button class="btn btn-sm" onclick="printVehicle('+ph+')" style="opacity:0.4;cursor:not-allowed" disabled title="차량 정보 입력 필요">📄 LS</button></td>' +
+    '<td data-label="KPP"><button class="btn btn-sm" onclick="printKppVehicle('+ph+')" style="opacity:0.4;cursor:not-allowed" disabled title="차량 정보 입력 필요">📦 KPP</button></td>' +
     '<td data-label="출고시간"></td>' +
     '<td data-label="톤수">' + tonHtml + '</td>' +
     '<td data-label="관리"><button class="btn btn-sm" onclick="deleteRow('+ph+')" style="color:#ef4444">🗑️</button></td>';
@@ -740,7 +1018,12 @@ function renderDataRow(container, d) {
   var savedPlt = (pltQtyValues[i] !== undefined) ? pltQtyValues[i] : (d.plt || 0);
   // 저장된 plt를 pltQtyValues에도 반영 (새로고침 후에도 유지)
   if (pltQtyValues[i] === undefined && d.plt > 0) { pltQtyValues[i] = d.plt; }
-  var savedTime = (pltTimestamps[i]) ? ('0'+pltTimestamps[i].getHours()).slice(-2)+':'+('0'+pltTimestamps[i].getMinutes()).slice(-2) : (d.departTime||'');
+  // 0 / 미입력 → 빈칸 (기본 0 표시 안 함 — 숫자만 바로 입력)
+  var pltDisplay = (savedPlt && Number(savedPlt) > 0) ? String(savedPlt) : '';
+  // 차량정보 「출고시간」= 파렛트 수치 입력 시각 (권역 입력·LS 접안 아님)
+  var savedShipTime = pltInputTimestamps[i]
+    ? _hhmmFromDate(pltInputTimestamps[i])
+    : (d.pltTime || '');
   var badge = isNew ? '<span class="badge-new">🆕 신규</span>' : '<span class="badge-old">✅ 기존</span>';
   
   // 최근 접안일 및 총 접안 횟수 추가 표기
@@ -764,9 +1047,10 @@ function renderDataRow(container, d) {
     '<td data-label="기사님">' + driver + '</td>' +
     '<td data-label="연락처">' + phone + '</td>' +
     '<td data-label="구분">' + badge + '</td>' +
-    '<td data-label="파렛트"><input class="inp inp-xs" value="' + savedPlt + '" onchange="onPalletChange(' + i + ')" id="plt_input_' + i + '"></td>' +
-    '<td data-label="🖨️"><button class="btn btn-sm" onclick="printVehicle('+i+')" title="LS PDF 출력 (봉인씰 합성)">🖨️</button></td>' +
-    '<td data-label="출고시간" id="plt_time_' + i + '">' + savedTime + '</td>' +
+    '<td data-label="파렛트"><input class="inp inp-xs" type="number" min="0" inputmode="numeric" value="' + pltDisplay + '" placeholder="" onchange="onPalletChange(' + i + ')" id="plt_input_' + i + '"></td>' +
+    '<td data-label="LS"><button class="btn btn-sm" onclick="printVehicle('+i+')" title="LS PDF 출력 (봉인씰 합성)">📄 LS</button></td>' +
+    '<td data-label="KPP"><button class="btn btn-sm" onclick="printKppVehicle('+i+')" title="KPP EDI 전표 등록·출력" style="background:#0f766e;color:#fff;border-color:#0f766e">📦 KPP</button></td>' +
+    '<td data-label="출고시간" id="plt_time_' + i + '" title="파렛트 수량 입력 시각">' + savedShipTime + '</td>' +
     '<td data-label="톤수"><select class="inp inp-xs" id="ton_select_' + i + '" onchange="onTonnageChange(' + i + ')">'
     + '<option value="5T"' + (ton==='5T'?' selected':'') + '>5T</option>'
     + '<option value="11T"' + (ton==='11T'?' selected':'') + '>11T</option>'
@@ -779,22 +1063,30 @@ function renderDataRow(container, d) {
 // ── 행 삭제 ──
 function deleteRow(hoche) {
   if (!confirm(hoche+'호차를 삭제하시겠습니까?')) return;
-  delete pltTimestamps[hoche];
+  delete departTimestamps[hoche];
+  delete pltInputTimestamps[hoche];
   delete pltQtyValues[hoche];
   
   var sel = formatDate(currentDate);
-  var hasDataEntry = LS_DATA.some(function(v){ return v.hoche === hoche && v.date === sel; });
+  var hasDataEntry = LS_DATA.some(function(v){
+    return v.hoche === hoche && String(v.date||'').slice(0,10) === sel;
+  });
   
   if (hasDataEntry) {
-    // LS_DATA에 실제 데이터가 있으면 데이터 삭제
-    LS_DATA = LS_DATA.filter(function(v){ return !(v.hoche === hoche && v.date === sel); });
-    fetch('/departure/api/ls-data', {
+    // 해당 날짜 잔여 차량만 남기고 replace=1 로 명시 삭제
+    var remain = LS_DATA.filter(function(v){
+      return !(v.hoche === hoche && String(v.date||'').slice(0,10) === sel);
+    });
+    var dayRemain = remain.filter(function(v){ return String(v.date||'').slice(0,10) === sel; });
+    fetch('/departure/api/ls-data?date=' + encodeURIComponent(sel) + '&replace=1', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(LS_DATA)
+      body: JSON.stringify({ date: sel, vehicles: dayRemain })
     }).then(function(r){ return r.json(); }).then(function(data){
-      if (data.ok) { LS_DATA = data.data; loadDateData(); }
-      else { alert('❌ 삭제 실패: '+(data.error||'')); }
+      if (data.ok) {
+        LS_DATA = data.data || dayRemain;
+        loadDateData();
+      } else { alert('❌ 삭제 실패: '+(data.error||'')); }
     }).catch(function(err){
       alert('❌ 오류: '+err.message);
     });
@@ -873,30 +1165,43 @@ function savePlaceholderVehicle(ph) {
 
 // ── 당일 배차 초기화 (기본 3대 리셋) ──
 function resetTodayDispatch() {
-  if (!confirm('⚠️ 당일 배차를 초기화하시겠습니까?\n모든 추가 배차 및 입력 정보가 삭제되고 기본 3대(1,2,3호차)로 돌아갑니다.')) return;
+  if (!confirm('⚠️ 당일 배차를 초기화하시겠습니까?\n모든 추가 배차 및 입력 정보(파렛트·권역 포함)가 삭제되고 기본 3대(1,2,3호차)로 돌아갑니다.')) return;
   
   var sel = formatDate(currentDate);
   
   // 1) 오늘 날짜의 LS_DATA 제거
-  LS_DATA = LS_DATA.filter(function(v){ return v.date !== sel; });
+  LS_DATA = LS_DATA.filter(function(v){ return String(v.date||'').slice(0,10) !== sel; });
   
   // 2) 오늘 날짜의 deletedPlaceholders 제거
   window._deletedPlaceholders = {};
+  // 2b) 파렛트·권역 extras 초기화 (서버 파일 비우기)
+  _vehicleExtras = {};
+  pltQtyValues = {};
+  departTimestamps = {};
+  pltInputTimestamps = {};
+  pltTimestamps = departTimestamps;
   
   // 3) 서버 저장
   var done = 0;
   function checkDone() {
     done++;
-    if (done >= 2) { loadDateData(); }
+    if (done >= 3) { loadDateData(); }
   }
   
-  // LS_DATA 저장
-  fetch('/departure/api/ls-data', {
+  // vehicle-extras 비우기
+  fetch('/departure/api/vehicle-extras', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify(LS_DATA)
+    body: JSON.stringify({ date: sel, extras: {} })
+  }).then(function(){ checkDone(); }).catch(function(){ checkDone(); });
+
+  // LS_DATA 저장 (replace 로 당일 차량 삭제)
+  fetch('/departure/api/ls-data?date=' + encodeURIComponent(sel) + '&replace=1', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ date: sel, vehicles: [] })
   }).then(function(r){ return r.json(); }).then(function(data){
-    if (data.ok) { LS_DATA = data.data; checkDone(); }
+    if (data.ok) { LS_DATA = data.data || []; checkDone(); }
     else { alert('❌ 초기화 실패'); }
   }).catch(function(){
     alert('❌ 서버 오류');
@@ -1005,15 +1310,15 @@ function renderClosingStatusWithData(data) {
   });
   document.getElementById('coCount').textContent = activeCount;
 
-  // 마감 출차 시간 = 3호차 파렛트/수량 입력 시각 (배차 예정 시간 아님)
+  // 마감 출차 시간 = 3호차 권역 수치 입력 시각 (배차 예정·파렛트 입력 시각 아님)
   document.getElementById('coTime').textContent = getHoche3CloseTime(data);
 }
 
-/** 3호차 입력 시각: 세션 타임스탬프 → departTime → localStorage */
+/** 3호차 출차 시각: 권역 입력 타임스탬프 → departTime → localStorage */
 function getHoche3CloseTime(data) {
-  var ts3 = pltTimestamps[3];
+  var ts3 = departTimestamps[3];
   if (ts3 && ts3.getTime) {
-    return ('0' + ts3.getHours()).slice(-2) + ':' + ('0' + ts3.getMinutes()).slice(-2);
+    return _hhmmFromDate(ts3);
   }
   var v3 = null;
   (data || []).forEach(function(v) {
@@ -1039,22 +1344,74 @@ function persistDepartTimeLocal(hoche, timeVal) {
   } catch (e) {}
 }
 
+/**
+ * 출차 카드 「5.출차시간」표시용.
+ * SoT = 권역(EAST/WEST/…) 수치 입력 시점 (departTimestamps / departTime).
+ * 파렛트 입력 시각(pltTime) · LS 접안 슬롯(d.time) 아님.
+ */
+function resolveActualDepartTime(hoche, d) {
+  var ts = departTimestamps[hoche];
+  if (ts && ts.getTime) {
+    return _hhmmFromDate(ts);
+  }
+  if (d && d.departTime && String(d.departTime).trim()) {
+    return String(d.departTime).trim();
+  }
+  try {
+    var map = JSON.parse(localStorage.getItem('vf67_departTime_' + formatDate(currentDate)) || '{}');
+    if (map[String(hoche)]) return String(map[String(hoche)]);
+  } catch (e) {}
+  return '';
+}
+
+/** 차량정보 「출고시간」— 파렛트 입력 시각 */
+function resolvePltShipTime(hoche, d) {
+  if (pltInputTimestamps[hoche] && pltInputTimestamps[hoche].getTime) {
+    return _hhmmFromDate(pltInputTimestamps[hoche]);
+  }
+  if (d && d.pltTime && String(d.pltTime).trim()) {
+    return String(d.pltTime).trim();
+  }
+  try {
+    var map = JSON.parse(localStorage.getItem('vf67_pltTime_' + formatDate(currentDate)) || '{}');
+    if (map[String(hoche)]) return String(map[String(hoche)]);
+  } catch (e) {}
+  return '';
+}
+
+function persistPltTimeLocal(hoche, timeVal) {
+  try {
+    var key = 'vf67_pltTime_' + formatDate(currentDate);
+    var map = JSON.parse(localStorage.getItem(key) || '{}');
+    if (timeVal) map[String(hoche)] = timeVal;
+    else delete map[String(hoche)];
+    localStorage.setItem(key, JSON.stringify(map));
+  } catch (e) {}
+}
+
 function restoreDepartTimesFromLocal(data) {
   try {
     var map = JSON.parse(localStorage.getItem('vf67_departTime_' + formatDate(currentDate)) || '{}');
     (data || []).forEach(function(v) {
       var h = String(v.hoche);
       if (map[h] && !v.departTime) v.departTime = map[h];
-      if (map[h] && !pltTimestamps[v.hoche]) {
-        var parts = String(map[h]).split(':');
-        if (parts.length >= 2) {
-          var d = new Date();
-          d.setHours(parseInt(parts[0], 10) || 0, parseInt(parts[1], 10) || 0, 0, 0);
-          pltTimestamps[v.hoche] = d;
-        }
+      if (map[h] && !departTimestamps[v.hoche]) {
+        var d = _dateFromHhmm(map[h]);
+        if (d) departTimestamps[v.hoche] = d;
       }
     });
   } catch (e) {}
+  try {
+    var pmap = JSON.parse(localStorage.getItem('vf67_pltTime_' + formatDate(currentDate)) || '{}');
+    (data || []).forEach(function(v) {
+      var h = String(v.hoche);
+      if (pmap[h] && !v.pltTime) v.pltTime = pmap[h];
+      if (pmap[h] && !pltInputTimestamps[v.hoche]) {
+        var pd = _dateFromHhmm(pmap[h]);
+        if (pd) pltInputTimestamps[v.hoche] = pd;
+      }
+    });
+  } catch (e2) {}
 }
 
 // ── 마감출차현황 복사 ──
@@ -1094,44 +1451,95 @@ function fallbackCopySimple(text) {
 }
 
 // ── VF67 카드 렌더링 ──
+// 규칙: **차량 정보(초기 배차 데이터)가 기준**
+//   - 차량 2대 → 출차카드 2장
+//   - 차량 4대 → 출차카드 4장
+//   - 3대 고정 아님. 빈 플레이스홀더만으로 카드 만들지 않음.
+//   - LS에서 채운 plate/시간/기사 표시 (차량 정보에 등록된 행만)
+function buildVF67CardSlots(data) {
+  var slots = [];
+  var seen = {};
+  (data || []).forEach(function(d) {
+    if (!d) return;
+    var h = parseInt(d.hoche, 10);
+    if (!h || h < 1) return;
+    // 실제 차량 정보 행만: 번호판·시간·기사 중 하나라도 있으면 배차로 인정
+    var plate = (d.plate || '').trim();
+    var time = (d.time || '').trim();
+    var driver = (d.driver || d.driverName || d.name || '').trim();
+    if (!plate && !time && !driver) return;
+    if (seen[h]) return;
+    seen[h] = true;
+    slots.push(d);
+  });
+  slots.sort(function(a, b) { return (a.hoche || 0) - (b.hoche || 0); });
+  return slots;
+}
+
 function renderVF67CardsWithData(data) {
-  var container = document.getElementById('vf67Container');
+  // SPA 삽입 시 문서 전역 id 충돌 방지 — .departure-root 안 컨테이너만 사용
+  var root = document.querySelector('.departure-root');
+  var container = root
+    ? root.querySelector('#vf67Container')
+    : document.getElementById('vf67Container');
+  if (!container) {
+    console.warn('[departure] vf67Container 없음 — 카드 렌더 스킵');
+    return;
+  }
   container.innerHTML = '';
-  if (!data || data.length === 0) {
-    document.getElementById('vf67Section').style.display = 'none';
+  var slots = buildVF67CardSlots(data);
+  console.info('[departure] VF67 cards render', slots.map(function(s){
+    return (s.hoche||'?') + ':' + ((s.plate||'').trim() || 'empty');
+  }).join(', '));
+  // 차량 정보 0대 → 출차카드 섹션 숨김
+  if (!slots || slots.length === 0) {
+    var sec0 = document.getElementById('vf67Section');
+    if (sec0) sec0.style.display = 'none';
     return;
   }
-  document.getElementById('vf67Section').style.display = '';
-  // VF67 카드는 LS 배차 정보 확인 후 차량번호가 있는 경우만 생성
-  var confirmedData = data.filter(function(d){ return d.plate && d.plate.trim() !== ''; });
-  if (confirmedData.length === 0) {
-    document.getElementById('vf67Section').style.display = 'none';
-    return;
-  }
-  confirmedData.forEach(function(d){
+  var sec = document.getElementById('vf67Section');
+  if (sec) sec.style.display = '';
+
+  slots.forEach(function(d){
     var i = d.hoche;
-    var plate = d.plate || '';
-    var center = normalizeHub(d.hub || '');
-    var phone = d.phone || '';
-    var time = d.time || '';
-    var savedPlt = (d.plt || 0);
-    if (pltTimestamps[i] === undefined && savedPlt > 0) pltQtyValues[i] = savedPlt;
+    var plate = (d.plate || '').trim();
+    var waiting = !plate; // 시간만 있고 번호판 없으면 대기 표시
+    var center = normalizeHub(d.hub || '') || '부천1 HUB';
+    var phone = d.phone || d.driverPhone || '';
+    // 출차시간 = 권역 수치 입력 시각 (departTime). LS 슬롯·총수량 입력 시각 아님
+    var departTimeDisp = resolveActualDepartTime(i, d);
+    var driver = d.driver || d.driverName || d.name || '';
+    var savedPlt = (pltQtyValues[i] !== undefined) ? pltQtyValues[i] : (d.plt || 0);
+    if (pltQtyValues[i] === undefined && savedPlt > 0) pltQtyValues[i] = savedPlt;
+    var pltCardDisplay = (savedPlt && Number(savedPlt) > 0) ? String(savedPlt) : '';
     var wrap = document.createElement('div');
-    wrap.className = 'vf67-card-wrap';
+    wrap.className = 'vf67-card-wrap' + (waiting ? ' vf67-waiting' : '');
     wrap.id = 'vf67_card_wrap_'+i;
     wrap.dataset.hoche = i;
     var card = document.createElement('div');
     card.className = 'vf67-card';
     card.id = 'vf67_card_'+i;
+    if (waiting) {
+      card.style.opacity = '0.85';
+      card.style.borderStyle = 'dashed';
+    }
     var html = '<table class="vf67-table">';
-    html += '<thead><tr><th colspan="2"><div class="th-inner"><span>VF67</span><div style="display:flex;gap:4px;"><button class="btn btn-sm" onclick="resetVF67Regions('+i+')" style="background:#ef4444;color:#fff;border-color:#ef4444;padding:2px 8px;font-size:11px;">🔄 초기화</button><button class="btn btn-sm btn-primary" onclick="copyVF67('+i+')">📋 복사</button></div></div></th></tr></thead>';
+    html += '<thead><tr><th colspan="2"><div class="th-inner"><span>VF67</span><div style="display:flex;gap:4px;">';
+    if (!waiting) {
+      html += '<button class="btn btn-sm" onclick="resetVF67Regions('+i+')" style="background:#ef4444;color:#fff;border-color:#ef4444;padding:2px 8px;font-size:11px;">🔄 초기화</button>';
+      html += '<button class="btn btn-sm btn-primary" onclick="copyVF67('+i+')">📋 복사</button>';
+    } else {
+      html += '<span style="font-size:11px;color:#b45309;font-weight:600;">차량번호 대기</span>';
+    }
+    html += '</div></div></th></tr></thead>';
     html += '<tbody>';
     html += '<tr><td class="vf67-label">1.센터 : </td><td class="vf67-value" id="vf67_center_'+i+'">'+center+'</td></tr>';
     html += '<tr><td class="vf67-label">2.출차 : </td><td class="vf67-value">'+i+'호차</td></tr>';
-    html += '<tr><td class="vf67-label">3.차량 : </td><td class="vf67-value" id="vf67_plate_'+i+'">'+plate+'</td></tr>';
-    html += '<tr><td class="vf67-label">4.수량 : </td><td class="vf67-value"><input class="inp inp-sm" id="vf67_qty_'+i+'" type="number" value="'+savedPlt+'" onchange="onVF67QtyChange('+i+')" onkeydown="handleQtyKeydown(event, '+i+')"></td></tr>';
-    html += '<tr><td class="vf67-label">5.출차시간 : </td><td class="vf67-value" id="vf67_time_'+i+'">'+(time||'--:--')+'</td></tr>';
-    html += '<tr><td class="vf67-label">6.기사정보 : </td><td class="vf67-value" id="vf67_phone_'+i+'">'+(phone||'-')+'</td></tr>';
+    html += '<tr><td class="vf67-label">3.차량 : </td><td class="vf67-value" id="vf67_plate_'+i+'">'+(plate || (waiting ? '—' : '-'))+'</td></tr>';
+    html += '<tr><td class="vf67-label">4.수량 : </td><td class="vf67-value"><input class="inp inp-sm" id="vf67_qty_'+i+'" type="number" min="0" inputmode="numeric" value="'+pltCardDisplay+'" placeholder="" onchange="onVF67QtyChange('+i+')" onkeydown="handleQtyKeydown(event, '+i+')"></td></tr>';
+    html += '<tr><td class="vf67-label">5.출차시간 : </td><td class="vf67-value" id="vf67_time_'+i+'">'+(departTimeDisp || '--:--')+'</td></tr>';
+    var driverLine = (driver ? driver + ' ' : '') + (phone || '-');
+    html += '<tr><td class="vf67-label">6.기사정보 : </td><td class="vf67-value" id="vf67_phone_'+i+'">'+driverLine+'</td></tr>';
     html += '</tbody>';
     html += '<tbody>';
     var totalSum = 0;
@@ -1139,7 +1547,6 @@ function renderVF67CardsWithData(data) {
       var raw = (d.regions && d.regions[r] !== undefined && d.regions[r] !== null) ? d.regions[r] : '';
       var num = parseInt(raw, 10);
       if (!isNaN(num) && num > 0) totalSum += num;
-      // 0 은 빈칸 표시 (placeholder 없음)
       var displayVal = (!isNaN(num) && num > 0) ? num : '';
       html += '<tr class="vf67-region-row"><td class="vf67-region-label">'+r+'</td><td><input class="inp-region" type="number" value="'+displayVal+'" min="0" id="vf67_'+r+'_'+i+'" onchange="onVF67RegionChange('+i+')" onkeydown="handleRegionKeydown(event, '+i+', \''+r+'\')"></td></tr>';
     });
@@ -1150,12 +1557,15 @@ function renderVF67CardsWithData(data) {
     wrap.appendChild(card);
     container.appendChild(wrap);
   });
-  // 항상 3열 그리드 전체 표시 (4대째는 1번 아래 2단). 탭 전환은 사용하지 않음.
-  var cont = document.getElementById('vf67Container');
-  if (cont) cont.className = '';
+  // 차량 정보 N대 = 카드 N장 전부 표시 (숨김/탭 1장 모드 금지)
+  if (container) container.className = '';
   showAllCards();
   hideTabBar();
-  updateHiddenBanner(confirmedData);
+  var expected = slots.length;
+  var domCards = container.querySelectorAll('.vf67-card-wrap').length;
+  if (expected > 0 && domCards !== expected) {
+    console.warn('[departure] vehicle slots=' + expected + ' but cards DOM=' + domCards);
+  }
 }
 
 // ── 탭바 ──
@@ -1189,56 +1599,133 @@ function selectTab(n) {
   bar.querySelectorAll('.vf67-tab').forEach(function(t){ t.classList.toggle('active', parseInt(t.id.replace('vf67_tab_',''))===n); });
 }
 function showAllCards() {
-  var wraps = document.querySelectorAll('.vf67-card-wrap');
-  wraps.forEach(function(w){ w.style.display = w.classList.contains('hidden-by-time')?'none':'block'; });
+  // 차량 정보 기준 카드 전부 표시 (시간 경과·탭으로 숨기지 않음)
+  var root = document.querySelector('.departure-root');
+  var scope = root || document;
+  var wraps = scope.querySelectorAll('.vf67-card-wrap');
+  wraps.forEach(function(w){
+    w.classList.remove('hidden-by-time');
+    w.style.display = 'block';
+  });
   selectedTab = null;
+  var banner = document.getElementById('vf67HiddenBanner');
+  if (banner) banner.style.display = 'none';
 }
 
-// ── VF67 수량 변경 ──
+/**
+ * 출차카드 「출차시간」SoT = 권역(EAST/WEST/…) 수치 입력 시점.
+ * 차량정보 「출고시간」(파렛트)은 건드리지 않음.
+ */
+function stampDepartTimeFromRegionInput(idx, hasRegionQty) {
+  var timeEl = document.getElementById('vf67_time_' + idx);
+  var dateKey = formatDate(currentDate);
+  if (!hasRegionQty) {
+    // 권역 전부 비움 → 출차시간만 초기화 (출고시간/파렛트 시각 유지)
+    delete departTimestamps[idx];
+    persistDepartTimeLocal(idx, '');
+    if (timeEl) timeEl.textContent = '--:--';
+    for (var i = 0; i < (LS_DATA || []).length; i++) {
+      if (LS_DATA[i].hoche === idx && String(LS_DATA[i].date || dateKey).slice(0, 10) === dateKey) {
+        LS_DATA[i].departTime = '';
+        break;
+      }
+    }
+    if (parseInt(idx, 10) === 3 && window._filteredData) {
+      renderClosingStatusWithData(window._filteredData);
+    }
+    return;
+  }
+  var now = new Date();
+  var timeVal = _hhmmFromDate(now);
+  departTimestamps[idx] = now;
+  persistDepartTimeLocal(idx, timeVal);
+  if (timeEl) timeEl.textContent = timeVal;
+  // 표의 출고시간(plt_time)은 파렛트 입력이므로 여기서 갱신하지 않음
+  for (var j = 0; j < (LS_DATA || []).length; j++) {
+    if (LS_DATA[j].hoche === idx && String(LS_DATA[j].date || dateKey).slice(0, 10) === dateKey) {
+      LS_DATA[j].departTime = timeVal;
+      break;
+    }
+  }
+  // 3호차 권역 입력 시각 = 마감 출차 시간
+  if (parseInt(idx, 10) === 3 && window._filteredData) {
+    renderClosingStatusWithData(window._filteredData);
+  }
+}
+
+/**
+ * 차량정보 「출고시간」SoT = 파렛트 수량 입력 시점.
+ * 출차카드 출차시간(권역)은 건드리지 않음.
+ */
+function stampPltShipTimeFromPalletInput(idx, hasPltQty) {
+  var shipEl = document.getElementById('plt_time_' + idx);
+  var dateKey = formatDate(currentDate);
+  if (!hasPltQty) {
+    delete pltInputTimestamps[idx];
+    persistPltTimeLocal(idx, '');
+    if (shipEl) shipEl.textContent = '';
+    for (var i = 0; i < (LS_DATA || []).length; i++) {
+      if (LS_DATA[i].hoche === idx && String(LS_DATA[i].date || dateKey).slice(0, 10) === dateKey) {
+        LS_DATA[i].pltTime = '';
+        break;
+      }
+    }
+    return;
+  }
+  var now = new Date();
+  var timeVal = _hhmmFromDate(now);
+  pltInputTimestamps[idx] = now;
+  persistPltTimeLocal(idx, timeVal);
+  if (shipEl) shipEl.textContent = timeVal;
+  for (var j = 0; j < (LS_DATA || []).length; j++) {
+    if (LS_DATA[j].hoche === idx && String(LS_DATA[j].date || dateKey).slice(0, 10) === dateKey) {
+      LS_DATA[j].pltTime = timeVal;
+      break;
+    }
+  }
+}
+
+// ── VF67 수량 변경 (파렛트 → 출고시간, 출차시간은 권역 SoT) ──
 function onVF67QtyChange(idx) {
+  // Enter/Tab으로 이미 동기화된 경우 중복 실행 방지 (포커스 유지)
+  if (_qtyAlreadySynced[idx]) return;
   var qty = parseInt(document.getElementById('vf67_qty_'+idx).value)||0;
   var pltInput = document.getElementById('plt_input_'+idx);
   if (pltInput) {
-    pltInput.value = qty;
-    onPalletChange(idx); // 시간 저장 및 서버 동기화를 대행 처리
+    pltInput.value = (qty > 0) ? String(qty) : ''; // 0이면 빈칸
+    onPalletChange(idx); // 출고시간 스탬프 + 톤 동기화
   } else {
-    var now = new Date();
-    var timeVal = ('0'+now.getHours()).slice(-2)+':'+('0'+now.getMinutes()).slice(-2);
-    if (qty>0) { pltTimestamps[idx]=now; pltQtyValues[idx]=qty; }
-    loadDateData();
+    if (qty > 0) { pltQtyValues[idx] = qty; }
+    else { delete pltQtyValues[idx]; }
+    stampPltShipTimeFromPalletInput(idx, qty > 0);
+    persistVehicleExtras(idx);
   }
 }
 function onVF67RegionChange(idx) {
   var total = 0;
   var regionsData = {};
   regionNames.forEach(function(r){
-    var val = parseInt(document.getElementById('vf67_'+r+'_'+idx).value)||0;
+    var el = document.getElementById('vf67_'+r+'_'+idx);
+    var raw = el ? String(el.value || '').trim() : '';
+    var val = raw === '' ? 0 : (parseInt(raw, 10) || 0);
     total += val;
-    regionsData[r] = val;
+    if (val > 0) regionsData[r] = val;
   });
-  document.getElementById('vf67_total_'+idx).textContent = total+'P';
+  var totEl = document.getElementById('vf67_total_'+idx);
+  if (totEl) totEl.textContent = total+'P';
 
-  // LS_DATA에 권역별 수량 저장 및 서버 동기화 (새로고침 유지)
+  // ★ 출차시간 = 권역 수치 입력 시점 (복사 시 이 시각 사용)
+  stampDepartTimeFromRegionInput(idx, total > 0);
+
+  // 메모리 + 서버 vehicle-extras 저장 (새로고침 유지). loadDateData 안 함 → 포커스 유지
   var dateKey = formatDate(currentDate);
-  var updated = false;
-  for (var i = 0; i < LS_DATA.length; i++) {
-    if (LS_DATA[i].hoche === idx && LS_DATA[i].date === dateKey) {
+  for (var i = 0; i < (LS_DATA || []).length; i++) {
+    if (LS_DATA[i].hoche === idx && String(LS_DATA[i].date || dateKey).slice(0, 10) === dateKey) {
       LS_DATA[i].regions = regionsData;
-      updated = true;
       break;
     }
   }
-  if (updated) {
-    fetch('/departure/api/ls-data', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(LS_DATA)
-    }).then(function(r){ return r.json(); }).then(function(data){
-      if(data.ok) { LS_DATA = data.data; loadDateData(); }
-    }).catch(function(err){
-      console.error('권역 수량 저장 실패:', err);
-    });
-  }
+  persistVehicleExtras(idx);
 }
 
 // ── 카드별 권역 수량 초기화 기능 ──
@@ -1250,7 +1737,37 @@ function resetVF67Regions(hoche) {
       inp.value = '';
     }
   });
-  onVF67RegionChange(hoche);
+  var qtyEl = document.getElementById('vf67_qty_' + hoche);
+  if (qtyEl) qtyEl.value = '';
+  var pltEl = document.getElementById('plt_input_' + hoche);
+  if (pltEl) pltEl.value = '';
+  delete pltQtyValues[hoche];
+  delete departTimestamps[hoche];
+  delete pltInputTimestamps[hoche];
+  var dateKey = formatDate(currentDate);
+  for (var i = 0; i < (LS_DATA || []).length; i++) {
+    if (LS_DATA[i].hoche === hoche && String(LS_DATA[i].date || dateKey).slice(0, 10) === dateKey) {
+      LS_DATA[i].regions = {};
+      LS_DATA[i].plt = 0;
+      LS_DATA[i].departTime = '';
+      LS_DATA[i].pltTime = '';
+      break;
+    }
+  }
+  // 서버 extras 에서도 해당 호차 삭제 후 저장
+  if (_vehicleExtras) {
+    delete _vehicleExtras[String(hoche)];
+    delete _vehicleExtras[hoche];
+  }
+  fetch('/departure/api/vehicle-extras', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ date: dateKey, extras: _vehicleExtras || {} })
+  }).catch(function() {});
+  // plt 도 DB 반영
+  onPalletChange(hoche);
+  var totEl = document.getElementById('vf67_total_' + hoche);
+  if (totEl) totEl.textContent = '0P';
 }
 
 /** 권역 입력 포커스를 아래(다음 행)로 이동. Enter/Tab 공통 */
@@ -1283,31 +1800,31 @@ function handleRegionKeydown(event, hoche, region) {
   var raw = String(input.value || '').trim();
   var val = raw === '' ? 0 : (parseInt(raw, 10) || 0);
 
-  // ↑ ↓ ← → : 수량 조절 (±1) — 0 이 되면 빈칸
+  // ↑ ↓ ← → : 수량 조절 (±1) — 0 이 되면 빈칸 + 서버 저장
   if (key === 'ArrowUp') {
     event.preventDefault();
     input.value = val + 1;
-    _recalcRegionTotal(hoche);
+    onVF67RegionChange(hoche);
     return;
   }
   if (key === 'ArrowDown') {
     event.preventDefault();
     var nextDown = Math.max(0, val - 1);
     input.value = nextDown > 0 ? nextDown : '';
-    _recalcRegionTotal(hoche);
+    onVF67RegionChange(hoche);
     return;
   }
   if (key === 'ArrowLeft') {
     event.preventDefault();
     var nextLeft = Math.max(0, val - 1);
     input.value = nextLeft > 0 ? nextLeft : '';
-    _recalcRegionTotal(hoche);
+    onVF67RegionChange(hoche);
     return;
   }
   if (key === 'ArrowRight') {
     event.preventDefault();
     input.value = val + 1;
-    _recalcRegionTotal(hoche);
+    onVF67RegionChange(hoche);
     return;
   }
 
@@ -1368,31 +1885,43 @@ function handleQtyKeydown(event, hoche) {
   if (key === 'Enter' || key === 'Tab') {
     if (key === 'Tab' && event.shiftKey) return; // Shift+Tab 은 기본 동작
     event.preventDefault();
+    // Enter/Tab 전에 값을 동기화 (onchange가 나중에 fire되어도 이미 처리됨)
+    _syncQtyChange(hoche, input.value);
+    _qtyAlreadySynced[hoche] = true;  // onchange 중복 실행 방지 플래그
+    setTimeout(function() { delete _qtyAlreadySynced[hoche]; }, 500);
     var eastInput = document.getElementById('vf67_EAST_' + hoche);
     if (eastInput) { eastInput.focus(); eastInput.select(); }
     return;
   }
 }
 
-// ── QTY 변경 동기화 (reload 없이 시간/PLT/합계만 갱신) ──
+// ── QTY 변경 동기화 (파렛트 → 출고시간 스탬프, 출차시간은 권역 SoT) ──
 function _syncQtyChange(idx, qty) {
   qty = parseInt(qty) || 0;
-  var now = new Date();
-  var timeVal = ('0'+now.getHours()).slice(-2)+':'+('0'+now.getMinutes()).slice(-2);
 
-  // 시간 표시
-  var timeEl = document.getElementById('vf67_time_'+idx);
-  if (timeEl) timeEl.textContent = timeVal;
-
-  // PLT 입력칸 동기화
+  // PLT 입력칸 동기화 (0이면 빈칸) — 출차시간(vf67_time)은 변경하지 않음
   var pltInput = document.getElementById('plt_input_'+idx);
-  if (pltInput) { pltInput.value = qty; }
-  var pltTime = document.getElementById('plt_time_'+idx);
-  if (pltTime) pltTime.textContent = timeVal;
-
-  // 메모리 저장
-  if (qty > 0) { pltTimestamps[idx]=now; pltQtyValues[idx]=qty; }
-  else { delete pltTimestamps[idx]; delete pltQtyValues[idx]; }
+  if (pltInput) { pltInput.value = (qty > 0) ? String(qty) : ''; }
+  var vf67Qty = document.getElementById('vf67_qty_'+idx);
+  if (vf67Qty && String(vf67Qty.value) !== String(qty > 0 ? qty : '')) {
+    vf67Qty.value = (qty > 0) ? String(qty) : '';
+  }
+  if (qty > 0) {
+    pltQtyValues[idx] = qty;
+  } else {
+    delete pltQtyValues[idx];
+  }
+  // 차량정보 출고시간 = 파렛트 입력 시각
+  stampPltShipTimeFromPalletInput(idx, qty > 0);
+  var dateKey = formatDate(currentDate);
+  for (var i = 0; i < (LS_DATA || []).length; i++) {
+    if (LS_DATA[i].hoche === idx && String(LS_DATA[i].date || dateKey).slice(0, 10) === dateKey) {
+      LS_DATA[i].plt = qty;
+      // departTime(권역) 유지
+      break;
+    }
+  }
+  persistVehicleExtras(idx);
 
   // VF67 카드 합계 갱신
   _recalcRegionTotal(idx);
@@ -1410,12 +1939,16 @@ function _recalcRegionTotal(idx) {
   if (totalEl) totalEl.textContent = total + 'P';
 }
 
-// ── VF67 복사 ──
+// ── VF67 복사 (출차시간 = 권역 수치 입력 시점, 권역 수량 포함) ──
 function copyVF67(idx) {
   var center = document.getElementById('vf67_center_'+idx).textContent;
   var plate = document.getElementById('vf67_plate_'+idx).textContent;
   var qty = parseInt(document.getElementById('vf67_qty_'+idx).value)||0;
-  var time = document.getElementById('vf67_time_'+idx).textContent;
+  // 출차시간 SoT = 권역 입력 시각 (DOM / departTime). LS 슬롯·총수량 입력 시각 아님
+  var timeEl = document.getElementById('vf67_time_'+idx);
+  var time = (timeEl && timeEl.textContent && timeEl.textContent.trim() !== '--:--')
+    ? timeEl.textContent.trim()
+    : (resolveActualDepartTime(idx, null) || '--:--');
   var phone = document.getElementById('vf67_phone_'+idx).textContent;
   var total = 0;
   var lines = ['VF67','1.센터 : '+center,'2.출차 : '+idx+'호차','3.차량 : '+plate,'4.수량 : '+qty,'5.출차시간 : '+time,'6.기사정보 : '+phone];
@@ -1460,40 +1993,46 @@ function showCopyText(text) {
   setTimeout(function(){ var ta = div.querySelector('textarea'); if(ta){ta.focus();ta.select();} }, 100);
 }
 
-// ── 파렛트 수량 변경 → 시간 + 서버 저장 ──
+// ── 파렛트 수량 변경 → 출고시간 스탬프 + 수량·톤 저장 (출차시간은 권역 SoT) ──
 function onPalletChange(idx) {
   var qty = parseInt(document.getElementById('plt_input_'+idx).value)||0;
-  var now = new Date();
-  var timeVal = ('0'+now.getHours()).slice(-2)+':'+('0'+now.getMinutes()).slice(-2);
-  document.getElementById('plt_time_'+idx).textContent = timeVal;
   var vf67Qty = document.getElementById('vf67_qty_'+idx);
-  if (vf67Qty) { vf67Qty.value = qty; var te = document.getElementById('vf67_time_'+idx); if(te) te.textContent = timeVal; }
-  if (qty>0) { pltTimestamps[idx]=now; pltQtyValues[idx]=qty; persistDepartTimeLocal(idx, timeVal); }
-  else { delete pltTimestamps[idx]; delete pltQtyValues[idx]; persistDepartTimeLocal(idx, ''); }
-
-  // 3호차 입력 시각 = 마감 출차 시간 → 즉시 마감현황 갱신
-  if (parseInt(idx, 10) === 3 && window._filteredData) {
-    renderClosingStatusWithData(window._filteredData);
+  if (vf67Qty) {
+    vf67Qty.value = (qty > 0) ? String(qty) : ''; // 0이면 빈칸
+    // vf67_time / 출차시간 은 변경하지 않음 (권역 입력 시점 유지)
   }
+  if (qty > 0) { pltQtyValues[idx] = qty; }
+  else { delete pltQtyValues[idx]; }
+
+  // 차량정보 표 「출고시간」= 파렛트 입력 시각
+  stampPltShipTimeFromPalletInput(idx, qty > 0);
   
-  // LS_DATA에 plt 및 출고시간(departTime) 저장 (새로고침 유지)
+  // LS_DATA + vehicle-extras 서버 저장 (새로고침 유지). loadDateData 안 함 → 포커스 유지
   var dateKey = formatDate(currentDate);
   var updated = false;
-  for (var i = 0; i < LS_DATA.length; i++) {
-    if (LS_DATA[i].hoche === idx && LS_DATA[i].date === dateKey) {
+  for (var i = 0; i < (LS_DATA || []).length; i++) {
+    if (LS_DATA[i].hoche === idx && String(LS_DATA[i].date || dateKey).slice(0, 10) === dateKey) {
       LS_DATA[i].plt = qty;
-      LS_DATA[i].departTime = (qty > 0) ? timeVal : '';
+      // departTime 유지 (권역 입력으로 찍힌 시각)
       updated = true;
       break;
     }
   }
+  // extras: plt · pltTime(출고) · departTime(출차) · regions
+  persistVehicleExtras(idx);
   if (updated) {
-    fetch('/departure/api/ls-data', {
+    var dayPayload = (LS_DATA || []).filter(function(v) {
+      return String(v.date || dateKey).slice(0, 10) === dateKey;
+    });
+    fetch('/departure/api/ls-data?date=' + encodeURIComponent(dateKey), {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(LS_DATA)
+      body: JSON.stringify({ date: dateKey, vehicles: dayPayload })
     }).then(function(r){ return r.json(); }).then(function(data){
-      if(data.ok) { LS_DATA = data.data; loadDateData(); }
+      if (data.ok && data.data) {
+        LS_DATA = data.data;
+        mergeExtrasIntoLsData(dateKey); // regions 다시 입히기 (DB에 regions 없음)
+      }
     }).catch(function(){});
   }
   // PLT 수량에 따른 적정 톤수 자동 계산 및 변경 (상향/하향 연동)
@@ -1513,16 +2052,13 @@ function onPalletChange(idx) {
       }
     }
   }
-  loadDateData();
+  // loadDateData() 제거 — 새로고침 시 extras 로드로 복원, 입력 중 리렌더로 포커스 잃지 않음
 }
 
-// ── 시간 선택 변경 ──
+// ── 시간 선택 변경 (LS 접안 슬롯 d.time 만 — 출고/출차 스탬프 아님) ──
 function onTimeChange(idx) {
   var sel = document.getElementById('time_select_'+idx).value;
-  var parts = sel.split(':');
-  var d = new Date();
-  d.setHours(parseInt(parts[0]), parseInt(parts[1]), 0, 0);
-  pltTimestamps[idx] = d;
+  // 접안 예정 시간만 DB 반영. 파렛트 출고시간·권역 출차시간과 분리.
   
   // LS_DATA에 해당 hoche가 있으면 시간 업데이트 후 저장
   var dateKey = formatDate(currentDate);
@@ -1613,6 +2149,7 @@ function executePrint() {
   });
   // 조회 중인 작업일(currentDate)을 반드시 전달 — 서버 자정 기준 today와 어긋나면 잘못된 PDF/호차 매칭
   var dateParam = '&date=' + encodeURIComponent(formatDate(currentDate));
+  // 서버 API만 호출 → 인쇄는 Django 실행 PC 프린터 (window.print 사용 금지)
   fetch('/departure/api/print/' + hoche + '?plt=' + pltVal + sealParams + dateParam)
   .then(function(r) {
     if (!r.ok) {
@@ -1623,7 +2160,7 @@ function executePrint() {
     return r.json();
   })
   .then(function(data) {
-    var msg = '';
+    var msg = (data.server_print ? '🖥 서버 프린터' + (data.printer ? ' (' + data.printer + ')' : '') + '\n' : '');
     if (data.results) {
       data.results.forEach(function(r) { msg += r + '\n'; });
     }
@@ -1647,7 +2184,63 @@ function executePrint() {
   });
 }
 
-// ── LS PDF 인쇄 (봉인씰 합성, KPP 미연동) ──
+// ── KPP EDI 전표 (등록 반영 후 출력) ──
+function printKppVehicle(hoche) {
+  var pltInput = document.getElementById('plt_input_' + hoche);
+  var vf67Qty = document.getElementById('vf67_qty_' + hoche);
+  var pltQty = pltInput ? parseInt(pltInput.value, 10) || 0 : 0;
+  if (pltQty <= 0 && vf67Qty) pltQty = parseInt(vf67Qty.value, 10) || 0;
+  // 기본 12 강제 없음 — 빈칸이면 등록 불가
+  if (pltQty <= 0) {
+    alert('❌ 파렛트 수량이 비어 있습니다.\n출차 카드(또는 차량 정보)에서 실제 수량을 입력한 뒤 KPP 등록하세요.');
+    return;
+  }
+  var msg = '📦 ' + hoche + '호차 KPP 출력\n'
+    + '파렛트: ' + pltQty + '개\n'
+    + '· 기존 등록 여부 확인 후 중복 없이 갱신/등록\n'
+    + '· WPPS 출하통보(PBM140MW) EDI 전표\n'
+    + '· Chrome CDP(9222) + 로그인 세션 필요\n\n'
+    + '진행할까요?';
+  if (!confirm(msg)) return;
+  var btn = event && event.target ? event.target : null;
+  var orig = btn ? btn.textContent : '📦 KPP';
+  if (btn) btn.textContent = '⏳';
+  var dateParam = '&date=' + encodeURIComponent(formatDate(currentDate));
+  // 등록+PDF+프린터 전송에 60~120초 걸릴 수 있음
+  var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var to = setTimeout(function(){ try { if (ctrl) ctrl.abort(); } catch(e){} }, 120000);
+  fetch('/departure/api/print-kpp/' + hoche + '?plt=' + pltQty + dateParam, {
+    signal: ctrl ? ctrl.signal : undefined
+  })
+  .then(function(r) {
+    clearTimeout(to);
+    if (!r.ok) {
+      return r.text().then(function(t) {
+        throw new Error('HTTP ' + r.status + ' - ' + (t.slice(0, 200) || '오류'));
+      });
+    }
+    return r.json();
+  })
+  .then(function(data) {
+    var m = '';
+    if (data.is_new === false) m += '🔍 기존 등록 → 갱신 (중복 추가 없음)\n';
+    else if (data.is_new === true) m += '🆕 신규 등록\n';
+    if (data.results) data.results.forEach(function(x){ m += x + '\n'; });
+    else m += data.message || JSON.stringify(data);
+    showToast(m, data.ok ? 'success' : 'error', 12000);
+    if (btn) btn.textContent = orig;
+  })
+  .catch(function(err) {
+    clearTimeout(to);
+    var msg = (err && err.name === 'AbortError')
+      ? '시간 초과(120초). Chrome WPPS 로그인·PBM140 탭·프린터(Canon G2010) 확인'
+      : (err.message || String(err));
+    showToast('❌ KPP: ' + msg, 'error', 12000);
+    if (btn) btn.textContent = orig;
+  });
+}
+
+// ── LS PDF 인쇄 (봉인씰 합성) ──
 function printVehicle(hoche) {
   var pltInput = document.getElementById('plt_input_' + hoche);
   var pltQty = pltInput ? parseInt(pltInput.value) || 0 : 0;
@@ -1676,29 +2269,12 @@ function printVehicle(hoche) {
   document.getElementById('printConfirmModal').style.display = 'flex';
 }
 
-// ── 1시간 경과 체크 ──
+// ── 카드 숨김 비활성: 차량 정보 N대 = 출차카드 N장 유지 ──
 function checkElapsedCards() {
-  var now = new Date();
-  var changed = false;
-  var data = window._filteredData || LS_DATA;
-  if (!data) return;
-  data.forEach(function(d){
-    var i = d.hoche;
-    if (!pltTimestamps[i]) return;
-    var elapsed = (now - pltTimestamps[i])/(1000*60);
-    var wrap = document.getElementById('vf67_card_wrap_'+i);
-    if (!wrap) return;
-    if (elapsed >= 60 && !wrap.classList.contains('hidden-by-time')) {
-      wrap.classList.add('hidden-by-time'); changed = true;
-    }
-  });
-  if (changed) { updateVisibility(); updateHiddenBanner(data); }
+  showAllCards();
 }
 function updateVisibility() {
-  var data = window._filteredData;
-  var count = data ? data.length : 0;
-  if (count <= MAX_VISIBLE) showAllCards();
-  else selectTab(selectedTab || (data[0] ? data[0].hoche : null));
+  showAllCards();
 }
 function updateHiddenBanner(data) {
   var banner = document.getElementById('vf67HiddenBanner');
@@ -1720,7 +2296,8 @@ function updateHiddenBanner(data) {
 }
 function reselectCard(idx) {
   var wrap = document.getElementById('vf67_card_wrap_'+idx);
-  if (wrap) { wrap.classList.remove('hidden-by-time'); pltTimestamps[idx]=new Date(); }
+  // 표시만 복원 — 출차/출고 시각은 권역·파렛트 입력으로만 갱신
+  if (wrap) { wrap.classList.remove('hidden-by-time'); }
   updateVisibility(); updateHiddenBanner(window._filteredData);
 }
 
@@ -1946,34 +2523,152 @@ function loadFromServerAndRender() {
   fetch('/departure/api/ls-data?date=' + dateStr)
     .then(function(r) { return r.json(); })
     .then(function(data) {
-      if (data.data && data.data.length > 0) {
-        LS_DATA = data.data;
-        // plt, regions, departTime 복원
-        LS_DATA.forEach(function(v) {
-          if (v.plt && v.plt > 0) {
-            pltQtyValues[v.hoche] = v.plt;
-          }
-          if (v.departTime) {
-            var parts = v.departTime.split(':');
-            pltTimestamps[v.hoche] = new Date();
-            pltTimestamps[v.hoche].setHours(parseInt(parts[0]), parseInt(parts[1]), 0, 0);
-          }
+      // 서버 DB 차량 목록 — 선택한 날짜의 데이터로 무조건 교체.
+      // (이전 코드는 빈 응답일 때 LS_DATA 를 갱신하지 않아, 이전 날짜 데이터가
+      //  새 날짜로 전환해도 화면에 잔존하는 버그가 있었음.)
+      var serverList = (data && data.data) ? data.data : [];
+      LS_DATA = serverList;
+      console.info('[departure] load ls-data date=' + dateStr + ' count=' + serverList.length,
+        serverList.map(function(v){ return v.hoche + ':' + (v.plate||''); }).join(' | '));
+      // 파렛트·권역 수량 extras 로드 → 새로고침 복원
+      loadVehicleExtras(dateStr, function() {
+        loadDeletedPlaceholders(function() {
+          loadDateData();
         });
-      }
-      loadDeletedPlaceholders(function() {
-        loadDateData();
-        // VF67 카드 생성 (plate가 있는 차량만)
-        var confirmed = LS_DATA.filter(function(d) { return d.plate && d.plate.trim() !== ''; });
-        if (confirmed.length > 0 && typeof renderVF67CardsWithData === 'function') {
-          renderVF67CardsWithData(confirmed);
-        }
       });
     })
-    .catch(function() {
-      loadDeletedPlaceholders(function() { loadDateData(); });
+    .catch(function(err) {
+      console.warn('[departure] load ls-data failed', err);
+      loadVehicleExtras(formatDate(currentDate), function() {
+        loadDeletedPlaceholders(function() { loadDateData(); });
+      });
     });
 }
 loadFromServerAndRender();
+
+// 15:00 이후: 백그라운드 다운로드 스캔 + 화면 갱신 (수동 버튼은 유지)
+// LS 자동화(ls_automation --watch)가 PDF를 받아 두면 여기서 DB 등록·표시
+var _lsConfirmOpen = false;
+var _lsConfirmData = null;
+
+function closeLsConfirmModal() {
+  var m = document.getElementById('lsConfirmModal');
+  if (m) m.style.display = 'none';
+  _lsConfirmOpen = false;
+}
+
+function showLsConfirmModal(cmp) {
+  if (!cmp || !cmp.needs_confirm) return;
+  _lsConfirmData = cmp;
+  var sum = document.getElementById('lsConfirmSummary');
+  var extra = document.getElementById('lsConfirmExtra');
+  if (sum) {
+    sum.innerHTML =
+      'Departure <b>차량 정보 ' + (cmp.vehicle_info_count || 0) + '대</b>인데, ' +
+      'LS 배정은 <b>' + (cmp.ls_count || 0) + '대</b>입니다.<br>' +
+      'LS 기준으로 차량 정보를 맞출까요? (기존 입력은 유지, 미입력·미등록만 반영)';
+  }
+  if (extra) {
+    var lines = (cmp.extra_ls || []).map(function(e) {
+      return (e.time || '--:--') + '  ' + (e.plate || '') + (e.slip ? '  (slip ' + e.slip + ')' : '');
+    });
+    extra.textContent = lines.length ? lines.join('\n') : '(없음)';
+  }
+  var m = document.getElementById('lsConfirmModal');
+  if (m) {
+    m.style.display = 'flex';
+    _lsConfirmOpen = true;
+  }
+}
+
+function confirmLsApplyMerge() {
+  var dateStr = formatDate(currentDate);
+  fetch('/departure/api/ls-apply-merge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ date: dateStr, confirm: true })
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data && data.ok) {
+        if (data.vehicles) LS_DATA = data.vehicles;
+        closeLsConfirmModal();
+        loadFromServerAndRender();
+        if (typeof showToast === 'function') {
+          showToast('LS 기준 반영 완료 (기존 입력 유지)', 'success', 3000);
+        } else {
+          alert('LS 기준 반영 완료 (기존 입력 유지 · 미등록 추가)');
+        }
+      } else {
+        alert('반영 실패: ' + ((data && data.error) || 'unknown'));
+      }
+    })
+    .catch(function(err) {
+      alert('반영 오류: ' + err);
+    });
+}
+
+function deferLsMerge() {
+  var dateStr = formatDate(currentDate);
+  fetch('/departure/api/ls-defer-merge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ date: dateStr })
+  }).catch(function() {});
+  closeLsConfirmModal();
+  if (typeof showToast === 'function') {
+    showToast('대기 — 다음 주기에도 안내합니다', 'info', 2500);
+  }
+}
+
+function checkLsVehicleCompare() {
+  var dateStr = formatDate(currentDate);
+  fetch('/departure/api/ls-compare?date=' + encodeURIComponent(dateStr))
+    .then(function(r) { return r.json(); })
+    .then(function(cmp) {
+      if (cmp && cmp.needs_confirm && !_lsConfirmOpen) {
+        showLsConfirmModal(cmp);
+      }
+    })
+    .catch(function(err) {
+      console.warn('[departure] ls-compare failed', err);
+    });
+}
+
+function autoLsScanIfAfternoon() {
+  var now = new Date();
+  if (now.getHours() < 15) return;
+  var dateStr = formatDate(currentDate);
+  fetch('/departure/api/ls-download-scan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ date: dateStr })
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data && (data.ok || data.compare)) {
+        var n = data.new_count || 0;
+        console.info('[departure] LS 스캔', n, data.compare || '');
+        loadFromServerAndRender();
+        if (data.compare && data.compare.needs_confirm) {
+          showLsConfirmModal(data.compare);
+        } else {
+          checkLsVehicleCompare();
+        }
+      }
+    })
+    .catch(function(err) {
+      console.warn('[departure] LS 자동 스캔 실패', err);
+      checkLsVehicleCompare();
+    });
+}
+// 페이지 진입 시 1회 + 10분마다 (15시 이전에는 no-op) — 미완료 시 LS 확인
+setTimeout(function() {
+  autoLsScanIfAfternoon();
+  checkLsVehicleCompare();
+}, 2000);
+setInterval(autoLsScanIfAfternoon, 10 * 60 * 1000);
+setInterval(checkLsVehicleCompare, 10 * 60 * 1000);
 
 // 날짜 네비게이션 버튼 클릭 시 서버 재로드 (shiftDate/goToday에서 이미 처리되므로 제거)
 

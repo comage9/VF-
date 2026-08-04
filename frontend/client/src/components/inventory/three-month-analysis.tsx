@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { OutboundAnalysisItem, AnalysisParams, OutboundAnalysisResponse } from '../../types/enhanced-inventory';
+import { matchesSearchInFields } from '@/lib/searchMatch';
 
 interface ThreeMonthAnalysisProps {
   className?: string;
@@ -60,7 +61,9 @@ export function ThreeMonthAnalysis({ className = "" }: ThreeMonthAnalysisProps) 
       }
       return response.json();
     },
-    refetchInterval: 60000, // 1분마다 갱신
+    // 주기 폴링 없음 — 필요 시 상위 invalidate / 탭 재진입으로만 갱신
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
   });
 
   // 자동 계산 적용
@@ -153,11 +156,10 @@ export function ThreeMonthAnalysis({ className = "" }: ThreeMonthAnalysisProps) 
   }
 
   const analysis = (barcodeDailyData?.data || []).filter((item) => {
-    const matchesSearch =
-      !searchTerm.trim() ||
-      (item.productName || '').toLowerCase().includes(searchTerm.trim().toLowerCase()) ||
-      (item.barcode || '').toLowerCase().includes(searchTerm.trim().toLowerCase()) ||
-      (item.category || '').toLowerCase().includes(searchTerm.trim().toLowerCase());
+    const matchesSearch = matchesSearchInFields(
+      [item.productName, item.barcode, item.category],
+      searchTerm
+    );
     const matchesCategory = !categoryFilter || (item.category || '') === categoryFilter;
     return matchesSearch && matchesCategory;
   });

@@ -96,6 +96,17 @@ export interface InventoryItem {
   coverDays?: number | null;
   outbound14dTotal?: number;
   avgDailyOutbound14d?: number;
+  outbound30dTotal?: number;
+  avgDailyOutbound30d?: number;
+  avgDailyOutbound60d?: number;
+  /** 최근 90일(≈3개월) 출고 합 · 일평균 — 입고 가능 SoT */
+  outbound90dTotal?: number;
+  avgDailyOutbound90d?: number;
+  price?: number;
+  /** 제품 마스터 is_vf_item (목록 SoT) */
+  is_vf_item?: boolean;
+  masterSpecId?: number;
+  inBaseline?: boolean;
 }
 
 export interface ApiResponse<T> {
@@ -133,6 +144,9 @@ export interface OutboundAnalysisResponse extends ApiResponse<OutboundAnalysisIt
 // 통합 재고 응답 (기존 타입 확장)
 export interface UnifiedInventoryResponseEnhanced {
   success: boolean;
+  /** 품목 목록 SoT: master_vf = MasterSpec.is_vf_item */
+  universe?: 'master_vf' | string;
+  vfMasterCount?: number;
   data: InventoryItem[];
   pagination: {
     page: number;
@@ -144,23 +158,30 @@ export interface UnifiedInventoryResponseEnhanced {
   summary: {
     overall: {
       totalItems: number;
-      totalStock: number;
-      criticalCount: number;
-      lowCount: number;
-      normalCount: number;
-      highCount: number;
+      totalStock?: number;
+      totalQuantity?: number;
+      totalValue?: number;
+      critical?: number;
+      low?: number;
+      normal?: number;
+      high?: number;
+      criticalCount?: number;
+      lowCount?: number;
+      normalCount?: number;
+      highCount?: number;
+      vfMasterCount?: number;
     };
     filtered: {
-      totalItems: number;
-      totalStock: number;
-      criticalCount: number;
-      lowCount: number;
-      normalCount: number;
-      highCount: number;
+      totalItems?: number;
+      totalStock?: number;
+      criticalCount?: number;
+      lowCount?: number;
+      normalCount?: number;
+      highCount?: number;
     };
     options: {
-      showHidden: boolean;
-      lifecycleFilter: string;
+      showHidden?: boolean;
+      lifecycleFilter?: string;
     };
   };
   lastUploadDate: string | null;

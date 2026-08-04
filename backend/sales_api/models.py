@@ -15,6 +15,18 @@ class OutboundRecord(models.Model):
     barcode = models.CharField(max_length=100, null=True, blank=True, db_index=True)
     status = models.CharField(max_length=50, default='완료')
     notes = models.TextField(null=True, blank=True)
+    # 실적 공백일 보간: 앞·뒤 실적일로 예측한 행
+    is_estimated = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="True면 실적이 아닌 예측 보정 데이터",
+    )
+    estimate_method = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="예: adjacent_avg (직전·직후 실적일 품목 평균)",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -23,10 +35,12 @@ class OutboundRecord(models.Model):
         indexes = [
             models.Index(fields=['outbound_date', 'category']), # 복합 인덱스
             models.Index(fields=['outbound_date', 'barcode']),  # 날짜+바코드 복합 인덱스 추가 (조회 성능 최적화)
+            models.Index(fields=['outbound_date', 'is_estimated']),
         ]
 
     def __str__(self):
-        return f"{self.outbound_date} - {self.product_name}"
+        tag = " [예측]" if self.is_estimated else ""
+        return f"{self.outbound_date} - {self.product_name}{tag}"
 
 class InventoryItem(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -219,6 +233,63 @@ class InventoryReceiptItem(models.Model):
         return f"{self.receipt_date} {self.barcode} (+{self.quantity_box})"
 
 
+class InventoryStockAdjustment(models.Model):
+    """
+    재고 조정 전표 (매출 출고·입고 업로드로 설명되지 않는 차이).
+
+    현재고 = baseline + 입고(as_of 이후) − 출고(as_of 이후) + 조정(as_of 이후)
+
+    WMS 실물과 장부가 어긋날 때 baseline 을 덮어쓰지 않고
+    차이(qty_delta)만 이벤트로 남긴다. 같은 source_key 는 1회만 반영(멱등).
+    """
+    REASON_WMS_RECONCILE = "wms_reconcile"
+    REASON_DAMAGE = "damage"
+    REASON_AUDIT = "audit"
+    REASON_GRADE = "grade_change"
+    REASON_MANUAL = "manual"
+    REASON_OTHER = "other"
+    REASON_CHOICES = [
+        (REASON_WMS_RECONCILE, "WMS 실물 대조"),
+        (REASON_DAMAGE, "파손/폐기"),
+        (REASON_AUDIT, "실사"),
+        (REASON_GRADE, "등급변경"),
+        (REASON_MANUAL, "수동 조정"),
+        (REASON_OTHER, "기타"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    adjustment_date = models.DateField(db_index=True)
+    barcode = models.CharField(max_length=100, db_index=True)
+    product_name = models.CharField(max_length=255, blank=True, default="")
+    # +증가 / -감소 (박스)
+    qty_delta = models.IntegerField(default=0)
+    reason = models.CharField(
+        max_length=32, choices=REASON_CHOICES, default=REASON_MANUAL, db_index=True
+    )
+    note = models.CharField(max_length=500, blank=True, default="")
+    # 멱등 키: wms_reconcile:2026-07-20:R000...
+    source_key = models.CharField(max_length=200, blank=True, default="", db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "inventory_stock_adjustments"
+        indexes = [
+            models.Index(fields=["barcode", "adjustment_date"]),
+            models.Index(fields=["adjustment_date", "reason"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source_key"],
+                condition=~models.Q(source_key=""),
+                name="uniq_inv_adj_source_key_nonempty",
+            )
+        ]
+
+    def __str__(self):
+        sign = "+" if self.qty_delta >= 0 else ""
+        return f"{self.adjustment_date} {self.barcode} ({sign}{self.qty_delta})"
+
+
 class MasterSpec(models.Model):
     product_name = models.CharField(max_length=255, unique=True, db_index=True)
     product_name_eng = models.TextField(blank=True, default='')
@@ -231,6 +302,79 @@ class MasterSpec(models.Model):
     barcode = models.CharField(max_length=100, blank=True, default='', db_index=True)
     category_lg = models.CharField(max_length=255, blank=True, default='', db_index=True)  # 대분류
     category_md = models.CharField(max_length=255, blank=True, default='')  # 중분류
+    price = models.IntegerField(default=0)  # 단가
+    lot_number = models.CharField(max_length=255, blank=True, default='')  # 로트 번호
+    components = models.TextField(blank=True, default='')  # 제품 구성품들
+    notes = models.TextField(
+        blank=True,
+        default='',
+        help_text="제품 비고. 목록 제품명 호버 시 표시.",
+    )
+    image_url = models.CharField(max_length=500, blank=True, default='')  # 사진 URL
+    prev_price = models.IntegerField(default=0)  # 이전 단가
+    price_changed_at = models.DateField(null=True, blank=True)  # 단가 변동일
+    is_discontinued = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="True면 단종 품목. 단종 지정/해제는 수동(마스터 UI·API)만 허용. 자동 배치·출고 동기화는 변경하지 않음.",
+    )
+    is_no_outbound_3m = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text=(
+            "상태열 출고 진행/3개월 미출고. "
+            "VF 품목: 최근 90일 실출고(Outbound) 없음. "
+            "비VF: 최근 90일 FC 입고(쿠팡 센터 납품) 없음. "
+            "단종에는 적용 안 함. update_outbound_status 로 갱신."
+        ),
+    )
+    is_vf_item = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text=(
+            "True면 VF 대상 품목. 운영 SoT=현재 DB 값. "
+            "마스터 화면·일괄수정·양식 import 로 지정/해제. "
+            "출고·재고 자동 배치로는 변경하지 않음. "
+            "카드(출고 진행/3개월 없음)는 is_vf 안에서의 상태 분할만."
+        ),
+    )
+    vf_registered_at = models.DateField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text=(
+            "VF 최초 지정일. 수동 VF 지정 시 비어 있으면 오늘로 채움. "
+            "해제해도 이력 유지. 자동 해제 조건으로 쓰지 않음."
+        ),
+    )
+    # 완제품 vs 포장 필요 (대분류가 아님 · 수동 지정)
+    FINISH_FINISHED = "finished"
+    FINISH_NEEDS_PACKAGING = "needs_packaging"
+    FINISH_TYPE_CHOICES = [
+        ("", "미지정"),
+        (FINISH_FINISHED, "완제품"),
+        (FINISH_NEEDS_PACKAGING, "포장 필요"),
+    ]
+    finish_type = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        db_index=True,
+        choices=FINISH_TYPE_CHOICES,
+        help_text=(
+            "완제품(finished) 또는 포장을 해야 하는 제품(needs_packaging). "
+            "마스터 UI에서 수동 선택. 출고 배치와 무관."
+        ),
+    )
+    product_number = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "제품 번호. 로케이션에서 파생: "
+            "320-A1-1-XXX → XXX, 320-A1-2-XXX → 2XXX (예: 320-A1-2-115 → 2115), "
+            "그 외 null. location 저장/변경 시 자동 재계산."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -501,6 +645,48 @@ class InboundPolicy(models.Model):
 
     def __str__(self):
         return f"Policy ({self.status_mode})"
+
+
+class InboundProductRestriction(models.Model):
+    """
+    바코드 단위 입고 제한.
+    enabled=True 이고 오늘 < allowed_from 이면 입고 불가.
+    allowed_from 이 null 이고 enabled=True 이면 무기한 차단(가능일 설정 전).
+    enabled=False 이면 제한 해제(이력 유지).
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    barcode = models.CharField(max_length=100, unique=True, db_index=True)
+    product_name = models.CharField(max_length=255, blank=True, default='')
+    location = models.CharField(max_length=100, blank=True, default='')
+    enabled = models.BooleanField(default=True, db_index=True)
+    note = models.TextField(blank=True, default='')
+    allowed_from = models.DateField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text='이 날짜부터 입고 허용 (포함). null + enabled=True → 무기한 차단',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'inbound_product_restrictions'
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        flag = 'ON' if self.enabled else 'OFF'
+        return f"{self.barcode} [{flag}] from={self.allowed_from}"
+
+    def is_blocked_on(self, on_date=None) -> bool:
+        """on_date(date) 기준 입고 차단 여부."""
+        if not self.enabled:
+            return False
+        from datetime import date as date_cls
+
+        d = on_date or date_cls.today()
+        if self.allowed_from is None:
+            return True
+        return d < self.allowed_from
 
 
 class FCInboundRecord(models.Model):

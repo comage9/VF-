@@ -194,6 +194,50 @@ def start_server(host=DEFAULT_HOST, port=DEFAULT_PORT):
     print(f"[START] Starting server on {host}:{port}")
     print("=" * 50 + "\n")
 
+    # LS 감시: 15:00~ PDF 다운로드 + 차량 자동 등록 (기본 ON)
+    # 끄려면: set LS_AUTO_WATCH=0
+    _ls_flag = os.getenv("LS_AUTO_WATCH", "1").strip().lower()
+    if _ls_flag not in ("0", "false", "no", "n", "off"):
+        try:
+            import subprocess
+
+            ls_script = os.path.join(BASE_DIR, "ls_automation.py")
+            interval = os.getenv("LS_WATCH_INTERVAL", "10")
+            start_h = os.getenv("LS_WATCH_START_HOUR", "15")
+            end_h = os.getenv("LS_WATCH_END_HOUR", "23")
+            log_path = os.path.join(BASE_DIR, "departure", "data", "ls_watch.log")
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            log_f = open(log_path, "a", encoding="utf-8")
+            child_env = os.environ.copy()
+            child_env["PYTHONIOENCODING"] = "utf-8"
+            cmd = [
+                sys.executable,
+                ls_script,
+                "--watch",
+                "--interval",
+                str(interval),
+                "--start-hour",
+                str(start_h),
+                "--end-hour",
+                str(end_h),
+            ]
+            subprocess.Popen(
+                cmd,
+                cwd=BASE_DIR,
+                stdout=log_f,
+                stderr=subprocess.STDOUT,
+                env=child_env,
+            )
+            print(
+                f"[LS] 감시 프로세스 기동 "
+                f"({start_h}:00~, 미완료 시 {interval}분 간격, "
+                f"PDF+등록 완료 시 LS 종료) · log={log_path}"
+            )
+        except Exception as e:
+            print(f"[LS] 감시 기동 실패: {e}")
+    else:
+        print("[LS] 감시 미기동 (LS_AUTO_WATCH=0)")
+
     # Start server
     from django.core.management import execute_from_command_line
 

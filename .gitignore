@@ -109,6 +109,60 @@ Thumbs.db
 *.bak
 *.swp
 *~
+*.sqlite3.bak*
+db.sqlite3.bak.*
+
+# Departure 런타임 데이터 (커밋 금지 — 매일 생성되는 실운영 파일)
+backend/departure/data/ls_pdfs/
+backend/departure/data/ls_data_*.json
+backend/departure/data/barcode_*.json
+backend/departure/data/ls_orders_*.json
+backend/departure/data/vehicle_extract*.json
+backend/departure/data/vehicle_extras_*.json
+backend/departure/data/processed_sl*
+backend/departure/data/rs2.*
+backend/departure/data/.ls_watch.lock
+backend/departure/data/ls_sup_statu*
+backend/gunicorn_*.err
+backend/gunicorn_*.out
+backend/runserver_*.err
+backend/.env.broken_backup*
+backend/temp_unzip/
+backend/media/
+departure-now.png
+departure-now.yml
+frontend/client/dev_*.err
+frontend/client/dev_*.out
+frontend/client/_master_verify*.png
+frontend/client/verify_ui.js
+nul
+nul/
+
+# Local debug / one-off dumps (do not commit)
+backend/upload_*.json
+backend/prod_after*.json
+backend/prod_before*.json
+backend/prod_log_test.json
+backend/production_log_test.*
+backend/delete_result.json
+backend/yt_*
+backend/graphify-out/
+backend/.env.bak*
+backend/.env.backup*
+%APPDATA%/
+.codegraph/
+.codegraph/**
+logs/
+logs/**
+cleanup_pass*_log.json
+
+# ── Tool folders (not VF app core; reinstall separately) ──
+# Nested 3rd-party clones / agent session state
+playwright-cli/
+opencode-telegram-bot/
+antigravity-telegram-suite/
+.antigravitycli/
+.antigravitycli/**
 
 # Docker
 *.log
@@ -121,3 +175,7 @@ htmlcov/
 .tox/
 VF/
 test-results/
+.playwright/
+.playwright-cli/
+.playwright-mcp/
+.playwright*/

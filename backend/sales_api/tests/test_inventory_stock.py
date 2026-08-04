@@ -6,36 +6,53 @@ from unittest.mock import MagicMock
 from django.test import SimpleTestCase
 
 from sales_api.inventory_stock import (
-    SNAPSHOT_INCLUDES_AS_OF_DAY_MOVEMENTS,
+    SNAPSHOT_INCLUDES_AS_OF_DAY_OUTBOUND,
+    SNAPSHOT_INCLUDES_AS_OF_DAY_RECEIPTS,
     STOCK_EXCLUDES_ESTIMATED_OUTBOUND,
     compute_current_stock,
     filter_outbound_for_stock,
     is_movement_date_applicable,
+    is_outbound_date_applicable,
     movement_after_baseline_lookup,
+    outbound_after_baseline_lookup,
+    receipt_after_baseline_lookup,
     stock_value,
 )
 
 
 class InventoryStockRuleTests(SimpleTestCase):
-    def test_snapshot_is_post_outbound_closing(self):
-        self.assertTrue(SNAPSHOT_INCLUDES_AS_OF_DAY_MOVEMENTS)
-        self.assertEqual(movement_after_baseline_lookup(date(2026, 7, 14)), "gt")
+    def test_snapshot_is_baseline_only_receipts_and_outbound_by_date(self):
+        """스냅샷=기준. 당일 입고 가산, 당일 출고 차감. 우회 없음."""
+        self.assertFalse(SNAPSHOT_INCLUDES_AS_OF_DAY_RECEIPTS)
+        self.assertFalse(SNAPSHOT_INCLUDES_AS_OF_DAY_OUTBOUND)
+        as_of = date(2026, 7, 21)
+        self.assertEqual(receipt_after_baseline_lookup(as_of), "gte")
+        self.assertEqual(outbound_after_baseline_lookup(as_of), "gte")
+        self.assertEqual(movement_after_baseline_lookup(as_of, "receipt"), "gte")
+        self.assertEqual(movement_after_baseline_lookup(as_of, "outbound"), "gte")
 
-    def test_same_day_movement_not_applied(self):
-        as_of = date(2026, 7, 14)
-        # 기준일 당일 출고는 스냅샷에 이미 반영 → 재적용 금지
-        self.assertFalse(is_movement_date_applicable(as_of, as_of))
-        # 다음 날부터 적용
-        self.assertTrue(is_movement_date_applicable(date(2026, 7, 15), as_of))
-        # 이전 날은 미적용
-        self.assertFalse(is_movement_date_applicable(date(2026, 7, 13), as_of))
+    def test_same_day_receipt_and_outbound_both_apply(self):
+        as_of = date(2026, 7, 21)
+        # 당일 입고: 기준에 가산
+        self.assertTrue(is_movement_date_applicable(as_of, as_of))
+        self.assertTrue(is_movement_date_applicable(date(2026, 7, 22), as_of))
+        self.assertFalse(is_movement_date_applicable(date(2026, 7, 20), as_of))
+        # 당일 출고: 일자 맞춰 차감
+        self.assertTrue(is_outbound_date_applicable(as_of, as_of))
+        self.assertTrue(is_outbound_date_applicable(date(2026, 7, 22), as_of))
+        self.assertFalse(is_outbound_date_applicable(date(2026, 7, 20), as_of))
 
-    def test_no_double_subtract_same_day_outbound(self):
-        # baseline 2, same-day outbound 2 already in snapshot → current stays 2
-        # (if wrongly using gte, would become 0)
-        self.assertEqual(compute_current_stock(base_qty=2, receipt_qty_after=0, outbound_qty_after=0), 2)
-        # next day outbound 1
-        self.assertEqual(compute_current_stock(base_qty=2, receipt_qty_after=0, outbound_qty_after=1), 1)
+    def test_current_stock_subtracts_as_of_day_outbound(self):
+        # 7/21 스냅샷 100, 7/21 출고 30 → 현재고 70
+        self.assertEqual(
+            compute_current_stock(base_qty=100, receipt_qty_after=0, outbound_qty_after=30),
+            70,
+        )
+        # 7/21 스냅샷 100 + 7/22 입고 10 − 7/21~ 출고 30 = 80
+        self.assertEqual(
+            compute_current_stock(base_qty=100, receipt_qty_after=10, outbound_qty_after=30),
+            80,
+        )
 
     def test_stock_value_clamps_negative(self):
         self.assertEqual(stock_value(-3, 1000), 0)
@@ -72,3 +89,75 @@ class InventoryStockRuleTests(SimpleTestCase):
         cur_a = compute_current_stock(31, rcv_a.get("R-A", 0), out_a.get("R-A", 0))
         cur_b = compute_current_stock(4, rcv_a.get("R-B", 0), out_a.get("R-B", 0))
         self.assertEqual(cur_a + cur_b, 31 + 4 + 7 - 9)
+
+    def test_adjustment_included_in_current_stock(self):
+        """조정 전표(+/-)가 현재고 공식에 포함된다."""
+        # base 10, rcv 2, out 3, adj -1 → 8
+        self.assertEqual(
+            compute_current_stock(10, 2, 3, adjustment_qty_after=-1),
+            8,
+        )
+        self.assertEqual(
+            compute_current_stock(10, 0, 0, adjustment_qty_after=5),
+            15,
+        )
+
+    def test_reconcile_delta_builder(self):
+        from sales_api.inventory_reconcile import build_reconcile_deltas
+
+        rows = build_reconcile_deltas(
+            ledger_qty={"A": 10, "B": 5},
+            wms_qty={"A": 8, "B": 5, "C": 2},
+            name_by_barcode={"A": "품A", "C": "품C"},
+        )
+        by = {r["barcode"]: r for r in rows}
+        self.assertEqual(by["A"]["qty_delta"], -2)
+        self.assertNotIn("B", by)  # match
+        self.assertEqual(by["C"]["qty_delta"], 2)
+
+    def test_classify_variance_cause(self):
+        from sales_api.inventory_reconcile import (
+            CAUSE_AFTER_RECEIPT_GAP,
+            CAUSE_LEDGER_ONLY,
+            CAUSE_MATCH,
+            CAUSE_NO_MOVEMENT_WMS_LOWER,
+            classify_variance_cause,
+            build_variance_items,
+        )
+
+        self.assertEqual(
+            classify_variance_cause(
+                base_qty=26, receipt_qty=0, outbound_qty=0, ledger_qty=26, wms_qty=22
+            ),
+            CAUSE_NO_MOVEMENT_WMS_LOWER,
+        )
+        self.assertEqual(
+            classify_variance_cause(
+                base_qty=2, receipt_qty=4, outbound_qty=0, ledger_qty=6, wms_qty=5
+            ),
+            CAUSE_AFTER_RECEIPT_GAP,
+        )
+        self.assertEqual(
+            classify_variance_cause(
+                base_qty=3, receipt_qty=0, outbound_qty=0, ledger_qty=3, wms_qty=0
+            ),
+            CAUSE_LEDGER_ONLY,
+        )
+        self.assertEqual(
+            classify_variance_cause(
+                base_qty=1, receipt_qty=0, outbound_qty=0, ledger_qty=1, wms_qty=1
+            ),
+            CAUSE_MATCH,
+        )
+        items, summary = build_variance_items(
+            base_by_barcode={"A": 26, "B": 1},
+            receipt_by_barcode={},
+            outbound_by_barcode={},
+            ledger_by_barcode={"A": 26, "B": 1},
+            wms_by_barcode={"A": 22, "B": 1},
+            include_matches=False,
+        )
+        self.assertEqual(summary["mismatchCount"], 1)
+        self.assertEqual(summary["matchCount"], 1)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["barcode"], "A")

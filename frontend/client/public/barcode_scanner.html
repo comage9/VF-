@@ -3,9 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>바코드 스캐너 대시보드</title>
-    <!-- JsBarcode 라이브러리 로드 -->
+    <!-- JsBarcode / SheetJS (엑셀 업로드) / 기간 메트릭 SoT (탭과 동일) -->
     <script src="JsBarcode.all.min.js"></script>
+    <script src="xlsx.full.min.js"></script>
+    <script src="js/inbound-period-metrics.js"></script>
     <style>
         :root {
             --bg-color: #121212;
@@ -178,20 +183,75 @@
         }
 
         .list-item.flagged .list-item-flag {
-            display: block;
-        }
+                    display: block;
+                }
 
-        .list-item.flagged .list-item-title {
-            color: var(--error-color);
-        }
+                .list-item.flagged .list-item-title {
+                    color: var(--error-color);
+                }
 
-        .list-item-name {
+                /* 입고 제한(홀드) — 목록에서 제외하지 않고 상태 표시 */
+                .list-item.held {
+                    border-color: #f59e0b;
+                    background: rgba(245, 158, 11, 0.08);
+                }
+                .list-item.held .list-item-title {
+                    color: #fbbf24;
+                }
+                .list-item-held-flag {
+                    display: none;
+                    color: #fbbf24;
+                    font-size: 12px;
+                    font-weight: bold;
+                }
+                .list-item.held .list-item-held-flag {
+                    display: block;
+                }
+
+                .list-item-name {
             font-size: 15px;
             font-weight: bold;
             color: var(--text-primary);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+
+        .list-item-qty {
+            margin-top: 6px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            gap: 6px 10px;
+            font-size: 14px;
+            font-weight: 800;
+            color: #ffeb3b;
+            line-height: 1.3;
+        }
+        .list-item-qty .qty-period {
+            font-size: 11px;
+            font-weight: 700;
+            color: #c4b5fd;
+            letter-spacing: -0.02em;
+        }
+        .list-item-qty .qty-num {
+            font-size: 15px;
+            font-weight: 800;
+            color: #ffeb3b;
+        }
+        .list-item-qty.qty-zero .qty-num {
+            color: #6b7280;
+        }
+        .list-item-qty.qty-raw .qty-period {
+            color: #86efac;
+        }
+        .list-item-qty.qty-raw .qty-num {
+            color: #4ade80;
+        }
+        .list-item-qty .qty-order-sub {
+            font-size: 11px;
+            font-weight: 600;
+            color: #9ca3af;
         }
 
         /* 카트(적재 위치) 선택 스타일 */
@@ -310,6 +370,106 @@
             font-weight: bold;
             color: #00e676;
             line-height: 1;
+        }
+
+        /* 좌: 전산 · 중: N일 입고가능(목표−전산) · 우: 여백/힌트 */
+        .info-row-metrics {
+            display: grid;
+            grid-template-columns: 1fr minmax(160px, auto) 1fr;
+            align-items: start;
+            column-gap: 12px;
+            background-color: #2a2a2a;
+            padding: 11px 18px 11px; /* 전체적으로 위로 ~3px 압축, 박스 안 정렬 */
+            border-radius: 8px;
+            box-sizing: border-box;
+            width: 100%;
+            max-width: 600px;
+            margin-bottom: 20px;
+            min-height: 90px;
+            height: auto;
+            overflow: hidden; /* 일평균 문구가 박스 밖으로 밀리지 않게 */
+        }
+        .info-row-metrics .metrics-left {
+            min-width: 0;
+            text-align: left;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: flex-start;
+            padding-top: 0;
+            transform: translateY(-3px); /* 전산 블록 전체 3px 상향 */
+        }
+        .info-row-metrics .metrics-left .info-label {
+            margin-bottom: 2px;
+        }
+        .info-row-metrics .metrics-center {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            text-align: center;
+            min-width: 0;
+            transform: translateY(-3px); /* 가운데도 동일 높이 맞춤 */
+        }
+        .info-row-metrics .metrics-center .info-label {
+            margin-bottom: 2px;
+        }
+        .info-row-metrics .metrics-center .info-value-qty {
+            font-size: 36px;
+            font-weight: 800;
+            color: #ffeb3b;
+            line-height: 1.05;
+        }
+        /* 전산 재고 수치(2개·15개)만 가운데 입고가능과 동일 크기 */
+        .info-row-metrics .metrics-left .info-value-stock {
+            line-height: 1.05;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        .info-row-metrics .metrics-left #valCurrentStockNum {
+            font-size: 36px;
+            font-weight: 800;
+            color: var(--text-primary, #e5e7eb);
+            line-height: 1.05;
+        }
+        .info-row-metrics .metrics-left .stock-avg-hint {
+            display: block;
+            margin-top: 1px;
+            font-size: 11px;
+            font-weight: 500;
+            line-height: 1.2;
+            color: var(--text-secondary, #9ca3af);
+            white-space: nowrap;
+        }
+        .info-row-metrics .metrics-right {
+            min-width: 0;
+            text-align: right;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            justify-content: flex-start;
+            transform: translateY(-3px);
+        }
+        .info-row-metrics .metrics-right #valExtraOrderHint {
+            display: none;
+            font-size: 13px;
+            font-weight: 700;
+            line-height: 1.3;
+            max-width: 160px;
+            text-align: right;
+            color: #fbbf24;
+        }
+        /* 상태 문구 바로 아래: 선택 기간 필요 재고 — 전산/입고가능과 동일 수치 크기 */
+        .info-row-metrics .metrics-right #valPeriodNeedQty {
+            display: none;
+            margin-top: 2px;
+            font-size: 36px;
+            font-weight: 800;
+            line-height: 1.05;
+            color: #e5e7eb;
+            text-align: right;
+            white-space: nowrap;
         }
 
         .barcode-section {
@@ -516,8 +676,28 @@
     <h1>바코드 스캐너 대시보드</h1>
 
     <div class="input-section" id="inputSection">
-        <p style="margin:0; color: var(--text-secondary);">엑셀 등에서 복사한 데이터를 아래에 붙여넣고 시작 버튼을 누르세요.</p>
-        <textarea id="dataInput" placeholder="여기에 데이터를 붙여넣으세요..."></textarea>
+        <p style="margin:0; color: var(--text-secondary);">
+            <strong>파일 업로드(기본)</strong>: <code>VF 발주서 업로드.xlsx</code> 또는 <code>발주서 미입고 물량.csv</code> / <code>PO_SKU_LIST_*.csv</code><br>
+            · xlsx → 수량=<b>확정수량</b><br>
+            · 미입고 csv → <b>유원피에스</b>만 · <b>입고예정일≥오늘</b> · 수량=<b>입고 가능(확정−입고)</b> (0 제외)<br>
+            · 로케이션은 마스터 조회 후 없으면 수동 입력 · 텍스트 붙여넣기는 동일 헤더 보조
+        </p>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <label class="start-like-btn" style="display:inline-flex; align-items:center; gap:8px; cursor:pointer; background:var(--accent-color); color:#000; padding:12px 18px; border-radius:8px; font-weight:bold;">
+                📂 발주서 파일 업로드
+                <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv" style="display:none;">
+            </label>
+            <button type="button" id="openRestrictionModalBtnHome" class="start-like-btn"
+                style="display:inline-flex; align-items:center; gap:8px; cursor:pointer; background:#3d2a00; color:#fbbf24; border:1px solid #f59e0b; padding:12px 18px; border-radius:8px; font-weight:bold; font-size:15px;">
+                ⚙️ 입고 제한 설정
+            </button>
+            <span id="excelFileName" style="color:var(--text-secondary); font-size:13px;"></span>
+        </div>
+        <p style="margin:8px 0 0; font-size:12px; color:#9ca3af; line-height:1.45;">
+            입고 제한: 바코드만 붙여넣기 → 제품명·로케이션 조회 → <b style="color:#e5e7eb;">입고 가능일</b>·비고 저장.
+            (발주 업로드 없이도 설정 가능)
+        </p>
+        <textarea id="dataInput" placeholder="동일 헤더 텍스트 붙여넣기 (탭 또는 콤마)&#10;xlsx: 발주번호 … 상품바코드 상품이름 … 확정수량 … 입고예정일&#10;csv: 발주번호 … SKU Barcode … 확정수량,입고수량,…"></textarea>
         <button id="startButton">데이터 스캔 시작</button>
         <div id="errorMessage" class="error-message"></div>
     </div>
@@ -525,11 +705,11 @@
     <!-- 메인 대시보드 -->
     <div class="dashboard" id="dashboard">
         
-        <!-- 좌측: 전체 작업 목록 사이드바 -->
-        <div class="dashboard-sidebar">
-            <div style="color: var(--text-secondary); margin-bottom: 15px; font-weight: bold; font-size: 14px; display: flex; justify-content: space-between;">
-                <span>전체 작업 목록</span>
-                <span id="sidebarCounter">0 / 0</span>
+        <!-- 좌측: 전체 작업 목록 사이드바 (기간별 입고가능 수량 표시) -->
+        <div class="dashboard-sidebar" id="workListSidebar">
+            <div style="color: var(--text-secondary); margin-bottom: 15px; font-weight: bold; font-size: 14px; display: flex; justify-content: space-between; gap: 8px;">
+                <span id="workListSidebarTitle" style="flex:1; min-width:0; line-height:1.3;">전체 작업 목록</span>
+                <span id="sidebarCounter" style="flex-shrink:0;">0 / 0</span>
             </div>
             <ul id="dashboardList" class="list-container"></ul>
         </div>
@@ -540,9 +720,15 @@
                 <div id="flagBadge" class="flag-badge">⚠️ 미입고 처리됨</div>
             </div>
 
-            <div class="inbound-date-badge" id="inboundDateContainer" style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-weight: bold; font-size: 15px; color: #ffeb3b; width: 100%; max-width: 600px; padding: 0 5px;">
-                <span>📅 입고 예정일:</span>
-                <span id="valInboundDate">-</span>
+            <div class="inbound-date-badge" id="inboundDateContainer" style="display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 8px; font-weight: bold; font-size: 15px; color: #ffeb3b; width: 100%; max-width: 600px; padding: 0 5px; box-sizing: border-box;">
+                <span style="display:inline-flex; align-items:center; gap:8px; flex-shrink:0;">
+                    <span>📅 입고 예정일:</span>
+                    <span id="valInboundDate">-</span>
+                </span>
+                <span style="display:inline-flex; align-items:center; gap:8px; color:#7dd3fc; margin-left:auto; text-align:right;">
+                    <span>📋 발주번호:</span>
+                    <span id="valOrderNo" style="font-family:ui-monospace,monospace; letter-spacing:0.02em;">-</span>
+                </span>
             </div>
             
             <div class="info-row">
@@ -551,19 +737,57 @@
                     <div class="info-value-name" id="valProductName">-</div>
                 </div>
                 <div class="qty-info">
-                    <div class="info-label">입고 가능수량</div>
+                    <div class="info-label" id="qtyLabel">확정수량</div>
                     <div class="info-value-qty" id="valQuantity">-</div>
                 </div>
             </div>
 
-            <div class="info-row" style="margin-top: -10px;">
-                <div class="product-info">
-                    <div class="info-label">전산 재고 수량 (60일 일평균 출고)</div>
-                    <div class="info-value-name" id="valCurrentStock" style="font-size: 16px; color: var(--text-primary); margin-top: 5px;">-</div>
+            <!-- 일 간격: 10/14/30 · 전체 -->
+            <div id="periodSelectBar" style="width:100%; max-width:600px; margin: 2px 0 8px; padding: 8px 10px; background:#2a2a2a; border-radius:10px; border:1px solid #3a3a3a;">
+                <div style="font-size:12px; color:var(--text-secondary); margin-bottom:6px; font-weight:600; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <span>입고 가능 기준 (단일 선택)</span>
+                    <button type="button" id="openRestrictionModalBtn" style="padding:6px 10px; border-radius:8px; border:1px solid #f59e0b; background:#3d2a00; color:#fbbf24; cursor:pointer; font-weight:700; font-size:12px;">⚙️ 입고 제한 설정</button>
                 </div>
-                <div class="qty-info">
-                    <div class="info-label">10일 보유 수량</div>
-                    <div class="info-value-qty" id="val10Day" style="font-size: 32px; color: #ffeb3b;">-</div>
+                <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                    <button type="button" class="period-btn" data-days="10" style="padding:8px 12px; border-radius:8px; border:none; cursor:pointer; font-weight:700; font-size:13px;">10일</button>
+                    <button type="button" class="period-btn" data-days="14" style="padding:8px 12px; border-radius:8px; border:none; cursor:pointer; font-weight:700; font-size:13px;">14일</button>
+                    <button type="button" class="period-btn" data-days="30" style="padding:8px 12px; border-radius:8px; border:none; cursor:pointer; font-weight:700; font-size:13px;">30일</button>
+                    <button type="button" id="periodSelectAllBtn" class="period-btn-all" style="padding:8px 12px; border-radius:8px; border:1px solid #7c5cff; background:transparent; color:#c4b5fd; cursor:pointer; font-weight:700; font-size:13px;">전체</button>
+                    <label id="hideZeroAvailLabel" style="margin-left:4px; display:inline-flex; align-items:center; gap:6px; font-size:12px; color:#aaa; cursor:pointer; user-select:none;">
+                        <input type="checkbox" id="hideZeroAvailChk" checked style="width:15px; height:15px; accent-color:#721FE5;">
+                        입고가능 0 숨김
+                    </label>
+                </div>
+            </div>
+
+            <!-- 입고 제한 배지 (현재 품목) -->
+            <div id="restrictionBadge" style="display:none; width:100%; max-width:600px; margin:0 0 8px; padding:10px 12px; border-radius:10px; background:#3d1a1a; border:1px solid #ef4444; box-sizing:border-box;">
+                <div style="font-weight:800; color:#fca5a5; font-size:13px; margin-bottom:4px;">🚫 입고 제한 중</div>
+                <div id="restrictionBadgeDetail" style="font-size:12px; color:#fecaca; line-height:1.45;"></div>
+                <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+                    <button type="button" id="restrictionBadgeEditBtn" style="padding:6px 10px; border-radius:8px; border:none; background:#f59e0b; color:#000; font-weight:700; font-size:12px; cursor:pointer;">설정 열기</button>
+                    <button type="button" id="restrictionBadgeDisableBtn" style="padding:6px 10px; border-radius:8px; border:1px solid #666; background:transparent; color:#ccc; font-weight:600; font-size:12px; cursor:pointer;">제한 해제</button>
+                </div>
+            </div>
+
+            <!-- 좌: 전산 · 중: N일 입고가능 · 우: 더 요청 힌트 -->
+            <div class="info-row-metrics" id="valActualInboundWrap">
+                <div class="metrics-left">
+                    <div class="info-label">전산 재고 수량</div>
+                    <div class="info-value-stock" id="valCurrentStock"><span id="valCurrentStockNum">-</span><span class="stock-avg-hint" id="valCurrentStockAvg"></span></div>
+                    <div id="valHoldHint" style="display:none;"></div>
+                </div>
+                <div class="metrics-center">
+                    <div class="info-label" id="inboundAvailLabel">10일 입고 가능</div>
+                    <div class="info-value-qty" id="valInboundAvailable">-</div>
+                    <!-- 레거시 호환용(숨김) -->
+                    <span id="valActualInbound" style="display:none;"></span>
+                    <div id="valHoldFormula" style="display:none;"></div>
+                </div>
+                <div class="metrics-right">
+                    <span id="valExtraOrderHint"></span>
+                    <!-- 상태 문구 바로 아래: 10/14/30일 필요 재고(보유 목표) 수량 -->
+                    <div id="valPeriodNeedQty"></div>
                 </div>
             </div>
 
@@ -574,20 +798,31 @@
                 <svg id="barcodeProduct"></svg>
             </div>
 
-            <div class="barcode-section" style="margin-bottom: 0;">
+            <div class="barcode-section" id="locationBarcodeSection" style="margin-bottom: 0;">
                 <div class="barcode-title">로케이션</div>
                 <svg id="barcodeLocation"></svg>
+                <!-- 자동 로케이션(파일/마스터) 없을 때만 표시 -->
+                <div id="locationManualWrap" style="display:none; width:100%; max-width:600px; margin-top:10px; flex-direction:column; gap:6px;">
+                    <div style="display:flex; gap:8px; align-items:center; width:100%;">
+                        <input type="text" id="locationManualInput" placeholder="로케이션 없음 — 수동 입력 후 적용"
+                            style="flex:1; padding:10px 12px; border-radius:8px; border:1px solid #444; background:#2a2a2a; color:#fff; font-size:15px;">
+                        <button type="button" id="locationApplyBtn"
+                            style="padding:10px 14px; border-radius:8px; border:none; background:var(--success-color); color:#000; font-weight:bold; cursor:pointer;">적용</button>
+                    </div>
+                </div>
+                <div id="locationSourceHint" style="margin-top:6px; font-size:12px; color:var(--text-secondary);"></div>
             </div>
 
             <div class="controls">
                 <button id="prevBtn">&lt; 이전</button>
-                <div class="counter"><span id="currentIndexDisplay">0</span> / <span id="totalCountDisplay">0</span> <span style="font-size: 13px; color: var(--text-secondary); margin-left: 10px;">(총 수량: <span id="totalQuantityDisplay" style="color: #ffeb3b; font-weight: bold;">0</span>개)</span></div>
+                <div class="counter"><span id="currentIndexDisplay">0</span> / <span id="totalCountDisplay">0</span> <span style="font-size: 13px; color: var(--text-secondary); margin-left: 10px;">(<span id="totalQuantityLabel">총 수량</span>: <span id="totalQuantityDisplay" style="color: #ffeb3b; font-weight: bold;">0</span>)</span></div>
                 <button id="nextBtn">다음 &gt;</button>
             </div>
             
             <div class="action-buttons">
                 <button id="flagBtn" class="flag-btn">⚠️ 미입고 체크 (Enter)</button>
                 <button id="showListBtn" class="list-btn">📋 미입고 품목 모아보기</button>
+                <button id="restrictCurrentBtn" type="button" style="background:#3d2a00; color:#fbbf24; border:1px solid #f59e0b; flex:1; padding:12px; border-radius:8px; font-weight:700; cursor:pointer;">🚫 이 품목 제한</button>
                 <button id="resetBtn" class="reset-btn" style="background-color: var(--error-color); color: #000; flex: 1;">🔄 작업 초기화</button>
             </div>
 
@@ -676,6 +911,86 @@
 
     <div id="copyToast">복사되었습니다!</div>
 
+    <!-- 로케이션 누락 알림 (비차단: 보완 또는 다음에 진행) -->
+    <div class="modal-overlay" id="locationMissingOverlay" style="z-index:1100;">
+        <div class="modal-content" style="max-width:720px; height:auto; max-height:85vh;">
+            <div class="modal-header">
+                <h2 style="color:#ffeb3b; margin:0;">⚠️ 로케이션 확인</h2>
+                <button type="button" class="close-btn" id="locationMissingCloseX">&times;</button>
+            </div>
+            <div class="modal-body" style="flex-direction:column; overflow:auto;">
+                <p id="locationMissingSummary" style="margin:0 0 12px; color:var(--text-secondary); font-size:14px; line-height:1.5;"></p>
+                <p style="margin:0 0 10px; color:#aaa; font-size:12px;">
+                    필수는 아닙니다. <b>지금 보완</b>하거나 <b>다음에 진행</b>할 수 있습니다.
+                </p>
+                <div style="max-height:40vh; overflow:auto; border:1px solid #333; border-radius:8px;">
+                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                        <thead>
+                            <tr style="background:#2a2a2a; color:#ccc; text-align:left;">
+                                <th style="padding:8px;">#</th>
+                                <th style="padding:8px;">바코드</th>
+                                <th style="padding:8px;">제품명</th>
+                                <th style="padding:8px;">상태</th>
+                            </tr>
+                        </thead>
+                        <tbody id="locationMissingTbody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer" style="justify-content:space-between; flex-wrap:wrap; gap:8px;">
+                <button type="button" id="locationMissingLaterBtn" style="background:#333; color:#fff; padding:10px 16px; border:none; border-radius:8px; cursor:pointer; font-weight:600;">다음에 진행</button>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button type="button" id="locationMissingRefreshBtn" style="background:#444; color:#fff; padding:10px 14px; border:none; border-radius:8px; cursor:pointer;">목록 새로고침</button>
+                    <button type="button" id="locationMissingFixBtn" style="background:var(--success-color); color:#000; padding:10px 16px; border:none; border-radius:8px; cursor:pointer; font-weight:700;">지금 보완 (첫 항목으로)</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 입고 제한 품목 설정 모달 -->
+    <div class="modal-overlay" id="restrictionModalOverlay" style="z-index:1120;">
+        <div class="modal-content" style="max-width:720px; width:95%; max-height:90vh; display:flex; flex-direction:column; background:#1a1a1a; border:1px solid #444; border-radius:14px; overflow:hidden;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; padding:16px 18px; border-bottom:1px solid #333;">
+                <h2 style="margin:0; color:#fbbf24; font-size:18px;">입고 제한 품목 설정</h2>
+                <button type="button" class="close-btn" id="restrictionModalCloseX" style="background:none; border:none; color:#aaa; font-size:28px; cursor:pointer; line-height:1;">&times;</button>
+            </div>
+            <div style="padding:14px 18px; overflow-y:auto; flex:1;">
+                <p style="margin:0 0 10px; font-size:12px; color:#9ca3af; line-height:1.5;">
+                    바코드만 입력·붙여넣기하면 <b style="color:#e5e7eb;">제품명·로케이션</b>을 조회합니다.
+                    <b style="color:#e5e7eb;">입고 가능일</b>(이 날부터 허용)과 <b style="color:#e5e7eb;">비고</b>를 입력한 뒤 저장하세요.
+                </p>
+                <label style="display:block; font-size:12px; color:#aaa; margin-bottom:4px; font-weight:600;">바코드 (한 줄에 하나)</label>
+                <textarea id="restrictionBarcodeInput" rows="5" placeholder="R256047180001&#10;R256047190002&#10;R256047220005&#10;R256047230006"
+                    style="width:100%; box-sizing:border-box; padding:10px 12px; border-radius:8px; border:1px solid #444; background:#2a2a2a; color:#fff; font-family:ui-monospace,monospace; font-size:13px; resize:vertical;"></textarea>
+                <div style="display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 14px; align-items:center;">
+                    <button type="button" id="restrictionLookupBtn" style="padding:9px 14px; border-radius:8px; border:none; background:#721FE5; color:#fff; font-weight:700; cursor:pointer;">조회</button>
+                    <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; color:#aaa;">
+                        일괄 가능일
+                        <input type="date" id="restrictionBulkDate" style="padding:6px 8px; border-radius:6px; border:1px solid #444; background:#2a2a2a; color:#fff;">
+                    </label>
+                    <button type="button" id="restrictionBulkDateBtn" style="padding:8px 12px; border-radius:8px; border:1px solid #666; background:#333; color:#ddd; font-weight:600; cursor:pointer; font-size:12px;">일괄 적용</button>
+                    <button type="button" id="restrictionLoadSavedBtn" style="padding:8px 12px; border-radius:8px; border:1px solid #666; background:transparent; color:#c4b5fd; font-weight:600; cursor:pointer; font-size:12px; margin-left:auto;">저장된 목록</button>
+                </div>
+                <div id="restrictionResultList" style="display:flex; flex-direction:column; gap:10px;"></div>
+                <div id="restrictionModalStatus" style="margin-top:10px; font-size:12px; color:#9ca3af; min-height:1.2em;"></div>
+            </div>
+            <div class="modal-footer" style="padding:12px 18px; border-top:1px solid #333; display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+                <button type="button" id="restrictionModalCancelBtn" style="padding:10px 16px; border-radius:8px; border:none; background:#333; color:#fff; font-weight:600; cursor:pointer;">닫기</button>
+                <button type="button" id="restrictionModalSaveBtn" style="padding:10px 18px; border-radius:8px; border:none; background:#f59e0b; color:#000; font-weight:800; cursor:pointer;">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 로케이션 누락 잔여 배너 (닫은 뒤에도 다시 열 수 있음) -->
+    <div id="locationMissingBanner" style="display:none; position:fixed; bottom:20px; right:20px; z-index:1050; max-width:340px; background:#3d2a00; border:1px solid #ffeb3b; border-radius:12px; padding:12px 14px; box-shadow:0 8px 24px rgba(0,0,0,0.4);">
+        <div style="font-weight:700; color:#ffeb3b; margin-bottom:6px; font-size:13px;">로케이션 없는 품목 <span id="locationMissingBannerCount">0</span>건</div>
+        <div style="font-size:12px; color:#ddd; margin-bottom:10px;">작업은 계속 가능합니다. 필요할 때 보완하세요.</div>
+        <div style="display:flex; gap:8px;">
+            <button type="button" id="locationMissingBannerOpen" style="flex:1; padding:8px; border:none; border-radius:8px; background:#ffeb3b; color:#000; font-weight:700; cursor:pointer;">목록 보기</button>
+            <button type="button" id="locationMissingBannerDismiss" style="padding:8px 10px; border:1px solid #666; border-radius:8px; background:transparent; color:#ccc; cursor:pointer;">숨기기</button>
+        </div>
+    </div>
+
     <script>
         let parsedData = [];
         let currentIndex = 0;
@@ -683,7 +998,26 @@
         let flaggedIndices = new Set(); 
         let orderNoList = []; 
         let filteredIndices = []; 
-        let inventoryCache = {}; 
+        let inventoryCache = {};
+        /**
+         * 단일 선택 모드:
+         * - 10|14|30: 전산 기준 입고 가능 계산
+         * - 'raw'(전체): 일수 계산 없음 · 업로드 수량 그대로
+         */
+        const PERIOD_OPTIONS = [10, 14, 30];
+        let selectedPeriodMode = 10;
+        /** dataIndex(string) -> 수동 입력 로케이션 */
+        let locationOverrides = {};
+        /**
+         * 입고 제한 맵: barcode(trim) -> {
+         *   id?, barcode, productName, location, enabled, note, allowedFrom, blockedToday?
+         * }
+         */
+        let restrictionMap = {};
+        /** 10/14/30 모드에서 available===0 숨김 (기본 true) */
+        let hideZeroAvailable = true;
+        /** 발주번호 필터 기준 인덱스 (기간/제한 필터 전) */
+        let orderBaseIndices = null;
 
         let modalSortedIndices = [];
         let modalCurrentIdx = 0;
@@ -741,6 +1075,31 @@
         const cartBarcodeTitle = document.getElementById('cartBarcodeTitle');
 
         startButton.addEventListener('click', parseData);
+
+        const excelFileInput = document.getElementById('excelFileInput');
+        const excelFileName = document.getElementById('excelFileName');
+        if (excelFileInput) {
+            excelFileInput.addEventListener('change', handleExcelUpload);
+        }
+
+        const locationManualInput = document.getElementById('locationManualInput');
+        const locationApplyBtn = document.getElementById('locationApplyBtn');
+        const locationSourceHint = document.getElementById('locationSourceHint');
+        const locationManualWrap = document.getElementById('locationManualWrap');
+        const locationBarcodeSection = document.getElementById('locationBarcodeSection');
+        if (locationApplyBtn) {
+            locationApplyBtn.addEventListener('click', applyManualLocation);
+        }
+        if (locationManualInput) {
+            locationManualInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    applyManualLocation();
+                }
+            });
+        }
+        // 대분류 모달 HTML 은 파일 하단에 있음 → 여기서 bind 하면 null.
+        // bindCategoryPromptUi() 를 openCategoryPromptModal / DOMContentLoaded 에서 호출.
         flagBtn.addEventListener('click', toggleFlag);
         showListBtn.addEventListener('click', openModal);
         closeModalBtn.addEventListener('click', closeModal);
@@ -801,6 +1160,7 @@
                 rows: parsedData,
                 flagged_indices: Array.from(flaggedIndices),
                 current_index: filteredIndices[currentIndex] || 0,
+                location_overrides: locationOverrides,
             };
             try {
                 const r = await fetch(`${apiBase()}/departure/api/barcode/save`, {
@@ -836,17 +1196,32 @@
             }, SAVE_DEBOUNCE_MS);
         }
 
+        /**
+         * 로케이션/재고 캐시 로드
+         * 1) /api/inventory/unified — 현재고·출고평균 (최신 baseline 스냅샷 품목만)
+         * 2) /api/inventory/barcode-master — 로케이션 마스터 (재고 0·baseline 미포함 기존 품목 포함)
+         *
+         * 주의: unified 에 없는 바코드(예: 재고 0)도 BarcodeMaster 로케이션은 표시해야 함.
+         * 로케이션 source of truth = BarcodeMaster
+         */
         async function loadInventoryCache() {
+            inventoryCache = {};
             try {
                 const response = await fetch('/api/inventory/unified');
                 const result = await response.json();
                 if (result && result.success && result.data) {
                     result.data.forEach(item => {
-                        const bc = (item.barcode || '').trim();
+                        const bc = normalizeCell(item.barcode || '');
                         if (bc) {
                             inventoryCache[bc] = {
-                                currentStock: item.currentStock || 0,
-                                avgDailyOutbound60d: item.avgDailyOutbound60d || 0
+                                currentStock: Number(item.currentStock) || 0,
+                                avgDailyOutbound14d: Number(item.avgDailyOutbound14d) || 0,
+                                avgDailyOutbound30d: Number(item.avgDailyOutbound30d) || 0,
+                                avgDailyOutbound60d: Number(item.avgDailyOutbound60d) || 0,
+                                // 입고가능 SoT: 3개월(90d) 일평균 (inbound-period-metrics.js)
+                                avgDailyOutbound90d: Number(item.avgDailyOutbound90d) || 0,
+                                location: (item.location || '').trim(),
+                                productName: (item.productName || item.product_name || item.name || '').trim()
                             };
                         }
                     });
@@ -854,74 +1229,1197 @@
             } catch (e) {
                 console.warn('전산 재고 데이터를 가져오지 못했습니다:', e);
             }
+
+            // 재고 스냅샷에 없어도 마스터 로케이션은 반드시 보강
+            try {
+                const res = await fetch('/api/inventory/barcode-master?limit=5000');
+                const result = await res.json();
+                if (result && result.success && Array.isArray(result.data)) {
+                    let filled = 0;
+                    result.data.forEach(item => {
+                        const bc = normalizeCell(item.barcode || '');
+                        if (!bc) return;
+                        const loc = (item.location || '').trim();
+                        const pname = (item.productName || item.product_name || item.name || '').trim();
+                        if (!inventoryCache[bc]) {
+                            inventoryCache[bc] = {
+                                currentStock: 0,
+                                avgDailyOutbound14d: 0,
+                                avgDailyOutbound30d: 0,
+                                avgDailyOutbound60d: 0,
+                                avgDailyOutbound90d: 0,
+                                location: loc,
+                                productName: pname
+                            };
+                            if (loc) filled += 1;
+                        } else {
+                            if (loc) {
+                                // BarcodeMaster 가 로케이션 SoT — 비어 있거나 다를 때 마스터 우선
+                                if (!inventoryCache[bc].location || inventoryCache[bc].location !== loc) {
+                                    if (!inventoryCache[bc].location) filled += 1;
+                                    inventoryCache[bc].location = loc;
+                                }
+                            }
+                            if (pname && !inventoryCache[bc].productName) {
+                                inventoryCache[bc].productName = pname;
+                            }
+                        }
+                    });
+                    console.info('[scanner] barcode-master locations merged', {
+                        masterRows: result.data.length,
+                        cacheSize: Object.keys(inventoryCache).length,
+                        locationsFilledOrUpdated: filled
+                    });
+                }
+            } catch (e) {
+                console.warn('바코드 마스터 로케이션을 가져오지 못했습니다:', e);
+            }
+
+            // 전산 캐시 반영 후 사이드바 기간 입고가능 수량 재계산
+            try {
+                if (typeof initDashboardSidebar === 'function'
+                    && filteredIndices
+                    && filteredIndices.length
+                    && dashboard
+                    && dashboard.classList.contains('active')) {
+                    initDashboardSidebar();
+                }
+            } catch (_) { /* ignore */ }
         }
 
-        function updateTotalQuantity() {
-            let total = 0;
-            if (filteredIndices && filteredIndices.length > 0 && colIndices.quantity !== undefined && colIndices.quantity !== -1) {
-                filteredIndices.forEach(idx => {
-                    const row = parsedData[idx];
-                    const qVal = parseFloat(row[colIndices.quantity]) || 0;
-                    total += qVal;
+        /**
+         * 일평균 — shared InboundPeriodMetrics (입고 가능 탭과 동일 SoT)
+         * 90d(3개월) 우선 + 최근 급증 가중. 폴백 60→30→14.
+         */
+        function getAvgDailyForPeriod(stockData, days) {
+            if (window.InboundPeriodMetrics && window.InboundPeriodMetrics.resolveAvgDailyFromUnified) {
+                return window.InboundPeriodMetrics.resolveAvgDailyFromUnified(stockData, days);
+            }
+            // 폴백 (스크립트 미로드 시) — metrics.js 와 동일 우선순위
+            if (!stockData) return { avg: 0, source: '' };
+            const a14 = Number(stockData.avgDailyOutbound14d) || 0;
+            const a30 = Number(stockData.avgDailyOutbound30d) || 0;
+            const a60 = Number(stockData.avgDailyOutbound60d) || 0;
+            const a90 = Number(stockData.avgDailyOutbound90d) || 0;
+            let base = 0;
+            let baseSrc = '';
+            if (a90 > 0) { base = a90; baseSrc = '90d'; }
+            else if (a60 > 0) { base = a60; baseSrc = '60d'; }
+            else if (a30 > 0) { base = a30; baseSrc = '30d'; }
+            else if (a14 > 0) { base = a14; baseSrc = '14d'; }
+            if (base <= 0) return { avg: 0, source: '' };
+            const recent = a14 > 0 ? a14 : (a30 > 0 ? a30 : 0);
+            if (recent > base) {
+                return { avg: base + (recent - base) * 0.4, source: baseSrc + '+surge' };
+            }
+            return { avg: base, source: baseSrc };
+        }
+
+        /** 하위 호환: 숫자만 필요할 때 */
+        function getAvgDailyNumber(stockData, days) {
+            const r = getAvgDailyForPeriod(stockData, days);
+            return typeof r === 'object' ? (r.avg || 0) : (Number(r) || 0);
+        }
+
+        /** 바코드 → 전산 캐시 (정규화·대소문자·앞뒤 공백 폴백) */
+        function lookupInventory(barcodeVal) {
+            const bc = normalizeCell(barcodeVal || '');
+            if (!bc) return null;
+            if (inventoryCache[bc]) return inventoryCache[bc];
+            if (inventoryCache[bc.trim()]) return inventoryCache[bc.trim()];
+            const upper = bc.toUpperCase();
+            if (inventoryCache[upper]) return inventoryCache[upper];
+            // 캐시 키 느슨 매칭 (한 번만, 키 수가 많을 수 있어 정확 일치 우선)
+            const keys = Object.keys(inventoryCache);
+            for (let i = 0; i < keys.length; i++) {
+                if (normalizeCell(keys[i]) === bc) return inventoryCache[keys[i]];
+            }
+            return null;
+        }
+
+        /** 행 기준 기간 지표 (사이드바·총수량 공용) */
+        function metricsForRow(row, daysOrMode) {
+            const mode = daysOrMode != null ? daysOrMode : selectedPeriodMode;
+            const uploadedQty = getUploadedRowQty(row);
+            if (mode === 'raw') {
+                return {
+                    hold: uploadedQty,
+                    orderIn: uploadedQty,
+                    available: uploadedQty,
+                    stock: 0,
+                    avg: 0,
+                    isRaw: true,
+                };
+            }
+            const days = parseInt(mode, 10) || 10;
+            const bc =
+                colIndices.barcode !== undefined && colIndices.barcode !== -1
+                    ? normalizeCell(row[colIndices.barcode])
+                    : '';
+            const stockData = lookupInventory(bc);
+            if (!stockData) {
+                // 전산 없음: 확정 수량 기준으로 표시 (0 처리하지 않음)
+                return {
+                    hold: 0,
+                    orderIn: uploadedQty,
+                    available: uploadedQty,
+                    gap: 0,
+                    stock: 0,
+                    avg: 0,
+                    isRaw: false,
+                    missingStock: true,
+                    days,
+                };
+            }
+            const m = calcInboundAvailable(stockData, days, uploadedQty);
+            return { ...m, isRaw: false, missingStock: false };
+        }
+
+        function syncPeriodButtonsUI() {
+            document.querySelectorAll('.period-btn').forEach((btn) => {
+                const d = parseInt(btn.getAttribute('data-days'), 10);
+                const on = selectedPeriodMode === d;
+                btn.style.background = on ? '#721FE5' : '#3a3a3a';
+                btn.style.color = on ? '#fff' : '#ccc';
+            });
+            const allBtn = document.getElementById('periodSelectAllBtn');
+            if (allBtn) {
+                const allOn = selectedPeriodMode === 'raw';
+                allBtn.style.background = allOn ? '#5b21b6' : 'transparent';
+                allBtn.style.color = allOn ? '#fff' : '#c4b5fd';
+                allBtn.style.borderColor = allOn ? '#5b21b6' : '#7c5cff';
+            }
+        }
+
+        function selectPeriodDays(days) {
+            selectedPeriodMode = Number(days) || 10;
+            syncPeriodButtonsUI();
+            // 목록·헤더·중앙 메트릭을 같은 기간으로 일괄 갱신 (10/30 어긋남 방지)
+            rebuildFilteredIndices({ preservePosition: true });
+        }
+
+        /** 전체 = 업로드 수량 그대로 (일수 계산 없음) */
+        function selectAllPeriods() {
+            selectedPeriodMode = 'raw';
+            syncPeriodButtonsUI();
+            rebuildFilteredIndices({ preservePosition: true });
+        }
+
+        /** 기간 버튼·데이터 갱신 후 목록/헤더/중앙/총수량을 동일 모드로 맞춤 */
+        function refreshAllPeriodDisplays() {
+            try {
+                rebuildFilteredIndices({ preservePosition: true });
+            } catch (e) {
+                console.warn('[scanner] refreshAllPeriodDisplays', e);
+            }
+        }
+
+        function normalizeRestrictionBarcode(bc) {
+            return String(bc || '').trim();
+        }
+
+        function getRowBarcode(row) {
+            if (!row || colIndices.barcode === undefined || colIndices.barcode === -1) return '';
+            return normalizeRestrictionBarcode(row[colIndices.barcode]);
+        }
+
+        /** enabled 이고 오늘 < allowedFrom (또는 가능일 없음) → 차단 */
+        function isRestrictionBlocking(barcode) {
+            const bc = normalizeRestrictionBarcode(barcode);
+            if (!bc) return false;
+            const r = restrictionMap[bc] || restrictionMap[bc.toUpperCase()];
+            if (!r || !r.enabled) return false;
+            if (r.blockedToday === true) return true;
+            if (r.blockedToday === false) return false;
+            const from = r.allowedFrom || r.allowed_from || null;
+            if (!from) return true;
+            return String(TODAY) < String(from).slice(0, 10);
+        }
+
+        function getRestriction(barcode) {
+            const bc = normalizeRestrictionBarcode(barcode);
+            if (!bc) return null;
+            return restrictionMap[bc] || restrictionMap[bc.toUpperCase()] || null;
+        }
+
+        function ingestRestrictionItems(items) {
+            if (!Array.isArray(items)) return;
+            items.forEach((it) => {
+                if (!it) return;
+                const bc = normalizeRestrictionBarcode(it.barcode);
+                if (!bc) return;
+                restrictionMap[bc] = {
+                    id: it.id || null,
+                    barcode: bc,
+                    productName: it.productName || it.product_name || '',
+                    location: it.location || '',
+                    enabled: it.enabled !== false,
+                    note: it.note || '',
+                    allowedFrom: it.allowedFrom || it.allowed_from || null,
+                    blockedToday: typeof it.blockedToday === 'boolean' ? it.blockedToday : undefined,
+                };
+            });
+        }
+
+        async function loadRestrictionsFromServer() {
+            try {
+                const res = await fetch('/api/inventory/inbound/restrictions');
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                restrictionMap = {};
+                ingestRestrictionItems(data.items || []);
+                console.info('[scanner] restrictions loaded', Object.keys(restrictionMap).length);
+            } catch (e) {
+                console.warn('[scanner] restrictions load failed', e);
+            }
+        }
+
+        /**
+                 * 발주번호 필터 → (기간모드면 available>0)
+                 * 제한(홀드) 품목은 제외하지 않고 목록에 남겨 홀드 상태 표시
+                 */
+                function rebuildFilteredIndices(opts) {
+                    opts = opts || {};
+                    const preservePosition = !!opts.preservePosition;
+                    let prevDataIndex = null;
+                    if (preservePosition && filteredIndices && filteredIndices.length && currentIndex >= 0) {
+                        prevDataIndex = filteredIndices[currentIndex];
+                    }
+
+                    let base;
+                    if (orderBaseIndices && Array.isArray(orderBaseIndices)) {
+                        base = orderBaseIndices.slice();
+                    } else if (parsedData && parsedData.length) {
+                        base = parsedData.map((_, idx) => idx);
+                    } else {
+                        base = [];
+                    }
+
+                    let next = base.filter((dataIndex) => {
+                        const row = parsedData[dataIndex];
+                        if (!row) return false;
+                        // 제한(홀드) 품목도 목록 유지 — UI에서 홀드 상태 표시
+                        if (selectedPeriodMode !== 'raw' && hideZeroAvailable) {
+                            const m = metricsForRow(row, selectedPeriodMode);
+                            if ((Number(m.available) || 0) <= 0) return false;
+                        }
+                        return true;
+                    });
+
+                    filteredIndices = next;
+                    if (filteredIndices.length === 0) {
+                        currentIndex = 0;
+                    } else if (prevDataIndex != null) {
+                        const fi = filteredIndices.indexOf(prevDataIndex);
+                        currentIndex = fi >= 0 ? fi : Math.min(currentIndex, filteredIndices.length - 1);
+                    } else if (currentIndex >= filteredIndices.length) {
+                        currentIndex = filteredIndices.length - 1;
+                    }
+
+                    const totalEl = document.getElementById('totalCountDisplay');
+                    if (totalEl) totalEl.textContent = filteredIndices.length;
+                    try {
+                        if (typeof initDashboardSidebar === 'function') initDashboardSidebar();
+                        if (filteredIndices.length > 0 && typeof renderCurrentRow === 'function') {
+                            renderCurrentRow();
+                        } else if (typeof updateTotalQuantity === 'function') {
+                            updateTotalQuantity();
+                        }
+                        if (typeof updateRestrictionBadge === 'function' && filteredIndices.length === 0) {
+                            updateRestrictionBadge('');
+                        }
+                    } catch (e) {
+                        console.warn('[scanner] rebuildFilteredIndices UI', e);
+                    }
+                    syncWorkListSidebarTitle();
+                }
+
+                function updateRestrictionBadge(barcode) {
+            const badge = document.getElementById('restrictionBadge');
+            const detail = document.getElementById('restrictionBadgeDetail');
+            if (!badge) return;
+            const r = getRestriction(barcode);
+            const blocking = isRestrictionBlocking(barcode);
+            // 제한 레코드가 있고(활성) 표시 — 차단 중이거나, 가능일 대기/활성 이력
+            if (!r || !r.enabled) {
+                badge.style.display = 'none';
+                return;
+            }
+            badge.style.display = 'block';
+            const from = r.allowedFrom ? String(r.allowedFrom).slice(0, 10) : '미지정(차단)';
+            const note = r.note ? String(r.note) : '';
+            if (blocking) {
+                badge.style.background = '#3d1a1a';
+                badge.style.borderColor = '#ef4444';
+                detail.innerHTML =
+                    `가능일: <b>${from}</b>` +
+                    (note ? `<br>비고: ${escapeHtml(note)}` : '') +
+                    `<br><span style="color:#fca5a5;">오늘(${TODAY}) 입고 불가 — 목록에서 제외됩니다</span>`;
+            } else {
+                badge.style.background = '#1a2e1a';
+                badge.style.borderColor = '#22c55e';
+                detail.innerHTML =
+                    `가능일: <b>${from}</b> 이후 허용 중` +
+                    (note ? `<br>비고: ${escapeHtml(note)}` : '');
+            }
+        }
+
+        function escapeHtml(s) {
+            return String(s || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        /* ── 입고 제한 모달 ── */
+        function parseBarcodeLines(text) {
+            const raw = String(text || '');
+            const parts = raw.split(/[\n\r,;\t]+/);
+            const seen = new Set();
+            const out = [];
+            parts.forEach((p) => {
+                const bc = normalizeRestrictionBarcode(p);
+                if (!bc || seen.has(bc)) return;
+                seen.add(bc);
+                out.push(bc);
+            });
+            return out;
+        }
+
+        function openRestrictionModal(prefillBarcodes) {
+            const overlay = document.getElementById('restrictionModalOverlay');
+            if (!overlay) return;
+            const ta = document.getElementById('restrictionBarcodeInput');
+            if (ta && prefillBarcodes && prefillBarcodes.length) {
+                ta.value = prefillBarcodes.map(normalizeRestrictionBarcode).filter(Boolean).join('\n');
+            }
+            overlay.classList.add('active');
+            if (ta && ta.value.trim()) {
+                runRestrictionLookup();
+            } else {
+                const list = document.getElementById('restrictionResultList');
+                if (list) list.innerHTML = '';
+                setRestrictionModalStatus('바코드를 입력한 뒤 조회하세요.');
+            }
+        }
+
+        function closeRestrictionModal() {
+            const overlay = document.getElementById('restrictionModalOverlay');
+            if (overlay) overlay.classList.remove('active');
+        }
+
+        function setRestrictionModalStatus(msg, isError) {
+            const el = document.getElementById('restrictionModalStatus');
+            if (!el) return;
+            el.textContent = msg || '';
+            el.style.color = isError ? '#fca5a5' : '#9ca3af';
+        }
+
+        function lookupProductForRestrictionLocal(barcode) {
+            const bc = normalizeRestrictionBarcode(barcode);
+            const stock = lookupInventory(bc);
+            let productName = (stock && (stock.productName || stock.name)) || '';
+            let location = (stock && stock.location) || '';
+            // 작업 목록 행에서 이름 보강
+            if (parsedData && colIndices.barcode !== undefined && colIndices.barcode !== -1) {
+                for (let i = 0; i < parsedData.length; i++) {
+                    const rowBc = getRowBarcode(parsedData[i]);
+                    if (rowBc === bc || rowBc.toUpperCase() === bc.toUpperCase()) {
+                        if (!productName && colIndices.productName !== undefined && colIndices.productName !== -1) {
+                            productName = String(parsedData[i][colIndices.productName] || '').trim();
+                        }
+                        if (!location) {
+                            const loc = resolveLocation(parsedData[i], i);
+                            if (loc && loc.value) location = loc.value;
+                        }
+                        break;
+                    }
+                }
+            }
+            const existing = getRestriction(bc);
+            return {
+                barcode: bc,
+                productName: productName || (existing && existing.productName) || '',
+                location: location || (existing && existing.location) || '',
+                found: !!(productName || location || stock),
+                source: productName || location ? 'cache' : '',
+                enabled: existing ? existing.enabled !== false : true,
+                note: existing ? existing.note || '' : '',
+                allowedFrom: existing && existing.allowedFrom ? String(existing.allowedFrom).slice(0, 10) : '',
+                isSaved: !!existing,
+            };
+        }
+
+        async function resolveProductsFromServer(barcodes) {
+            try {
+                const res = await fetch('/api/inventory/inbound/restrictions/resolve', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ barcodes }),
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                const map = {};
+                (data.items || []).forEach((it) => {
+                    const bc = normalizeRestrictionBarcode(it.barcode);
+                    if (!bc) return;
+                    map[bc] = it;
+                    // inventoryCache 보강
+                    if (!inventoryCache[bc]) {
+                        inventoryCache[bc] = {
+                            currentStock: 0,
+                            avgDailyOutbound14d: 0,
+                            avgDailyOutbound30d: 0,
+                            avgDailyOutbound60d: 0,
+                            location: it.location || '',
+                            productName: it.productName || '',
+                        };
+                    } else {
+                        if (it.productName && !inventoryCache[bc].productName) {
+                            inventoryCache[bc].productName = it.productName;
+                        }
+                        if (it.location && !inventoryCache[bc].location) {
+                            inventoryCache[bc].location = it.location;
+                        }
+                    }
+                });
+                return map;
+            } catch (e) {
+                console.warn('[scanner] resolve failed', e);
+                return {};
+            }
+        }
+
+        function renderRestrictionCard(info) {
+            const bc = info.barcode;
+            const card = document.createElement('div');
+            card.className = 'restriction-result-card';
+            card.dataset.barcode = bc;
+            const found = !!(info.productName || info.location || info.found);
+            card.style.cssText =
+                'padding:12px 14px; border-radius:10px; border:1px solid ' +
+                (found ? '#444' : '#7f1d1d') +
+                '; background:#222;';
+            const nameColor = info.productName ? '#fff' : '#f87171';
+            const srcHint = info.source
+                ? `<span style="color:#6b7280; font-weight:500;"> · ${escapeHtml(info.source)}</span>`
+                : '';
+            const savedBadge = info.isSaved
+                ? '<span style="font-size:11px; color:#fbbf24; margin-left:6px;">저장됨</span>'
+                : '';
+            card.innerHTML = `
+                <div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start; margin-bottom:8px;">
+                    <div style="font-family:ui-monospace,monospace; font-weight:800; color:#c4b5fd; font-size:14px;">
+                        ${escapeHtml(bc)}${savedBadge}
+                    </div>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; color:#ddd; cursor:pointer;">
+                            제한
+                            <input type="checkbox" class="restr-enabled" ${info.enabled !== false ? 'checked' : ''} style="width:16px;height:16px;accent-color:#f59e0b;">
+                        </label>
+                        <button type="button" class="restr-delete-btn" title="삭제"
+                            style="padding:4px 8px; border-radius:6px; border:1px solid #7f1d1d; background:#3d1a1a; color:#fca5a5; font-size:11px; font-weight:700; cursor:pointer;">삭제</button>
+                    </div>
+                </div>
+                <div style="font-size:14px; font-weight:700; color:${nameColor}; margin-bottom:4px; line-height:1.35;">
+                    ${escapeHtml(info.productName || '(제품명 없음 — 등록 정보 없음)')}
+                </div>
+                <div style="font-size:12px; color:#7dd3fc; margin-bottom:10px;">
+                    로케이션: <b style="color:#e0f2fe;">${escapeHtml(info.location || '없음')}</b>${srcHint}
+                </div>
+                <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+                    <label style="display:flex; flex-direction:column; gap:4px; font-size:11px; color:#aaa;">
+                        입고 가능일
+                        <input type="date" class="restr-date" value="${escapeHtml(info.allowedFrom || '')}"
+                            style="padding:7px 8px; border-radius:6px; border:1px solid #444; background:#2a2a2a; color:#fff; font-size:13px;">
+                    </label>
+                    <label style="display:flex; flex-direction:column; gap:4px; font-size:11px; color:#aaa; flex:1; min-width:160px;">
+                        비고
+                        <input type="text" class="restr-note" value="${escapeHtml(info.note || '')}"
+                            placeholder="사유 입력"
+                            style="padding:7px 8px; border-radius:6px; border:1px solid #444; background:#2a2a2a; color:#fff; font-size:13px; width:100%; box-sizing:border-box;">
+                    </label>
+                </div>
+                <input type="hidden" class="restr-product-name" value="${escapeHtml(info.productName || '')}">
+                <input type="hidden" class="restr-location" value="${escapeHtml(info.location || '')}">
+            `;
+            const delBtn = card.querySelector('.restr-delete-btn');
+            if (delBtn) {
+                delBtn.addEventListener('click', async () => {
+                    if (!confirm(`${bc} 제한 설정을 삭제할까요?`)) return;
+                    await deleteRestrictionBarcode(bc);
+                    card.remove();
+                    setRestrictionModalStatus(`${bc} 삭제됨`);
                 });
             }
-            const totalQtyDisplay = document.getElementById('totalQuantityDisplay');
-            if (totalQtyDisplay) {
-                totalQtyDisplay.textContent = total.toLocaleString();
+            return card;
+        }
+
+        async function deleteRestrictionBarcode(barcode) {
+            const bc = normalizeRestrictionBarcode(barcode);
+            if (!bc) return;
+            try {
+                await fetch('/api/inventory/inbound/restrictions/' + encodeURIComponent(bc), {
+                    method: 'DELETE',
+                });
+            } catch (e) {
+                console.warn(e);
+            }
+            delete restrictionMap[bc];
+            rebuildFilteredIndices({ preservePosition: true });
+        }
+
+        async function runRestrictionLookup() {
+            const ta = document.getElementById('restrictionBarcodeInput');
+            const list = document.getElementById('restrictionResultList');
+            if (!ta || !list) return;
+            const barcodes = parseBarcodeLines(ta.value);
+            if (!barcodes.length) {
+                list.innerHTML = '';
+                setRestrictionModalStatus('바코드를 입력하세요.', true);
+                return;
+            }
+            list.innerHTML = '';
+            setRestrictionModalStatus('제품명·로케이션 조회 중…');
+
+            // 서버 다중 소스 조회 (마스터·스펙·baseline·출고·발주·스캐너 이력)
+            const serverMap = await resolveProductsFromServer(barcodes);
+
+            list.innerHTML = '';
+            let foundN = 0;
+            barcodes.forEach((bc) => {
+                const local = lookupProductForRestrictionLocal(bc);
+                const srv = serverMap[bc] || serverMap[bc.toUpperCase()] || {};
+                const productName = srv.productName || local.productName || '';
+                const location = srv.location || local.location || '';
+                const info = {
+                    barcode: bc,
+                    productName,
+                    location,
+                    found: !!(productName || location || srv.found),
+                    source: srv.source || local.source || '',
+                    enabled: local.enabled,
+                    note: local.note,
+                    allowedFrom: local.allowedFrom,
+                    isSaved: local.isSaved,
+                };
+                if (info.found) foundN += 1;
+                list.appendChild(renderRestrictionCard(info));
+            });
+            setRestrictionModalStatus(
+                `${barcodes.length}건 조회 · 제품정보 ${foundN}건 확인. 가능일·비고 입력 후 저장하세요.`
+            );
+        }
+
+        function collectRestrictionCardsPayload() {
+            const list = document.getElementById('restrictionResultList');
+            if (!list) return [];
+            const cards = list.querySelectorAll('.restriction-result-card');
+            const items = [];
+            cards.forEach((card) => {
+                const barcode = card.dataset.barcode || '';
+                if (!barcode) return;
+                const enabledEl = card.querySelector('.restr-enabled');
+                const dateEl = card.querySelector('.restr-date');
+                const noteEl = card.querySelector('.restr-note');
+                const nameEl = card.querySelector('.restr-product-name');
+                const locEl = card.querySelector('.restr-location');
+                items.push({
+                    barcode,
+                    enabled: enabledEl ? !!enabledEl.checked : true,
+                    allowedFrom: dateEl && dateEl.value ? dateEl.value : null,
+                    note: noteEl ? noteEl.value.trim() : '',
+                    productName: nameEl ? nameEl.value : '',
+                    location: locEl ? locEl.value : '',
+                });
+            });
+            return items;
+        }
+
+        async function saveRestrictionCards() {
+            const items = collectRestrictionCardsPayload();
+            if (!items.length) {
+                setRestrictionModalStatus('저장할 조회 결과가 없습니다. 먼저 조회하세요.', true);
+                return;
+            }
+            setRestrictionModalStatus('저장 중…');
+            try {
+                const res = await fetch('/api/inventory/inbound/restrictions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok && !(data.items && data.items.length)) {
+                    throw new Error(data.message || 'HTTP ' + res.status);
+                }
+                ingestRestrictionItems(data.items || items.map((it) => ({
+                    ...it,
+                    blockedToday: it.enabled && (!it.allowedFrom || String(TODAY) < String(it.allowedFrom)),
+                })));
+                // enabled=false 도 맵에 반영
+                items.forEach((it) => {
+                    const bc = normalizeRestrictionBarcode(it.barcode);
+                    if (!restrictionMap[bc]) return;
+                    restrictionMap[bc].enabled = it.enabled;
+                    restrictionMap[bc].note = it.note;
+                    restrictionMap[bc].allowedFrom = it.allowedFrom;
+                    restrictionMap[bc].blockedToday = it.enabled && (!it.allowedFrom || String(TODAY) < String(it.allowedFrom));
+                });
+                setRestrictionModalStatus(`저장 완료 ${items.length}건` + (data.errors && data.errors.length ? ` · 오류 ${data.errors.length}` : ''));
+                rebuildFilteredIndices({ preservePosition: true });
+            } catch (e) {
+                console.error(e);
+                setRestrictionModalStatus('저장 실패: ' + (e.message || e), true);
             }
         }
 
-        function sortParsedData() {
-            if (!parsedData || parsedData.length === 0) return;
-            
-            function parseDateValue(str) {
-                if (!str) return 0;
-                // 표준 날짜 포맷 테스트 (2026.7.4 -> 2026-7-4로 정규화하여 시도)
-                const normalized = str.replace(/\./g, '-').replace(/\s+/g, '');
-                let timestamp = Date.parse(normalized);
-                if (!isNaN(timestamp)) {
-                    return timestamp;
+        async function loadSavedRestrictionsIntoModal() {
+            await loadRestrictionsFromServer();
+            // 활성+비활성 전부 (수정·삭제용)
+            const bcs = Object.keys(restrictionMap);
+            const ta = document.getElementById('restrictionBarcodeInput');
+            if (ta) ta.value = bcs.join('\n');
+            if (bcs.length) {
+                await runRestrictionLookup();
+                setRestrictionModalStatus(
+                    `저장된 제한 ${bcs.length}건 로드. 수정 후 저장하거나 삭제하세요.`
+                );
+            } else {
+                const list = document.getElementById('restrictionResultList');
+                if (list) list.innerHTML = '';
+                setRestrictionModalStatus('저장된 제한 품목이 없습니다.');
+            }
+        }
+
+        function applyBulkRestrictionDate() {
+            const dateEl = document.getElementById('restrictionBulkDate');
+            if (!dateEl || !dateEl.value) {
+                setRestrictionModalStatus('일괄 가능일을 선택하세요.', true);
+                return;
+            }
+            document.querySelectorAll('#restrictionResultList .restr-date').forEach((inp) => {
+                inp.value = dateEl.value;
+            });
+            setRestrictionModalStatus(`일괄 가능일 ${dateEl.value} 적용`);
+        }
+
+        function openRestrictionForCurrentRow() {
+            if (!filteredIndices.length) {
+                openRestrictionModal([]);
+                return;
+            }
+            const dataIndex = filteredIndices[currentIndex];
+            const row = parsedData[dataIndex];
+            const bc = getRowBarcode(row);
+            openRestrictionModal(bc ? [bc] : []);
+        }
+
+        async function disableRestrictionForBarcode(barcode) {
+            const bc = normalizeRestrictionBarcode(barcode);
+            if (!bc) return;
+            try {
+                const res = await fetch('/api/inventory/inbound/restrictions/' + encodeURIComponent(bc), {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: false }),
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.item) ingestRestrictionItems([data.item]);
+                    else if (restrictionMap[bc]) restrictionMap[bc].enabled = false;
+                } else if (restrictionMap[bc]) {
+                    restrictionMap[bc].enabled = false;
                 }
-                
-                // 수동 점(.) 스플릿 fallback
-                const parts = str.split('.').map(p => p.trim()).filter(p => p.length > 0);
-                let year = new Date().getFullYear();
-                let month = 1;
-                let day = 1;
-                if (parts.length === 3) {
-                    year = parseInt(parts[0]) || year;
-                    month = parseInt(parts[1]) || month;
-                    day = parseInt(parts[2]) || day;
-                } else if (parts.length === 2) {
-                    month = parseInt(parts[0]) || month;
-                    day = parseInt(parts[1]) || day;
-                }
-                return new Date(year, month - 1, day).getTime();
+            } catch (e) {
+                if (restrictionMap[bc]) restrictionMap[bc].enabled = false;
+                console.warn(e);
+            }
+            rebuildFilteredIndices({ preservePosition: true });
+        }
+
+        function bindRestrictionUi() {
+            const openBtn = document.getElementById('openRestrictionModalBtn');
+            if (openBtn) openBtn.addEventListener('click', () => openRestrictionModal([]));
+            const openBtnHome = document.getElementById('openRestrictionModalBtnHome');
+            if (openBtnHome) openBtnHome.addEventListener('click', () => openRestrictionModal([]));
+            const curBtn = document.getElementById('restrictCurrentBtn');
+            if (curBtn) curBtn.addEventListener('click', openRestrictionForCurrentRow);
+            const closeX = document.getElementById('restrictionModalCloseX');
+            if (closeX) closeX.addEventListener('click', closeRestrictionModal);
+            const cancelBtn = document.getElementById('restrictionModalCancelBtn');
+            if (cancelBtn) cancelBtn.addEventListener('click', closeRestrictionModal);
+            const lookupBtn = document.getElementById('restrictionLookupBtn');
+            if (lookupBtn) lookupBtn.addEventListener('click', runRestrictionLookup);
+            const saveBtn = document.getElementById('restrictionModalSaveBtn');
+            if (saveBtn) saveBtn.addEventListener('click', saveRestrictionCards);
+            const bulkBtn = document.getElementById('restrictionBulkDateBtn');
+            if (bulkBtn) bulkBtn.addEventListener('click', applyBulkRestrictionDate);
+            const loadBtn = document.getElementById('restrictionLoadSavedBtn');
+            if (loadBtn) loadBtn.addEventListener('click', loadSavedRestrictionsIntoModal);
+            const hideChk = document.getElementById('hideZeroAvailChk');
+            if (hideChk) {
+                hideChk.checked = hideZeroAvailable;
+                hideChk.addEventListener('change', () => {
+                    hideZeroAvailable = !!hideChk.checked;
+                    rebuildFilteredIndices({ preservePosition: true });
+                });
+            }
+            const badgeEdit = document.getElementById('restrictionBadgeEditBtn');
+            if (badgeEdit) badgeEdit.addEventListener('click', openRestrictionForCurrentRow);
+            const badgeDis = document.getElementById('restrictionBadgeDisableBtn');
+            if (badgeDis) {
+                badgeDis.addEventListener('click', () => {
+                    if (!filteredIndices.length) return;
+                    const row = parsedData[filteredIndices[currentIndex]];
+                    disableRestrictionForBarcode(getRowBarcode(row));
+                });
+            }
+            const ta = document.getElementById('restrictionBarcodeInput');
+            if (ta) {
+                ta.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                        e.preventDefault();
+                        runRestrictionLookup();
+                    }
+                });
+            }
+        }
+
+        /**
+         * 사이드바/목록용: 선택 기간에 맞는 표시 수량
+         * - 10/14/30: 입고가능 = min(max(0, hold−전산), 확정)  ← 확정 수량 상한
+         * - 전체(raw): 확정/업로드 수량 그대로
+         */
+        function getSidebarDisplayQty(row) {
+            if (!row) {
+                return {
+                    qty: 0,
+                    label: '수량',
+                    isRaw: true,
+                    orderIn: 0,
+                    periodText: '',
+                    html: '<span class="qty-num">0 개</span>',
+                };
+            }
+            const m = metricsForRow(row, selectedPeriodMode);
+            if (m.isRaw || selectedPeriodMode === 'raw') {
+                const q = Number(m.orderIn) || 0;
+                return {
+                    qty: q,
+                    label: '업로드',
+                    isRaw: true,
+                    orderIn: q,
+                    periodText: '업로드',
+                    html:
+                        `<span class="qty-period">업로드</span>` +
+                        `<span class="qty-num">${q.toLocaleString()} 개</span>`,
+                };
+            }
+            const days = parseInt(selectedPeriodMode, 10) || 10;
+            // 목록 큰 숫자 = 확정 상한 입고가능 (확정 초과 표시 금지)
+            const avail = Number(m.available) || 0;
+            const hold = Number(m.hold) || 0;
+            const orderIn = Number(m.orderIn) || 0;
+            const periodText = `${days}일 입고가능`;
+            const orderSub =
+                orderIn > 0
+                    ? `<span class="qty-order-sub">발주 ${orderIn.toLocaleString()}</span>`
+                    : '';
+            return {
+                qty: avail,
+                label: periodText,
+                isRaw: false,
+                orderIn,
+                available: avail,
+                hold,
+                extraOrder: m.extraOrder,
+                periodText,
+                html:
+                    `<span class="qty-period">${periodText}</span>` +
+                    `<span class="qty-num">${avail.toLocaleString()} 개</span>` +
+                    orderSub,
+            };
+        }
+
+        function sidebarQtyClassName(disp) {
+            const parts = ['list-item-qty'];
+            if (disp && disp.isRaw) parts.push('qty-raw');
+            if (disp && !disp.isRaw && Number(disp.qty) === 0) parts.push('qty-zero');
+            return parts.join(' ');
+        }
+
+        /** 업로드 행 작업 수량 (확정/입고가능 열) */
+        function getUploadedRowQty(row) {
+            if (!row || colIndices.quantity === undefined || colIndices.quantity === -1) return 0;
+            const raw = row[colIndices.quantity];
+            if (typeof parseQtyNum === 'function') return parseQtyNum(raw) || 0;
+            return parseFloat(String(raw || '').replace(/,/g, '')) || 0;
+        }
+
+        /**
+         * ── 스캐너 기간 로직 (입고 가능 탭과 동일 SoT) ──
+         * public/js/inbound-period-metrics.js · src/lib/inboundPeriodMetrics.ts
+         *
+         * orderIn / 확정수량       = 발주 파일 (표시·총량의 상한 SoT)
+         * hold (N일 보유 목표)    = round(일평균 × N) (raw<0.5 → 0)
+         * gap                     = max(0, hold − 전산)
+         * available (화면 입고가능) =
+                  *   전산 0 이고 확정>0 → 확정 (재고 0인데 입고가능 미표기 방지)
+                  *   그 외 확정>0 → min(gap, 확정)
+                  *   그 외 → gap
+                  *   예) 확정 32, 전산 0 → 표시 32 (hold/gap 무관)
+                  *   예) 확정 32, 14일 보유목표 47, 전산 10 → gap 37 → 표시 32
+                  * extraOrder (더 요청)    = max(0, hold − 전산 − 확정)
+         *
+         * 전체(raw): available = orderIn (확정 합 = 업로드 총 수량)
+         */
+        function calcInboundAvailable(stockData, days, uploadedQty) {
+            const stock = stockData ? (Number(stockData.currentStock) || 0) : 0;
+            const orderIn = Math.max(0, Number(uploadedQty) || 0);
+            const d = parseInt(days, 10) || 10;
+
+            if (window.InboundPeriodMetrics && window.InboundPeriodMetrics.calcInboundPeriodMetrics) {
+                const m = window.InboundPeriodMetrics.calcInboundPeriodMetrics({
+                    currentStock: stock,
+                    days: d,
+                    stockFields: stockData || null,
+                    orderIn: orderIn,
+                });
+                return {
+                    hold: m.hold,
+                    available: m.available,
+                    gap: m.gap,
+                    orderIn: m.orderIn,
+                    extraOrder: m.extraOrder,
+                    stockAfter: m.stock + m.orderIn,
+                    avg: m.avg,
+                    avgSource: m.avgSource,
+                    stock: m.stock,
+                    need: m.available,
+                    days: m.days,
+                };
             }
 
-            function compareValues(a, b) {
-                const numA = parseFloat(a);
-                const numB = parseFloat(b);
-                if (!isNaN(numA) && !isNaN(numB)) {
-                    return numA - numB;
+            // 폴백 (공유 스크립트 미로드)
+                        const avgInfo = stockData ? getAvgDailyForPeriod(stockData, days) : { avg: 0, source: '' };
+                        const avg = typeof avgInfo === 'object' ? (avgInfo.avg || 0) : (Number(avgInfo) || 0);
+                        const avgSource = typeof avgInfo === 'object' ? (avgInfo.source || '') : '';
+                        const rawHold = avg * d;
+                        const hold = rawHold < 0.5 ? 0 : Math.round(rawHold);
+                        const gapBeforeOrder = Math.max(0, hold - stock);
+                        // 전산 0 + 확정 있음 → 입고가능 = 확정
+                        let available;
+                        if (stock === 0 && orderIn > 0) {
+                            available = orderIn;
+                        } else if (orderIn > 0) {
+                            available = Math.min(gapBeforeOrder, orderIn);
+                        } else {
+                            available = gapBeforeOrder;
+                        }
+                        const gapAfterOrder = Math.max(0, hold - stock - orderIn);
+                        return {
+                            hold,
+                            available,
+                            gap: gapBeforeOrder,
+                            orderIn,
+                            extraOrder: gapAfterOrder,
+                            stockAfter: stock + orderIn,
+                            avg,
+                            avgSource,
+                            stock,
+                            need: available,
+                            days: d,
+            };
+        }
+
+        function setExtraOrderHint(hint) {
+            const h = document.getElementById('valExtraOrderHint');
+            if (!h) return;
+            const t = hint || '';
+            h.textContent = t;
+            h.style.display = t ? 'block' : 'none';
+        }
+
+        /** 우측 상태 문구 아래: 선택 기간 필요 재고 수량(hold)만 표시 */
+        function setPeriodNeedQty(holdQty, days) {
+            const el = document.getElementById('valPeriodNeedQty');
+            if (!el) return;
+            if (holdQty == null || selectedPeriodMode === 'raw') {
+                el.textContent = '';
+                el.style.display = 'none';
+                el.title = '';
+                return;
+            }
+            const n = Math.max(0, Number(holdQty) || 0);
+            const d = days || parseInt(selectedPeriodMode, 10) || 10;
+            el.textContent = `${n.toLocaleString()} 개`;
+            el.title = `${d}일 필요 재고(보유 목표)`;
+            el.style.display = 'block';
+        }
+
+        /** 전산 재고: 수량만 큰 글씨, 일평균은 작은 힌트 */
+        function setCurrentStockDisplay(numText, avgText) {
+            const numEl = document.getElementById('valCurrentStockNum');
+            const avgEl = document.getElementById('valCurrentStockAvg');
+            const wrap = document.getElementById('valCurrentStock');
+            if (numEl) {
+                numEl.textContent = numText != null ? String(numText) : '-';
+            } else if (wrap) {
+                wrap.textContent = numText != null ? String(numText) : '-';
+            }
+            if (avgEl) {
+                const t = avgText ? String(avgText) : '';
+                avgEl.textContent = t;
+                avgEl.style.display = t ? 'block' : 'none';
+            }
+        }
+
+        /**
+         * 좌: 전산 재고
+         * 중: N일 입고 가능 = min(max(0, 목표−전산), 확정)
+         * 우: 더 요청 힌트
+         */
+        function updatePeriodMetricsUI(barcodeVal, row) {
+            const valHoldHint = document.getElementById('valHoldHint');
+            const valIn = document.getElementById('valInboundAvailable');
+            const inLabel = document.getElementById('inboundAvailLabel');
+            const valFormula = document.getElementById('valHoldFormula');
+            if (valHoldHint) {
+                valHoldHint.textContent = '';
+                valHoldHint.style.display = 'none';
+            }
+            // 숨긴 발주 숫자 영역 비움
+            const legacyOrderEl = document.getElementById('valActualInbound');
+            if (legacyOrderEl) {
+                legacyOrderEl.textContent = '';
+                legacyOrderEl.style.display = 'none';
+            }
+
+            const stockData = lookupInventory(barcodeVal);
+            const uploadedQty = getUploadedRowQty(row);
+
+            // ── 전체: 발주 수량 ──
+            if (selectedPeriodMode === 'raw') {
+                if (stockData) {
+                    const stock = Number(stockData.currentStock) || 0;
+                    const a = getAvgDailyNumber(stockData, 14);
+                    setCurrentStockDisplay(
+                        `${stock.toLocaleString()} 개`,
+                        a > 0 ? `(일평균 ${Math.round(a)}/14d)` : ''
+                    );
+                } else {
+                    setCurrentStockDisplay('-', '');
                 }
-                return a.localeCompare(b);
+                if (inLabel) inLabel.textContent = '업로드 수량';
+                if (valIn) {
+                    valIn.style.display = 'block';
+                    valIn.textContent = `${Number(uploadedQty || 0).toLocaleString()} 개`;
+                    valIn.title = '전체 모드: 확정/발주 수량';
+                    valIn.style.color = '#4ade80';
+                }
+                if (valFormula) {
+                    valFormula.textContent = '';
+                    valFormula.style.display = 'none';
+                }
+                setExtraOrderHint('');
+                setPeriodNeedQty(null);
+                return;
+            }
+
+            const days = parseInt(selectedPeriodMode, 10) || 10;
+            if (inLabel) inLabel.textContent = `${days}일 입고 가능`;
+
+            if (!stockData) {
+                setCurrentStockDisplay('전산 없음', '');
+                // 전산 없음 → 확정 수량으로 표시 (계산만, UI 레이아웃 동일)
+                if (valIn) {
+                    valIn.style.display = 'block';
+                    valIn.textContent = `${Number(uploadedQty || 0).toLocaleString()} 개`;
+                    valIn.style.color = '#ffeb3b';
+                    valIn.title = `${days}일 입고가능`;
+                }
+                if (valFormula) {
+                    valFormula.textContent = '';
+                    valFormula.style.display = 'none';
+                }
+                setExtraOrderHint('');
+                setPeriodNeedQty(null);
+                return;
+            }
+
+            const m = calcInboundAvailable(stockData, days, uploadedQty);
+
+            {
+                // 큰 숫자 아래 작은 글씨: (일평균 0.2/14d)
+                const src = m.avgSource || (m.avg > 0 ? '14d' : '');
+                setCurrentStockDisplay(
+                    `${m.stock.toLocaleString()} 개`,
+                    m.avg > 0
+                        ? `(일평균 ${Math.round(m.avg)}/${src})`
+                        : '(일평균 0)'
+                );
+            }
+
+            // 가운데: min(보유목표−전산, 확정) — UI 동일, 숫자만 확정 상한
+            if (valIn) {
+                valIn.style.display = 'block';
+                valIn.textContent = `${m.available.toLocaleString()} 개`;
+                valIn.style.color = '#ffeb3b';
+                valIn.title = `${days}일 입고가능`;
+            }
+            if (valFormula) {
+                valFormula.textContent = '';
+                valFormula.style.display = 'none';
+            }
+
+            let extraHint = '';
+            const hintEl = document.getElementById('valExtraOrderHint');
+            if (m.extraOrder > 0) {
+                extraHint = `⚠ ${m.extraOrder.toLocaleString()}개 더 요청`;
+                if (hintEl) {
+                    hintEl.style.color = '#fbbf24';
+                    hintEl.style.fontWeight = '700';
+                }
+            } else if (m.hold === 0) {
+                extraHint = `✓ ${days}일 필요 없음`;
+                if (hintEl) {
+                    hintEl.style.color = '#86efac';
+                    hintEl.style.fontWeight = '600';
+                }
+            } else if (m.stock + m.orderIn >= m.hold) {
+                extraHint = `✓ ${days}일 필요량 충족`;
+                if (hintEl) {
+                    hintEl.style.color = '#86efac';
+                    hintEl.style.fontWeight = '600';
+                }
+            } else {
+                // 그 외에도 상태 문구 없이 필요 수량만 보이게 할 수 있음
+                extraHint = '';
+            }
+            setExtraOrderHint(extraHint);
+            // 상태 문구 바로 아래: 10/14/30일 필요 재고(보유 목표) 수량만
+            setPeriodNeedQty(m.hold, days);
+
+            console.info('[scanner metrics]', {
+                mode: selectedPeriodMode,
+                hold: m.hold,
+                stock: m.stock,
+                gap: m.gap,
+                available: m.available,
+                orderIn: m.orderIn,
+                formula: `min(max(0,${m.hold}-${m.stock}),${m.orderIn})=${m.available}`,
+            });
+        }
+
+        function initPeriodSelectBar() {
+            document.querySelectorAll('.period-btn').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const d = parseInt(btn.getAttribute('data-days'), 10);
+                    if (!isNaN(d)) selectPeriodDays(d);
+                });
+            });
+            const allBtn = document.getElementById('periodSelectAllBtn');
+            if (allBtn) allBtn.addEventListener('click', selectAllPeriods);
+            syncPeriodButtonsUI();
+        }
+
+        /**
+         * 총 수량 (라벨은 항상 "총 수량" 만)
+         * - 10/14/30: Σ min(max(0, 목표−전산), 확정)  ← 확정 합(232)을 넘지 않음
+         * - 전체:     Σ 확정수량
+         */
+        function updateTotalQuantity() {
+            const totalQtyDisplay = document.getElementById('totalQuantityDisplay');
+            const totalQtyLabel = document.getElementById('totalQuantityLabel');
+            if (!totalQtyDisplay) return;
+            if (totalQtyLabel) totalQtyLabel.textContent = '총 수량';
+
+            let total = 0;
+            if (filteredIndices && filteredIndices.length > 0) {
+                filteredIndices.forEach((idx) => {
+                    const row = parsedData[idx];
+                    if (selectedPeriodMode === 'raw') {
+                        total += getUploadedRowQty(row);
+                    } else {
+                        const m = metricsForRow(row, selectedPeriodMode);
+                        total += Number(m.available) || 0;
+                    }
+                });
+            }
+            totalQtyDisplay.textContent = total.toLocaleString();
+            totalQtyDisplay.title = '';
+            totalQtyDisplay.style.color = '#ffeb3b';
+        }
+
+        /**
+         * 작업 목록 정렬:
+         * 1) 입고예정일 빠른 순 (오름차순)
+         * 2) 로케이션 번호 순 (오름차순, 없음은 맨 아래)
+         *    ※ 예전 "제품번호(SKU ID)" 2차 정렬은 사용하지 않음
+         */
+        function sortParsedData() {
+            if (!parsedData || parsedData.length === 0) return;
+
+            function parseDateValue(str) {
+                if (!str) return 0;
+                // parseDateYmd 우선 (YYYY-MM-DD / M/D/Y 등)
+                if (typeof parseDateYmd === 'function') {
+                    const ymd = parseDateYmd(str);
+                    if (ymd) {
+                        const t = Date.parse(ymd + 'T00:00:00');
+                        if (!isNaN(t)) return t;
+                    }
+                }
+                const normalized = String(str).replace(/\./g, '-').replace(/\s+/g, '');
+                let timestamp = Date.parse(normalized);
+                if (!isNaN(timestamp)) return timestamp;
+                return 0;
+            }
+
+            /** 로케이션 정렬 키 (파일 열 → 재고 마스터, 없으면 빈 문자열) */
+            function locationSortKey(row) {
+                // sort 시점에는 배열 인덱스가 바뀌므로 override는 쓰지 않고 자동 소스만 사용
+                if (typeof resolveLocation === 'function') {
+                    const info = resolveLocation(row, null);
+                    if (info && info.value) return String(info.value).trim();
+                }
+                // resolveLocation 미정의 폴백: 마스터 직접 조회
+                if (colIndices.barcode !== undefined && colIndices.barcode !== -1) {
+                    const bc = normalizeCell(row[colIndices.barcode]);
+                    if (bc && inventoryCache[bc] && inventoryCache[bc].location) {
+                        return String(inventoryCache[bc].location).trim();
+                    }
+                }
+                return '';
+            }
+
+            /** 320-A1-1-212 형태 자연 정렬 */
+            function compareLocation(a, b) {
+                if (!a && !b) return 0;
+                if (!a) return 1;  // 로케이션 없음 → 뒤로
+                if (!b) return -1;
+                return a.localeCompare(b, 'ko', { numeric: true, sensitivity: 'base' });
             }
 
             parsedData.sort((a, b) => {
+                // 1) 입고예정일 오름차순
                 if (colIndices.inboundDate !== undefined && colIndices.inboundDate !== -1) {
-                    const dateA = (a[colIndices.inboundDate] || '').trim();
-                    const dateB = (b[colIndices.inboundDate] || '').trim();
-                    const timeA = parseDateValue(dateA);
-                    const timeB = parseDateValue(dateB);
-                    if (timeA !== timeB) {
-                        return timeA - timeB; // 빠른 일자 순(오름차순)
-                    }
+                    const timeA = parseDateValue(a[colIndices.inboundDate] || '');
+                    const timeB = parseDateValue(b[colIndices.inboundDate] || '');
+                    if (timeA !== timeB) return timeA - timeB;
                 }
-                if (colIndices.productNo !== undefined && colIndices.productNo !== -1) {
-                    const noA = (a[colIndices.productNo] || '').trim();
-                    const noB = (b[colIndices.productNo] || '').trim();
-                    return compareValues(noA, noB); // 낮은 제품번호 순(오름차순)
+                // 2) 로케이션 번호 순
+                const locA = locationSortKey(a);
+                const locB = locationSortKey(b);
+                const locCmp = compareLocation(locA, locB);
+                if (locCmp !== 0) return locCmp;
+                // 3) 동률 시 상품명
+                if (colIndices.productName !== undefined && colIndices.productName !== -1) {
+                    const nA = normalizeCell(a[colIndices.productName] || '');
+                    const nB = normalizeCell(b[colIndices.productName] || '');
+                    return nA.localeCompare(nB, 'ko');
                 }
                 return 0;
             });
@@ -935,9 +2433,12 @@
             const data = res.data;
             parsedData = data.rows || [];
             colIndices = data.col_indices || {};
+            // 과거 저장분에 타 물류센터가 섞였을 수 있음 → 유원피에스·일자·잔량 재필터
+            reapplyUnreceivedFiltersIfNeeded();
             sortParsedData(); // 복원 시 정렬 적용
             
             flaggedIndices = new Set(data.flagged_indices || []);
+            locationOverrides = data.location_overrides || {};
             lastSavedText = data.parsed_text || '';
             lastServerUpdatedAt = data.updated_at || '';
 
@@ -946,15 +2447,17 @@
             errorMessage.style.display = 'none';
             inputSection.style.display = 'none';
             dashboard.classList.add('active');
+            updateQtyLabelUI();
 
-            // filteredIndices 및 UI 셋팅
-            filteredIndices = parsedData.map((_, idx) => idx);
-            currentIndex = parsedData.length > 0 ? (filteredIndices.indexOf(data.current_index) !== -1 ? filteredIndices.indexOf(data.current_index) : 0) : 0;
-            totalCountDisplay.textContent = filteredIndices.length;
-            updateTotalQuantity();
-
-            initDashboardSidebar();
-            renderCurrentRow();
+            // 발주 베이스 + 기간/제한 필터
+            orderBaseIndices = parsedData.map((_, idx) => idx);
+            currentIndex = 0;
+            rebuildFilteredIndices({ preservePosition: false });
+            if (data.current_index != null && filteredIndices.length) {
+                const fi = filteredIndices.indexOf(data.current_index);
+                if (fi !== -1) currentIndex = fi;
+                if (typeof renderCurrentRow === 'function') renderCurrentRow();
+            }
 
             const selectedCart = document.querySelector('input[name="cartLoc"]:checked').value;
             renderCartBarcode(selectedCart);
@@ -969,6 +2472,11 @@
             });
             orderNoList = Array.from(orderNoSet).sort();
             renderOrderSelector();
+
+            // 복원 시: 팝업 강제 없이 배너만 (원할 때 목록 보기)
+            try {
+                updateLocationMissingBanner(collectMissingLocationItems().length);
+            } catch (_) { /* ignore */ }
 
             return true;
         }
@@ -990,6 +2498,7 @@
                             parsedData = [];
                             colIndices = {};
                             flaggedIndices = new Set();
+                            locationOverrides = {};
                             currentIndex = 0;
                             lastSavedText = '';
                             lastServerUpdatedAt = null;
@@ -997,6 +2506,7 @@
                             dashboard.classList.remove('active');
                             inputSection.style.display = 'flex';
                             dataInput.value = '';
+                            if (excelFileName) excelFileName.textContent = '';
                             const orderSidebar = document.getElementById('orderSidebar');
                             if (orderSidebar) orderSidebar.style.display = 'none';
                             const totalQtyDisplay = document.getElementById('totalQuantityDisplay');
@@ -1028,9 +2538,11 @@
                     suppressNextSave = true;
                     parsedData = data.rows || [];
                     colIndices = data.col_indices || {};
+                    reapplyUnreceivedFiltersIfNeeded();
                     sortParsedData(); // 폴링 갱신 시에도 정렬 보장
                     
                     flaggedIndices = new Set(data.flagged_indices || []);
+                    locationOverrides = data.location_overrides || {};
                     lastSavedText = data.parsed_text || '';
                     if (data.parsed_text) dataInput.value = data.parsed_text;
 
@@ -1039,15 +2551,16 @@
                             inputSection.style.display = 'none';
                             dashboard.classList.add('active');
                         }
-                        
-                        filteredIndices = parsedData.map((_, idx) => idx);
-                        const filterIdx = filteredIndices.indexOf(data.current_index || 0);
-                        currentIndex = filterIdx !== -1 ? filterIdx : 0;
-                        
-                        totalCountDisplay.textContent = filteredIndices.length;
-                        updateTotalQuantity();
-                        initDashboardSidebar();
-                        renderCurrentRow();
+
+                        orderBaseIndices = parsedData.map((_, idx) => idx);
+                        rebuildFilteredIndices({ preservePosition: true });
+                        if (data.current_index != null) {
+                            const filterIdx = filteredIndices.indexOf(data.current_index || 0);
+                            if (filterIdx !== -1) {
+                                currentIndex = filterIdx;
+                                renderCurrentRow();
+                            }
+                        }
                         const selectedCart = document.querySelector('input[name="cartLoc"]:checked').value;
                         renderCartBarcode(selectedCart);
 
@@ -1069,7 +2582,11 @@
 
         // 페이지 로드 시 자동으로 기존 데이터 확인 + 폴링 시작
         (async function bootstrap() {
+            initPeriodSelectBar();
+            initLocationMissingUi();
+            bindRestrictionUi();
             await loadInventoryCache(); // 인벤토리 전산 데이터 먼저 로드
+            await loadRestrictionsFromServer();
             const res = await loadFromServer();
             if (res && res.exists && res.data && res.data.rows && res.data.rows.length > 0) {
                 lastServerUpdatedAt = res.data.updated_at || '';
@@ -1091,6 +2608,7 @@
                         rows: parsedData,
                         flagged_indices: Array.from(flaggedIndices),
                         current_index: filteredIndices[currentIndex] || 0,
+                        location_overrides: locationOverrides,
                     });
                     const blob = new Blob([body], { type: 'application/json' });
                     navigator.sendBeacon(`${apiBase()}/departure/api/barcode/save`, blob);
@@ -1113,8 +2631,11 @@
             currentIndex = 0;
             colIndices = {};
             flaggedIndices.clear();
+            locationOverrides = {};
             if (typeof filteredIndices !== 'undefined') filteredIndices = [];
             orderNoList = [];
+            if (excelFileName) excelFileName.textContent = '';
+            if (excelFileInput) excelFileInput.value = '';
             const totalQtyDisplay = document.getElementById('totalQuantityDisplay');
             if (totalQtyDisplay) totalQtyDisplay.textContent = '0';
 
@@ -1208,27 +2729,16 @@
             const checkedBoxes = document.querySelectorAll('input[name="selectedOrderNo"]:checked');
             const selectedOrders = Array.from(checkedBoxes).map(cb => cb.value);
 
-            // 2. parsedData에서 일치하는 원본 행 인덱스 추출하여 filteredIndices 구성
-            filteredIndices = [];
+            // 2. 발주번호 기준 베이스 인덱스 (기간·제한 필터는 rebuild에서)
+            orderBaseIndices = [];
             parsedData.forEach((row, idx) => {
                 const orderNo = colIndices.orderNo !== -1 ? (row[colIndices.orderNo] || '').trim() : '';
                 if (selectedOrders.includes(orderNo)) {
-                    filteredIndices.push(idx);
+                    orderBaseIndices.push(idx);
                 }
             });
 
-            // 3. 인덱스 포인터 범위 정정
-            if (filteredIndices.length === 0) {
-                currentIndex = 0;
-            } else if (currentIndex >= filteredIndices.length) {
-                currentIndex = filteredIndices.length - 1;
-            }
-
-            // 4. 화면 및 총 수량 갱신
-            totalCountDisplay.textContent = filteredIndices.length;
-            updateTotalQuantity();
-            initDashboardSidebar();
-            renderCurrentRow();
+            rebuildFilteredIndices({ preservePosition: true });
 
             // 5. 우측 하단 발주번호 바코드 영역 동적 제어
             const orderBarcodeTitle = document.getElementById('orderBarcodeTitle');
@@ -1301,144 +2811,1460 @@
             }
         }
         
-        function parseData() {
-            const text = dataInput.value.trim();
-            if (!text) {
-                showError("데이터를 입력해주세요.");
-                return;
-            }
-
-            const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-            if (lines.length === 0) {
-                showError("데이터가 없습니다.");
-                return;
-            }
-
-            const firstLineCols = lines[0].split('\t').map(h => h.trim().replace(/\s+/g, ''));
-            let hasHeader = firstLineCols.some(h => h.includes('발주번호') || h.includes('제품명'));
-
-            if (hasHeader) {
-                colIndices = {
-                    orderNo: firstLineCols.findIndex(h => h.includes('발주번호')),
-                    productName: firstLineCols.findIndex(h => h.includes('제품명')),
-                    quantity: firstLineCols.findIndex(h => h.includes('입고가능수량') || h.includes('수량')),
-                    barcode: firstLineCols.findIndex(h => h.includes('상품바코드') || (h.includes('바코드') && !h.includes('상품바코드'))),
-                    locationIndices: firstLineCols.reduce((acc, h, idx) => {
-                        if (h.includes('로케이션')) acc.push(idx);
-                        return acc;
-                    }, []),
-                    inboundDate: firstLineCols.findIndex(h => h.includes('입고예정일') || h.includes('입고예정')),
-                    // '제품번호' 열을 우선 타겟팅하고 없으면 '상품번호'로 fallback
-                    productNo: firstLineCols.findIndex(h => h === '제품번호' || (h.includes('제품번호') && !h.includes('상품번호')))
-                };
-                if (colIndices.productNo === -1) {
-                    colIndices.productNo = firstLineCols.findIndex(h => h.includes('상품번호') || h.includes('제품번호'));
+        /**
+         * VF 발주서 xlsx / 미입고 csv / 동일 헤더 텍스트 공통 컬럼 매핑
+         * 스펙: docs/VF_ORDER_XLSX_MAPPING.md  · 서버: sales_api/vf_order_xlsx.py
+         * xlsx: 확정수량 · csv(미입고): 입고 가능 = 확정 − 입고
+         */
+        function buildColIndicesFromHeaders(headers) {
+            const h = headers.map(x => String(x || '').trim().replace(/\s+/g, ''));
+            const find = (...needles) => {
+                for (const n of needles) {
+                    const nrm = String(n).replace(/\s+/g, '');
+                    const idx = h.findIndex(v => v === nrm || v.includes(nrm));
+                    if (idx !== -1) return idx;
                 }
-                if (colIndices.barcode === -1) {
-                     colIndices.barcode = firstLineCols.findIndex(h => h.includes('바코드'));
-                }
-                parsedData = lines.slice(1).map(line => line.split('\t').map(c => c.trim()));
-            } else {
-                colIndices = {
-                    orderNo: 0,
-                    barcode: 4,
-                    productName: 5,
-                    quantity: 7,
-                    location: 18,
-                    inboundDate: 2,
-                    productNo: 19 // 기본 20번째 컬럼이 제품번호
-                };
-                parsedData = lines.map(line => line.split('\t').map(c => c.trim()));
+                return -1;
+            };
+
+            // 미입고 CSV: SKU Barcode / SKU 이름 / 입고수량
+            let barcode = find('상품바코드', 'SKUBarcode');
+            if (barcode === -1) {
+                // '바코드' 단독 매칭 (SKUBarcode 이미 위에서 처리)
+                const bi = h.findIndex(v => v === '바코드' || (v.includes('바코드') && !v.includes('상품')));
+                barcode = bi;
             }
+            let productName = find('상품이름', '상품명', '제품명', 'SKU이름');
+            let productNo = find('상품번호', '제품번호', 'SKUID');
+            let orderNo = find('발주번호');
+            let inboundDate = find('입고예정일', '입고예정');
+            let confirmedQty = find('확정수량');
+            let receivedQty = find('입고수량');
+            // 주의: find('수량')은 입고수량/발주수량에 오매칭될 수 있어 확정수량 우선만 사용
+            let orderedQty = find('발주수량');
+            // 물류센터: 짧은 '센터' includes 매칭 금지 → 오매칭 방지
+            let hub = findHubColumnIndex(h);
 
-            if (parsedData.length === 0) {
-                showError("데이터 행이 없습니다.");
-                return;
-            }
+            // 작업 수량 열 기본값 (미입고 처리는 이후 available 열로 교체)
+            let quantity = confirmedQty;
+            if (quantity === -1) quantity = find('입고가능수량', '발주수량');
 
-            // 데이터 처리 후 정렬 및 필터 인덱스 초기 설정
-            sortParsedData();
-
-            errorMessage.style.display = 'none';
-            inputSection.style.display = 'none';
-            flaggedIndices.clear(); 
-            dashboard.classList.add('active');
-            
-            filteredIndices = parsedData.map((_, idx) => idx);
-            currentIndex = 0;
-            totalCountDisplay.textContent = filteredIndices.length;
-            updateTotalQuantity();
-            
-            initDashboardSidebar();
-            renderCurrentRow();
-
-            // 초기 우측 카트 바코드 렌더링
-            const selectedCart = document.querySelector('input[name="cartLoc"]:checked').value;
-            renderCartBarcode(selectedCart);
-
-            // 데이터 처리 후 고유 발주번호 목록 추출 및 UI 렌더링
-            const orderNoSet = new Set();
-            parsedData.forEach(row => {
-                const orderNo = colIndices.orderNo !== -1 ? (row[colIndices.orderNo] || '').trim() : '';
-                if (orderNo) {
-                    orderNoSet.add(orderNo);
+            const locationIndices = [];
+            h.forEach((v, idx) => {
+                if (v.includes('로케이션') || v === '위치' || v.toLowerCase() === 'location') {
+                    locationIndices.push(idx);
                 }
             });
-            orderNoList = Array.from(orderNoSet).sort();
-            renderOrderSelector();
 
-            // 서버 저장 스케줄 가동
+            let sourceType = detectOrderFileType(headerNormFromHeaders(headers));
+            // 입고수량 열이 있으면 미입고 포맷으로 강제 (헤더 표기 변형 대응)
+            if (receivedQty !== -1 && (find('SKUBarcode') !== -1 || find('SKU이름') !== -1 || find('발주현황') !== -1)) {
+                sourceType = 'unreceived';
+            }
+
+            return {
+                orderNo,
+                productName,
+                quantity,
+                confirmedQty,
+                receivedQty,
+                orderedQty,
+                hub,
+                barcode,
+                productNo,
+                inboundDate,
+                locationIndices,
+                location: locationIndices.length ? locationIndices[0] : -1,
+                sourceType,
+                qtyLabel: sourceType === 'unreceived' ? '입고 가능 수량' : '확정수량',
+            };
+        }
+
+        /** 물류센터 열 인덱스 — exact 우선, includes는 '물류센터'만 */
+        function findHubColumnIndex(hNorm) {
+            const exact = ['물류센터', '물류센터명', '센터명', '도착물류센터'];
+            for (let i = 0; i < hNorm.length; i++) {
+                if (exact.indexOf(hNorm[i]) !== -1) return i;
+            }
+            for (let i = 0; i < hNorm.length; i++) {
+                const v = hNorm[i] || '';
+                if (v.includes('물류센터')) return i;
+            }
+            return -1;
+        }
+
+        /** 유원피에스 센터 여부 (공백·NBSP 제거 후 비교) */
+        function isUwonPsHub(hubVal) {
+            const s = String(hubVal == null ? '' : hubVal)
+                .replace(/\u00a0/g, ' ')
+                .replace(/\s+/g, '')
+                .trim();
+            return s === '유원피에스' || s.indexOf('유원피에스') !== -1;
+        }
+
+        /** 로컬 오늘 날짜 YYYY-MM-DD */
+        function getTodayYmd() {
+            const d = new Date();
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return y + '-' + m + '-' + day;
+        }
+
+        /** 날짜 문자열/Date/엑셀시리얼 → YYYY-MM-DD 또는 null */
+        function parseDateYmd(val) {
+            if (val == null || val === '') return null;
+            if (val instanceof Date && !Number.isNaN(val.getTime())) {
+                const y = val.getFullYear();
+                const m = String(val.getMonth() + 1).padStart(2, '0');
+                const day = String(val.getDate()).padStart(2, '0');
+                return y + '-' + m + '-' + day;
+            }
+            // 엑셀 시리얼 (숫자)
+            if (typeof val === 'number' && !Number.isNaN(val) && val > 20000 && val < 80000) {
+                // Excel epoch 1899-12-30
+                const d = new Date(Date.UTC(1899, 11, 30) + Math.round(val) * 86400000);
+                const y = d.getUTCFullYear();
+                const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+                const day = String(d.getUTCDate()).padStart(2, '0');
+                return y + '-' + m + '-' + day;
+            }
+            let s = String(val).replace(/^\uFEFF/, '').trim();
+            if (!s) return null;
+            // "2026-07-10 09:05:53"
+            let m = s.match(/(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+            if (m) {
+                return m[1] + '-' + String(parseInt(m[2], 10)).padStart(2, '0') + '-' + String(parseInt(m[3], 10)).padStart(2, '0');
+            }
+            // "7/13/2026" or "07/13/26" (US M/D/Y — SheetJS 로케일)
+            m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})(?:\s|$)/);
+            if (m) {
+                let y = parseInt(m[3], 10);
+                if (y < 100) y += 2000;
+                const mo = String(parseInt(m[1], 10)).padStart(2, '0');
+                const da = String(parseInt(m[2], 10)).padStart(2, '0');
+                // 휴리스틱: 첫 수가 13 이상이면 D/M/Y
+                if (parseInt(m[1], 10) > 12) {
+                    return y + '-' + String(parseInt(m[2], 10)).padStart(2, '0') + '-' + String(parseInt(m[1], 10)).padStart(2, '0');
+                }
+                return y + '-' + mo + '-' + da;
+            }
+            // 숫자 문자열 시리얼
+            if (/^\d+(\.\d+)?$/.test(s)) {
+                const n = parseFloat(s);
+                if (n > 20000 && n < 80000) return parseDateYmd(n);
+            }
+            return null;
+        }
+
+        /** RFC-style CSV 한 줄 파싱 (따옴표·콤마 처리) */
+        function parseCsvLine(line, delim) {
+            delim = delim || ',';
+            const out = [];
+            let cur = '';
+            let inQ = false;
+            for (let i = 0; i < line.length; i++) {
+                const c = line[i];
+                if (c === '"') {
+                    if (inQ && line[i + 1] === '"') { cur += '"'; i++; continue; }
+                    inQ = !inQ;
+                    continue;
+                }
+                if (!inQ && c === delim) {
+                    out.push(cur);
+                    cur = '';
+                    continue;
+                }
+                cur += c;
+            }
+            out.push(cur);
+            return out;
+        }
+
+        /** CSV 텍스트 → 2차원 배열 (UTF-8 BOM 제거) */
+        function csvTextToMatrix(text) {
+            let t = String(text || '').replace(/^\uFEFF/, '');
+            const lines = t.split(/\r\n|\n|\r/).filter(line => line.trim().length > 0);
+            if (!lines.length) return [];
+            const delim = (lines[0].split('\t').length > lines[0].split(',').length) ? '\t' : ',';
+            return lines.map(line => parseCsvLine(line, delim).map(c => normalizeCell(c)));
+        }
+
+        function headerNormFromHeaders(headers) {
+            return headers.map(x => String(x || '').trim().replace(/\s+/g, ''));
+        }
+
+        /** 헤더로 VF xlsx vs 미입고 CSV 판별 */
+        function detectOrderFileType(headerNorm) {
+            const h = headerNorm || [];
+            const hasReceived = h.some(v => v.includes('입고수량'));
+            const hasSkuBarcode = h.some(v => v === 'SKUBarcode' || (v.includes('SKU') && v.toLowerCase().includes('barcode')));
+            const hasSkuName = h.some(v => v === 'SKU이름' || v.includes('SKU이름'));
+            const hasStatus = h.some(v => v.includes('발주현황'));
+            if (hasReceived && (hasSkuBarcode || hasSkuName || hasStatus)) return 'unreceived';
+            return 'vf';
+        }
+
+        /** 헤더 없는 경우: VF 발주서 열 순서 (A=0 … U=20 입고예정일, I=8 확정수량) */
+        function buildDefaultVfIndices() {
+            return {
+                orderNo: 0,
+                productNo: 4,
+                barcode: 5,
+                productName: 6,
+                quantity: 8,
+                confirmedQty: 8,
+                receivedQty: -1,
+                orderedQty: 7,
+                hub: -1,
+                inboundDate: 20,
+                locationIndices: [],
+                location: -1,
+                sourceType: 'vf',
+                qtyLabel: '확정수량',
+            };
+        }
+
+        /**
+         * 미입고 CSV 전용 필터:
+         * 1) 물류센터 = 유원피에스 만 (그 외 센터 전부 제외)
+         * 2) 입고예정일 >= 오늘 (이전이면 제외, 파싱 실패 제외)
+         */
+        function filterUnreceivedHubAndDate(rows, indices) {
+            let hubIdx = indices.hub;
+            const dateIdx = indices.inboundDate;
+            const today = getTodayYmd();
+            let dropHub = 0;
+            let dropDate = 0;
+            let dropNoDate = 0;
+            const hubSample = {};
+
+            // hub 인덱스 보정: 저장/복원 시 누락되면 헤더 재탐색 불가 → 행 길이 기반 흔한 위치 추정은 위험
+            // indices.hub 가 -1 이면 필터 실패로 간주하지 않고, 가능한 경우 raw 헤더 재지정은 parse 단계에서 보장
+            if (hubIdx === undefined || hubIdx === null || hubIdx < 0) {
+                console.warn('[scanner] 물류센터 열 인덱스 없음 — 유원피에스 필터 불가, 전체 제외');
+                return {
+                    rows: [],
+                    stats: { today, dropHub: rows.length, dropDate: 0, dropNoDate: 0, kept: 0, hubIdx: -1, error: 'no_hub_col' }
+                };
+            }
+
+            const filtered = rows.filter(row => {
+                const hubRaw = row[hubIdx];
+                const hub = normalizeCell(hubRaw);
+                hubSample[hub || '(empty)'] = (hubSample[hub || '(empty)'] || 0) + 1;
+
+                if (!isUwonPsHub(hub)) {
+                    dropHub++;
+                    return false;
+                }
+                if (dateIdx === undefined || dateIdx === null || dateIdx < 0) {
+                    dropNoDate++;
+                    return false;
+                }
+                const ymd = parseDateYmd(row[dateIdx]);
+                if (!ymd) {
+                    dropNoDate++;
+                    return false;
+                }
+                if (ymd < today) {
+                    dropDate++;
+                    return false;
+                }
+                return true;
+            });
+
+            return {
+                rows: filtered,
+                stats: {
+                    today,
+                    hubIdx,
+                    dropHub,
+                    dropDate,
+                    dropNoDate,
+                    kept: filtered.length,
+                    hubSample: hubSample
+                }
+            };
+        }
+
+        function normalizeCell(v) {
+            if (v === null || v === undefined) return '';
+            if (typeof v === 'number' && !Number.isNaN(v)) {
+                if (Number.isInteger(v) || Math.abs(v - Math.round(v)) < 1e-9) {
+                    return String(Math.round(v));
+                }
+                return String(v);
+            }
+            // BOM·NBSP 제거
+            return String(v).replace(/^\uFEFF/, '').replace(/\u00a0/g, ' ').trim();
+        }
+
+        /**
+         * 서버 복원/이미 파싱된 행에 유원피에스·일자·잔량 필터 재적용
+         * (과거 저장분에 타 센터가 섞여 있을 수 있음)
+         */
+        function reapplyUnreceivedFiltersIfNeeded() {
+            if (!parsedData || !parsedData.length || !colIndices) return;
+            const isUnreceived = colIndices.sourceType === 'unreceived'
+                || (colIndices.receivedQty !== undefined && colIndices.receivedQty !== -1
+                    && colIndices.receivedQty !== null);
+            if (!isUnreceived) return;
+
+            colIndices.sourceType = 'unreceived';
+            if (colIndices.hub === undefined || colIndices.hub === null || colIndices.hub < 0) {
+                // 복원 데이터에 hub 인덱스 없으면 추정 불가 → hub 열 값이 유원피에스인지만 스캔
+                // 열 전체를 훑어 유원피에스/안성 등이 있는 열을 hub로 추정
+                const guess = guessHubColumnFromRows(parsedData);
+                if (guess >= 0) colIndices.hub = guess;
+            }
+
+            const hubDate = filterUnreceivedHubAndDate(parsedData, colIndices);
+            let rows = hubDate.rows;
+
+            // quantity 열이 입고가능이 아닐 수 있으면 재계산
+            if (colIndices.confirmedQty !== undefined && colIndices.confirmedQty !== -1
+                && colIndices.receivedQty !== undefined && colIndices.receivedQty !== -1) {
+                const applied = applyUnreceivedAvailableQty(rows, colIndices);
+                if (applied.ok) {
+                    rows = filterRowsByWorkQty(rows, colIndices);
+                }
+            } else {
+                rows = filterRowsByWorkQty(rows, colIndices);
+            }
+
+            parsedData = rows;
+            console.info('[scanner] reapply unreceived filters on restore', hubDate.stats, 'final', parsedData.length);
+        }
+
+        /** 행 샘플에서 물류센터 열 추정 (유원피에스/안성/부천 등 값이 많은 열) */
+        function guessHubColumnFromRows(rows) {
+            if (!rows || !rows.length) return -1;
+            const sample = rows.slice(0, Math.min(30, rows.length));
+            const width = sample.reduce((m, r) => Math.max(m, r.length), 0);
+            const markers = ['유원피에스', '안성', '부천', '대구', '이천', '감일', '광주'];
+            let bestIdx = -1;
+            let bestScore = 0;
+            for (let c = 0; c < width; c++) {
+                let score = 0;
+                sample.forEach(r => {
+                    const v = normalizeCell(r[c]);
+                    if (markers.some(m => v.indexOf(m) !== -1)) score++;
+                });
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestIdx = c;
+                }
+            }
+            return bestScore >= 3 ? bestIdx : -1;
+        }
+
+        function parseQtyNum(v) {
+            const s = normalizeCell(v).replace(/,/g, '');
+            if (!s) return 0;
+            const n = parseFloat(s);
+            return Number.isNaN(n) ? 0 : n;
+        }
+
+        /**
+         * 미입고 CSV: 각 행에 입고 가능 수량 열 추가
+         * available = max(0, 확정수량 - 입고수량)
+         * colIndices.quantity 를 해당 열로 지정
+         */
+        function applyUnreceivedAvailableQty(rows, indices) {
+            const confIdx = (indices.confirmedQty !== undefined && indices.confirmedQty !== -1)
+                ? indices.confirmedQty
+                : indices.quantity;
+            const recIdx = indices.receivedQty;
+            if (confIdx === undefined || confIdx === -1 || recIdx === undefined || recIdx === -1) {
+                return { ok: false, error: '미입고 CSV에 확정수량/입고수량 열이 없습니다.' };
+            }
+            const availIdx = rows.reduce((m, r) => Math.max(m, r.length), 0);
+            rows.forEach(row => {
+                while (row.length < availIdx) row.push('');
+                const conf = parseQtyNum(row[confIdx]);
+                const rec = parseQtyNum(row[recIdx]);
+                row[availIdx] = String(Math.max(0, conf - rec));
+            });
+            indices.quantity = availIdx;
+            indices.qtyLabel = '입고 가능 수량';
+            indices.sourceType = 'unreceived';
+            return { ok: true };
+        }
+
+        function filterRowsByWorkQty(rows, indices) {
+            if (!rows.length) return rows;
+            if (indices.quantity === undefined || indices.quantity === -1) return rows;
+            if (indices.barcode === undefined || indices.barcode === -1) return rows;
+            return rows.filter(row => {
+                const bc = normalizeCell(row[indices.barcode]);
+                if (!bc) return false;
+                const q = parseQtyNum(row[indices.quantity]);
+                if (q <= 0) return false;
+                return true;
+            });
+        }
+
+        function updateQtyLabelUI() {
+            const el = document.getElementById('qtyLabel');
+            if (el) el.textContent = (colIndices && colIndices.qtyLabel) ? colIndices.qtyLabel : '확정수량';
+        }
+
+        function activateDashboardFromParsed() {
+            if (parsedData.length === 0) {
+                const qtyHint = (colIndices && colIndices.sourceType === 'unreceived')
+                    ? '유원피에스 · 입고예정일≥오늘 · 입고 가능(확정−입고)>0 · 바코드'
+                    : '상품바코드·확정수량>0';
+                showError('유효한 데이터 행이 없습니다. (' + qtyHint + ')');
+                return false;
+            }
+
+            sortParsedData();
+            errorMessage.style.display = 'none';
+            inputSection.style.display = 'none';
+            flaggedIndices.clear();
+            locationOverrides = {};
+            dashboard.classList.add('active');
+            updateQtyLabelUI();
+
+            orderBaseIndices = parsedData.map((_, idx) => idx);
+            currentIndex = 0;
+            // 발주 선택 UI가 베이스를 다시 잡고 rebuild — 우선 기간/제한 필터 적용
+            rebuildFilteredIndices({ preservePosition: false });
+
+            // 업로드 직후: 「N일 입고가능 + 0 숨김」만 켜져 있으면 목록이 전부 비는 경우가 많음
+            // → 사용자에게는 “파일 내용이 안 나온다”로 보임. 업로드 수량이 있으면 전체(raw)로 폴백.
+            if (
+                filteredIndices.length === 0 &&
+                parsedData.length > 0 &&
+                selectedPeriodMode !== 'raw'
+            ) {
+                console.warn('[scanner] period filter emptied list; fallback to raw (upload qty)', {
+                    parsed: parsedData.length,
+                    mode: selectedPeriodMode,
+                    hideZeroAvailable: hideZeroAvailable,
+                });
+                selectedPeriodMode = 'raw';
+                syncPeriodButtonsUI();
+                rebuildFilteredIndices({ preservePosition: false });
+                // 에러 배너가 아닌 안내 (파싱은 성공)
+                try {
+                    if (errorMessage) {
+                        errorMessage.style.display = 'block';
+                        errorMessage.style.background = '#3d2a00';
+                        errorMessage.style.color = '#fbbf24';
+                        errorMessage.style.border = '1px solid #f59e0b';
+                        errorMessage.textContent =
+                            '업로드 ' + parsedData.length +
+                            '행 중 N일 입고가능(0 숨김) 필터로 표시할 행이 없어 「전체(업로드 수량)」로 전환했습니다. ' +
+                            '10/14/30일을 누르면 기간 기준으로 다시 걸러집니다.';
+                    }
+                } catch (eBanner) { /* ignore */ }
+            } else if (filteredIndices.length === 0 && parsedData.length > 0) {
+                showError(
+                    '업로드 ' + parsedData.length +
+                    '행이 있으나 입고 제한·필터로 표시할 행이 없습니다. 「입고 제한 설정」 또는 필터를 확인하세요.'
+                );
+            }
+
+            const selectedCart = document.querySelector('input[name="cartLoc"]:checked');
+            if (selectedCart) renderCartBarcode(selectedCart.value);
+
+            const orderNoSet = new Set();
+            parsedData.forEach(row => {
+                const orderNo = colIndices.orderNo !== -1 ? normalizeCell(row[colIndices.orderNo]) : '';
+                if (orderNo) orderNoSet.add(orderNo);
+            });
+            orderNoList = Array.from(orderNoSet).sort();
+            renderOrderSelector(); // 기본 전체 선택 → applyOrderFilter → rebuild
+
             scheduleSave();
+
+            // 로케이션 누락 알림 (비차단 — 보완 또는 다음에 진행)
+            setTimeout(() => {
+                try {
+                    const missing = collectMissingLocationItems();
+                    if (missing.length > 0) {
+                        openLocationMissingModal(missing);
+                    } else {
+                        updateLocationMissingBanner(0);
+                    }
+                } catch (e) {
+                    console.warn('[scanner] location missing check failed', e);
+                }
+            }, 80);
+
+            return true;
+        }
+
+        /** 업로드 데이터 중 로케이션 없거나 유효하지 않은 행 (비차단 알림용) */
+        function collectMissingLocationItems() {
+            const out = [];
+            if (!parsedData || !parsedData.length) return out;
+            const seenBc = new Set();
+            for (let i = 0; i < parsedData.length; i++) {
+                const row = parsedData[i];
+                if (!row) continue;
+                const info = resolveLocation(row, i);
+                if (info && isValidLocationValue(info.value) && !info.needsManual) continue;
+                const bc = colIndices.barcode !== -1 ? normalizeCell(row[colIndices.barcode]) : '';
+                const name = colIndices.productName !== -1 ? normalizeCell(row[colIndices.productName]) : '';
+                // 동일 바코드는 한 번만 목록에
+                const key = bc || `__row_${i}`;
+                if (seenBc.has(key)) continue;
+                seenBc.add(key);
+                let status = '로케이션 없음';
+                if (info && info.value && !isValidLocationValue(info.value)) {
+                    status = '로케이션 값 부족/무효';
+                } else if (!bc) {
+                    status = '바코드 없음 (로케이션 저장 어려움)';
+                }
+                out.push({
+                    dataIndex: i,
+                    barcode: bc || '-',
+                    productName: name || '-',
+                    status,
+                });
+            }
+            return out;
+        }
+
+        function openLocationMissingModal(items) {
+            const list = items || collectMissingLocationItems();
+            const overlay = document.getElementById('locationMissingOverlay');
+            const summary = document.getElementById('locationMissingSummary');
+            const tbody = document.getElementById('locationMissingTbody');
+            if (!overlay || !tbody) return;
+
+            const total = parsedData ? parsedData.length : 0;
+            if (summary) {
+                summary.innerHTML =
+                    `업로드 <b style="color:#fff">${total}</b>건 중 ` +
+                    `로케이션이 없거나 부족한 품목 <b style="color:#ffeb3b">${list.length}</b>건이 있습니다.`;
+            }
+            tbody.innerHTML = list.map((it, idx) => (
+                `<tr style="border-top:1px solid #333; cursor:pointer;" data-goto-index="${it.dataIndex}">` +
+                `<td style="padding:8px; color:#aaa;">${idx + 1}</td>` +
+                `<td style="padding:8px; font-family:monospace; color:#7dd3fc;">${escapeHtml(it.barcode)}</td>` +
+                `<td style="padding:8px; color:#eee;">${escapeHtml(it.productName)}</td>` +
+                `<td style="padding:8px; color:#fbbf24;">${escapeHtml(it.status)}</td>` +
+                `</tr>`
+            )).join('');
+
+            tbody.querySelectorAll('tr[data-goto-index]').forEach((tr) => {
+                tr.addEventListener('click', () => {
+                    const di = parseInt(tr.getAttribute('data-goto-index'), 10);
+                    if (!isNaN(di)) jumpToDataIndexForLocationFix(di);
+                });
+            });
+
+            overlay.classList.add('active');
+            updateLocationMissingBanner(list.length);
+        }
+
+        function closeLocationMissingModal() {
+            const overlay = document.getElementById('locationMissingOverlay');
+            if (overlay) overlay.classList.remove('active');
+            const n = collectMissingLocationItems().length;
+            updateLocationMissingBanner(n);
+        }
+
+        function updateLocationMissingBanner(count) {
+            const banner = document.getElementById('locationMissingBanner');
+            const cntEl = document.getElementById('locationMissingBannerCount');
+            if (!banner) return;
+            const n = typeof count === 'number' ? count : collectMissingLocationItems().length;
+            if (cntEl) cntEl.textContent = String(n);
+            // 대시보드 활성 + 누락 있을 때만
+            const dashOn = dashboard && dashboard.classList.contains('active');
+            banner.style.display = (dashOn && n > 0) ? 'block' : 'none';
+        }
+
+        function jumpToDataIndexForLocationFix(dataIndex) {
+            closeLocationMissingModal();
+            if (!filteredIndices || !filteredIndices.length) return;
+            let fi = filteredIndices.indexOf(dataIndex);
+            if (fi < 0) {
+                // 필터에 없으면 전체 목록 기준으로 재설정 후 이동
+                filteredIndices = parsedData.map((_, idx) => idx);
+                fi = filteredIndices.indexOf(dataIndex);
+            }
+            if (fi < 0) return;
+            currentIndex = fi;
+            renderCurrentRow();
+            // 수동 입력란 포커스
+            setTimeout(() => {
+                if (locationManualInput && locationManualWrap &&
+                    locationManualWrap.style.display !== 'none') {
+                    locationManualInput.focus();
+                }
+            }, 100);
+        }
+
+        function jumpToFirstMissingLocation() {
+            const list = collectMissingLocationItems();
+            if (!list.length) {
+                closeLocationMissingModal();
+                updateLocationMissingBanner(0);
+                if (typeof copyToast !== 'undefined' && copyToast) {
+                    // soft notice
+                    const prev = copyToast.textContent;
+                    copyToast.textContent = '로케이션 누락 품목이 없습니다.';
+                    copyToast.style.display = 'block';
+                    setTimeout(() => {
+                        copyToast.style.display = 'none';
+                        copyToast.textContent = prev || '복사되었습니다!';
+                    }, 1800);
+                }
+                return;
+            }
+            jumpToDataIndexForLocationFix(list[0].dataIndex);
+        }
+
+        function escapeHtml(s) {
+            return String(s || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function initLocationMissingUi() {
+            const closeX = document.getElementById('locationMissingCloseX');
+            const later = document.getElementById('locationMissingLaterBtn');
+            const fix = document.getElementById('locationMissingFixBtn');
+            const refresh = document.getElementById('locationMissingRefreshBtn');
+            const bannerOpen = document.getElementById('locationMissingBannerOpen');
+            const bannerDismiss = document.getElementById('locationMissingBannerDismiss');
+            if (closeX) closeX.addEventListener('click', closeLocationMissingModal);
+            if (later) later.addEventListener('click', closeLocationMissingModal);
+            if (fix) fix.addEventListener('click', jumpToFirstMissingLocation);
+            if (refresh) {
+                refresh.addEventListener('click', () => {
+                    openLocationMissingModal(collectMissingLocationItems());
+                });
+            }
+            if (bannerOpen) {
+                bannerOpen.addEventListener('click', () => {
+                    openLocationMissingModal(collectMissingLocationItems());
+                });
+            }
+            if (bannerDismiss) {
+                bannerDismiss.addEventListener('click', () => {
+                    const banner = document.getElementById('locationMissingBanner');
+                    if (banner) banner.style.display = 'none';
+                });
+            }
+        }
+
+        function parseMatrixToState(matrix, sourceLabel) {
+            if (!matrix || matrix.length === 0) {
+                showError((sourceLabel || '데이터') + '가 비어 있습니다.');
+                return false;
+            }
+
+            const headerCells = matrix[0].map(normalizeCell);
+            const headerNorm = headerNormFromHeaders(headerCells);
+            const hasHeader = headerNorm.some(h =>
+                h.includes('발주번호') ||
+                h.includes('상품바코드') ||
+                h.includes('SKUBarcode') ||
+                h.includes('상품이름') ||
+                h.includes('SKU이름') ||
+                h.includes('제품명')
+            );
+
+            let body;
+            if (hasHeader) {
+                colIndices = buildColIndicesFromHeaders(headerCells);
+                body = matrix.slice(1).map(r => r.map(normalizeCell));
+            } else {
+                colIndices = buildDefaultVfIndices();
+                body = matrix.map(r => r.map(normalizeCell));
+            }
+
+            // 필수 컬럼
+            if (colIndices.barcode === -1 || colIndices.orderNo === -1) {
+                showError('필수 열(발주번호/상품바코드 또는 SKU Barcode)을 찾을 수 없습니다.');
+                return false;
+            }
+
+            // 입고수량 열이 있으면 미입고 포맷으로 처리 (sourceType 오판 방지)
+            const isUnreceived = colIndices.sourceType === 'unreceived'
+                || (colIndices.receivedQty !== undefined && colIndices.receivedQty !== -1);
+
+            if (isUnreceived) {
+                colIndices.sourceType = 'unreceived';
+                colIndices.qtyLabel = '입고 가능 수량';
+
+                if (colIndices.hub === undefined || colIndices.hub === null || colIndices.hub < 0) {
+                    colIndices.hub = findHubColumnIndex(headerNorm);
+                }
+                if (colIndices.inboundDate === undefined || colIndices.inboundDate === null || colIndices.inboundDate < 0) {
+                    colIndices.inboundDate = headerNorm.findIndex(v => v === '입고예정일' || (v && v.indexOf('입고예정') !== -1));
+                }
+                if (colIndices.receivedQty === undefined || colIndices.receivedQty === null || colIndices.receivedQty < 0) {
+                    colIndices.receivedQty = headerNorm.findIndex(v => v === '입고수량');
+                }
+                if (colIndices.confirmedQty === undefined || colIndices.confirmedQty === null || colIndices.confirmedQty < 0) {
+                    colIndices.confirmedQty = headerNorm.findIndex(v => v === '확정수량');
+                }
+                if (colIndices.barcode === undefined || colIndices.barcode < 0) {
+                    colIndices.barcode = headerNorm.findIndex(v =>
+                        v === 'SKUBarcode' || v === '상품바코드' || (v && v.indexOf('Barcode') !== -1) || (v && v.indexOf('바코드') !== -1)
+                    );
+                }
+
+                const before = body.length;
+                const hubDate = filterUnreceivedHubAndDate(body, colIndices);
+                body = hubDate.rows;
+                console.info('[scanner] hub/date filter', {
+                    before,
+                    after: body.length,
+                    hubIdx: colIndices.hub,
+                    dateIdx: colIndices.inboundDate,
+                    confIdx: colIndices.confirmedQty,
+                    recIdx: colIndices.receivedQty,
+                    bcIdx: colIndices.barcode,
+                    header: headerCells,
+                    stats: hubDate.stats
+                });
+
+                if (hubDate.stats && hubDate.stats.error === 'no_hub_col') {
+                    showError('물류센터 열을 찾을 수 없습니다. 헤더: ' + headerCells.slice(0, 10).join(' | '));
+                    return false;
+                }
+                if (body.length === 0) {
+                    const st = hubDate.stats || {};
+                    showError(
+                        '필터 후 행 없음. 오늘=' + (st.today || getTodayYmd()) +
+                        ' · 타센터제외=' + (st.dropHub || 0) +
+                        ' · 일자제외=' + ((st.dropDate || 0) + (st.dropNoDate || 0)) +
+                        ' · 센터분포=' + JSON.stringify(st.hubSample || {}) +
+                        ' · hub열=' + colIndices.hub
+                    );
+                    return false;
+                }
+
+                const applied = applyUnreceivedAvailableQty(body, colIndices);
+                if (!applied.ok) {
+                    showError(applied.error || '미입고 수량 계산 실패');
+                    return false;
+                }
+                const beforeQty = body.length;
+                body = filterRowsByWorkQty(body, colIndices);
+                console.info('[scanner] after avail qty', { beforeQty, after: body.length });
+                if (body.length === 0) {
+                    showError('유원피에스·일자 통과 ' + beforeQty + '행 중 입고 가능 수량(확정−입고)>0 인 행이 없습니다.');
+                    return false;
+                }
+            } else if (colIndices.quantity === -1) {
+                showError('확정수량(또는 발주수량) 열을 찾을 수 없습니다.');
+                return false;
+            } else {
+                body = filterRowsByWorkQty(body, colIndices);
+            }
+
+            parsedData = body;
+            return activateDashboardFromParsed();
+        }
+
+        async function parseData() {
+            const text = dataInput.value.trim();
+            if (!text) {
+                showError('데이터를 입력하거나 발주서 파일을 업로드하세요.');
+                return;
+            }
+
+            const lines = text.split('\n').map(line => line.replace(/\r$/, '')).filter(line => line.trim().length > 0);
+            if (lines.length === 0) {
+                showError('데이터가 없습니다.');
+                return;
+            }
+
+            await loadInventoryCache();
+
+            // CSV/TSV 안전 파싱 (따옴표 필드 지원)
+            const matrix = csvTextToMatrix(text);
+            parseMatrixToState(matrix, '붙여넣기 데이터');
+        }
+
+        async function handleExcelUpload(e) {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+
+            if (excelFileName) excelFileName.textContent = file.name;
+
+            try {
+                await loadInventoryCache();
+                const isCsv = /\.csv$/i.test(file.name);
+                let normalized;
+
+                if (isCsv) {
+                    // CSV는 SheetJS 날짜/열 깨짐 방지 — UTF-8 텍스트 직접 파싱
+                    let text;
+                    try {
+                        text = await file.text();
+                    } catch (te) {
+                        const buf = await file.arrayBuffer();
+                        text = new TextDecoder('utf-8').decode(buf);
+                    }
+                    // cp949 폴백: 한글 깨짐 시
+                    if (text.indexOf('�') !== -1 || (text.indexOf('발주번호') === -1 && text.indexOf('SKU') === -1)) {
+                        try {
+                            const buf = await file.arrayBuffer();
+                            // TextDecoder doesn't support cp949; try latin1 + escape (weak) — prefer utf-8-sig
+                            text = new TextDecoder('utf-8').decode(buf);
+                        } catch (e2) { /* keep */ }
+                    }
+                    normalized = csvTextToMatrix(text);
+                    if (!normalized.length) {
+                        showError('CSV에서 행을 읽지 못했습니다. UTF-8 저장 여부를 확인하세요.');
+                        return;
+                    }
+                    console.info('[scanner] CSV parsed', {
+                        rows: normalized.length,
+                        cols: (normalized[0] || []).length,
+                        header: normalized[0]
+                    });
+                } else {
+                    if (typeof XLSX === 'undefined') {
+                        showError('엑셀 라이브러리(XLSX)를 불러오지 못했습니다. xlsx.full.min.js 를 확인하세요.');
+                        return;
+                    }
+                    const buf = await file.arrayBuffer();
+                    const workbook = XLSX.read(buf, { type: 'array', cellDates: true, codepage: 65001 });
+                    const sheetName = workbook.SheetNames.includes('상품목록')
+                        ? '상품목록'
+                        : workbook.SheetNames[0];
+                    if (!sheetName) {
+                        showError('시트를 찾을 수 없습니다.');
+                        return;
+                    }
+                    const sheet = workbook.Sheets[sheetName];
+                    const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+                    normalized = matrix.map(row => (row || []).map(cell => {
+                        if (cell instanceof Date) {
+                            const y = cell.getFullYear();
+                            const m = String(cell.getMonth() + 1).padStart(2, '0');
+                            const d = String(cell.getDate()).padStart(2, '0');
+                            return y + '-' + m + '-' + d;
+                        }
+                        return cell;
+                    })).filter(row => row.some(c => String(c || '').trim() !== ''));
+                }
+
+                dataInput.value = normalized.map(r => r.join('\t')).join('\n');
+
+                const ok = parseMatrixToState(normalized, file.name || '업로드 파일');
+                if (!ok && excelFileInput) excelFileInput.value = '';
+            } catch (err) {
+                console.error(err);
+                showError('파일 파싱 실패: ' + (err.message || String(err)));
+                if (excelFileInput) excelFileInput.value = '';
+            }
+        }
+
+        let locationApplyInFlight = false;
+
+        async function applyManualLocation() {
+            // 연속 클릭/이중 저장 방지 (이전 요청 중 다음 품목 저장 무반응 방지)
+            if (locationApplyInFlight) return;
+            if (!filteredIndices.length) return;
+            const actualIndex = filteredIndices[currentIndex];
+            const val = (locationManualInput && locationManualInput.value || '').trim();
+            if (val) {
+                locationOverrides[String(actualIndex)] = val;
+            } else {
+                delete locationOverrides[String(actualIndex)];
+            }
+            renderCurrentRow();
+            scheduleSave();
+
+            // 영구 저장: BarcodeMaster (세션 JSON만이 아님)
+            if (!val) return;
+            const row = parsedData[actualIndex];
+            if (!row) return;
+            const barcodeVal = colIndices.barcode !== -1 ? normalizeCell(row[colIndices.barcode]) : '';
+            if (!barcodeVal) {
+                if (locationSourceHint) {
+                    locationSourceHint.textContent = '바코드 없음 — 마스터 영구 저장 불가 (세션만 저장됨)';
+                    locationSourceHint.style.color = 'var(--error-color)';
+                }
+                return;
+            }
+            const productName = colIndices.productName !== -1 ? normalizeCell(row[colIndices.productName]) : '';
+            const skuId = colIndices.productNo !== -1 ? normalizeCell(row[colIndices.productNo]) : '';
+            locationApplyInFlight = true;
+            if (locationApplyBtn) {
+                locationApplyBtn.disabled = true;
+                locationApplyBtn.textContent = '저장 중…';
+            }
+            try {
+                const res = await fetch('/api/inventory/barcode-location', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        barcode: barcodeVal,
+                        location: val,
+                        product_name: productName,
+                        sku_id: skuId,
+                    }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.message || '로케이션 마스터 저장 실패');
+                // 캐시 갱신
+                if (!inventoryCache[barcodeVal]) {
+                    inventoryCache[barcodeVal] = {
+                        currentStock: 0,
+                        avgDailyOutbound14d: 0,
+                        avgDailyOutbound30d: 0,
+                        avgDailyOutbound60d: 0,
+                        location: val
+                    };
+                } else {
+                    inventoryCache[barcodeVal].location = val;
+                }
+                if (locationSourceHint) {
+                    locationSourceHint.textContent = '출처: 마스터 영구 저장됨 (BarcodeMaster)';
+                    locationSourceHint.style.color = 'var(--text-secondary)';
+                }
+                // 누락 목록 배너 갱신 (보완 후 잔여 건수)
+                try { updateLocationMissingBanner(); } catch (_) { /* ignore */ }
+                // 대분류 없음 → 사용자에게 질문
+                if (data.needs_category) {
+                    openCategoryPromptModal({
+                        barcode: barcodeVal,
+                        product_name: productName || data.product_name || '',
+                        sku_id: skuId || data.sku_id || '',
+                        location: val,
+                        master_spec_id: data.master_spec_id,
+                    });
+                } else {
+                    // 대분류 이미 있음 → 바로 다음 로케이션 누락 품목으로
+                    setTimeout(() => {
+                        try { goToNextMissingLocationAfterSave(); } catch (_) { /* ignore */ }
+                    }, 50);
+                }
+            } catch (e) {
+                console.warn('[scanner] barcode-location save failed', e);
+                if (locationSourceHint) {
+                    locationSourceHint.textContent = '세션 저장됨 · 마스터 영구 저장 실패: ' + (e.message || e);
+                    locationSourceHint.style.color = 'var(--error-color)';
+                }
+            } finally {
+                locationApplyInFlight = false;
+                if (locationApplyBtn) {
+                    locationApplyBtn.disabled = false;
+                    locationApplyBtn.textContent = '적용';
+                }
+            }
+        }
+
+        /** 대분류 필수 질문 모달 (신규/대분류 공란) */
+        let categoryPromptState = null;
+        let categoryLgOptionsCache = null;
+        let categoryPromptUiBound = false;
+        let categoryPromptSubmitting = false;
+
+        function formatCategoryApiError(data, status) {
+            if (data == null) return '등록 실패 (' + status + ')';
+            const pick = (v) => {
+                if (v == null) return '';
+                if (typeof v === 'string') return v.trim();
+                if (Array.isArray(v)) {
+                    return v
+                        .map((x) => (typeof x === 'string' ? x : (x && (x.msg || x.message || x.detail)) || ''))
+                        .filter(Boolean)
+                        .join(', ');
+                }
+                if (typeof v === 'object') {
+                    if (typeof v.message === 'string') return v.message;
+                    if (typeof v.detail === 'string') return v.detail;
+                    try { return JSON.stringify(v); } catch (_) { return ''; }
+                }
+                return String(v);
+            };
+            return (
+                pick(data.message) ||
+                pick(data.detail) ||
+                pick(data.error) ||
+                ('등록 실패 (' + status + ')')
+            );
+        }
+
+        /** 모달 마크업이 스크립트 뒤에 있어도 안전하게 이벤트 연결 */
+        function bindCategoryPromptUi() {
+            if (categoryPromptUiBound) return;
+            const sel = document.getElementById('categoryPromptLg');
+            const save = document.getElementById('categoryPromptSave');
+            const cancel = document.getElementById('categoryPromptCancel');
+            const later = document.getElementById('categoryPromptLater');
+            const customInput = document.getElementById('categoryPromptCustom');
+            if (!sel || !save) return; // 아직 DOM 없음
+
+            sel.addEventListener('change', syncCategoryCustomWrap);
+            if (customInput) {
+                customInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        submitCategoryPrompt();
+                    }
+                });
+            }
+            save.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                submitCategoryPrompt();
+            });
+            if (cancel) {
+                cancel.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    closeCategoryPromptModal();
+                });
+            }
+            if (later) {
+                later.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    closeCategoryPromptModal();
+                });
+            }
+            categoryPromptUiBound = true;
+        }
+
+        function syncCategoryCustomWrap() {
+            const sel = document.getElementById('categoryPromptLg');
+            const wrap = document.getElementById('categoryPromptCustomWrap');
+            const customInput = document.getElementById('categoryPromptCustom');
+            if (!sel || !wrap) return;
+            const isCustom = sel.value === '__custom__';
+            wrap.style.display = isCustom ? 'block' : 'none';
+            if (isCustom && customInput) {
+                setTimeout(() => customInput.focus(), 50);
+            }
+        }
+
+        async function loadCategoryLgOptions() {
+            if (categoryLgOptionsCache) return categoryLgOptionsCache;
+            try {
+                const res = await fetch('/api/master/category-lg-options');
+                const data = await res.json();
+                categoryLgOptionsCache = (data && data.data) || [];
+            } catch (e) {
+                categoryLgOptionsCache = [];
+            }
+            return categoryLgOptionsCache;
+        }
+
+        /** 대분류 모달 저장 버튼·플래그 초기화 (연속 저장 시 '저장 중…' 고착 방지) */
+        function resetCategoryPromptSaveUi() {
+            categoryPromptSubmitting = false;
+            const saveBtn = document.getElementById('categoryPromptSave');
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = '저장';
+            }
+        }
+
+        /**
+         * 대분류/로케이션 저장 후 남은 누락 품목으로 이동 (연속 보완 UX).
+         * 필터에 없으면 전체 목록으로 재설정 후 첫 누락 행으로 점프.
+         */
+        function goToNextMissingLocationAfterSave() {
+            try {
+                const list = collectMissingLocationItems();
+                updateLocationMissingBanner(list.length);
+                if (!list.length) return;
+                // 현재 행이 이미 보완됐으면 목록의 첫 잔여 항목으로
+                jumpToDataIndexForLocationFix(list[0].dataIndex);
+            } catch (e) {
+                console.warn('[scanner] goToNextMissingLocationAfterSave', e);
+            }
+        }
+
+        async function openCategoryPromptModal(ctx) {
+            categoryPromptState = ctx || {};
+            bindCategoryPromptUi();
+            const overlay = document.getElementById('categoryPromptOverlay');
+            if (!overlay) {
+                console.error('[scanner] categoryPromptOverlay 없음');
+                return;
+            }
+            // 이전 저장 성공 후 버튼이 disabled/'저장 중…' 로 남은 경우 복구
+            resetCategoryPromptSaveUi();
+            const opts = await loadCategoryLgOptions();
+            // 모달 오픈 중 다른 경로가 submitting 을 건드린 경우 대비 재초기화
+            resetCategoryPromptSaveUi();
+            const sel = document.getElementById('categoryPromptLg');
+            if (sel) {
+                sel.innerHTML = '<option value="">— 대분류 선택 (필수) —</option>';
+                opts.forEach((c) => {
+                    const o = document.createElement('option');
+                    o.value = c;
+                    o.textContent = c;
+                    sel.appendChild(o);
+                });
+                const custom = document.createElement('option');
+                custom.value = '__custom__';
+                custom.textContent = '직접 입력…';
+                sel.appendChild(custom);
+                sel.value = '';
+            }
+            const nameEl = document.getElementById('categoryPromptName');
+            const bcEl = document.getElementById('categoryPromptBarcode');
+            const locEl = document.getElementById('categoryPromptLoc');
+            const customWrap = document.getElementById('categoryPromptCustomWrap');
+            const customInput = document.getElementById('categoryPromptCustom');
+            const errEl = document.getElementById('categoryPromptError');
+            if (nameEl) nameEl.value = categoryPromptState.product_name || '';
+            if (bcEl) bcEl.textContent = categoryPromptState.barcode || '';
+            if (locEl) locEl.textContent = categoryPromptState.location || '';
+            if (customWrap) customWrap.style.display = 'none';
+            if (customInput) customInput.value = '';
+            if (errEl) {
+                errEl.style.color = '#f87171';
+                errEl.textContent = '';
+            }
+            const vfEl = document.getElementById('categoryPromptVf');
+            if (vfEl) vfEl.checked = true; // 신규 기본 VF 체크 (요청 UX)
+            const mdEl = document.getElementById('categoryPromptMd');
+            if (mdEl) mdEl.value = '';
+            overlay.style.display = 'flex';
+            syncCategoryCustomWrap();
+        }
+
+        function closeCategoryPromptModal(opts) {
+            const overlay = document.getElementById('categoryPromptOverlay');
+            if (overlay) overlay.style.display = 'none';
+            categoryPromptState = null;
+            // 닫을 때도 항상 버튼 복구 — 다음 품목 오픈 시 '저장 중' 고착 방지
+            resetCategoryPromptSaveUi();
+            if (opts && opts.afterSave) {
+                // 성공 닫기: 남은 로케이션 누락 품목으로 이어서 이동
+                setTimeout(() => goToNextMissingLocationAfterSave(), 50);
+            }
+        }
+
+        async function submitCategoryPrompt() {
+            bindCategoryPromptUi();
+            const errEl = document.getElementById('categoryPromptError');
+            if (categoryPromptSubmitting) return;
+            if (!categoryPromptState) {
+                if (errEl) {
+                    errEl.style.color = '#f87171';
+                    errEl.textContent = '등록 대상이 없습니다. 다시 열어 주세요.';
+                }
+                resetCategoryPromptSaveUi();
+                return;
+            }
+            // 스냅샷 — 저장 중 close/재오픈이 와도 요청 본문·성공 처리 유지
+            const stateSnap = { ...categoryPromptState };
+            const sel = document.getElementById('categoryPromptLg');
+            const customInput = document.getElementById('categoryPromptCustom');
+            const nameEl = document.getElementById('categoryPromptName');
+            const mdEl = document.getElementById('categoryPromptMd');
+            const vfEl = document.getElementById('categoryPromptVf');
+            const selVal = (sel && sel.value) || '';
+            const customVal = (customInput && customInput.value || '').trim();
+            let lg = '';
+            if (selVal === '__custom__') {
+                lg = customVal;
+            } else if (selVal) {
+                lg = String(selVal).trim();
+            } else if (customVal) {
+                // select 미선택이어도 직접입력 칸에 값이 있으면 사용
+                lg = customVal;
+            }
+            if (!lg) {
+                if (errEl) {
+                    errEl.style.color = '#f87171';
+                    errEl.textContent =
+                        selVal === '__custom__'
+                            ? '대분류를 직접 입력해 주세요.'
+                            : '대분류를 선택하거나 직접 입력해 주세요. (필수)';
+                }
+                if (selVal === '__custom__' && customInput) customInput.focus();
+                return;
+            }
+            const productName = (
+                (nameEl && nameEl.value) ||
+                stateSnap.product_name ||
+                ''
+            ).trim();
+            const saveBtn = document.getElementById('categoryPromptSave');
+            categoryPromptSubmitting = true;
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.textContent = '저장 중…';
+            }
+            if (errEl) {
+                errEl.style.color = '#f87171';
+                errEl.textContent = '';
+            }
+            let succeeded = false;
+            try {
+                const res = await fetch('/api/master/specs/register-from-scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        barcode: stateSnap.barcode || '',
+                        product_name: productName,
+                        sku_id: stateSnap.sku_id || '',
+                        location: stateSnap.location || '',
+                        category_lg: lg,
+                        category_md: (mdEl && mdEl.value || '').trim(),
+                        is_vf_item: !!(vfEl && vfEl.checked),
+                    }),
+                });
+                const rawText = await res.text();
+                let data = {};
+                if (rawText) {
+                    try {
+                        data = JSON.parse(rawText);
+                    } catch (_) {
+                        // HTML/비JSON 응답 — status 로만 판단
+                        data = {};
+                    }
+                }
+                // 201 Created / 200 OK / body.success 모두 성공으로 인정
+                // (DB 저장 후 응답 파싱만 실패하는 경우도 success 플래그로 복구)
+                const ok =
+                    res.ok ||
+                    res.status === 200 ||
+                    res.status === 201 ||
+                    data.success === true;
+                if (!ok) {
+                    throw new Error(formatCategoryApiError(data, res.status));
+                }
+                succeeded = true;
+                // 옵션 캐시 무효화 (신규 대분류 반영)
+                categoryLgOptionsCache = null;
+                const createdLabel =
+                    data.created === true ? ' (신규)' :
+                    data.created === false ? ' (수정)' : '';
+                if (locationSourceHint) {
+                    locationSourceHint.textContent =
+                        '마스터 등록 완료 · 대분류: ' + lg + createdLabel;
+                    locationSourceHint.style.color = '#86efac';
+                }
+                if (errEl) {
+                    errEl.style.color = '#86efac';
+                    errEl.textContent = '저장 완료' + createdLabel;
+                }
+                // 성공 피드백 잠깐 보여 준 뒤 닫기 → 다음 누락 품목으로 이동
+                await new Promise((r) => setTimeout(r, 280));
+                closeCategoryPromptModal({ afterSave: true });
+            } catch (e) {
+                // 이미 성공 처리 중이면 에러 UI로 덮지 않음
+                if (succeeded) {
+                    console.warn('[scanner] category save succeeded with post-success noise', e);
+                    closeCategoryPromptModal({ afterSave: true });
+                    return;
+                }
+                console.error('[scanner] category save failed', e);
+                if (errEl) {
+                    errEl.style.color = '#f87171';
+                    errEl.textContent = (e && e.message) || String(e);
+                }
+            } finally {
+                // 성공/실패 모두 플래그·버튼 복구 (성공 시 모달은 이미 닫힘·다음 오픈 대비)
+                resetCategoryPromptSaveUi();
+            }
+        }
+
+        // 모달 HTML 파싱 후 bind (하단 마크업이 스크립트 뒤에 있어도 동작)
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', bindCategoryPromptUi);
+        } else {
+            setTimeout(bindCategoryPromptUi, 0);
+        }
+
+        /** 로케이션 문자열이 유효한지 (빈값/#N/A/0 제외) */
+        function isValidLocationValue(val) {
+            if (val == null) return false;
+            const s = String(val).trim();
+            if (!s) return false;
+            if (s === '#N/A' || s === 'N/A' || s === '-' || s === '0') return false;
+            return true;
+        }
+
+        /** 수동 입력 UI 표시 여부 갱신 */
+        function updateLocationManualUI(locInfo) {
+            const needsManual = !!(locInfo && locInfo.needsManual);
+            if (locationManualWrap) {
+                locationManualWrap.style.display = needsManual ? 'flex' : 'none';
+            }
+            if (locationManualInput) {
+                if (needsManual) {
+                    locationManualInput.value = '';
+                    locationManualInput.placeholder = '로케이션 없음 — 수동 입력 후 적용';
+                } else {
+                    // 자동/수동 확정값 있을 때는 입력 UI 숨김 (값은 바코드로만 표시)
+                    locationManualInput.value = '';
+                }
+            }
+            if (locationSourceHint) {
+                if (locInfo && locInfo.value) {
+                    locationSourceHint.textContent = `출처: ${locInfo.source}`;
+                    locationSourceHint.style.color = 'var(--text-secondary)';
+                } else if (needsManual) {
+                    locationSourceHint.textContent = '마스터/파일에 로케이션 없음 → 수동 입력';
+                    locationSourceHint.style.color = 'var(--error-color)';
+                } else {
+                    locationSourceHint.textContent = '';
+                }
+            }
+            // 섹션 자체는 항상 보이게 (바코드 또는 수동 입력 중 하나)
+            if (locationBarcodeSection) {
+                locationBarcodeSection.style.display = '';
+            }
+        }
+
+        /** 로케이션 바코드만 갱신 (섹션 전체 숨김 금지 — 수동 입력 UI와 공존) */
+        function renderLocationBarcode(text) {
+            const svg = document.querySelector('#barcodeLocation');
+            if (!svg) return;
+            if (!isValidLocationValue(text)) {
+                svg.style.display = 'none';
+                svg.innerHTML = '';
+                return;
+            }
+            svg.style.display = 'block';
+            try {
+                JsBarcode(svg, String(text).trim(), {
+                    format: 'CODE128',
+                    displayValue: true,
+                    fontSize: 18,
+                    height: 80,
+                    margin: 10
+                });
+            } catch (e) {
+                console.error('Location barcode error:', e);
+                svg.style.display = 'none';
+            }
         }
 
         function showError(msg) {
             errorMessage.textContent = msg;
             errorMessage.style.display = 'block';
+            // 안내(amber) 스타일 잔여 제거
+            errorMessage.style.background = '';
+            errorMessage.style.color = '';
+            errorMessage.style.border = '';
         }
+
+        function syncWorkListSidebarTitle() {
+            const titleEl = document.getElementById('workListSidebarTitle');
+            if (!titleEl) return;
+            const modeLabel =
+                selectedPeriodMode === 'raw'
+                    ? '업로드 수량'
+                    : `${parseInt(selectedPeriodMode, 10) || 10}일 입고가능`;
+            const zeroHint =
+                selectedPeriodMode !== 'raw' && hideZeroAvailable ? ' · 0 제외' : '';
+            const n = filteredIndices ? filteredIndices.length : 0;
+            titleEl.textContent = `작업 목록 · ${modeLabel}${zeroHint} (${n})`;
+            titleEl.title =
+                            selectedPeriodMode === 'raw'
+                                ? '업로드/미입고 잔량 · 홀드 품목은 목록에 표시'
+                                : `${modeLabel} = min(gap, 확정) · 전산0은 확정 표기 · 홀드 상태 표시`;
+                    }
 
         function initDashboardSidebar() {
-            dashboardList.innerHTML = '';
-            filteredIndices.forEach((dataIndex, filterIdx) => {
-                const row = parsedData[dataIndex];
-                const getVal = (idx) => idx !== -1 ? (row[idx] || '') : '';
-                const productName = getVal(colIndices.productName);
+                    if (!dashboardList) return;
+                    syncWorkListSidebarTitle();
 
-                const li = document.createElement('li');
-                li.className = 'list-item';
-                li.id = 'dashboard-list-item-' + dataIndex;
-                li.innerHTML = `
-                    <div class="list-item-header">
-                        <div class="list-item-title">작업 품목 #${filterIdx + 1}</div>
-                        <div class="list-item-flag">⚠️ 미입고</div>
-                    </div>
-                    <div class="list-item-name">${productName || '-'}</div>
-                `;
-                li.onclick = () => {
-                    currentIndex = filterIdx;
-                    renderCurrentRow();
-                };
-                dashboardList.appendChild(li);
-            });
-        }
+                    dashboardList.innerHTML = '';
+                    filteredIndices.forEach((dataIndex, filterIdx) => {
+                        const row = parsedData[dataIndex];
+                        const getVal = (idx) => (idx !== undefined && idx !== -1) ? (row[idx] || '') : '';
+                        const productName = getVal(colIndices.productName);
+                        const bc = getRowBarcode(row);
+                        const held = isRestrictionBlocking(bc);
+                        const disp = getSidebarDisplayQty(row);
+                        const qtyClass = sidebarQtyClassName(disp);
+                        const qtyTitle = disp.isRaw
+                            ? '업로드/미입고 잔량'
+                            : `${disp.label} · 발주 ${disp.orderIn || 0}`;
 
-        function updateDashboardSidebar() {
+                        const li = document.createElement('li');
+                        li.className = 'list-item' + (held ? ' held' : '');
+                        li.id = 'dashboard-list-item-' + dataIndex;
+                        li.dataset.periodMode = String(selectedPeriodMode);
+                        li.innerHTML = `
+                            <div class="list-item-header">
+                                <div class="list-item-title">작업 품목 #${filterIdx + 1}</div>
+                                <div style="display:flex; flex-direction:column; align-items:flex-end; gap:2px;">
+                                    <div class="list-item-held-flag">🚫 홀드</div>
+                                    <div class="list-item-flag">⚠️ 미입고</div>
+                                </div>
+                            </div>
+                            <div class="list-item-name" title="${String(productName || '-').replace(/"/g, '&quot;')}">${productName || '-'}</div>
+                            <div class="${qtyClass}" title="${qtyTitle}">${disp.html || ''}</div>
+                        `;
+                        li.onclick = () => {
+                            currentIndex = filterIdx;
+                            renderCurrentRow();
+                        };
+                        dashboardList.appendChild(li);
+                    });
+                    updateDashboardSidebar({ skipScroll: true });
+                }
+
+        function updateDashboardSidebar(opts) {
+            if (!dashboardList) return;
+            const skipScroll = opts && opts.skipScroll;
+            syncWorkListSidebarTitle();
+
             const items = dashboardList.querySelectorAll('.list-item');
-            items.forEach((item, filterIdx) => {
-                const dataIndex = filteredIndices[filterIdx];
-                if (filterIdx === currentIndex) {
-                    item.classList.add('active');
-                    item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                } else {
-                    item.classList.remove('active');
+            // 기간이 어긋난 목록이면 전체 재생성
+            if (items.length > 0 && items.length === filteredIndices.length) {
+                const firstMode = items[0].dataset.periodMode;
+                if (firstMode != null && String(firstMode) !== String(selectedPeriodMode)) {
+                    initDashboardSidebar();
+                    return;
                 }
+            }
 
-                if (flaggedIndices.has(dataIndex)) {
-                    item.classList.add('flagged');
-                } else {
-                    item.classList.remove('flagged');
-                }
-            });
-        }
+            items.forEach((item, filterIdx) => {
+                            const dataIndex = filteredIndices[filterIdx];
+                            if (filterIdx === currentIndex) {
+                                item.classList.add('active');
+                                if (!skipScroll) {
+                                    item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                                }
+                            } else {
+                                item.classList.remove('active');
+                            }
+
+                            if (flaggedIndices.has(dataIndex)) {
+                                item.classList.add('flagged');
+                            } else {
+                                item.classList.remove('flagged');
+                            }
+
+                            const row = parsedData[dataIndex];
+                            const bc = row ? getRowBarcode(row) : '';
+                            if (bc && isRestrictionBlocking(bc)) {
+                                item.classList.add('held');
+                            } else {
+                                item.classList.remove('held');
+                            }
+
+                            item.dataset.periodMode = String(selectedPeriodMode);
+                            const qtyEl = item.querySelector('.list-item-qty');
+                            if (qtyEl && row) {
+                                const disp = getSidebarDisplayQty(row);
+                                qtyEl.innerHTML = disp.html || '';
+                                qtyEl.className = sidebarQtyClassName(disp);
+                                qtyEl.title = disp.isRaw
+                                    ? '업로드/미입고 잔량'
+                                    : `${disp.label} · 발주 ${disp.orderIn || 0}`;
+                            }
+                        });
+                    }
 
         function renderCurrentRow() {
             if (filteredIndices.length === 0) return;
@@ -1453,34 +4279,30 @@
             if (valInbound) {
                 valInbound.textContent = colIndices.inboundDate !== -1 ? (row[colIndices.inboundDate] || '-') : '-';
             }
+            const valOrderNo = document.getElementById('valOrderNo');
+            if (valOrderNo) {
+                valOrderNo.textContent =
+                    colIndices.orderNo !== undefined && colIndices.orderNo !== -1
+                        ? (String(row[colIndices.orderNo] || '').trim() || '-')
+                        : '-';
+            }
 
             valProductName.textContent = colIndices.productName !== -1 ? (row[colIndices.productName] || '-') : '-';
+            updateQtyLabelUI();
             valQuantity.textContent = colIndices.quantity !== -1 ? (row[colIndices.quantity] || '-') : '-';
 
-            // 전산 재고 및 10일 재고 보유량 수량 매핑 복원
-            const valStock = document.getElementById('valCurrentStock');
-            const val10 = document.getElementById('val10Day');
-            
+            // 전산 재고 · 선택 일수별 보유 · 입고 가능 (바코드 단위 — 동일 제품명이어도 바코드 다르면 별개)
             const barcodeVal = colIndices.barcode !== -1 ? (row[colIndices.barcode] || '').trim() : '';
-            if (barcodeVal && inventoryCache[barcodeVal]) {
-                const stockData = inventoryCache[barcodeVal];
-                const currentStock = stockData.currentStock || 0;
-                const avg60d = stockData.avgDailyOutbound60d || 0;
-                const target10d = Math.round(avg60d * 10);
-                
-                if (valStock) valStock.textContent = `${currentStock} 개 (일 평균 출고: ${avg60d.toFixed(1)} 개)`;
-                if (val10) val10.textContent = `${target10d} 개`;
-            } else {
-                if (valStock) valStock.textContent = '-';
-                if (val10) val10.textContent = '-';
-            }
+            updatePeriodMetricsUI(barcodeVal, row);
+            updateRestrictionBadge(barcodeVal);
 
             // 상품 바코드 렌더링
             renderBarcode('#barcodeProduct', barcodeVal);
             
-            // 로케이션 바코드 렌더링 (다중 로케이션 열 탐색 적용)
-            const locationVal = getLocationValue(row);
-            renderBarcode('#barcodeLocation', locationVal);
+            // 로케이션: 자동(파일/마스터/수동확정) 있으면 바코드만, 없으면 수동 입력 UI만
+            const locInfo = resolveLocation(row, actualIndex);
+            renderLocationBarcode(locInfo.value);
+            updateLocationManualUI(locInfo);
 
             if (flaggedIndices.has(actualIndex)) {
                 flagBadge.style.display = 'inline-block';
@@ -1493,21 +4315,58 @@
             }
 
             updateDashboardSidebar();
+            updateTotalQuantity(); // 선택 일수 입고 가능 합 → 총 수량
         }
 
         function getLocationValue(row) {
+            return resolveLocation(row, null).value;
+        }
+
+        /**
+         * 로케이션 해석 우선순위:
+         * 1) 수동 적용(locationOverrides) — 확정값
+         * 2) 붙여넣기/파일 행의 로케이션 열 — 자동
+         * 3) inventory unified / BarcodeMaster — 자동
+         * needsManual=true 일 때만 입력·적용 UI 표시
+         */
+        function resolveLocation(row, dataIndex) {
+            // 1) 수동 적용 완료
+            if (dataIndex !== null && dataIndex !== undefined) {
+                const ov = locationOverrides[String(dataIndex)];
+                if (isValidLocationValue(ov)) {
+                    return { value: String(ov).trim(), source: '수동 입력', needsManual: false, isAuto: false };
+                }
+            }
+            // 2) 파일/텍스트 열
             if (colIndices.locationIndices && colIndices.locationIndices.length > 0) {
                 for (const idx of colIndices.locationIndices) {
-                    const val = (row[idx] || '').trim();
-                    if (val && val !== '#N/A' && val !== '0') {
-                        return val;
+                    const val = normalizeCell(row[idx]);
+                    if (isValidLocationValue(val)) {
+                        return { value: val, source: '파일/텍스트 열', needsManual: false, isAuto: true };
                     }
                 }
             }
             if (colIndices.location !== undefined && colIndices.location !== -1) {
-                return (row[colIndices.location] || '').trim();
+                const val = normalizeCell(row[colIndices.location]);
+                if (isValidLocationValue(val)) {
+                    return { value: val, source: '파일/텍스트 열', needsManual: false, isAuto: true };
+                }
             }
-            return '';
+            // 3) 재고 마스터 (바코드 키 trim 매칭)
+            const barcodeVal = colIndices.barcode !== -1 ? normalizeCell(row[colIndices.barcode]) : '';
+            if (barcodeVal) {
+                const cached = inventoryCache[barcodeVal] || inventoryCache[barcodeVal.trim()];
+                if (cached && isValidLocationValue(cached.location)) {
+                    return {
+                        value: String(cached.location).trim(),
+                        source: '재고 마스터(API)',
+                        needsManual: false,
+                        isAuto: true
+                    };
+                }
+            }
+            // 자동 확보 실패 → 수동 입력 UI 필요
+            return { value: '', source: '없음', needsManual: true, isAuto: false };
         }
 
         function renderBarcode(selector, text) {
@@ -1724,6 +4583,15 @@
 
         // 키보드 이벤트
         document.addEventListener('keydown', (e) => {
+            const restrOverlay = document.getElementById('restrictionModalOverlay');
+            if (restrOverlay && restrOverlay.classList.contains('active')) {
+                if (e.code === 'Escape') {
+                    e.preventDefault();
+                    closeRestrictionModal();
+                }
+                return;
+            }
+
             if (listModal.classList.contains('active')) {
                 if (e.code === 'Escape') {
                     closeModal();
@@ -1751,5 +4619,38 @@
             }
         });
     </script>
+
+    <!-- 대분류 필수 질문 (신규 / 대분류 공란) -->
+    <div id="categoryPromptOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:9999; align-items:center; justify-content:center; padding:16px;">
+        <div style="background:#1e1e1e; color:#eee; border-radius:12px; max-width:440px; width:100%; padding:20px; border:1px solid #444; box-shadow:0 12px 40px rgba(0,0,0,0.45);">
+            <h3 style="margin:0 0 8px; font-size:17px; color:#fff;">신규/미분류 품목 — 대분류 선택</h3>
+            <p style="margin:0 0 12px; font-size:12px; color:#aaa; line-height:1.45;">
+                이 품목의 <strong style="color:#c4b5fd;">대분류</strong>를 알려 주세요. (필수 · 추측 자동 확정 없음)
+            </p>
+            <div style="font-size:12px; color:#9ca3af; margin-bottom:10px;">
+                바코드 <span id="categoryPromptBarcode" style="font-family:monospace; color:#e5e7eb;"></span><br>
+                로케이션 <span id="categoryPromptLoc" style="font-family:monospace; color:#e5e7eb;"></span>
+            </div>
+            <label style="display:block; font-size:12px; margin-bottom:4px; color:#ccc;">제품명</label>
+            <input id="categoryPromptName" type="text" style="width:100%; box-sizing:border-box; padding:10px; margin-bottom:10px; border-radius:8px; border:1px solid #444; background:#2a2a2a; color:#fff;">
+            <label style="display:block; font-size:12px; margin-bottom:4px; color:#ccc;">대분류 *</label>
+            <select id="categoryPromptLg" style="width:100%; box-sizing:border-box; padding:10px; margin-bottom:8px; border-radius:8px; border:1px solid #444; background:#2a2a2a; color:#fff;"></select>
+            <div id="categoryPromptCustomWrap" style="display:none; margin-bottom:10px;">
+                <label style="display:block; font-size:12px; margin-bottom:4px; color:#c4b5fd;">대분류 직접 입력 *</label>
+                <input id="categoryPromptCustom" type="text" placeholder="예: 정리함 / 서랍장 / 수납" autocomplete="off" style="width:100%; box-sizing:border-box; padding:10px; border-radius:8px; border:1px solid #7c3aed; background:#2a2a2a; color:#fff;">
+            </div>
+            <label style="display:block; font-size:12px; margin-bottom:4px; color:#ccc;">중분류 (선택)</label>
+            <input id="categoryPromptMd" type="text" style="width:100%; box-sizing:border-box; padding:10px; margin-bottom:10px; border-radius:8px; border:1px solid #444; background:#2a2a2a; color:#fff;">
+            <label style="display:flex; align-items:center; gap:8px; font-size:13px; margin-bottom:12px; color:#ddd;">
+                <input id="categoryPromptVf" type="checkbox"> VF 품목으로 설정
+            </label>
+            <p id="categoryPromptError" style="color:#f87171; font-size:12px; min-height:16px; margin:0 0 10px;"></p>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button type="button" id="categoryPromptSave" style="flex:1; padding:10px; border:none; border-radius:8px; background:#7c3aed; color:#fff; font-weight:bold; cursor:pointer;">저장</button>
+                <button type="button" id="categoryPromptLater" style="padding:10px 12px; border-radius:8px; border:1px solid #555; background:#333; color:#ccc; cursor:pointer;">나중에</button>
+                <button type="button" id="categoryPromptCancel" style="padding:10px 12px; border-radius:8px; border:1px solid #555; background:#333; color:#ccc; cursor:pointer;">닫기</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

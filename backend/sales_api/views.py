@@ -1,3 +1,5 @@
+import time
+
 from rest_framework import status, viewsets, generics
 from rest_framework.decorators import api_view
 from rest_framework.pagination import LimitOffsetPagination
@@ -23,6 +25,7 @@ from .models import (
     InventoryBaselineItem,
     InventoryReceiptUpload,
     InventoryReceiptItem,
+    InventoryStockAdjustment,
     MasterSpec,
     ProductionLog,
     MachineUser,
@@ -30,6 +33,7 @@ from .models import (
     InboundOrderUpload,
     InboundOrderLine,
     InboundPolicy,
+    InboundProductRestriction,
     FCInboundRecord,
     FCInboundFileUpload,
     OutboundAnalysis,
@@ -413,6 +417,47 @@ def _find_col_index(cols, candidates):
     return None
 
 
+def _token_and_search_q(fields: list[str], search: str) -> Q:
+    """
+    띄어쓰기 등 구분자로 나눈 토큰이 모두 매칭 (순서 무시 AND).
+    각 토큰은 fields 중 어느 하나에 icontains 되면 됨.
+    """
+    import re
+
+    s = (search or "").strip()
+    if not s:
+        return Q()
+    tokens = [t for t in re.split(r"[\s,./|·•]+", s) if t and t.strip()]
+    if not tokens:
+        return Q()
+    q_all = Q()
+    for token in tokens:
+        q_tok = Q()
+        for f in fields:
+            q_tok |= Q(**{f"{f}__icontains": token})
+        q_all &= q_tok
+    return q_all
+
+
+def _outbound_text_search_q(search: str):
+    """
+    VF 출고 검색: 품명·바코드·분류.
+    다중 단어는 순서 무시 AND.
+    """
+    return _token_and_search_q(
+        ["product_name", "barcode", "category"],
+        search,
+    )
+
+
+def _fc_inbound_text_search_q(search: str):
+    """FC 입고 검색: 품명·바코드·SKU·물류센터. 다중 단어 순서 무시 AND."""
+    return _token_and_search_q(
+        ["product_name", "barcode", "sku_id", "logistics_center", "category"],
+        search,
+    )
+
+
 @api_view(["GET"])
 def inventory_unified(request):
     # Source of truth: latest baseline upload (single active snapshot)
@@ -503,21 +548,18 @@ def inventory_unified(request):
             outbound_category_map[b] = counter.most_common(1)[0][0]
 
     # 현재고 가감: sales_api/inventory_stock.py 단일 규칙
-    # (기준일 = 출고 후 잔여 스냅샷 → 당일 출고/입고 재차감 금지)
+    # 스냅샷=재고+입고 / 당일 출고는 다음날 입력 → outbound_date >= as_of 차감
     from .inventory_stock import (
+        aggregate_adjustments_after_baseline,
         aggregate_movements_after_baseline,
         compute_current_stock,
         filter_outbound_for_stock,
+        outbound_after_baseline_lookup,
         stock_value,
     )
+    from .inventory_reconcile import receipt_calendar_gaps
 
-    baseline_barcode_list = list(
-        baseline_items.exclude(barcode__isnull=True)
-        .exclude(barcode="")
-        .values_list("barcode", flat=True)
-        .distinct()
-    )
-    # 바코드→상품명 (별칭 출고 통합 차감용)
+    # 바코드→상품명 (별칭 출고 통합 차감용) · 스냅샷 수량
     name_by_barcode = {}
     base_qty_by_barcode = {}
     for row in baseline_items.exclude(barcode__isnull=True).exclude(barcode="").values(
@@ -531,6 +573,56 @@ def inventory_unified(request):
         )
         if row.get("product_name") and bc not in name_by_barcode:
             name_by_barcode[bc] = (row["product_name"] or "").strip()
+
+    # ── 품목 universe SoT: 재고 업로드 바코드 (1바코드 = 1행) ──
+    # 업로드 파일을 그대로 목록·검색. VF active 필터로 숨기지 않음.
+    # 마스터는 이름/단가/분류 보강용. 기준일 이후 입고만 있는 바코드도 목록에 포함.
+    barcode_universe = list(base_qty_by_barcode.keys())
+    # 기준일 이후 입고 발생 바코드 (스냅샷에 없어도 검색·표시)
+    try:
+        from .inventory_stock import receipt_after_baseline_lookup
+
+        _rcv_lk = receipt_after_baseline_lookup(as_of)
+        extra_rcv = (
+            InventoryReceiptItem.objects.filter(**{f"receipt_date__{_rcv_lk}": as_of})
+            .exclude(barcode__isnull=True)
+            .exclude(barcode="")
+            .values_list("barcode", flat=True)
+            .distinct()
+        )
+        for b in extra_rcv:
+            bc = (b or "").strip()
+            if bc and bc not in base_qty_by_barcode:
+                barcode_universe.append(bc)
+    except Exception:
+        pass
+    barcode_universe = list(dict.fromkeys(barcode_universe))
+    baseline_barcode_list = barcode_universe
+    baseline_barcodes_qs = barcode_universe
+
+    # 바코드 → MasterSpec (동일 바코드 복수 행이면 VF 우선)
+    spec_by_barcode = {}
+    for s in MasterSpec.objects.exclude(barcode__isnull=True).exclude(barcode="").only(
+        "id",
+        "barcode",
+        "sku_id",
+        "product_name",
+        "price",
+        "category_lg",
+        "is_discontinued",
+        "is_no_outbound_3m",
+        "is_vf_item",
+        "vf_registered_at",
+    ):
+        bc = (s.barcode or "").strip()
+        if not bc:
+            continue
+        prev = spec_by_barcode.get(bc)
+        if prev is None:
+            spec_by_barcode[bc] = s
+        elif getattr(s, "is_vf_item", False) and not getattr(prev, "is_vf_item", False):
+            spec_by_barcode[bc] = s
+
     # BarcodeMaster / MasterSpec 이름 보강
     extra_names = {}
     try:
@@ -561,6 +653,11 @@ def inventory_unified(request):
         base_qty_by_barcode=base_qty_by_barcode,
         apply_aliases=True,
     )
+    adjustment_agg = aggregate_adjustments_after_baseline(
+        as_of=as_of,
+        barcodes=baseline_barcode_list,
+        adjustment_model=InventoryStockAdjustment,
+    )
 
     # 30-day stats for threshold calc (min/max) — 실적 출고만
     end_date = timezone.localdate()
@@ -589,6 +686,21 @@ def inventory_unified(request):
     outbound_60_agg = {
         row["barcode"]: int(row.get("qty") or 0)
         for row in outbound_60_qs.values("barcode").annotate(
+            qty=Coalesce(Sum("box_quantity"), 0)
+        )
+    }
+
+    # 90-day (≈3개월) stats — 입고 가능 일평균 기준 SoT
+    start_90 = end_date - timedelta(days=89)
+    outbound_90_qs = filter_outbound_for_stock(
+        OutboundRecord.objects.filter(outbound_date__range=[start_90, end_date])
+        .exclude(barcode__isnull=True)
+        .exclude(barcode="")
+        .filter(barcode__in=baseline_barcodes_qs)
+    )
+    outbound_90_agg = {
+        row["barcode"]: int(row.get("qty") or 0)
+        for row in outbound_90_qs.values("barcode").annotate(
             qty=Coalesce(Sum("box_quantity"), 0)
         )
     }
@@ -627,13 +739,24 @@ def inventory_unified(request):
         return "normal"
 
     data = []
-    for item in baseline_items:
-        bc = (item.barcode or "").strip()
+    recent_out_bcs = _recent_outbound_barcodes_3m(days=90)
+
+    # 바코드 1개 = 1행. 업로드 파일(및 이후 입고 바코드) 전부 표시 — 제외 없음
+    for bc in barcode_universe:
+        bc = (bc or "").strip()
+        if not bc:
+            continue
+        spec = spec_by_barcode.get(bc)
         master = master_map.get(bc)
-        base_qty = int(item.quantity_box or 0)
+        base_qty = int(base_qty_by_barcode.get(bc) or 0)
         rcv_qty = int(receipt_agg.get(bc) or 0)
         out_qty = int(outbound_agg.get(bc) or 0)
-        current_qty = compute_current_stock(base_qty, rcv_qty, out_qty)
+        adj_qty = int(adjustment_agg.get(bc) or 0)
+        current_qty = compute_current_stock(base_qty, rcv_qty, out_qty, adj_qty)
+
+        has_out_3m = bc in recent_out_bcs
+        is_disc = bool(getattr(spec, "is_discontinued", False)) if spec else False
+        is_vf = bool(getattr(spec, "is_vf_item", False)) if spec else False
 
         out14 = int(outbound_14_agg.get(bc) or 0)
         avg_daily = (out14 / 14.0) if out14 > 0 else 0.0
@@ -641,21 +764,19 @@ def inventory_unified(request):
 
         out30 = int(outbound_30_agg.get(bc) or 0)
         avg_daily_30 = (out30 / 30.0) if out30 > 0 else 0.0
-        
+
         out60 = int(outbound_60_agg.get(bc) or 0)
         avg_daily_60 = (out60 / 60.0) if out60 > 0 else 0.0
 
-        # 정책: 최소재고=3일치, 최대재고=30일치(한달) — 30일 평균 출고 기준
+        out90 = int(outbound_90_agg.get(bc) or 0)
+        avg_daily_90 = (out90 / 90.0) if out90 > 0 else 0.0
+
         calc_min_stock = int(round(avg_daily_30 * 3)) if avg_daily_30 > 0 else 0
         calc_max_stock = int(round(avg_daily_30 * 30)) if avg_daily_30 > 0 else 0
-        # 안전재고 기본: 7일치 (최소보다 여유 구간을 두어 부족 분류가 동작하도록)
         calc_safety_stock = int(round(avg_daily_30 * 7)) if avg_daily_30 > 0 else 0
         if calc_safety_stock > 0 and calc_min_stock > 0:
             calc_safety_stock = max(calc_safety_stock, calc_min_stock)
 
-        # 임계값의 source of truth:
-        # 1) BarcodeMaster에 설정값이 있으면 그것을 우선 사용
-        # 2) 없으면(0) 계산값을 fallback
         bm_min_stock = int(getattr(master, "min_stock", 0) or 0) if master else 0
         bm_max_stock = int(getattr(master, "max_stock", 0) or 0) if master else 0
         bm_reorder_point = (
@@ -667,13 +788,12 @@ def inventory_unified(request):
             if master
             else "active"
         )
+        if is_disc:
+            bm_lifecycle_status = "discontinued"
 
         min_stock = bm_min_stock if bm_min_stock > 0 else calc_min_stock
         max_stock = bm_max_stock if bm_max_stock > 0 else calc_max_stock
 
-        # safetyStock: 부족(발주요청) 상한
-        # - 마스터 값이 있으면 사용 (최소재고 이상으로 보정)
-        # - 없으면 계산 안전재고(7일), 그것도 없으면 최소재고
         if bm_safety_stock > 0:
             safety_stock = max(bm_safety_stock, min_stock)
         elif calc_safety_stock > 0:
@@ -687,22 +807,22 @@ def inventory_unified(request):
             int(current_qty), int(min_stock), int(safety_stock), int(max_stock)
         )
 
+        # 목록 숨김 사유 없음 — 업로드 바코드는 전부 표시
         hidden_reason = None
-        if (
-            str(bm_lifecycle_status) in ("paused", "discontinued")
-            and int(current_qty) == 0
-        ):
-            hidden_reason = "lifecycle_zero_stock"
 
         product_name = (
-            master.product_name
-            if (master and master.product_name)
-            else (item.product_name or "-")
+            ((spec.product_name or "").strip() if spec else "")
+            or (master.product_name if (master and master.product_name) else "")
+            or name_by_barcode.get(bc, "")
+            or "-"
         )
-        sku_id = (master.sku_id if master else None) or ""
-        # 단가: MasterSpec 매입가 (바코드 → SKU → 제품명)
+        sku_id = (
+            ((spec.sku_id or "").strip() if spec else "")
+            or ((master.sku_id if master else None) or "")
+        )
         unit_price = (
-            price_by_barcode.get(bc)
+            (int(spec.price or 0) if spec else 0)
+            or price_by_barcode.get(bc)
             or price_by_sku.get(str(sku_id).strip())
             or price_by_name.get(str(product_name or "").strip())
             or 0
@@ -710,8 +830,9 @@ def inventory_unified(request):
 
         data.append(
             {
-                "id": str(item.id),
-                "skuId": (master.sku_id if master else None),
+                "id": f"bc-{bc}",
+                "masterSpecId": spec.id if spec else None,
+                "skuId": sku_id or None,
                 "productName": product_name,
                 "currentStock": int(current_qty),
                 "minStock": int(min_stock),
@@ -720,10 +841,9 @@ def inventory_unified(request):
                 "safetyStock": int(safety_stock),
                 "lifecycleStatus": str(bm_lifecycle_status),
                 "hiddenReason": hidden_reason,
-                # 분류 표시: MasterSpec.category_lg(마스터) → BM → 출고 최빈값 → 기타
-                # 수량 계산(base/receipt/outbound)과는 완전 분리
                 "category": (
-                    category_lg_by_barcode.get(bc)
+                    ((spec.category_lg or "").strip() if spec else "")
+                    or category_lg_by_barcode.get(bc)
                     or category_lg_by_name.get(str(product_name or "").strip())
                     or (master.category if (master and master.category) else "")
                     or outbound_category_map.get(bc)
@@ -732,13 +852,17 @@ def inventory_unified(request):
                 "location": (
                     master.location
                     if (master and master.location)
-                    else (item.location or "")
+                    else ""
                 ),
                 "barcode": bc,
                 "price": int(unit_price),
                 "baseStock": int(base_qty),
                 "receiptQty": int(rcv_qty),
                 "outboundQty": int(out_qty),
+                "adjustmentQty": int(adj_qty),
+                "is_vf_item": is_vf,
+                "has_outbound_3m": has_out_3m,
+                "inBaseline": bc in base_qty_by_barcode,
                 "lastUpdated": latest_upload.uploaded_at.isoformat()
                 if latest_upload.uploaded_at
                 else None,
@@ -750,6 +874,8 @@ def inventory_unified(request):
                 "outbound30dTotal": out30,
                 "avgDailyOutbound30d": avg_daily_30,
                 "avgDailyOutbound60d": avg_daily_60,
+                "outbound90dTotal": out90,
+                "avgDailyOutbound90d": avg_daily_90,
             }
         )
 
@@ -781,13 +907,62 @@ def inventory_unified(request):
         summary_total_qty += qty_pos
         summary_total_value += val
 
+    # 드리프트 경고: 출고는 있는데 입고 업로드가 없는 날
+    today = timezone.localdate()
+    _out_lk = outbound_after_baseline_lookup(as_of)
+    out_dates = list(
+        OutboundRecord.objects.filter(
+            is_estimated=False, **{f"outbound_date__{_out_lk}": as_of}
+        )
+        .values_list("outbound_date", flat=True)
+        .distinct()
+    )
+    from .inventory_stock import receipt_after_baseline_lookup as _rcv_lk_fn
+
+    _rcv_lk2 = _rcv_lk_fn(as_of)
+    rcv_dates = list(
+        InventoryReceiptItem.objects.filter(**{f"receipt_date__{_rcv_lk2}": as_of})
+        .values_list("receipt_date", flat=True)
+        .distinct()
+    )
+    drift_health = receipt_calendar_gaps(as_of, today, rcv_dates, out_dates)
+    gap_days = drift_health.get("outbound_days_without_receipt_upload") or []
+    drift_warnings = []
+    if gap_days:
+        drift_warnings.append(
+            {
+                "code": "receipt_gap_days",
+                "message": (
+                    "출고 실적이 있는 날 중 입고 업로드가 없는 날짜가 있습니다. "
+                    "창고 입고가 있었다면 장부가 실물보다 낮아집니다."
+                ),
+                "days": gap_days,
+            }
+        )
+    adj_sum = int(sum(adjustment_agg.values())) if adjustment_agg else 0
+    if adj_sum != 0:
+        drift_warnings.append(
+            {
+                "code": "adjustments_applied",
+                "message": f"조정 전표 합계 {adj_sum:+d}박스가 현재고에 반영되어 있습니다.",
+                "adjustmentQtySum": adj_sum,
+            }
+        )
+
+    vf_master_count = MasterSpec.objects.filter(is_vf_item=True).count()
+    baseline_barcode_count = len(base_qty_by_barcode)
     return Response(
         {
             "success": True,
+            # 목록 SoT = 재고 업로드 바코드 (+ 이후 입고 바코드). 1바코드=1행. 제외 없음.
+            "universe": "baseline_barcode",
+            "vfMasterCount": vf_master_count,
+            "baselineBarcodeCount": baseline_barcode_count,
+            "listBarcodeCount": len(data),
             "data": data,
             "pagination": {
                 "page": 1,
-                "limit": 1000,
+                "limit": 2000,
                 "total": len(data),
                 "pages": 1,
                 "hasMore": False,
@@ -803,9 +978,24 @@ def inventory_unified(request):
                     "totalValue": summary_total_value,
                     "totalQuantity": summary_total_qty,
                     "totalItems": len(data),
+                    "vfMasterCount": vf_master_count,
+                    "baselineBarcodeCount": baseline_barcode_count,
                 },
                 "filtered": {},
                 "options": {},
+            },
+            "stockHealth": {
+                "formula": "baseline + receipts(date>=as_of) - outbound(date>=as_of) + adjustments",
+                "asOfDate": as_of.isoformat() if as_of else None,
+                "receiptRule": "receipt_date >= as_of (당일 입고 가산)",
+                "outboundRule": "outbound_date >= as_of (당일 출고 차감, 일자 맞춤)",
+                "note": (
+                    "재고 업로드=기준(그 시점 정답). "
+                    "기준일 이후 입고 이력은 기준 업로드 시 초기화 후, "
+                    "이후에 올리는 입고만 가산. 출고는 일자 맞춰 차감."
+                ),
+                "driftWarnings": drift_warnings,
+                **drift_health,
             },
             "lastUploadDate": latest_upload.uploaded_at.isoformat()
             if latest_upload.uploaded_at
@@ -828,13 +1018,15 @@ def inventory_stock_diagnostics(request):
     """
     재고 금액/수량 구성 진단 (읽기 전용).
     오전·오후 숫자 차이 원인 확인용:
-      현재고 = baseline + 입고(as_of 이후) − 실출고(as_of 이후)
+      현재고 = baseline + 입고(as_of 이후) − 실출고(as_of 이후) + 조정
     """
     from .inventory_stock import (
+        aggregate_adjustments_after_baseline,
         aggregate_movements_after_baseline,
         compute_current_stock,
         stock_value,
     )
+    from .inventory_reconcile import receipt_calendar_gaps
 
     latest = InventoryBaselineUpload.objects.order_by("-uploaded_at").first()
     if not latest:
@@ -859,8 +1051,14 @@ def inventory_stock_diagnostics(request):
         outbound_model=OutboundRecord,
         receipt_model=InventoryReceiptItem,
     )
+    adj_agg = aggregate_adjustments_after_baseline(
+        as_of=as_of,
+        barcodes=bcs,
+        adjustment_model=InventoryStockAdjustment,
+    )
     out_sum = int(sum(out_agg.values()))
     rcv_sum = int(sum(rcv_agg.values()))
+    adj_sum = int(sum(adj_agg.values()))
 
     price_by_bc = {}
     for s in MasterSpec.objects.exclude(barcode="").only("barcode", "price"):
@@ -874,13 +1072,21 @@ def inventory_stock_diagnostics(request):
     for it in items:
         bc = (it.barcode or "").strip()
         cur = compute_current_stock(
-            it.quantity_box, rcv_agg.get(bc, 0), out_agg.get(bc, 0)
+            it.quantity_box,
+            rcv_agg.get(bc, 0),
+            out_agg.get(bc, 0),
+            adj_agg.get(bc, 0),
         )
         total_qty += max(0, cur)
         total_val += stock_value(cur, price_by_bc.get(bc, 0))
 
+    from .inventory_stock import outbound_after_baseline_lookup as _out_lk_fn
+
+    _olk = _out_lk_fn(as_of)
     out_daily = list(
-        OutboundRecord.objects.filter(is_estimated=False, outbound_date__gt=as_of)
+        OutboundRecord.objects.filter(
+            is_estimated=False, **{f"outbound_date__{_olk}": as_of}
+        )
         .values("outbound_date")
         .annotate(qty=Coalesce(Sum("box_quantity"), 0), rows=Count("id"))
         .order_by("outbound_date")
@@ -888,7 +1094,9 @@ def inventory_stock_diagnostics(request):
     if barcode:
         out_daily = list(
             OutboundRecord.objects.filter(
-                is_estimated=False, outbound_date__gt=as_of, barcode=barcode
+                is_estimated=False,
+                barcode=barcode,
+                **{f"outbound_date__{_olk}": as_of},
             )
             .values("outbound_date")
             .annotate(qty=Coalesce(Sum("box_quantity"), 0), rows=Count("id"))
@@ -908,6 +1116,14 @@ def inventory_stock_diagnostics(request):
             .order_by("receipt_date")
         )
 
+    today = timezone.localdate()
+    health = receipt_calendar_gaps(
+        as_of,
+        today,
+        [r["receipt_date"] for r in rcv_daily],
+        [r["outbound_date"] for r in out_daily],
+    )
+
     return Response(
         {
             "success": True,
@@ -915,9 +1131,14 @@ def inventory_stock_diagnostics(request):
             "baselineUploadedAt": latest.uploaded_at.isoformat()
             if latest.uploaded_at
             else None,
-            "today": timezone.localdate().isoformat(),
-            "formula": "current = baseline + receipts(after as_of) - real_outbound(after as_of)",
+            "today": today.isoformat(),
+            "formula": (
+                "current = baseline + receipts(after as_of) "
+                "- real_outbound(after as_of) + adjustments(after as_of)"
+            ),
             "baseline": {"items": len(items), "qtySum": base_sum},
+            "adjustmentsAfter": {"qtySum": adj_sum},
+            "stockHealth": health,
             "receiptsAfter": {"qtySum": rcv_sum, "daily": [
                 {
                     "date": r["receipt_date"].isoformat(),
@@ -937,7 +1158,7 @@ def inventory_stock_diagnostics(request):
             "currentStock": {
                 "qty": total_qty,
                 "value": total_val,
-                "rawFormulaQty": base_sum + rcv_sum - out_sum,
+                "rawFormulaQty": base_sum + rcv_sum - out_sum + adj_sum,
             },
             "barcode": barcode or None,
         }
@@ -1043,13 +1264,117 @@ def inventory_upload_history_by_date(request, date: str):
     )
 
 
+def _read_baseline_dataframe(uploaded_file):
+    """
+    기준 재고 업로드 파일 로드.
+    - .xlsx/.xls → read_excel (openpyxl/xlrd)
+    - .csv → read_csv (utf-8-sig / cp949 / utf-8)
+    반환: (DataFrame, None) 또는 (None, error_message)
+    """
+    import io
+
+    name = (getattr(uploaded_file, "name", "") or "").lower()
+    raw = uploaded_file.read()
+    if hasattr(uploaded_file, "seek"):
+        try:
+            uploaded_file.seek(0)
+        except Exception:
+            pass
+
+    if name.endswith(".csv") or name.endswith(".txt"):
+        last_err = None
+        for enc in ("utf-8-sig", "cp949", "utf-8", "euc-kr"):
+            try:
+                df = pd.read_csv(io.BytesIO(raw), dtype=str, encoding=enc)
+                return df, None
+            except Exception as e:
+                last_err = e
+                continue
+        return None, f"CSV 파싱 실패: {last_err}"
+
+    # excel
+    last_err = None
+    for engine in ("openpyxl", "xlrd", None):
+        try:
+            kw = {"dtype": str}
+            if engine:
+                kw["engine"] = engine
+            df = pd.read_excel(io.BytesIO(raw), **kw)
+            return df, None
+        except Exception as e:
+            last_err = e
+            continue
+    try:
+        df = pd.read_csv(io.BytesIO(raw), dtype=str, encoding="utf-8-sig")
+        return df, None
+    except Exception:
+        return None, f"엑셀/CSV 파싱 실패: {last_err}"
+
+
+def _expand_upload_files(files):
+    """
+    zip 이면 내부 xlsx/xls/csv 를 풀어 리스트로 반환.
+    페이지별재고리스트 여러 장·zip 일괄 업로드 지원.
+    """
+    import io
+    import zipfile
+    from django.core.files.uploadedfile import InMemoryUploadedFile, SimpleUploadedFile
+
+    out = []
+    for f in files or []:
+        name = (getattr(f, "name", "") or "").lower()
+        raw = f.read()
+        if hasattr(f, "seek"):
+            try:
+                f.seek(0)
+            except Exception:
+                pass
+        if name.endswith(".zip"):
+            try:
+                zf = zipfile.ZipFile(io.BytesIO(raw))
+            except Exception as e:
+                raise ValueError(f"ZIP 열기 실패 ({getattr(f, 'name', '')}): {e}") from e
+            for zi in zf.infolist():
+                if zi.is_dir():
+                    continue
+                zn = zi.filename
+                base = zn.split("/")[-1].split("\\")[-1]
+                low = base.lower()
+                if not (low.endswith(".xlsx") or low.endswith(".xls") or low.endswith(".csv")):
+                    continue
+                if base.startswith("~$"):
+                    continue
+                data = zf.read(zi)
+                out.append(
+                    SimpleUploadedFile(
+                        base,
+                        data,
+                        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                )
+            continue
+        # 일반 파일: 이미 읽었으면 SimpleUploadedFile 로 재포장 (read 소진 방지)
+        out.append(
+            SimpleUploadedFile(
+                getattr(f, "name", "upload.bin") or "upload.bin",
+                raw,
+                content_type=getattr(f, "content_type", "") or "application/octet-stream",
+            )
+        )
+    return out
+
+
 @api_view(["POST"])
 def inventory_baseline_upload(request):
     """
     재고 기준 스냅샷 업로드.
 
+    지원:
+    - 창고 엑셀 (바코드/수량 등)
+    - inventory_unified_*.csv (export: barcode, currentStock, productName, …)
+
     안전 규칙 (실서비스):
-    1) 엑셀 파싱·검증이 끝난 뒤에만 DB 변경
+    1) 엑셀·CSV 파싱·검증이 끝난 뒤에만 DB 변경
     2) 트랜잭션으로 baseline 교체 (중간 실패 시 롤백)
     3) 입고(receipt) 이력은 삭제하지 않음 — 현재고 공식은 as_of 이후 입고만 가산
     """
@@ -1058,9 +1383,12 @@ def inventory_baseline_upload(request):
         (
             request.data.get("inventoryDate") or request.data.get("asOfDate") or ""
         ).strip()
-        if isinstance(request.data, dict)
+        if hasattr(request, "data")
         else ""
     )
+    if not as_of_str:
+        # multipart 폴백
+        as_of_str = (request.POST.get("inventoryDate") or request.POST.get("asOfDate") or "").strip()
     as_of = _parse_date_ymd(as_of_str)
     if not as_of:
         return Response(
@@ -1075,8 +1403,30 @@ def inventory_baseline_upload(request):
         # backward compatibility with existing UI
         files = request.FILES.getlist("csv")
     if not files:
+        # single file field
+        one = request.FILES.get("file")
+        if one:
+            files = [one]
+    if not files:
         return Response(
-            {"message": "files are required"}, status=status.HTTP_400_BAD_REQUEST
+            {"message": "files are required (xlsx/csv/zip, 여러 장 선택 가능)"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        files = _expand_upload_files(files)
+    except ValueError as e:
+        return Response(
+            {"message": str(e), "errorId": error_id},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not files:
+        return Response(
+            {
+                "message": "ZIP/파일에서 읽을 xlsx·csv 가 없습니다.",
+                "errorId": error_id,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
     total_bytes = 0
@@ -1097,35 +1447,52 @@ def inventory_baseline_upload(request):
 
     # --- 1) 파싱만 수행 (DB 변경 없음). 실패 시 기존 스냅샷 유지 ---
     total_rows = 0
+    rows_zero = 0
     agg = {}
     meta = {}
     file_names = [getattr(f, "name", "") for f in files]
+    parse_warnings = []
 
     for f in files:
+        fname = getattr(f, "name", "") or ""
         try:
             logger.debug(
-                "baseline_upload read_excel start error_id=%s file=%s size=%s",
+                "baseline_upload read start error_id=%s file=%s size=%s",
                 error_id,
-                getattr(f, "name", ""),
+                fname,
                 getattr(f, "size", None),
             )
-            df = pd.read_excel(f, dtype=str)
+            df, read_err = _read_baseline_dataframe(f)
+            if read_err or df is None:
+                logger.exception(
+                    "baseline_upload read failed error_id=%s file=%s err=%s",
+                    error_id,
+                    fname,
+                    read_err,
+                )
+                return Response(
+                    {
+                        "message": f"파일 파싱 실패: {fname}: {read_err}",
+                        "errorId": error_id,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             logger.debug(
-                "baseline_upload read_excel done error_id=%s file=%s rows=%s cols=%s",
+                "baseline_upload read done error_id=%s file=%s rows=%s cols=%s",
                 error_id,
-                getattr(f, "name", ""),
+                fname,
                 len(df),
                 len(df.columns),
             )
         except Exception as e:
             logger.exception(
-                "baseline_upload read_excel failed error_id=%s file=%s",
+                "baseline_upload read failed error_id=%s file=%s",
                 error_id,
-                getattr(f, "name", ""),
+                fname,
             )
             return Response(
                 {
-                    "message": f"엑셀 파싱 실패: {getattr(f, 'name', '')}: {str(e)}",
+                    "message": f"파일 파싱 실패: {fname}: {str(e)}",
                     "errorId": error_id,
                 },
                 status=status.HTTP_400_BAD_REQUEST,
@@ -1134,10 +1501,47 @@ def inventory_baseline_upload(request):
         df = df.fillna("")
         cols = _normalize_cols(df.columns)
         bc_idx = _find_col_index(
-            cols, ["상품 바코드", "상품바코드", "바코드", "barcode"]
+            cols,
+            [
+                "상품 바코드",
+                "상품바코드",
+                "바코드",
+                "barcode",
+                "sku barcode",
+            ],
         )
-        qty_idx = _find_col_index(cols, ["수량"])
-        name_idx = _find_col_index(cols, ["상품명", "품목", "product"])
+        # inventory_unified export: currentStock / 현재고 / 수량
+        qty_idx = _find_col_index(
+            cols,
+            [
+                "수량",
+                "재고수량",
+                "재고 수량",
+                "currentstock",
+                "current_stock",
+                "current stock",
+                "현재고",
+                "현재 재고",
+                "전산재고",
+                "전산 재고",
+                "stock",
+                "qty",
+                "quantity",
+            ],
+        )
+        name_idx = _find_col_index(
+            cols,
+            [
+                "상품명",
+                "품목",
+                "product",
+                "productname",
+                "product_name",
+                "product name",
+                "sku명",
+                "sku name",
+            ],
+        )
         # Prefer external SKU id when available
         sku_idx = _find_col_index(
             cols,
@@ -1169,51 +1573,124 @@ def inventory_baseline_upload(request):
             logger.warning(
                 "baseline_upload missing required cols error_id=%s file=%s cols=%s",
                 error_id,
-                getattr(f, "name", ""),
+                fname,
                 cols,
+            )
+            parse_warnings.append(
+                f"{fname}: 바코드/수량 컬럼 없음 (cols={list(df.columns)[:20]})"
             )
             continue
 
         total_rows += len(df)
-        for _, row in df.iterrows():
-            bc = str(row.iloc[bc_idx]).strip()
-            if not bc:
+        # vectorized parse (iterrows 는 대용량 엑셀에서 UI/서버 멈춤 유발)
+        skip_bc = {
+            "",
+            "nan",
+            "none",
+            "null",
+            "barcode",
+            "상품바코드",
+            "상품 바코드",
+        }
+        bc_s = df.iloc[:, bc_idx].astype(str).str.strip()
+        qty_raw = df.iloc[:, qty_idx]
+        qty_s = (
+            pd.to_numeric(
+                qty_raw.astype(str).str.replace(",", "", regex=False).str.strip(),
+                errors="coerce",
+            )
+            .fillna(0)
+            .clip(lower=0)
+            .astype(int)
+        )
+        valid = ~bc_s.str.lower().isin(skip_bc)
+        if not bool(valid.any()):
+            continue
+        bc_ok = bc_s[valid]
+        qty_ok = qty_s[valid]
+        rows_zero += int((qty_ok == 0).sum())
+        grouped = (
+            pd.DataFrame({"barcode": bc_ok.to_numpy(), "qty": qty_ok.to_numpy()})
+            .groupby("barcode", sort=False)["qty"]
+            .sum()
+        )
+        for bc, qty in grouped.items():
+            bc_key = str(bc)
+            agg[bc_key] = int(agg.get(bc_key) or 0) + int(qty)
+
+        # meta: 바코드별 첫 유효 행
+        first_idx = bc_ok.drop_duplicates(keep="first").index
+        name_col = (
+            df.iloc[:, name_idx].astype(str).str.strip()
+            if name_idx is not None
+            else None
+        )
+        sku_col = (
+            df.iloc[:, sku_idx].astype(str).str.strip()
+            if sku_idx is not None
+            else None
+        )
+        cat_col = (
+            df.iloc[:, cat_idx].astype(str).str.strip()
+            if cat_idx is not None
+            else None
+        )
+        loc_col = (
+            df.iloc[:, loc_idx].astype(str).str.strip()
+            if loc_idx is not None
+            else None
+        )
+        def _cell(series, idx):
+            if series is None:
+                return ""
+            v = str(series.loc[idx] or "").strip()
+            return "" if v.lower() in ("nan", "none", "null") else v
+
+        for i in first_idx:
+            bc_key = str(bc_s.loc[i])
+            if bc_key in meta:
                 continue
-            qty = _parse_int(row.iloc[qty_idx])
-            if qty <= 0:
-                continue
-            agg[bc] = int(agg.get(bc) or 0) + qty
-            if bc not in meta:
-                meta[bc] = {
-                    "product_name": str(row.iloc[name_idx]).strip()
-                    if name_idx is not None
-                    else "",
-                    "sku_id": str(row.iloc[sku_idx]).strip()
-                    if sku_idx is not None
-                    else "",
-                    "category": str(row.iloc[cat_idx]).strip()
-                    if cat_idx is not None
-                    else "",
-                    "location": str(row.iloc[loc_idx]).strip()
-                    if loc_idx is not None
-                    else "",
-                }
+            meta[bc_key] = {
+                "product_name": _cell(name_col, i),
+                "sku_id": _cell(sku_col, i),
+                "category": _cell(cat_col, i),
+                "location": _cell(loc_col, i),
+            }
 
     if not agg:
         return Response(
             {
-                "message": "유효한 바코드/수량 행이 없습니다. 기존 재고 스냅샷은 유지됩니다.",
+                "message": (
+                    "유효한 바코드/수량 행이 없습니다. 기존 재고 스냅샷은 유지됩니다. "
+                    "inventory_unified CSV는 barcode + currentStock 컬럼이 필요합니다. "
+                    + (" | ".join(parse_warnings) if parse_warnings else "")
+                ),
                 "errorId": error_id,
+                "warnings": parse_warnings,
             },
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # --- 2) 파싱 성공 후에만 baseline 교체 (입고 이력 보존) ---
+    # --- 2) 파싱 성공 후에만 baseline 교체 ---
+    # 기준 재고 업로드 = 그 시점 정답.
+    # as_of 당일·이후 입고는 스냅샷에 이미 반영된 것으로 보고 제거 후,
+    # 이후 새로 올리는 입고 업로드만 가산한다. (이중 가산 방지)
+    cleared_receipts = 0
     try:
         with transaction.atomic():
             InventoryBaselineItem.objects.all().delete()
             InventoryBaselineUpload.objects.all().delete()
-            # 주의: InventoryReceipt* 는 삭제하지 않음
+
+            # 기준일 이후(포함) 입고·조정 초기화 — 스냅샷이 새 기준
+            cleared_receipts, _ = InventoryReceiptItem.objects.filter(
+                receipt_date__gte=as_of
+            ).delete()
+            try:
+                InventoryStockAdjustment.objects.filter(
+                    adjustment_date__gte=as_of
+                ).delete()
+            except Exception:
+                pass
 
             upload = InventoryBaselineUpload.objects.create(
                 as_of_date=as_of,
@@ -1318,17 +1795,395 @@ def inventory_baseline_upload(request):
     return Response(
         {
             "success": True,
-            "message": "baseline uploaded",
-            "rowsProcessed": len(agg),
+            "message": (
+                f"기준 재고 업로드 완료: {len(agg)}개 바코드 "
+                f"(as_of={as_of.isoformat()}, 파일 {len(files)}개, 원본 행 {int(total_rows)}"
+                f"{f', 수량0 {rows_zero}행' if rows_zero else ''}"
+                f"{f', 기준일 이후 입고 {cleared_receipts}건 초기화' if cleared_receipts else ''})"
+            ),
+            "rowsProcessed": int(total_rows),
+            "barcodesSaved": len(agg),
+            "filesProcessed": len(files),
+            "rowsZeroQty": int(rows_zero),
             "asOfDate": as_of.isoformat(),
-            "receiptsPreserved": True,
+            "fileNames": file_names,
+            "receiptsClearedOnOrAfterAsOf": int(cleared_receipts or 0),
+            "warnings": parse_warnings,
+        }
+    )
+
+
+@api_view(["POST"])
+def inventory_variance_check(request):
+    """
+    전산 현재고 vs WMS 파일 차이 조회 (DB 변경 없음).
+
+    form:
+      files | xlsx | file : WMS xlsx/zip
+      asOfDate | inventoryDate : WMS 스냅샷 일자 (표시용)
+      dedupeLpn : 1/true 이면 (barcode,LPN) 재등장 행 스킵.
+        기본 0 — 페이지별재고리스트는 여러 행이 정상 표기(중복 아님).
+      includeMatches : 1 이면 일치 행 포함
+    """
+    import uuid as _uuid
+
+    from .inventory_stock import (
+        aggregate_adjustments_after_baseline,
+        aggregate_movements_after_baseline,
+        compute_current_stock,
+    )
+    from .inventory_reconcile import build_variance_items, parse_wms_stock_quantity
+
+    error_id = str(_uuid.uuid4())
+    as_of_str = ""
+    if isinstance(request.data, dict):
+        as_of_str = (
+            request.data.get("inventoryDate") or request.data.get("asOfDate") or ""
+        ).strip()
+    wms_as_of = _parse_date_ymd(as_of_str) or timezone.localdate()
+
+    # 기본 OFF: 페이지별 리스트의 다수 행은 중복이 아님
+    dedupe = False
+    include_matches = False
+    if isinstance(request.data, dict):
+        raw_d = str(request.data.get("dedupeLpn") or request.data.get("dedupe_lpn") or "0")
+        dedupe = raw_d.strip().lower() in ("1", "true", "yes", "y")
+        raw_m = str(
+            request.data.get("includeMatches") or request.data.get("include_matches") or ""
+        )
+        include_matches = raw_m.strip().lower() in ("1", "true", "yes", "y")
+
+    files = request.FILES.getlist("files")
+    if not files:
+        files = request.FILES.getlist("xlsx")
+    if not files:
+        files = request.FILES.getlist("file")
+    if not files:
+        return Response(
+            {"success": False, "message": "files are required (WMS xlsx or zip)", "errorId": error_id},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    wms_qty, wms_names, parse_stats, wms_locations = parse_wms_stock_quantity(
+        files, dedupe_lpn=dedupe
+    )
+    if not wms_qty:
+        return Response(
+            {
+                "success": False,
+                "message": "유효한 WMS 바코드/수량이 없습니다.",
+                "errorId": error_id,
+                "parseStats": parse_stats,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    latest = InventoryBaselineUpload.objects.order_by("-uploaded_at").first()
+    if not latest:
+        return Response(
+            {
+                "success": False,
+                "message": "재고 기준 스냅샷이 없습니다. 먼저 baseline을 업로드하세요.",
+                "errorId": error_id,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    base_as_of = latest.as_of_date
+    base_map = {}
+    name_by = dict(wms_names)
+    for it in InventoryBaselineItem.objects.filter(upload=latest).only(
+        "barcode", "quantity_box", "product_name"
+    ):
+        bc = (it.barcode or "").strip()
+        if not bc:
+            continue
+        base_map[bc] = base_map.get(bc, 0) + int(it.quantity_box or 0)
+        if it.product_name and bc not in name_by:
+            name_by[bc] = (it.product_name or "").strip()
+
+    # 로케이션 SoT = BarcodeMaster
+    master_loc: dict = {}
+    try:
+        for bm in BarcodeMaster.objects.exclude(barcode="").only(
+            "barcode", "product_name", "location"
+        ):
+            b = (bm.barcode or "").strip()
+            if not b:
+                continue
+            if (bm.product_name or "").strip() and b not in name_by:
+                name_by[b] = bm.product_name.strip()
+            master_loc[b] = (bm.location or "").strip()
+    except Exception:
+        pass
+
+    all_bcs = sorted(set(base_map) | set(wms_qty))
+    # 바코드 단위 독립: 별칭 배분 없이 raw 입출고
+    out_agg, rcv_agg = aggregate_movements_after_baseline(
+        as_of=base_as_of,
+        barcodes=all_bcs,
+        outbound_model=OutboundRecord,
+        receipt_model=InventoryReceiptItem,
+        apply_aliases=False,
+    )
+    adj_agg = aggregate_adjustments_after_baseline(
+        as_of=base_as_of,
+        barcodes=all_bcs,
+        adjustment_model=InventoryStockAdjustment,
+    )
+
+    ledger = {}
+    for bc in all_bcs:
+        ledger[bc] = compute_current_stock(
+            base_map.get(bc, 0),
+            int(rcv_agg.get(bc) or 0),
+            int(out_agg.get(bc) or 0),
+            int(adj_agg.get(bc) or 0),
+        )
+
+    items, summary = build_variance_items(
+        base_by_barcode=base_map,
+        receipt_by_barcode=rcv_agg,
+        outbound_by_barcode=out_agg,
+        ledger_by_barcode=ledger,
+        wms_by_barcode=wms_qty,
+        name_by_barcode=name_by,
+        master_location_by_barcode=master_loc,
+        wms_locations_by_barcode=wms_locations,
+        include_matches=include_matches,
+    )
+
+    return Response(
+        {
+            "success": True,
+            "errorId": error_id,
+            "baselineAsOf": base_as_of.isoformat() if base_as_of else None,
+            "wmsAsOf": wms_as_of.isoformat(),
+            "formula": "baseline + receipts - outbound (+ adjustments)",
+            "unit": "barcode",
+            "note": (
+                "수량: 바코드별 전산 vs WMS. "
+                "로케이션: 마스터(BarcodeMaster) 기준, WMS 복수 로케이션 전부 표시. DB 변경 없음."
+            ),
+            "parseStats": {
+                "files": parse_stats.get("files"),
+                "rows": parse_stats.get("rows"),
+                "rowsUsed": parse_stats.get("rows_used"),
+                "rowsLpnSkipped": parse_stats.get("rows_lpn_skipped"),
+                "barcodes": parse_stats.get("barcodes"),
+                "locationMultiBarcodes": parse_stats.get("locationConflicts"),
+            },
+            "summary": summary,
+            "items": items,
+        }
+    )
+
+
+@api_view(["POST"])
+def inventory_wms_reconcile(request):
+    """
+    WMS 실물 목록(xlsx/zip)과 장부 현재고를 대조해 차이만 조정 전표로 반영.
+
+    - baseline 스냅샷을 덮어쓰지 않음 (원장 연속 유지)
+    - dryRun=1 이면 미리보기만
+    - 같은 날짜·바코드 source_key 멱등 (재업로드 시 중복 방지)
+
+    form:
+      files | xlsx | file : WMS 파일
+      asOfDate | inventoryDate : 실물 기준일 (YYYY-MM-DD), 기본=오늘
+      dryRun : true/1 이면 저장 안 함
+    """
+    import uuid as _uuid
+
+    from .inventory_stock import (
+        aggregate_adjustments_after_baseline,
+        aggregate_movements_after_baseline,
+        compute_current_stock,
+    )
+    from .inventory_reconcile import build_reconcile_deltas, parse_wms_stock_quantity
+
+    error_id = str(_uuid.uuid4())
+    as_of_str = (
+        (
+            request.data.get("inventoryDate")
+            or request.data.get("asOfDate")
+            or ""
+        ).strip()
+        if isinstance(request.data, dict)
+        else ""
+    )
+    recon_date = _parse_date_ymd(as_of_str) or timezone.localdate()
+    dry_raw = ""
+    if isinstance(request.data, dict):
+        dry_raw = str(request.data.get("dryRun") or request.data.get("dry_run") or "")
+    dry_run = dry_raw.strip().lower() in ("1", "true", "yes", "y")
+
+    files = request.FILES.getlist("files")
+    if not files:
+        files = request.FILES.getlist("xlsx")
+    if not files:
+        files = request.FILES.getlist("file")
+    if not files:
+        return Response(
+            {"message": "files are required (WMS xlsx or zip)", "errorId": error_id},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # 페이지별재고리스트: 여러 행은 정상 → LPN 중복 제거 기본 OFF
+    wms_qty, wms_names, parse_stats, _wms_locs = parse_wms_stock_quantity(
+        files, dedupe_lpn=False
+    )
+    if not wms_qty:
+        return Response(
+            {
+                "message": "유효한 WMS 바코드/수량이 없습니다.",
+                "errorId": error_id,
+                "parseStats": parse_stats,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    latest = InventoryBaselineUpload.objects.order_by("-uploaded_at").first()
+    if not latest:
+        return Response(
+            {
+                "message": "재고 기준 스냅샷이 없습니다. 최초 1회 baseline 업로드가 필요합니다.",
+                "errorId": error_id,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    base_as_of = latest.as_of_date
+    base_map = {}
+    name_by = dict(wms_names)
+    for it in InventoryBaselineItem.objects.filter(upload=latest).only(
+        "barcode", "quantity_box", "product_name"
+    ):
+        bc = (it.barcode or "").strip()
+        if not bc:
+            continue
+        base_map[bc] = base_map.get(bc, 0) + int(it.quantity_box or 0)
+        if it.product_name and bc not in name_by:
+            name_by[bc] = it.product_name
+
+    all_bcs = sorted(set(base_map) | set(wms_qty))
+    out_agg, rcv_agg = aggregate_movements_after_baseline(
+        as_of=base_as_of,
+        barcodes=all_bcs,
+        outbound_model=OutboundRecord,
+        receipt_model=InventoryReceiptItem,
+    )
+    adj_agg = aggregate_adjustments_after_baseline(
+        as_of=base_as_of,
+        barcodes=all_bcs,
+        adjustment_model=InventoryStockAdjustment,
+    )
+
+    ledger = {}
+    for bc in all_bcs:
+        ledger[bc] = compute_current_stock(
+            base_map.get(bc, 0),
+            int(rcv_agg.get(bc) or 0),
+            int(out_agg.get(bc) or 0),
+            int(adj_agg.get(bc) or 0),
+        )
+
+    deltas = build_reconcile_deltas(
+        ledger_qty=ledger,
+        wms_qty=wms_qty,
+        name_by_barcode=name_by,
+        min_abs_delta=1,
+    )
+
+    preview = {
+        "matchCount": len(all_bcs) - len(deltas),
+        "mismatchCount": len(deltas),
+        "absDeltaSum": sum(abs(d["qty_delta"]) for d in deltas),
+        "netDeltaSum": sum(d["qty_delta"] for d in deltas),
+        "topMismatches": sorted(
+            deltas, key=lambda x: abs(x["qty_delta"]), reverse=True
+        )[:30],
+    }
+
+    if dry_run:
+        return Response(
+            {
+                "success": True,
+                "dryRun": True,
+                "errorId": error_id,
+                "reconcileDate": recon_date.isoformat(),
+                "baselineAsOf": base_as_of.isoformat(),
+                "parseStats": parse_stats,
+                "preview": preview,
+                "message": "미리보기만 수행했습니다. dryRun 없이 재요청 시 조정 전표가 저장됩니다.",
+            }
+        )
+
+    created = 0
+    skipped = 0
+    to_create = []
+    for d in deltas:
+        bc = d["barcode"]
+        source_key = f"wms_reconcile:{recon_date.isoformat()}:{bc}"
+        if InventoryStockAdjustment.objects.filter(source_key=source_key).exists():
+            skipped += 1
+            continue
+        to_create.append(
+            InventoryStockAdjustment(
+                adjustment_date=recon_date,
+                barcode=bc,
+                product_name=(d.get("product_name") or "")[:255],
+                qty_delta=int(d["qty_delta"]),
+                reason=InventoryStockAdjustment.REASON_WMS_RECONCILE,
+                note=(
+                    f"WMS {d['wms_qty']} - ledger {d['ledger_qty']} "
+                    f"(baseline {base_as_of})"
+                )[:500],
+                source_key=source_key,
+            )
+        )
+    if to_create:
+        with transaction.atomic():
+            InventoryStockAdjustment.objects.bulk_create(to_create, batch_size=500)
+            created = len(to_create)
+
+    logger.info(
+        "wms_reconcile done error_id=%s date=%s created=%s skipped=%s mismatches=%s",
+        error_id,
+        recon_date,
+        created,
+        skipped,
+        len(deltas),
+    )
+    return Response(
+        {
+            "success": True,
+            "dryRun": False,
+            "errorId": error_id,
+            "reconcileDate": recon_date.isoformat(),
+            "baselineAsOf": base_as_of.isoformat(),
+            "parseStats": parse_stats,
+            "preview": preview,
+            "createdAdjustments": created,
+            "skippedExisting": skipped,
+            "message": (
+                f"조정 전표 {created}건 반영"
+                + (f" (기존 {skipped}건 스킵)" if skipped else "")
+                + ". baseline 은 변경하지 않았습니다."
+            ),
         }
     )
 
 
 @api_view(["POST"])
 def inventory_receipts_upload(request):
+    """
+    입고 실적 엑셀 업로드.
+    - 파싱·검증 완료 후에만 DB 기록 (중간 실패 시 이력 오염 방지)
+    - 날짜/수량은 vectorized 파싱 (행 단위 pd.to_datetime 호출 금지 → 멈춤 방지)
+    """
     error_id = str(uuid.uuid4())
+    t0 = time.time()
     latest_upload = InventoryBaselineUpload.objects.order_by("-uploaded_at").first()
     if not latest_upload:
         return Response(
@@ -1357,7 +2212,10 @@ def inventory_receipts_upload(request):
         return Response({"success": True, "message": "이미 업로드된 파일입니다."})
 
     try:
-        df = pd.read_excel(io.BytesIO(raw), dtype=str).fillna("")
+        try:
+            df = pd.read_excel(io.BytesIO(raw), dtype=str, engine="openpyxl").fillna("")
+        except Exception:
+            df = pd.read_excel(io.BytesIO(raw), dtype=str).fillna("")
     except Exception as e:
         logger.exception(
             "receipts_upload read_excel failed error_id=%s file=%s",
@@ -1373,10 +2231,13 @@ def inventory_receipts_upload(request):
         )
 
     cols = _normalize_cols(df.columns)
+    # 수량 컬럼: '수량' 단독 부분일치는 오탐 → 입고 수량 우선
     bc_idx = _find_col_index(cols, ["상품바코드", "상품 바코드", "바코드", "barcode"])
-    qty_idx = _find_col_index(cols, ["입고 수량", "입고수량", "수량"])
+    qty_idx = _find_col_index(cols, ["입고 수량", "입고수량", "입고qty", "입고 qty"])
+    if qty_idx is None:
+        qty_idx = _find_col_index(cols, ["수량", "qty", "quantity"])
     dt_idx = _find_col_index(
-        cols, ["입고 일시", "입고일시", "입고일", "datetime", "date"]
+        cols, ["입고 일시", "입고일시", "입고일", "입고 일자", "datetime", "date"]
     )
     name_idx = _find_col_index(cols, ["상품명", "품목", "product"])
 
@@ -1392,146 +2253,192 @@ def inventory_receipts_upload(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    upload = InventoryReceiptUpload.objects.create(
-        file_name=getattr(file_obj, "name", "") or "receipts.xlsx",
-        file_hash=file_hash,
+    from .inventory_stock import is_movement_date_applicable
+
+    # --- vectorized parse (no per-row pd.to_datetime) ---
+    bc_s = df.iloc[:, bc_idx].astype(str).str.strip()
+    qty_s = (
+        pd.to_numeric(
+            df.iloc[:, qty_idx].astype(str).str.replace(",", "", regex=False).str.strip(),
+            errors="coerce",
+        )
+        .fillna(0)
+        .astype(int)
     )
+    dt_s = pd.to_datetime(df.iloc[:, dt_idx], errors="coerce")
+    if name_idx is not None:
+        name_s = df.iloc[:, name_idx].astype(str).str.strip()
+    else:
+        name_s = pd.Series([""] * len(df), index=df.index)
+
+    skip_bc = {"", "nan", "none", "null", "상품바코드", "상품 바코드", "바코드", "barcode"}
+    valid_mask = (~bc_s.str.lower().isin(skip_bc)) & (qty_s > 0) & dt_s.notna()
+    rows_invalid = int((~valid_mask).sum())
+
+    rows_before_baseline = 0
+    parsed = []
+    if bool(valid_mask.any()):
+        sub = pd.DataFrame(
+            {
+                "barcode": bc_s[valid_mask].to_numpy(),
+                "qty": qty_s[valid_mask].to_numpy(),
+                "dt": dt_s[valid_mask].to_numpy(),
+                "name": name_s[valid_mask].to_numpy(),
+            }
+        )
+        for rec in sub.itertuples(index=False):
+            bc = str(rec.barcode).strip()
+            try:
+                dt = pd.Timestamp(rec.dt).to_pydatetime()
+            except Exception:
+                rows_invalid += 1
+                continue
+            if getattr(dt, "tzinfo", None) is not None:
+                dt = dt.replace(tzinfo=None)
+            rdate = dt.date() if hasattr(dt, "date") else None
+            if rdate is None:
+                rows_invalid += 1
+                continue
+            if as_of and not is_movement_date_applicable(rdate, as_of):
+                rows_before_baseline += 1
+                continue
+            nm = str(rec.name or "").strip()
+            if nm.lower() in ("nan", "none", "null"):
+                nm = ""
+            parsed.append(
+                {
+                    "barcode": bc,
+                    "receipt_datetime": dt,
+                    "receipt_date": rdate,
+                    "quantity_box": int(rec.qty),
+                    "product_name": nm[:255],
+                }
+            )
+
+    rows_skipped = int(rows_before_baseline)
+    if not parsed:
+        return Response(
+            {
+                "message": (
+                    "유효한 입고 행이 없습니다. "
+                    f"(형식오류 {rows_invalid}, 기준일 이전 {rows_before_baseline})"
+                ),
+                "errorId": error_id,
+                "rowsInvalid": rows_invalid,
+                "rowsBeforeBaseline": rows_before_baseline,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     rows_processed = 0
-    rows_skipped = 0
     rows_created = 0
     rows_updated = 0
     rows_unchanged = 0
-    rows_invalid = 0
-
-    parsed = []
-    for _, row in df.iterrows():
-        bc = str(row.iloc[bc_idx]).strip()
-        if not bc:
-            rows_invalid += 1
-            continue
-        qty = _parse_int(row.iloc[qty_idx])
-        if qty <= 0:
-            rows_invalid += 1
-            continue
-        dt = _parse_datetime(row.iloc[dt_idx])
-        if not dt:
-            rows_invalid += 1
-            continue
-        rdate = dt.date()
-        # 기준일 = 출고 후 잔여 스냅샷 → 기준일 당일·이전 입고는 스냅샷에 포함되었다고 보고 제외
-        from .inventory_stock import is_movement_date_applicable
-
-        if not is_movement_date_applicable(rdate, as_of):
-            rows_skipped += 1
-            continue
-        parsed.append(
-            {
-                "barcode": bc,
-                "receipt_datetime": dt,
-                "receipt_date": rdate,
-                "quantity_box": int(qty),
-                "product_name": (
-                    str(row.iloc[name_idx]).strip()[:255]
-                    if name_idx is not None
-                    else ""
-                ),
-            }
-        )
-
-    # Auto-register new products into catalog (BarcodeMaster)
-    try:
-        parsed_barcodes = sorted({p.get("barcode") for p in parsed if p.get("barcode")})
-        if parsed_barcodes:
-            existing = set(
-                BarcodeMaster.objects.filter(barcode__in=parsed_barcodes).values_list(
-                    "barcode", flat=True
-                )
-            )
-            to_create = []
-            # pick first non-empty name per barcode
-            name_map = {}
-            for p in parsed:
-                bc = p.get("barcode")
-                if not bc or bc in name_map:
-                    continue
-                nm = (p.get("product_name") or "").strip()
-                if nm:
-                    name_map[bc] = nm[:255]
-            for bc in parsed_barcodes:
-                if bc in existing:
-                    continue
-                to_create.append(
-                    BarcodeMaster(
-                        barcode=bc,
-                        product_name=(name_map.get(bc) or ""),
-                    )
-                )
-            if to_create:
-                BarcodeMaster.objects.bulk_create(
-                    to_create, ignore_conflicts=True, batch_size=2000
-                )
-    except Exception:
-        logger.exception(
-            "receipts_upload barcode_master auto-register failed error_id=%s", error_id
-        )
-
-    # Upsert by (barcode, receipt_datetime)
-    # - same qty: unchanged (skip)
-    # - different qty: update to new qty (delta semantics)
-    # - missing: create
-    keys = {(p["barcode"], p["receipt_datetime"]) for p in parsed}
-    existing_map = {}
-    if keys:
-        # SQLite doesn't support composite IN well; fetch by barcode and then filter in memory.
-        barcodes = sorted({bc for bc, _ in keys})
-        qs = InventoryReceiptItem.objects.filter(barcode__in=barcodes)
-        for obj in qs:
-            k = ((obj.barcode or "").strip(), obj.receipt_datetime)
-            if k in keys:
-                existing_map[k] = obj
-
-    to_create = []
-    to_update = []
-
-    for p in parsed:
-        k = (p["barcode"], p["receipt_datetime"])
-        existing = existing_map.get(k)
-        if not existing:
-            to_create.append(
-                InventoryReceiptItem(
-                    upload=upload,
-                    receipt_datetime=p["receipt_datetime"],
-                    receipt_date=p["receipt_date"],
-                    barcode=p["barcode"],
-                    quantity_box=p["quantity_box"],
-                    product_name=p["product_name"],
-                )
-            )
-            rows_created += 1
-            rows_processed += 1
-            continue
-
-        new_qty = int(p["quantity_box"])
-        old_qty = int(existing.quantity_box or 0)
-        if new_qty == old_qty:
-            rows_unchanged += 1
-            rows_processed += 1
-            continue
-
-        existing.quantity_box = new_qty
-        # Keep most recent name if provided
-        if p.get("product_name"):
-            existing.product_name = p["product_name"]
-        # Tie latest upload reference to most recent file
-        existing.upload = upload
-        existing.receipt_date = p["receipt_date"]
-        to_update.append(existing)
-        rows_updated += 1
-        rows_processed += 1
 
     try:
         with transaction.atomic():
+            upload = InventoryReceiptUpload.objects.create(
+                file_name=getattr(file_obj, "name", "") or "receipts.xlsx",
+                file_hash=file_hash,
+            )
+
+            # Auto-register new products into catalog (BarcodeMaster)
+            try:
+                parsed_barcodes = sorted(
+                    {p.get("barcode") for p in parsed if p.get("barcode")}
+                )
+                if parsed_barcodes:
+                    existing = set(
+                        BarcodeMaster.objects.filter(
+                            barcode__in=parsed_barcodes
+                        ).values_list("barcode", flat=True)
+                    )
+                    name_map = {}
+                    for p in parsed:
+                        bc = p.get("barcode")
+                        if not bc or bc in name_map:
+                            continue
+                        nm = (p.get("product_name") or "").strip()
+                        if nm:
+                            name_map[bc] = nm[:255]
+                    to_bm = [
+                        BarcodeMaster(
+                            barcode=bc, product_name=(name_map.get(bc) or "")
+                        )
+                        for bc in parsed_barcodes
+                        if bc not in existing
+                    ]
+                    if to_bm:
+                        BarcodeMaster.objects.bulk_create(
+                            to_bm, ignore_conflicts=True, batch_size=2000
+                        )
+            except Exception:
+                logger.exception(
+                    "receipts_upload barcode_master auto-register failed error_id=%s",
+                    error_id,
+                )
+
+            # Upsert by (barcode, receipt_datetime) — 날짜 범위로 기존 행 조회 축소
+            keys = {(p["barcode"], p["receipt_datetime"]) for p in parsed}
+            existing_map = {}
+            if keys:
+                barcodes = sorted({bc for bc, _ in keys})
+                dts = [dt for _, dt in keys]
+                min_dt, max_dt = min(dts), max(dts)
+                qs = InventoryReceiptItem.objects.filter(
+                    barcode__in=barcodes,
+                    receipt_datetime__gte=min_dt,
+                    receipt_datetime__lte=max_dt,
+                ).only(
+                    "id",
+                    "barcode",
+                    "receipt_datetime",
+                    "receipt_date",
+                    "quantity_box",
+                    "product_name",
+                    "upload_id",
+                )
+                for obj in qs.iterator(chunk_size=2000):
+                    k = ((obj.barcode or "").strip(), obj.receipt_datetime)
+                    if k in keys:
+                        existing_map[k] = obj
+
+            to_create = []
+            to_update = []
+            for p in parsed:
+                k = (p["barcode"], p["receipt_datetime"])
+                existing = existing_map.get(k)
+                if not existing:
+                    to_create.append(
+                        InventoryReceiptItem(
+                            upload=upload,
+                            receipt_datetime=p["receipt_datetime"],
+                            receipt_date=p["receipt_date"],
+                            barcode=p["barcode"],
+                            quantity_box=p["quantity_box"],
+                            product_name=p["product_name"],
+                        )
+                    )
+                    rows_created += 1
+                    rows_processed += 1
+                    continue
+
+                new_qty = int(p["quantity_box"])
+                old_qty = int(existing.quantity_box or 0)
+                if new_qty == old_qty:
+                    rows_unchanged += 1
+                    rows_processed += 1
+                    continue
+
+                existing.quantity_box = new_qty
+                if p.get("product_name"):
+                    existing.product_name = p["product_name"]
+                existing.upload = upload
+                existing.receipt_date = p["receipt_date"]
+                to_update.append(existing)
+                rows_updated += 1
+                rows_processed += 1
+
             if to_create:
                 InventoryReceiptItem.objects.bulk_create(
                     to_create, batch_size=2000, ignore_conflicts=True
@@ -1542,6 +2449,11 @@ def inventory_receipts_upload(request):
                     ["quantity_box", "product_name", "upload", "receipt_date"],
                     batch_size=2000,
                 )
+
+            rows_skipped += int(rows_invalid)
+            upload.rows_processed = int(rows_processed)
+            upload.rows_skipped = int(rows_skipped)
+            upload.save(update_fields=["rows_processed", "rows_skipped"])
     except Exception:
         logger.exception("receipts_upload upsert failed error_id=%s", error_id)
         return Response(
@@ -1552,28 +2464,40 @@ def inventory_receipts_upload(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
-    rows_skipped += int(rows_invalid)
-
-    upload.rows_processed = int(rows_processed)
-    upload.rows_skipped = int(rows_skipped)
-    upload.save(update_fields=["rows_processed", "rows_skipped"])
-
+    elapsed = round(time.time() - t0, 3)
     logger.info(
-        "receipts_upload done error_id=%s rows_processed=%s rows_skipped=%s",
+        "receipts_upload done error_id=%s rows_processed=%s rows_skipped=%s before_baseline=%s elapsed_s=%s",
         error_id,
         int(rows_processed),
         int(rows_skipped),
+        int(rows_before_baseline),
+        elapsed,
     )
+
+    msg = (
+        f"입고 반영 완료: 처리 {rows_processed}건 "
+        f"(신규 {rows_created} · 수정 {rows_updated} · 동일 {rows_unchanged})"
+    )
+    if rows_before_baseline > 0:
+        msg += (
+            f". 기준일(as_of={as_of.isoformat() if as_of else '-'}) 이전 일자 "
+            f"{rows_before_baseline}건은 스냅샷 이전이므로 제외."
+        )
+    if rows_invalid > 0:
+        msg += f" 형식 오류 스킵 {rows_invalid}건."
 
     return Response(
         {
             "success": True,
-            "message": "receipts uploaded",
+            "message": msg,
             "rowsProcessed": rows_processed,
             "rowsSkipped": rows_skipped,
+            "rowsBeforeBaseline": rows_before_baseline,
+            "baselineAsOf": as_of.isoformat() if as_of else None,
             "rowsCreated": rows_created,
             "rowsUpdated": rows_updated,
             "rowsUnchanged": rows_unchanged,
+            "rowsInvalid": rows_invalid,
         }
     )
 
@@ -1744,6 +2668,9 @@ def master_specs_register_from_scan(request):
     location = (payload.get("location") or "").strip()
     sku_id = (payload.get("sku_id") or "").strip()
     is_vf = bool(payload.get("is_vf_item") or False)
+    # 규칙: 로케이션이 있으면 VF 품목 (스캐너 로케이션 등록 = VF 지정)
+    if location:
+        is_vf = True
 
     if not category_lg:
         return Response(
@@ -1755,6 +2682,22 @@ def master_specs_register_from_scan(request):
             {"message": "product_name 또는 barcode 필요"},
             status=status.HTTP_400_BAD_REQUEST,
         )
+
+    from datetime import date as date_cls
+
+    from django.utils import timezone as dj_tz
+
+    today = dj_tz.localdate()
+    # 등록일: payload 우선, 없으면 오늘 (VF 지정 시)
+    raw_reg = (payload.get("vf_registered_at") or payload.get("registered_at") or "").strip()
+    reg_date = None
+    if raw_reg:
+        try:
+            reg_date = date_cls.fromisoformat(raw_reg[:10])
+        except ValueError:
+            reg_date = None
+    if is_vf and reg_date is None:
+        reg_date = today
 
     spec = None
     if barcode:
@@ -1772,14 +2715,17 @@ def master_specs_register_from_scan(request):
         while MasterSpec.objects.filter(product_name=product_name).exists():
             n += 1
             product_name = f"{base_name} ({n})"
-        spec = MasterSpec.objects.create(
-            product_name=product_name,
-            barcode=barcode,
-            sku_id=sku_id,
-            category_lg=category_lg,
-            category_md=category_md,
-            is_vf_item=is_vf,
-        )
+        create_kwargs = {
+            "product_name": product_name,
+            "barcode": barcode,
+            "sku_id": sku_id,
+            "category_lg": category_lg,
+            "category_md": category_md,
+            "is_vf_item": is_vf,
+        }
+        if is_vf and reg_date is not None:
+            create_kwargs["vf_registered_at"] = reg_date
+        spec = MasterSpec.objects.create(**create_kwargs)
         created = True
     else:
         spec.category_lg = category_lg
@@ -1791,34 +2737,76 @@ def master_specs_register_from_scan(request):
             spec.sku_id = sku_id
         if product_name and not (spec.product_name or "").strip():
             spec.product_name = product_name
-        if "is_vf_item" in payload:
+        # 로케이션 있으면 VF 강제 / payload is_vf_item 반영
+        if location or "is_vf_item" in payload:
             spec.is_vf_item = is_vf
+        if is_vf and not getattr(spec, "vf_registered_at", None) and reg_date is not None:
+            spec.vf_registered_at = reg_date
         spec.save()
 
-    if barcode and location:
-        _upsert_barcode_location(
-            barcode,
-            location=location,
-            product_name=spec.product_name or product_name,
-            sku_id=spec.sku_id or sku_id,
-        )
-    elif barcode:
-        _upsert_barcode_location(
-            barcode,
-            location=None,
-            product_name=spec.product_name or product_name,
-            sku_id=spec.sku_id or sku_id,
+    # MasterSpec 저장 이후 단계 실패해도 등록 자체는 성공으로 응답
+    # (프론트가 !res.ok 만 보면 DB 반영됐는데 에러로 보이는 문제 방지)
+    try:
+        if barcode and location:
+            _upsert_barcode_location(
+                barcode,
+                location=location,
+                product_name=spec.product_name or product_name,
+                sku_id=spec.sku_id or sku_id,
+            )
+            # 로케이션 등록 후 VF 보장 (기존 행 재저장)
+            if not spec.is_vf_item or (
+                not getattr(spec, "vf_registered_at", None) and reg_date is not None
+            ):
+                if not spec.is_vf_item:
+                    spec.is_vf_item = True
+                if not getattr(spec, "vf_registered_at", None) and reg_date is not None:
+                    spec.vf_registered_at = reg_date
+                spec.save(
+                    update_fields=["is_vf_item", "vf_registered_at"]
+                    if hasattr(spec, "vf_registered_at")
+                    else ["is_vf_item"]
+                )
+        elif barcode:
+            _upsert_barcode_location(
+                barcode,
+                location=None,
+                product_name=spec.product_name or product_name,
+                sku_id=spec.sku_id or sku_id,
+            )
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).exception(
+            "register-from-scan: barcode location upsert failed (spec saved)"
         )
 
-    loc = ""
-    if barcode:
-        loc = _barcode_location_map([barcode]).get(barcode, "") or location
+    loc = location or ""
+    try:
+        if barcode:
+            loc = _barcode_location_map([barcode]).get(barcode, "") or location or ""
+    except Exception:
+        loc = location or ""
+
+    try:
+        spec_dict = _master_spec_dict(spec, location=loc)
+    except Exception:
+        spec_dict = {
+            "id": getattr(spec, "id", None),
+            "product_name": getattr(spec, "product_name", "") or product_name,
+            "barcode": getattr(spec, "barcode", "") or barcode,
+            "sku_id": getattr(spec, "sku_id", "") or sku_id,
+            "category_lg": getattr(spec, "category_lg", "") or category_lg,
+            "category_md": getattr(spec, "category_md", "") or category_md,
+            "location": loc,
+            "is_vf_item": bool(getattr(spec, "is_vf_item", is_vf)),
+        }
 
     return Response(
         {
             "success": True,
             "created": created,
-            "spec": _master_spec_dict(spec, location=loc),
+            "spec": spec_dict,
         },
         status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
     )
@@ -1862,11 +2850,10 @@ def inventory_barcode_master(request):
     qs = BarcodeMaster.objects.all().order_by("barcode")
     if q:
         qs = qs.filter(
-            models.Q(barcode__icontains=q)
-            | models.Q(product_name__icontains=q)
-            | models.Q(sku_id__icontains=q)
-            | models.Q(category__icontains=q)
-            | models.Q(location__icontains=q)
+            _token_and_search_q(
+                ["barcode", "product_name", "sku_id", "category", "location"],
+                q,
+            )
         )
 
     rows = []
@@ -1972,6 +2959,39 @@ def inventory_unified_patch(request, _id: str):
     return Response({"success": True, "barcode": barcode})
 
 
+def _product_number_from_location(location: str | None) -> int | None:
+    """로케이션 → 제품 번호 파생.
+
+    - 320-A1-1-XXX → XXX (예: 320-A1-1-115 → 115)
+    - 320-A1-2-XXX → 2XXX (예: 320-A1-2-115 → 2115)
+    - 그 외/형식 안 맞음 → None
+    """
+    loc = (location or "").strip()
+    if not loc:
+        return None
+    for prefix, lead in (("320-A1-1-", ""), ("320-A1-2-", "2")):
+        if loc.startswith(prefix):
+            suffix = loc[len(prefix):]
+            if suffix and re.fullmatch(r"\d+", suffix):
+                return int(lead + suffix)
+            return None
+    return None
+
+
+def _sync_product_number_for_barcode(barcode: str, location: str | None) -> int:
+    """바코드에 연결된 MasterSpec 행의 product_number 를 로케이션 기준값으로 동기화.
+
+    queryset update 사용 (updated_at 미갱신, 부수효과 최소화).
+    """
+    bc = (barcode or "").strip()
+    if not bc:
+        return 0
+    pn = _product_number_from_location(location)
+    return MasterSpec.objects.filter(barcode=bc).exclude(product_number=pn).update(
+        product_number=pn
+    )
+
+
 def _barcode_location_map(barcodes=None) -> dict:
     """barcode → location (BarcodeMaster SoT). barcodes=None 이면 전체."""
     qs = BarcodeMaster.objects.exclude(barcode="").exclude(barcode__isnull=True)
@@ -2033,11 +3053,115 @@ def _upsert_barcode_location(
                 changed = True
     if changed or _created:
         bm.save()
+    if location is not None:
+        # 로케이션 설정/해제 → 연결된 MasterSpec.product_number 자동 재계산
+        _sync_product_number_for_barcode(bc, bm.location)
     return True, "ok" if not _created else "created"
 
 
-def _master_spec_dict(s, location: str = "") -> dict:
-    return {
+def _recent_outbound_barcodes_3m(*, days: int = 90) -> set:
+    """
+    최근 N일 실출고(OutboundRecord) 바코드 집합.
+    - is_estimated=True 예측 출고 제외
+    - FC 입고는 포함하지 않음 (VF '출고있음/없음' 카드 전용 SoT)
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from .inventory_stock import filter_outbound_for_stock
+
+    since = timezone.localdate() - timedelta(days=max(1, int(days or 90)))
+    qs = filter_outbound_for_stock(
+        OutboundRecord.objects.filter(outbound_date__gte=since)
+        .exclude(barcode__isnull=True)
+        .exclude(barcode="")
+    )
+    return set(qs.values_list("barcode", flat=True).distinct())
+
+
+def _bulk_current_stock_by_barcode(barcodes: list) -> dict:
+    """
+    바코드 → 전산 현재고 (inventory_stock 규칙).
+    스냅샷 없으면 0 + 이후 이동만.
+    """
+    from .inventory_stock import (
+        aggregate_adjustments_after_baseline,
+        aggregate_movements_after_baseline,
+        compute_current_stock,
+    )
+
+    bcs = []
+    seen = set()
+    for b in barcodes or []:
+        bc = (b or "").strip()
+        if not bc or bc in seen:
+            continue
+        seen.add(bc)
+        bcs.append(bc)
+    if not bcs:
+        return {}
+
+    latest_upload = InventoryBaselineUpload.objects.order_by("-uploaded_at").first()
+    if not latest_upload:
+        return {bc: 0 for bc in bcs}
+
+    as_of = latest_upload.as_of_date
+    base_qty_by = {
+        row["barcode"]: int(row.get("qty") or 0)
+        for row in InventoryBaselineItem.objects.filter(
+            upload=latest_upload, barcode__in=bcs
+        )
+        .values("barcode")
+        .annotate(qty=Coalesce(Sum("quantity_box"), 0))
+    }
+    outbound_agg, receipt_agg = aggregate_movements_after_baseline(
+        as_of=as_of,
+        barcodes=bcs,
+        outbound_model=OutboundRecord,
+        receipt_model=InventoryReceiptItem,
+    )
+    adj_agg = aggregate_adjustments_after_baseline(
+        as_of=as_of,
+        barcodes=bcs,
+        adjustment_model=InventoryStockAdjustment,
+    )
+    out = {}
+    for bc in bcs:
+        base_qty = int(base_qty_by.get(bc) or 0)
+        rcv = int(receipt_agg.get(bc) or 0)
+        outq = int(outbound_agg.get(bc) or 0)
+        adj = int(adj_agg.get(bc) or 0)
+        out[bc] = int(compute_current_stock(base_qty, rcv, outq, adj))
+    return out
+
+
+def _normalize_finish_type(raw) -> str:
+    """완제품 / 포장 필요. 빈값·unknown → ''."""
+    v = str(raw or "").strip().lower()
+    if v in ("finished", "완제품", "finish", "done"):
+        return MasterSpec.FINISH_FINISHED
+    if v in (
+        "needs_packaging",
+        "packaging",
+        "to_pack",
+        "포장",
+        "포장필요",
+        "포장 필요",
+    ):
+        return MasterSpec.FINISH_NEEDS_PACKAGING
+    if v in ("", "none", "unset", "미지정", "null", "none"):
+        return ""
+    # already canonical
+    if v in (MasterSpec.FINISH_FINISHED, MasterSpec.FINISH_NEEDS_PACKAGING):
+        return v
+    return ""
+
+
+def _master_spec_dict(s, location: str = "", *, has_outbound_3m: bool | None = None) -> dict:
+    bc = (s.barcode or "").strip()
+    # has_outbound_3m 미전달 시 단건 조회 호환: 플래그만 의존하지 않고 출고 테이블 기준 아님 → None 유지
+    row = {
         "id": s.id,
         "product_name": s.product_name,
         "product_name_eng": s.product_name_eng,
@@ -2053,30 +3177,206 @@ def _master_spec_dict(s, location: str = "") -> dict:
         "price": int(s.price or 0),
         "lot_number": s.lot_number or "",
         "components": s.components or "",
+        "notes": getattr(s, "notes", None) or "",
         "image_url": s.image_url or "",
         "prev_price": int(s.prev_price or 0),
         "price_changed_at": s.price_changed_at.isoformat() if s.price_changed_at else None,
         "is_discontinued": s.is_discontinued,
         "is_no_outbound_3m": s.is_no_outbound_3m,
         "is_vf_item": bool(getattr(s, "is_vf_item", False)),
+        "vf_registered_at": (
+            s.vf_registered_at.isoformat()
+            if getattr(s, "vf_registered_at", None)
+            else None
+        ),
+        "finish_type": (getattr(s, "finish_type", None) or "").strip(),
+        "product_number": getattr(s, "product_number", None),
     }
+    if has_outbound_3m is not None:
+        row["has_outbound_3m"] = bool(has_outbound_3m)
+    elif bc:
+        # 단건 상세: 즉시 계산
+        row["has_outbound_3m"] = bc in _recent_outbound_barcodes_3m()
+    else:
+        row["has_outbound_3m"] = False
+    return row
+
+
+def _master_spec_compact_dict(
+    s,
+    location: str = "",
+    *,
+    has_outbound_3m: bool = False,
+    current_stock: int | None = None,
+    is_vf_active: bool | None = None,
+    is_vf_no_outbound: bool | None = None,
+) -> dict:
+    """목록용 경량 dict — 빈 값은 키 자체를 생략 (JSON 키 오버헤드 절감).
+
+    mold_number / components / price_changed_at 은 목록에서 불필요 → 제외.
+    편집 시 GET /api/master/specs/<id> 로 전체 로드.
+    """
+    row = {
+        "id": s.id,
+        "product_name": s.product_name or "",
+        "default_quantity": int(s.default_quantity or 0),
+        "sku_id": s.sku_id or "",
+        "barcode": s.barcode or "",
+        "location": location or "",
+        "category_lg": s.category_lg or "",
+        "category_md": s.category_md or "",
+        "price": int(s.price or 0),
+        "is_discontinued": bool(s.is_discontinued),
+        "is_no_outbound_3m": bool(s.is_no_outbound_3m),
+        "is_vf_item": bool(getattr(s, "is_vf_item", False)),
+        # VF 카드 분할 SoT: 최근 90일 실출고 여부 (FC 입고 무관)
+        "has_outbound_3m": bool(has_outbound_3m),
+        "product_number": getattr(s, "product_number", None),
+    }
+    ft = (getattr(s, "finish_type", None) or "").strip()
+    if ft:
+        row["finish_type"] = ft
+    if current_stock is not None:
+        row["current_stock"] = int(current_stock)
+    if is_vf_active is not None:
+        row["is_vf_active"] = bool(is_vf_active)
+    if is_vf_no_outbound is not None:
+        row["is_vf_no_outbound"] = bool(is_vf_no_outbound)
+    vf_at = getattr(s, "vf_registered_at", None)
+    if vf_at:
+        row["vf_registered_at"] = vf_at.isoformat()
+    eng = (s.product_name_eng or "").strip()
+    if eng:
+        row["product_name_eng"] = eng
+    c1 = (s.color1 or "").strip()
+    if c1:
+        row["color1"] = c1
+    c2 = (s.color2 or "").strip()
+    if c2:
+        row["color2"] = c2
+    lot = (s.lot_number or "").strip()
+    if lot:
+        row["lot_number"] = lot
+    img = (s.image_url or "").strip()
+    if img:
+        row["image_url"] = img
+    prev = int(s.prev_price or 0)
+    if prev:
+        row["prev_price"] = prev
+    notes = (getattr(s, "notes", None) or "").strip()
+    if notes:
+        row["notes"] = notes
+    return row
 
 
 @api_view(["GET", "POST"])
 def master_specs(request):
     if request.method == "GET":
-        specs = list(MasterSpec.objects.all().order_by("product_name"))
+        # compact=1 (기본): 목록용 경량 응답 — 빈 키 생략·components 제외
+        # compact=0: 전체 필드 (구 호환)
+        compact_raw = (request.query_params.get("compact") or "1").strip().lower()
+        compact = compact_raw not in ("0", "false", "no", "full")
+        vf_only = (request.query_params.get("vf_only") or "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+
+        qs = MasterSpec.objects.all().order_by("product_name")
+        if vf_only:
+            qs = qs.filter(is_vf_item=True)
+
+        if compact:
+            # 목록에 쓰는 필드만 (components·mold 등 제외 → ORM/페이로드 부담 감소)
+            qs = qs.only(
+                "id",
+                "product_name",
+                "product_name_eng",
+                "color1",
+                "color2",
+                "default_quantity",
+                "sku_id",
+                "barcode",
+                "category_lg",
+                "category_md",
+                "price",
+                "lot_number",
+                "notes",
+                "image_url",
+                "prev_price",
+                "is_discontinued",
+                "is_no_outbound_3m",
+                "is_vf_item",
+                "vf_registered_at",
+                "product_number",
+            )
+
+        specs = list(qs)
         loc_map = _barcode_location_map(
             [(s.barcode or "").strip() for s in specs if (s.barcode or "").strip()]
         )
-        return Response(
-            [
-                _master_spec_dict(
-                    s, location=loc_map.get((s.barcode or "").strip(), "")
-                )
-                for s in specs
-            ]
+        # 최근 90일 실출고 바코드 (VF 카드 분할용 — FC 입고 무관)
+        recent_out_bcs = _recent_outbound_barcodes_3m(days=90)
+        # VF 현재고 (카드 분할·전산 재고 유니버스)
+        vf_bcs = [
+            (s.barcode or "").strip()
+            for s in specs
+            if getattr(s, "is_vf_item", False) and (s.barcode or "").strip()
+        ]
+        stock_map = _bulk_current_stock_by_barcode(vf_bcs)
+        from django.utils import timezone as dj_tz
+
+        from .vf_classification import (
+            is_vf_active_for_inventory,
+            is_vf_no_outbound_bucket,
         )
+
+        as_of_today = dj_tz.localdate()
+        out = []
+        for s in specs:
+            bc = (s.barcode or "").strip()
+            loc = loc_map.get(bc, "")
+            has_out = bool(bc and bc in recent_out_bcs)
+            is_vf = bool(getattr(s, "is_vf_item", False))
+            cur = int(stock_map.get(bc, 0)) if (is_vf and bc) else 0
+            vf_active = False
+            vf_no = False
+            if is_vf:
+                vf_active = is_vf_active_for_inventory(
+                    is_vf_item=True,
+                    is_discontinued=bool(getattr(s, "is_discontinued", False)),
+                    current_stock=cur,
+                    has_outbound_3m=has_out,
+                    vf_registered_at=getattr(s, "vf_registered_at", None),
+                    as_of=as_of_today,
+                )
+                vf_no = is_vf_no_outbound_bucket(
+                    is_vf_item=True,
+                    is_discontinued=bool(getattr(s, "is_discontinued", False)),
+                    current_stock=cur,
+                    has_outbound_3m=has_out,
+                    vf_registered_at=getattr(s, "vf_registered_at", None),
+                    as_of=as_of_today,
+                )
+            if compact:
+                out.append(
+                    _master_spec_compact_dict(
+                        s,
+                        location=loc,
+                        has_outbound_3m=has_out,
+                        current_stock=cur if is_vf else None,
+                        is_vf_active=vf_active if is_vf else None,
+                        is_vf_no_outbound=vf_no if is_vf else None,
+                    )
+                )
+            else:
+                row = _master_spec_dict(s, location=loc, has_outbound_3m=has_out)
+                if is_vf:
+                    row["current_stock"] = cur
+                    row["is_vf_active"] = vf_active
+                    row["is_vf_no_outbound"] = vf_no
+                out.append(row)
+        return Response(out)
 
     payload = request.data if isinstance(request.data, dict) else {}
     product_name = (payload.get("product_name") or "").strip()
@@ -2100,12 +3400,14 @@ def master_specs(request):
             price=int(payload.get("price") or 0),
             lot_number=payload.get("lot_number") or "",
             components=payload.get("components") or "",
+            notes=payload.get("notes") or "",
             image_url=payload.get("image_url") or "",
             prev_price=int(payload.get("prev_price") or 0),
             price_changed_at=_parse_date_ymd(payload.get("price_changed_at")),
             is_discontinued=bool(payload.get("is_discontinued") or False),
             is_no_outbound_3m=bool(payload.get("is_no_outbound_3m") or False),
             is_vf_item=bool(payload.get("is_vf_item") or False),
+            finish_type=_normalize_finish_type(payload.get("finish_type")),
         )
     except Exception:
         return Response(
@@ -2133,18 +3435,34 @@ def master_specs(request):
             (spec.barcode or "").strip(), ""
         )
 
+    # 로케이션 기준 제품 번호 확정 (응답 반영 + DB 동기화)
+    pn_saved = _product_number_from_location(loc_saved)
+    if spec.product_number != pn_saved:
+        MasterSpec.objects.filter(pk=spec.pk).update(product_number=pn_saved)
+        spec.product_number = pn_saved
+
     return Response(
         _master_spec_dict(spec, location=loc_saved),
         status=status.HTTP_201_CREATED,
     )
 
 
-def _clear_no_outbound_3m_on_activity(*, barcodes=None, sku_ids=None) -> int:
+def _clear_no_outbound_3m_on_activity(
+    *,
+    barcodes=None,
+    sku_ids=None,
+    activity: str = "auto",
+) -> int:
     """
-    출고/입고 발생 시 '3개월 미출고' 플래그만 자동 해제.
+    활동 발생 시 is_no_outbound_3m 자동 해제.
 
-    단종(is_discontinued=True) 품목은 절대 자동 변경하지 않음.
-    단종 이동/복구는 제품 마스터 UI·API 수동 조작만 허용.
+    activity:
+      - "vf_outbound": VF 창고 고객 출고 → is_vf_item=True 만 해제
+      - "fc_inbound": 쿠팡 FC 납품(FC 입고) → is_vf_item=False 만 해제
+      - "auto": barcode/sku 있으면 비VF(FC), 출고 맥락은 호출측에서 지정 권장
+      - "all": 레거시 전체 (사용 최소화)
+
+    단종 품목은 변경하지 않음.
     """
     from django.db.models import Q
 
@@ -2159,11 +3477,29 @@ def _clear_no_outbound_3m_on_activity(*, barcodes=None, sku_ids=None) -> int:
     if sku_ids:
         scope |= Q(sku_id__in=sku_ids)
 
-    return MasterSpec.objects.filter(
+    qs = MasterSpec.objects.filter(
         scope,
         is_discontinued=False,
         is_no_outbound_3m=True,
-    ).update(is_no_outbound_3m=False)
+    )
+    act = (activity or "auto").strip().lower()
+    if act == "vf_outbound":
+        qs = qs.filter(is_vf_item=True)
+    elif act in ("fc_inbound", "auto"):
+        # FC/SKU 활동 → 비VF (센터 납품 기준)
+        # auto: 입고·FC 경로 기본
+        if act == "auto" and barcodes and not sku_ids:
+            # 바코드만 있고 auto 이면 양쪽 모두 해제하지 않고 비VF 우선
+            # (출고 동기화는 반드시 vf_outbound 로 호출)
+            qs = qs.filter(is_vf_item=False)
+        else:
+            qs = qs.filter(is_vf_item=False)
+    elif act == "all":
+        pass
+    else:
+        qs = qs.filter(is_vf_item=False)
+
+    return qs.update(is_no_outbound_3m=False)
 
 
 def _normalize_master_status_flags(is_discontinued, is_no_outbound_3m, *, has_disc, has_no_out):
@@ -2203,10 +3539,13 @@ def master_specs_bulk_update(request):
         "is_discontinued",
         "is_no_outbound_3m",
         "is_vf_item",
+        "finish_type",
     ]:
         if key in payload:
             if key in ["is_discontinued", "is_no_outbound_3m", "is_vf_item"]:
                 update_data[key] = bool(payload.get(key))
+            elif key == "finish_type":
+                update_data[key] = _normalize_finish_type(payload.get(key))
             else:
                 update_data[key] = str(payload.get(key) or "").strip()
 
@@ -2233,8 +3572,27 @@ def master_specs_bulk_update(request):
 
     try:
         updated_count = 0
+        vf_set = 0
+        vf_unset = 0
+        # is_vf_item 은 수동 지정/해제 SoT. 지정 시 등록일 비어 있으면 오늘.
+        want_vf = None
+        if "is_vf_item" in update_data:
+            want_vf = bool(update_data.pop("is_vf_item"))
+
         if update_data:
             updated_count = MasterSpec.objects.filter(id__in=ids).update(**update_data)
+
+        if want_vf is not None:
+            qs = MasterSpec.objects.filter(id__in=ids)
+            if want_vf:
+                vf_set = qs.update(is_vf_item=True)
+                MasterSpec.objects.filter(
+                    id__in=ids, is_vf_item=True, vf_registered_at__isnull=True
+                ).update(vf_registered_at=timezone.localdate())
+            else:
+                vf_unset = qs.update(is_vf_item=False)
+            if not updated_count:
+                updated_count = vf_set or vf_unset
 
         loc_updated = 0
         loc_skipped_no_barcode = 0
@@ -2258,6 +3616,8 @@ def master_specs_bulk_update(request):
             {
                 "success": True,
                 "updated_count": updated_count,
+                "vf_set": vf_set,
+                "vf_unset": vf_unset,
                 "location_updated": loc_updated,
                 "location_skipped_no_barcode": loc_skipped_no_barcode,
             }
@@ -2266,11 +3626,17 @@ def master_specs_bulk_update(request):
         return Response({"message": f"일괄 수정 처리 실패: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@api_view(["PUT", "DELETE"])
+@api_view(["GET", "PUT", "DELETE"])
 def master_specs_detail(request, id: int):
     spec = MasterSpec.objects.filter(id=int(id)).first()
     if not spec:
         return Response({"message": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == "GET":
+        loc = _barcode_location_map([spec.barcode]).get(
+            (spec.barcode or "").strip(), ""
+        )
+        return Response(_master_spec_dict(spec, location=loc))
 
     if request.method == "DELETE":
         spec.delete()
@@ -2298,12 +3664,15 @@ def master_specs_detail(request, id: int):
         "price",
         "lot_number",
         "components",
+        "notes",
         "image_url",
         "prev_price",
         "price_changed_at",
         "is_discontinued",
         "is_no_outbound_3m",
         "is_vf_item",
+        "vf_registered_at",
+        "finish_type",
     ]:
         if key in payload:
             val = payload.get(key)
@@ -2312,11 +3681,23 @@ def master_specs_detail(request, id: int):
                     val = int(val or 0)
                 except Exception:
                     val = 0
-            elif key == "price_changed_at":
+            elif key in ("price_changed_at", "vf_registered_at"):
                 val = _parse_date_ymd(val)
             elif key in ["is_discontinued", "is_no_outbound_3m", "is_vf_item"]:
                 val = bool(val)
+            elif key == "finish_type":
+                val = _normalize_finish_type(val)
+            elif key == "notes":
+                val = str(val or "")
             setattr(spec, key, val)
+
+    # VF 수동 ON 시 지정일 없으면 오늘
+    if "is_vf_item" in payload and bool(spec.is_vf_item) and not spec.vf_registered_at:
+        if "vf_registered_at" not in payload:
+            spec.vf_registered_at = timezone.localdate()
+    if "is_vf_item" in payload and not bool(spec.is_vf_item):
+        # VF 해제 시 일자 유지(이력) — 비우지 않음
+        pass
 
     # 단종은 수동 전환만: 단종 시 미출고 플래그 정리 (자동 배치와 혼선 방지)
     if has_disc or has_no_out:
@@ -2358,6 +3739,12 @@ def master_specs_detail(request, id: int):
             (spec.barcode or "").strip(), ""
         )
 
+    # 로케이션(또는 바코드) 변경 반영: 제품 번호 재계산 (응답 반영 + DB 동기화)
+    pn_out = _product_number_from_location(loc_out)
+    if spec.product_number != pn_out:
+        MasterSpec.objects.filter(pk=spec.pk).update(product_number=pn_out)
+        spec.product_number = pn_out
+
     return Response(_master_spec_dict(spec, location=loc_out))
 
 
@@ -2373,120 +3760,47 @@ def master_specs_sync_outbound_status(request):
 
 
 @api_view(["POST"])
-def master_specs_sync_vf_from_stock(request):
+def master_specs_sync_vf_from_outbound(request):
     """
-    Enhanced 전산 현재고 기준 VF 지정 (1차 단순).
-    currentStock > 0 바코드 → is_vf_item=True
-    바코드 있고 재고 없음 → is_vf_item=False
-    바코드 공란 MasterSpec → 스킵
+    출고 기준 자동 VF 지정 — 비활성.
+
+    SoT = 엑셀/마스터 수동 (restore_vf_sot). 출고로 is_vf_item 을 올리지 않음.
+    (과거: 출고 있으면 True 추가 → 865→872 사고)
     """
-    from .inventory_stock import (
-        aggregate_movements_after_baseline,
-        compute_current_stock,
-    )
-
-    latest = InventoryBaselineUpload.objects.order_by("-uploaded_at").first()
-    if not latest:
-        return Response(
-            {"message": "재고 스냅샷이 없습니다."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    as_of = latest.as_of_date
-    baseline_items = list(
-        InventoryBaselineItem.objects.filter(upload=latest).only("barcode", "quantity_box")
-    )
-    base_map = {}
-    for it in baseline_items:
-        bc = (it.barcode or "").strip()
-        if not bc:
-            continue
-        base_map[bc] = base_map.get(bc, 0) + int(it.quantity_box or 0)
-
-    bcs = list(base_map.keys())
-    out_agg, rcv_agg = aggregate_movements_after_baseline(
-        as_of=as_of,
-        barcodes=bcs,
-        outbound_model=OutboundRecord,
-        receipt_model=InventoryReceiptItem,
-    )
-
-    positive = set()
-    for bc, base in base_map.items():
-        cur = compute_current_stock(
-            base, int(rcv_agg.get(bc) or 0), int(out_agg.get(bc) or 0)
-        )
-        if cur > 0:
-            positive.add(bc)
-
-    # baseline 밖 이후 입고 잔여
-    from collections import defaultdict
-
-    extra_rcv = defaultdict(int)
-    extra_out = defaultdict(int)
-    if as_of:
-        for row in (
-            InventoryReceiptItem.objects.filter(receipt_date__gt=as_of)
-            .exclude(barcode="")
-            .exclude(barcode__isnull=True)
-            .values("barcode")
-            .annotate(qty=Coalesce(Sum("quantity_box"), 0))
-        ):
-            bc = (row["barcode"] or "").strip()
-            if bc and bc not in base_map:
-                extra_rcv[bc] = int(row["qty"] or 0)
-        from .inventory_stock import filter_outbound_for_stock
-
-        for row in (
-            filter_outbound_for_stock(
-                OutboundRecord.objects.filter(outbound_date__gt=as_of)
-                .exclude(barcode="")
-                .exclude(barcode__isnull=True)
-            )
-            .values("barcode")
-            .annotate(qty=Coalesce(Sum("box_quantity"), 0))
-        ):
-            bc = (row["barcode"] or "").strip()
-            if bc and bc not in base_map:
-                extra_out[bc] = int(row["qty"] or 0)
-    for bc in set(extra_rcv) | set(extra_out):
-        cur = compute_current_stock(0, extra_rcv.get(bc, 0), extra_out.get(bc, 0))
-        if cur > 0:
-            positive.add(bc)
-
-    # MasterSpec 반영
-    specs = list(MasterSpec.objects.exclude(barcode="").only("id", "barcode", "is_vf_item"))
-    to_true_ids = []
-    to_false_ids = []
-    for s in specs:
-        bc = (s.barcode or "").strip()
-        if not bc:
-            continue
-        want = bc in positive
-        if want and not s.is_vf_item:
-            to_true_ids.append(s.id)
-        elif (not want) and s.is_vf_item:
-            to_false_ids.append(s.id)
-
-    if to_true_ids:
-        MasterSpec.objects.filter(id__in=to_true_ids).update(is_vf_item=True)
-    if to_false_ids:
-        MasterSpec.objects.filter(id__in=to_false_ids).update(is_vf_item=False)
-
-    # 재고 있는데 마스터 없는 바코드
-    master_bcs = {(s.barcode or "").strip() for s in specs}
-    skipped_no_master = len(positive - master_bcs)
-
+    vf_total = MasterSpec.objects.filter(is_vf_item=True).count()
     return Response(
         {
             "success": True,
-            "message": "현재고>0 품목을 VF로 지정하고, 재고 없는 바코드 품목은 VF 해제했습니다.",
-            "asOf": as_of.isoformat() if as_of else None,
-            "stock_positive_barcodes": len(positive),
-            "vf_set_true": len(to_true_ids),
-            "vf_set_false": len(to_false_ids),
-            "skipped_no_master": skipped_no_master,
-            "vf_total_after": MasterSpec.objects.filter(is_vf_item=True).count(),
+            "noop": True,
+            "message": (
+                "출고→VF 자동 지정은 비활성입니다. "
+                "SoT(엑셀 865)만 기준. 복구: manage.py restore_vf_sot --strict"
+            ),
+            "vf_set_true": 0,
+            "vf_total_after": vf_total,
+        }
+    )
+
+
+@api_view(["POST"])
+def master_specs_sync_vf_from_stock(request):
+    """
+    현재고 기준 자동 VF 지정 — 비활성.
+
+    SoT = 엑셀/마스터 수동. 재고로 is_vf_item 을 올리거나 내리지 않음.
+    """
+    vf_total = MasterSpec.objects.filter(is_vf_item=True).count()
+    return Response(
+        {
+            "success": True,
+            "noop": True,
+            "message": (
+                "현재고→VF 자동 지정은 비활성입니다. "
+                "SoT(엑셀 865)만 기준. 복구: manage.py restore_vf_sot --strict"
+            ),
+            "vf_set_true": 0,
+            "vf_set_false": 0,
+            "vf_total_after": vf_total,
         }
     )
 
@@ -2495,27 +3809,110 @@ def master_specs_sync_vf_from_stock(request):
 def master_specs_export_xlsx(request):
     """
     마스터 일괄 수정 양식 다운로드.
-    쿼리: vf_only=1 | scope=vf|active|all (기본 all)
-    컬럼 id 필수 키, location 수정 대상 (BarcodeMaster SoT)
+    쿼리 scope (카드와 1:1):
+      all | vf | vf_active | vf_no_outbound | fc_active | fc_no_outbound
+      | active (fc_active 별칭) | no_outbound_3m (fc_no_outbound 별칭)
+      | discontinued | ids
+    vf_only=1 → scope=vf
+    ids=1,2,3 → 해당 id 만 (scope=ids 또는 ids 파라미터)
     """
     import io
+
+    from django.utils import timezone as dj_tz
+
+    from .vf_classification import (
+        is_vf_active_for_inventory,
+        is_vf_no_outbound_bucket,
+    )
 
     scope = (request.query_params.get("scope") or "all").strip().lower()
     vf_only = (request.query_params.get("vf_only") or "").strip() in ("1", "true", "yes")
     if vf_only:
         scope = "vf"
 
-    qs = MasterSpec.objects.all().order_by("product_name")
-    if scope == "vf":
-        qs = qs.filter(is_vf_item=True)
-    elif scope == "active":
-        qs = qs.filter(is_discontinued=False, is_no_outbound_3m=False)
+    # 별칭
+    if scope == "active":
+        scope = "fc_active"
     elif scope == "no_outbound_3m":
-        qs = qs.filter(is_discontinued=False, is_no_outbound_3m=True)
-    elif scope == "discontinued":
-        qs = qs.filter(is_discontinued=True)
+        scope = "fc_no_outbound"
 
-    specs = list(qs)
+    ids_raw = (request.query_params.get("ids") or "").strip()
+    id_list = []
+    if ids_raw or scope == "ids":
+        for part in ids_raw.replace(" ", "").split(","):
+            if not part:
+                continue
+            try:
+                id_list.append(int(part))
+            except ValueError:
+                pass
+        scope = "ids"
+
+    qs = MasterSpec.objects.all().order_by("product_name")
+    specs: list = []
+
+    if scope == "ids":
+        if not id_list:
+            return Response(
+                {"message": "ids 파라미터가 필요합니다"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        specs = list(qs.filter(id__in=id_list))
+        # 요청 순서 유지
+        by_id = {s.id: s for s in specs}
+        specs = [by_id[i] for i in id_list if i in by_id]
+    elif scope == "all":
+        specs = list(qs)
+    elif scope == "vf":
+        specs = list(qs.filter(is_vf_item=True))
+    elif scope in ("vf_active", "vf_no_outbound"):
+        vf_specs = list(qs.filter(is_vf_item=True))
+        recent = _recent_outbound_barcodes_3m(days=90)
+        as_of = dj_tz.localdate()
+        for s in vf_specs:
+            bc = (s.barcode or "").strip()
+            has_out = bool(bc and bc in recent)
+            if scope == "vf_active":
+                ok = is_vf_active_for_inventory(
+                    is_vf_item=True,
+                    is_discontinued=bool(s.is_discontinued),
+                    current_stock=0,
+                    has_outbound_3m=has_out,
+                    vf_registered_at=getattr(s, "vf_registered_at", None),
+                    as_of=as_of,
+                )
+            else:
+                ok = is_vf_no_outbound_bucket(
+                    is_vf_item=True,
+                    is_discontinued=bool(s.is_discontinued),
+                    current_stock=0,
+                    has_outbound_3m=has_out,
+                    vf_registered_at=getattr(s, "vf_registered_at", None),
+                    as_of=as_of,
+                )
+            if ok:
+                specs.append(s)
+    elif scope == "fc_active":
+        # 비VF · 비단종 · FC 납품 있음 (is_no_outbound_3m=False)
+        specs = list(
+            qs.filter(
+                is_vf_item=False,
+                is_discontinued=False,
+                is_no_outbound_3m=False,
+            )
+        )
+    elif scope == "fc_no_outbound":
+        specs = list(
+            qs.filter(
+                is_vf_item=False,
+                is_discontinued=False,
+                is_no_outbound_3m=True,
+            )
+        )
+    elif scope == "discontinued":
+        specs = list(qs.filter(is_discontinued=True))
+    else:
+        specs = list(qs)
     loc_map = _barcode_location_map(
         [(s.barcode or "").strip() for s in specs if (s.barcode or "").strip()]
     )
@@ -2535,9 +3932,11 @@ def master_specs_export_xlsx(request):
                 "color1": s.color1 or "",
                 "color2": s.color2 or "",
                 "is_vf_item": 1 if s.is_vf_item else 0,
+                "finish_type": (getattr(s, "finish_type", None) or "").strip(),
                 "is_discontinued": 1 if s.is_discontinued else 0,
                 "is_no_outbound_3m": 1 if s.is_no_outbound_3m else 0,
                 "price": int(s.price or 0),
+                "notes": getattr(s, "notes", None) or "",
             }
         )
 
@@ -2558,6 +3957,8 @@ def master_specs_export_xlsx(request):
             {"rule": "category_lg/md, color1/2", "description": "비움=유지"},
             {"rule": "is_discontinued / is_no_outbound_3m", "description": "0/1. 비움=유지. 단종 수동만"},
             {"rule": "is_vf_item", "description": "수정 가능. 1/true=VF설정, 0/false=VF 해제, 비움=유지. CSV 전체 재동기화 시 덮일 수 있음"},
+            {"rule": "finish_type", "description": "finished=완제품, needs_packaging=포장 필요, 비움=유지. __CLEAR__=미지정"},
+            {"rule": "notes", "description": "제품 비고. 비움=유지. 목록 제품명 호버에 표시"},
             {"rule": "price", "description": "참고(단가 대량 변경은 FC 단가 업로드 사용)"},
             {"rule": "업로드", "description": "POST /api/master/specs/import-bulk (이 파일 그대로)"},
         ]
@@ -2670,6 +4071,16 @@ def master_specs_import_bulk(request):
                     setattr(spec, field, val)
                     changed = True
 
+        notes_val = cell(row, "notes", "비고")
+        if notes_val:
+            if notes_val in ("__CLEAR__", "__clear__", "CLEAR"):
+                if (spec.notes or "").strip():
+                    spec.notes = ""
+                    changed = True
+            elif (spec.notes or "") != notes_val:
+                spec.notes = notes_val
+                changed = True
+
         disc_raw = cell(row, "is_discontinued", "단종")
         no_out_raw = cell(row, "is_no_outbound_3m", "미출고")
         has_disc = disc_raw != ""
@@ -2699,6 +4110,17 @@ def master_specs_import_bulk(request):
                 spec.is_vf_item = vf_v
                 changed = True
                 updated_vf += 1
+
+        # 완제품 / 포장 필요 (비움=유지, __CLEAR__=미지정)
+        ft_raw = cell(row, "finish_type", "finish", "완제품구분", "포장구분")
+        if ft_raw != "":
+            if str(ft_raw).strip().upper() in ("__CLEAR__", "CLEAR", "미지정"):
+                ft_v = ""
+            else:
+                ft_v = _normalize_finish_type(ft_raw)
+            if (getattr(spec, "finish_type", None) or "") != ft_v:
+                spec.finish_type = ft_v
+                changed = True
 
         if changed:
             spec.save()
@@ -2744,18 +4166,91 @@ def master_specs_import_bulk(request):
 @api_view(["GET"])
 def master_spec_current_stock(request):
     """
-    마스터 품목 클릭 리포트용 현재고 조회.
-    VF 품목 바코드 기준 — inventory_stock 규칙 (baseline + 이후입고 − 이후출고).
-    query: barcode=...  (필수)
+    마스터 품목 현재고 조회.
+    inventory_stock 규칙 (baseline + 이후입고 − 이후출고).
+
+    query:
+      barcode=...           단건 (상세 필드 포함)
+      barcodes=a,b,c        다건 요약 { stocks: { bc: qty }, asOf }
     """
+    from .inventory_stock import (
+        aggregate_adjustments_after_baseline,
+        aggregate_movements_after_baseline,
+        compute_current_stock,
+        filter_outbound_for_stock,
+    )
+
+    barcodes_raw = (request.query_params.get("barcodes") or "").strip()
     barcode = (request.query_params.get("barcode") or "").strip()
+
+    latest_upload = InventoryBaselineUpload.objects.order_by("-uploaded_at").first()
+
+    # ── 다건: 목록 컬럼용 ──────────────────────────────────────
+    if barcodes_raw:
+        bcs = []
+        seen = set()
+        for part in barcodes_raw.replace(";", ",").split(","):
+            bc = part.strip()
+            if not bc or bc in seen:
+                continue
+            seen.add(bc)
+            bcs.append(bc)
+            if len(bcs) >= 500:
+                break
+        if not bcs:
+            return Response(
+                {"message": "barcodes required", "stocks": {}, "asOf": None},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not latest_upload:
+            return Response(
+                {
+                    "stocks": {bc: 0 for bc in bcs},
+                    "asOf": None,
+                    "message": "재고 스냅샷 없음",
+                }
+            )
+        as_of = latest_upload.as_of_date
+        base_qty_by = {
+            row["barcode"]: int(row.get("qty") or 0)
+            for row in InventoryBaselineItem.objects.filter(
+                upload=latest_upload, barcode__in=bcs
+            )
+            .values("barcode")
+            .annotate(qty=Coalesce(Sum("quantity_box"), 0))
+        }
+        outbound_agg, receipt_agg = aggregate_movements_after_baseline(
+            as_of=as_of,
+            barcodes=bcs,
+            outbound_model=OutboundRecord,
+            receipt_model=InventoryReceiptItem,
+        )
+        adj_agg = aggregate_adjustments_after_baseline(
+            as_of=as_of,
+            barcodes=bcs,
+            adjustment_model=InventoryStockAdjustment,
+        )
+        stocks = {}
+        for bc in bcs:
+            base_qty = int(base_qty_by.get(bc) or 0)
+            rcv = int(receipt_agg.get(bc) or 0)
+            out = int(outbound_agg.get(bc) or 0)
+            adj = int(adj_agg.get(bc) or 0)
+            stocks[bc] = int(compute_current_stock(base_qty, rcv, out, adj))
+        return Response(
+            {
+                "stocks": stocks,
+                "asOf": as_of.isoformat() if as_of else None,
+            }
+        )
+
+    # ── 단건: 리포트 팝업용 ────────────────────────────────────
     if not barcode:
         return Response(
-            {"message": "barcode required", "found": False, "currentStock": None},
+            {"message": "barcode or barcodes required", "found": False, "currentStock": None},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    latest_upload = InventoryBaselineUpload.objects.order_by("-uploaded_at").first()
     if not latest_upload:
         return Response(
             {
@@ -2775,21 +4270,25 @@ def master_spec_current_stock(request):
     base_qty = int(item.quantity_box or 0) if item else 0
     in_baseline = item is not None
 
-    from .inventory_stock import (
-        aggregate_movements_after_baseline,
-        compute_current_stock,
-    )
-
     outbound_agg, receipt_agg = aggregate_movements_after_baseline(
         as_of=as_of,
         barcodes=[barcode],
         outbound_model=OutboundRecord,
         receipt_model=InventoryReceiptItem,
     )
+    adj_agg = aggregate_adjustments_after_baseline(
+        as_of=as_of,
+        barcodes=[barcode],
+        adjustment_model=InventoryStockAdjustment,
+    )
     rcv = int(receipt_agg.get(barcode) or 0)
     out = int(outbound_agg.get(barcode) or 0)
+    adj = int(adj_agg.get(barcode) or 0)
     # baseline 없으면 0 + 이후 이동만 (신규 VF 등) — found=False로 구분
-    current = compute_current_stock(base_qty, rcv, out) if in_baseline else compute_current_stock(0, rcv, out)
+    if in_baseline:
+        current = compute_current_stock(base_qty, rcv, out, adj)
+    else:
+        current = compute_current_stock(0, rcv, out, adj)
 
     # 마지막 입고/출고 (UI 표시용 — 누적 합과 별개)
     last_in = (
@@ -2809,8 +4308,6 @@ def master_spec_current_stock(request):
             ).aggregate(s=Coalesce(Sum("quantity_box"), 0))["s"]
             or 0
         )
-
-    from .inventory_stock import filter_outbound_for_stock
 
     last_out = (
         filter_outbound_for_stock(
@@ -3708,9 +5205,21 @@ def _ingest_production_dataframe(df, success_message="생산 계획 데이터를
     df.columns = [str(c).strip() for c in df.columns]
 
     # Support common Korean column names by mapping them to canonical keys.
-    # 붙여넣기/엑셀 헤더 변형 폭넓게 수용
+    # 붙여넣기/엑셀 헤더 변형 폭넓게 수용 (생산일자 등 포함 매칭)
     col_aliases = {
-        "date": ["일자", "날짜", "생산일", "작업일", "date"],
+        "date": [
+            "일자",
+            "날짜",
+            "생산일",
+            "생산일자",
+            "작업일",
+            "작업일자",
+            "생산날짜",
+            "작업날짜",
+            "date",
+            "proddate",
+            "workdate",
+        ],
         "machineNumber": [
             "기계번호",
             "기계",
@@ -3721,24 +5230,54 @@ def _ingest_production_dataframe(df, success_message="생산 계획 데이터를
             "MC",
             "machine",
             "machine_number",
+            "machinenumber",
             "기계 no",
             "기계No",
+            "설비",
         ],
         "moldNumber": ["금형", "금형번호", "금형#", "mold", "mold_number", "moldNumber"],
-        "productName": ["제품명", "품명", "상품명", "제품", "product", "product_name", "productName"],
+        "productName": [
+            "제품명",
+            "품명",
+            "상품명",
+            "제품",
+            "product",
+            "product_name",
+            "productName",
+            "품목명",
+            "품목",
+        ],
         "productNameEng": ["제품명(영문)", "영문명", "영문", "product_name_eng", "productNameEng"],
         "color1": ["색상", "색상1", "color", "color1"],
         "color2": ["색상2", "color2"],
         "unit": ["단위(문자)", "단위명", "unit", "박스단위"],
-        "quantity": ["생산수량", "수량", "박스수", "박스수량", "quantity", "qty"],
-        "unitQuantity": ["단위", "단위수량", "개수/박스", "박스당", "unit_quantity", "unitQuantity"],
-        "total": ["총계", "합계", "total"],
+        "quantity": [
+            "생산수량",
+            "수량",
+            "박스수",
+            "박스수량",
+            "quantity",
+            "qty",
+            "생산량",
+            "실적",
+            "실적수량",
+        ],
+        "unitQuantity": [
+            "단위",
+            "단위수량",
+            "개수/박스",
+            "박스당",
+            "unit_quantity",
+            "unitQuantity",
+            "입수",
+        ],
+        "total": ["총계", "합계", "total", "총생산", "총수량"],
         "status": ["상태", "status"],
     }
 
     def _norm_header(h: str) -> str:
         s = str(h or "").strip().replace("\ufeff", "")
-        s = s.replace(" ", "").replace("_", "").lower()
+        s = s.replace(" ", "").replace("_", "").replace("-", "").lower()
         return s
 
     # 정규화 맵: 변형 헤더 → 원본 컬럼명
@@ -3746,21 +5285,40 @@ def _ingest_production_dataframe(df, success_message="생산 계획 데이터를
 
     rename_map = {}
     existing_cols = set(df.columns)
+    claimed = set()  # 이미 다른 canonical 에 매핑된 원본 컬럼
+
     for canonical, aliases in col_aliases.items():
         if canonical in existing_cols:
+            claimed.add(canonical)
             continue
-        # 정규화 매칭
         matched = None
+        # 1) 정확 매칭 (정규화)
         for alias in [canonical] + list(aliases):
             key = _norm_header(alias)
-            if key in cols_by_norm:
+            if key in cols_by_norm and cols_by_norm[key] not in claimed:
                 matched = cols_by_norm[key]
                 break
-            if alias in existing_cols:
+            if alias in existing_cols and alias not in claimed:
                 matched = alias
                 break
+        # 2) 부분 포함 매칭 — date/제품/기계만 (수량·단위는 오매칭 위험)
+        if matched is None and canonical in ("date", "productName", "machineNumber"):
+            alias_norms = {_norm_header(a) for a in [canonical] + list(aliases)}
+            for norm_h, orig in cols_by_norm.items():
+                if orig in claimed:
+                    continue
+                for an in alias_norms:
+                    if not an or len(an) < 2:
+                        continue
+                    # 예: 생산일자 ← 일자, 작업날짜 ← 날짜
+                    if an in norm_h:
+                        matched = orig
+                        break
+                if matched:
+                    break
         if matched and matched != canonical:
             rename_map[matched] = canonical
+            claimed.add(matched)
     if rename_map:
         df = df.rename(columns=rename_map)
 
@@ -4001,27 +5559,29 @@ def _production_text_looks_headerless(first_cell: str) -> bool:
     s = str(first_cell or "").strip().replace("\ufeff", "")
     if not s:
         return False
-    # 명시적 헤더 키워드면 헤더 있음
-    header_keys = (
+    # 명시적 헤더 키워드(부분 포함)면 헤더 있음
+    sn = s.lower().replace(" ", "").replace("_", "")
+    header_tokens = (
         "date",
         "날짜",
         "일자",
         "생산일",
+        "생산일자",
+        "작업일",
         "productname",
         "제품명",
         "품명",
+        "품목",
         "machinenumber",
         "기계",
         "호기",
+        "금형",
+        "수량",
+        "생산수량",
     )
-    if s.lower().replace(" ", "") in header_keys or s in (
-        "날짜",
-        "일자",
-        "date",
-        "제품명",
-        "품명",
-    ):
-        return False
+    for tok in header_tokens:
+        if tok in sn or sn in tok:
+            return False
     try:
         pd.to_datetime(s)
         return True
@@ -5761,10 +7321,12 @@ def _process_outbound_csv_rows(headers, rows, now):
             for inst in instances:
                 inst.save()
 
-        # 신규 출고 품목 자동 복구: 3개월 미출고만 해제 (단종은 수동 유지)
+        # VF 창고 고객 출고 → VF 품목만 미출고 해제
         synced_barcodes = {inst.barcode for inst in instances if inst.barcode}
         if synced_barcodes:
-            _clear_no_outbound_3m_on_activity(barcodes=synced_barcodes)
+            _clear_no_outbound_3m_on_activity(
+                barcodes=synced_barcodes, activity="vf_outbound"
+            )
 
     return len(instances)
 
@@ -6161,7 +7723,7 @@ def outbound_ai_analysis(request):
     if category and category != "all":
         queryset = queryset.filter(category=category)
     if search_query:
-        queryset = queryset.filter(product_name__icontains=search_query)
+        queryset = queryset.filter(_outbound_text_search_q(search_query))
     if product:
         queryset = queryset.filter(product_name=product)
 
@@ -7659,7 +9221,7 @@ def get_outbound_stats(request):
         else:
             queryset = queryset.filter(category=category)
     if search:
-        queryset = queryset.filter(product_name__icontains=search)
+        queryset = queryset.filter(_outbound_text_search_q(search))
     if product:
         queryset = queryset.filter(product_name=product)
     if barcode:
@@ -7754,7 +9316,7 @@ def get_outbound_stats(request):
                 else:
                     prev_queryset = prev_queryset.filter(category=category)
             if search:
-                prev_queryset = prev_queryset.filter(product_name__icontains=search)
+                prev_queryset = prev_queryset.filter(_outbound_text_search_q(search))
             if product:
                 prev_queryset = prev_queryset.filter(product_name=product)
 
@@ -7840,7 +9402,7 @@ def get_outbound_top_products(request):
         else:
             queryset = queryset.filter(category=category)
     if search:
-        queryset = queryset.filter(product_name__icontains=search)
+        queryset = queryset.filter(_outbound_text_search_q(search))
     if product:
         queryset = queryset.filter(product_name=product)
 
@@ -7909,7 +9471,7 @@ def get_outbound_pivot(request):
         else:
             queryset = queryset.filter(category=category)
     if search:
-        queryset = queryset.filter(product_name__icontains=search)
+        queryset = queryset.filter(_outbound_text_search_q(search))
     if product:
         queryset = queryset.filter(product_name=product)
 
@@ -9452,10 +11014,12 @@ def outbound_upload_excel(request):
             with transaction.atomic():
                 OutboundRecord.objects.bulk_create(outbound_instances, batch_size=500)
 
-                # 신규 출고 품목 자동 복구 (최근 3개월 미출고 상태 해제)
+                # VF 창고 고객 출고 → VF 품목만 미출고 해제
                 synced_barcodes = {inst.barcode for inst in outbound_instances if inst.barcode}
                 if synced_barcodes:
-                    _clear_no_outbound_3m_on_activity(barcodes=synced_barcodes)
+                    _clear_no_outbound_3m_on_activity(
+                        barcodes=synced_barcodes, activity="vf_outbound"
+                    )
         except Exception as e:
             logger.error(f"Bulk insert failed, falling back to individual saves: {e}")
             # 폴백: 개별 저장
@@ -9544,9 +11108,150 @@ def outbound_download_excel(request):
 # ============================================================================
 
 
+def _apply_inbound_confirmed_as_receipts(lines, *, error_id: str = "") -> dict:
+    """
+    [예외 경로] 발주서 확정수량 → InventoryReceiptItem (전산 가산).
+
+    기본 업로드에서는 호출하지 않음 (apply_stock=1 일 때만).
+    전산 재고 SoT: 스냅샷 + 입고 업로드 − 출고. 발주 파일은 원칙적으로 재고 불변.
+
+    날짜:
+      1) 입고예정일 우선
+      2) 없으면 오늘
+      3) as_of 이전 일자는 스킵 (기준 스냅샷 이전 장부)
+      4) as_of 당일 포함 가산 (우회/날짜 조작 없음)
+    키: barcode + receipt_datetime (발주번호·바코드로 초 단위 유일화)
+    """
+    import hashlib
+    from datetime import date as date_cls
+    from datetime import datetime as dt_cls
+    from datetime import time as time_cls
+    from datetime import timedelta as td_cls
+
+    from django.utils import timezone as dj_tz
+
+    from .inventory_stock import is_movement_date_applicable
+
+    latest_upload = InventoryBaselineUpload.objects.order_by("-uploaded_at").first()
+    as_of = latest_upload.as_of_date if latest_upload else None
+    today = dj_tz.localdate()
+
+    # 가상의 receipt upload 묶음
+    ru = InventoryReceiptUpload.objects.create(
+        file_name=f"from_inbound_po_{error_id or uuid.uuid4().hex[:8]}.xlsx",
+        file_hash=hashlib.sha256(
+            f"inbound-po-{error_id}-{dj_tz.now().isoformat()}".encode()
+        ).hexdigest(),
+    )
+
+    created = updated = unchanged = skipped_before = 0
+    to_create = []
+    to_update = []
+    keys = []
+
+    for line in lines:
+        bc = (getattr(line, "barcode", None) or "").strip()
+        qty = int(getattr(line, "confirmed_qty", 0) or 0)
+        if not bc or qty <= 0:
+            continue
+        order_no = (getattr(line, "order_no", None) or "").strip()
+        name = (getattr(line, "product_name", None) or "").strip()[:255]
+        rdate = getattr(line, "expected_date", None) or today
+        if not isinstance(rdate, date_cls):
+            rdate = today
+
+        if as_of and not is_movement_date_applicable(rdate, as_of):
+            skipped_before += 1
+            continue
+
+        # 동일 발주·바코드는 같은 datetime 키 (재업로드 시 수량 갱신)
+        h = int(
+            hashlib.md5(f"{order_no}|{bc}".encode("utf-8")).hexdigest()[:6], 16
+        ) % 86399
+        rdt = dt_cls.combine(rdate, time_cls(0, 0, 0)) + td_cls(seconds=h)
+        keys.append((bc, rdt, qty, name))
+
+    existing_map = {}
+    if keys:
+        barcodes = sorted({k[0] for k in keys})
+        for obj in InventoryReceiptItem.objects.filter(barcode__in=barcodes):
+            k = ((obj.barcode or "").strip(), obj.receipt_datetime)
+            existing_map[k] = obj
+
+    for bc, rdt, qty, name in keys:
+        k = (bc, rdt)
+        ex = existing_map.get(k)
+        if not ex:
+            to_create.append(
+                InventoryReceiptItem(
+                    upload=ru,
+                    receipt_datetime=rdt,
+                    receipt_date=rdt.date(),
+                    barcode=bc,
+                    quantity_box=qty,
+                    product_name=name,
+                )
+            )
+            created += 1
+            continue
+        if int(ex.quantity_box or 0) == qty:
+            unchanged += 1
+            continue
+        ex.quantity_box = qty
+        if name:
+            ex.product_name = name
+        ex.upload = ru
+        ex.receipt_date = rdt.date()
+        to_update.append(ex)
+        updated += 1
+
+    with transaction.atomic():
+        if to_create:
+            InventoryReceiptItem.objects.bulk_create(to_create, batch_size=2000)
+        if to_update:
+            InventoryReceiptItem.objects.bulk_update(
+                to_update,
+                ["quantity_box", "product_name", "upload", "receipt_date"],
+                batch_size=2000,
+            )
+
+    ru.rows_processed = created + updated + unchanged
+    ru.rows_skipped = 0
+    ru.save(update_fields=["rows_processed", "rows_skipped"])
+
+    # 입고 발생 시 3개월 미출고 해제
+    try:
+        # 창고 재고 입고 반영 — 상태열 SoT(VF출고/FC납품)와 무관 → 플래그 자동 해제 안 함
+        _ = keys
+    except Exception:
+        logger.exception("apply inbound stock clear no_outbound failed error_id=%s", error_id)
+
+    return {
+        "applied": True,
+        "receiptsCreated": created,
+        "receiptsUpdated": updated,
+        "receiptsUnchanged": unchanged,
+        "skippedBeforeBaseline": skipped_before,
+        "dateAdjusted": 0,
+        "baselineAsOf": as_of.isoformat() if as_of else None,
+        "receiptUploadId": str(ru.id),
+        "message": (
+            f"전산 입고 {created + updated}건 반영 "
+            f"(기준일 as_of={as_of.isoformat() if as_of else '-'})"
+            + (f", 기준일 이전 제외 {skipped_before}건" if skipped_before else "")
+        ),
+    }
+
+
 @api_view(["POST"])
 def inbound_order_upload(request):
-    """입고 발주서 파일 업로드 (VF xlsx / 미입고 csv)"""
+    """입고 발주서 파일 업로드 (VF xlsx / 미입고 csv)
+
+    전산 재고 SoT:
+      baseline + 입고(InventoryReceiptItem) − 출고 (+ 조정)
+    발주서(InboundOrderLine)는 입고 가능 탭 계산용만 저장한다.
+    확정수량을 전산에 넣으려면 명시적으로 apply_stock=1 (기본 OFF).
+    """
     error_id = str(uuid.uuid4())
     file_obj = request.FILES.get("file")
     if not file_obj:
@@ -9582,7 +11287,12 @@ def inbound_order_upload(request):
     try:
         raw = file_obj.read()
         if file_type == "vf_xlsx":
-            df = pd.read_excel(io.BytesIO(raw), dtype=str, sheet_name="상품목록")
+            df = pd.read_excel(
+                io.BytesIO(raw),
+                dtype=str,
+                sheet_name="상품목록",
+                engine="openpyxl",
+            )
         else:
             # CSV 처리
             try:
@@ -9726,21 +11436,80 @@ def inbound_order_upload(request):
     upload.status = "success"
     upload.save(update_fields=["rows_parsed", "rows_skipped", "status"])
 
+    # ── 확정수량 → 전산 재고 반영: 기본 OFF ──
+    # SoT: 재고 = 스냅샷 + 입고 업로드 − 출고. 발주(입고 가능) 파일은 재고에 넣지 않음.
+    # 예외적으로만 apply_stock=1|true 시 InventoryReceiptItem 복사 (긴급/수동).
+    apply_stock_raw = ""
+    if isinstance(request.data, dict):
+        apply_stock_raw = str(request.data.get("apply_stock") or "").strip().lower()
+    if not apply_stock_raw:
+        apply_stock_raw = (request.query_params.get("apply_stock") or "").strip().lower()
+    apply_stock = apply_stock_raw in ("1", "true", "yes", "on")
+
+    stock_result = {
+        "applied": False,
+        "receiptsCreated": 0,
+        "receiptsUpdated": 0,
+        "receiptsUnchanged": 0,
+        "dateAdjusted": 0,
+        "baselineAsOf": None,
+        "message": (
+            ""
+            if apply_stock
+            else "발주서는 전산 재고에 반영하지 않음 (스냅샷+입고 업로드−출고 SoT)"
+        ),
+    }
+    if apply_stock and lines_to_create:
+        try:
+            stock_result = _apply_inbound_confirmed_as_receipts(
+                lines_to_create, error_id=error_id
+            )
+        except Exception:
+            logger.exception(
+                "inbound_upload apply stock failed error_id=%s", error_id
+            )
+            stock_result["message"] = "확정수량 전산 반영 중 오류 (발주서 라인은 저장됨)"
+
     logger.info(
-        "inbound_upload done error_id=%s rows_parsed=%s rows_skipped=%s",
+        "inbound_upload done error_id=%s rows_parsed=%s rows_skipped=%s stock=%s",
         error_id,
         rows_parsed,
         rows_skipped,
+        stock_result,
     )
+
+    msg = (
+        f"입고 발주서가 저장되었습니다. (파싱 {rows_parsed}건"
+        + (f", 스킵 {rows_skipped}건" if rows_skipped else "")
+        + "). 전산 재고에는 반영하지 않습니다. 재고 반영은 입고 데이터 업로드를 사용하세요."
+    )
+    if apply_stock:
+        if stock_result.get("receiptsCreated") or stock_result.get("receiptsUpdated"):
+            msg = (
+                f"발주서 저장 + 확정수량 전산 입고 반영 "
+                f"(신규 {stock_result.get('receiptsCreated', 0)} · "
+                f"수정 {stock_result.get('receiptsUpdated', 0)}) "
+                f"[apply_stock=1 명시]"
+            )
+            if stock_result.get("skippedBeforeBaseline"):
+                msg += (
+                    f". 기준일 이전 {stock_result['skippedBeforeBaseline']}건 제외"
+                )
+        elif stock_result.get("message"):
+            msg = f"발주서 저장. {stock_result['message']}"
+        else:
+            msg = "발주서 저장. 확정수량 전산 반영 대상 없음(apply_stock=1)."
 
     return Response(
         {
             "success": True,
-            "message": "입고 발주서 파일이 업로드되었습니다.",
+            "message": msg,
             "uploadId": str(upload.id),
             "fileType": file_type,
             "rowsParsed": rows_parsed,
             "rowsSkipped": rows_skipped,
+            "stockApplied": bool(apply_stock and stock_result.get("applied")),
+            "stock": stock_result,
         }
     )
 
@@ -9889,6 +11658,428 @@ def inbound_policy(request):
     )
 
 
+def _restriction_to_dict(row: InboundProductRestriction) -> dict:
+    return {
+        "id": str(row.id),
+        "barcode": row.barcode,
+        "productName": row.product_name or "",
+        "location": row.location or "",
+        "enabled": bool(row.enabled),
+        "note": row.note or "",
+        "allowedFrom": row.allowed_from.isoformat() if row.allowed_from else None,
+        "createdAt": row.created_at.isoformat() if row.created_at else None,
+        "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
+        "blockedToday": row.is_blocked_on(),
+    }
+
+
+def _parse_allowed_from(raw):
+    """YYYY-MM-DD 또는 null/빈 문자열 → date | None. 잘못된 값이면 ValueError."""
+    if raw is None or raw == "":
+        return None
+    if hasattr(raw, "year"):
+        return raw
+    s = str(raw).strip()[:10]
+    if not s:
+        return None
+    return datetime.strptime(s, "%Y-%m-%d").date()
+
+
+def _resolve_barcode_product_info(barcode: str) -> dict:
+    """
+    바코드 → 제품명·로케이션 해석.
+    우선순위: BarcodeMaster → MasterSpec → baseline → outbound → inbound line → 스캐너 이력 JSON
+    """
+    bc = (barcode or "").strip()
+    empty = {
+        "barcode": bc,
+        "productName": "",
+        "location": "",
+        "found": False,
+        "source": "",
+    }
+    if not bc:
+        return empty
+
+    product_name = ""
+    location = ""
+    source = ""
+
+    # 1) BarcodeMaster (로케이션 SoT)
+    bm = (
+        BarcodeMaster.objects.filter(barcode__iexact=bc)
+        .only("barcode", "product_name", "location")
+        .first()
+    )
+    if bm:
+        product_name = (bm.product_name or "").strip()
+        location = (bm.location or "").strip()
+        source = "barcode_master"
+
+    # 2) MasterSpec
+    if not product_name:
+        ms = (
+            MasterSpec.objects.filter(barcode__iexact=bc)
+            .only("barcode", "product_name")
+            .first()
+        )
+        if ms and (ms.product_name or "").strip():
+            product_name = ms.product_name.strip()
+            source = source or "master_spec"
+
+    # 3) 최신 baseline 행
+    if not product_name or not location:
+        bi = (
+            InventoryBaselineItem.objects.filter(barcode__iexact=bc)
+            .order_by("-id")
+            .only("product_name", "location")
+            .first()
+        )
+        if bi:
+            if not product_name and (bi.product_name or "").strip():
+                product_name = bi.product_name.strip()
+                source = source or "baseline"
+            if not location and (bi.location or "").strip():
+                location = bi.location.strip()
+                source = source or "baseline"
+
+    # 4) 출고 실적 (최근 제품명)
+    if not product_name:
+        ob = (
+            OutboundRecord.objects.filter(barcode__iexact=bc)
+            .exclude(product_name="")
+            .order_by("-outbound_date")
+            .only("product_name")
+            .first()
+        )
+        if ob and (ob.product_name or "").strip():
+            product_name = ob.product_name.strip()
+            source = source or "outbound"
+
+    # 5) 입고 발주 라인
+    if not product_name:
+        iol = (
+            InboundOrderLine.objects.filter(barcode__iexact=bc)
+            .exclude(product_name="")
+            .order_by("-id")
+            .only("product_name")
+            .first()
+        )
+        if iol and (iol.product_name or "").strip():
+            product_name = iol.product_name.strip()
+            source = source or "inbound_order"
+
+    # 6) 스캐너 일자별 저장 JSON (발주 업로드 이력 · rows + parsed_text)
+    if not product_name:
+        try:
+            import glob as _glob
+            import re as _re
+
+            data_dir = os.path.join(
+                os.path.dirname(os.path.dirname(__file__)),
+                "departure",
+                "data",
+            )
+            pattern = os.path.join(data_dir, "barcode_*.json")
+            for path in sorted(_glob.glob(pattern), reverse=True)[:90]:
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        payload = json.load(f)
+                except Exception:
+                    continue
+                rows = payload.get("rows") or []
+                cols = payload.get("col_indices") or {}
+                bci = cols.get("barcode")
+                pni = cols.get("productName", cols.get("product_name"))
+                lci = cols.get("location")
+                if bci is not None:
+                    for row in rows:
+                        if not isinstance(row, (list, tuple)):
+                            continue
+                        try:
+                            cell = str(row[bci] if bci < len(row) else "").strip()
+                        except Exception:
+                            continue
+                        if cell.upper() != bc.upper():
+                            continue
+                        if pni is not None and pni >= 0 and pni < len(row):
+                            product_name = str(row[pni] or "").strip()
+                        if (
+                            not location
+                            and lci is not None
+                            and isinstance(lci, int)
+                            and lci >= 0
+                            and lci < len(row)
+                        ):
+                            location = str(row[lci] or "").strip()
+                        if product_name:
+                            source = "scanner_history"
+                            break
+                # rows에 없어도 parsed_text(원본 발주)에 있을 수 있음 — 필터로 제외된 허브 등
+                if not product_name:
+                    text = payload.get("parsed_text") or ""
+                    if bc in text:
+                        for line in text.replace("\r\n", "\n").split("\n"):
+                            if bc not in line:
+                                continue
+                            parts = line.split("\t")
+                            # 바코드 열 추정: cols.barcode 또는 셀 정확 일치
+                            b_idx = None
+                            if bci is not None and isinstance(bci, int) and bci < len(parts):
+                                if str(parts[bci]).strip().upper() == bc.upper():
+                                    b_idx = bci
+                            if b_idx is None:
+                                for i, cell in enumerate(parts):
+                                    if str(cell).strip().upper() == bc.upper():
+                                        b_idx = i
+                                        break
+                            if b_idx is None:
+                                continue
+                            name_idx = pni if isinstance(pni, int) else None
+                            if name_idx is None or name_idx < 0 or name_idx >= len(parts):
+                                # 관례: 바코드 바로 앞 열이 상품이름인 경우가 많음
+                                name_idx = b_idx - 1 if b_idx > 0 else None
+                            if name_idx is not None and 0 <= name_idx < len(parts):
+                                cand = str(parts[name_idx] or "").strip()
+                                # SKU ID 숫자만이면 건너뛰고 더 앞 열 시도
+                                if cand and not _re.fullmatch(r"\d+", cand):
+                                    product_name = cand
+                                    source = "scanner_history_text"
+                                    break
+                                if b_idx >= 2:
+                                    cand2 = str(parts[b_idx - 2] or "").strip()
+                                    if cand2 and not _re.fullmatch(r"\d+", cand2):
+                                        product_name = cand2
+                                        source = "scanner_history_text"
+                                        break
+                if product_name:
+                    break
+        except Exception:
+            pass
+
+    # 마스터에 이름만 있으면 자동 보강 등록 (다음 조회 빠르게)
+    if product_name and not bm:
+        try:
+            BarcodeMaster.objects.update_or_create(
+                barcode=bc,
+                defaults={
+                    "product_name": product_name[:255],
+                    "location": (location or "")[:255],
+                },
+            )
+            source = (source or "auto") + "+seed_master"
+        except Exception:
+            pass
+    elif product_name and bm and not (bm.product_name or "").strip():
+        try:
+            bm.product_name = product_name[:255]
+            if location and not (bm.location or "").strip():
+                bm.location = location[:255]
+            bm.save()
+        except Exception:
+            pass
+
+    return {
+        "barcode": bc,
+        "productName": product_name,
+        "location": location,
+        "found": bool(product_name or location),
+        "source": source,
+    }
+
+
+@api_view(["GET", "POST"])
+def inbound_product_restrictions_resolve(request):
+    """
+    바코드 목록 → 제품명·로케이션 일괄 조회.
+    GET  ?barcodes=a,b,c
+    POST { barcodes: string[] }
+    """
+    if request.method == "GET":
+        raw = request.query_params.get("barcodes") or request.query_params.get("q") or ""
+        barcodes = [x.strip() for x in str(raw).replace("\n", ",").split(",") if x.strip()]
+    else:
+        payload = request.data if isinstance(request.data, dict) else {}
+        raw_list = payload.get("barcodes") or payload.get("items") or []
+        if isinstance(raw_list, str):
+            barcodes = [x.strip() for x in raw_list.replace("\n", ",").split(",") if x.strip()]
+        else:
+            barcodes = []
+            for x in raw_list:
+                if isinstance(x, dict):
+                    b = str(x.get("barcode") or "").strip()
+                else:
+                    b = str(x or "").strip()
+                if b:
+                    barcodes.append(b)
+
+    # unique preserve order
+    seen = set()
+    uniq = []
+    for b in barcodes:
+        if b not in seen:
+            seen.add(b)
+            uniq.append(b)
+
+    items = [_resolve_barcode_product_info(b) for b in uniq[:200]]
+    return Response(
+        {
+            "success": True,
+            "items": items,
+            "count": len(items),
+            "found": sum(1 for i in items if i.get("found")),
+        }
+    )
+
+
+@api_view(["GET", "POST"])
+def inbound_product_restrictions(request):
+    """
+    입고 제한 품목 목록 / 일괄 upsert.
+    GET  → { success, items: [...] }
+    POST → body.items[] | body (single) upsert by barcode
+           { barcode, productName?, location?, enabled?, note?, allowedFrom? }
+    """
+    if request.method == "GET":
+        only_enabled = str(request.query_params.get("enabled") or "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        qs = InboundProductRestriction.objects.all()
+        if only_enabled:
+            qs = qs.filter(enabled=True)
+        items = [_restriction_to_dict(r) for r in qs[:5000]]
+        return Response({"success": True, "items": items, "count": len(items)})
+
+    payload = request.data if isinstance(request.data, dict) else {}
+    raw_items = payload.get("items")
+    if raw_items is None:
+        raw_items = [payload]
+    if not isinstance(raw_items, list) or len(raw_items) == 0:
+        return Response(
+            {"success": False, "message": "items 배열 또는 단일 객체가 필요합니다"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    saved = []
+    errors = []
+    for i, item in enumerate(raw_items):
+        if not isinstance(item, dict):
+            errors.append({"index": i, "message": "객체여야 합니다"})
+            continue
+        barcode = str(
+            item.get("barcode") or item.get("Barcode") or ""
+        ).strip()
+        if not barcode:
+            errors.append({"index": i, "message": "barcode 필수"})
+            continue
+        try:
+            allowed_from = _parse_allowed_from(
+                item.get("allowedFrom")
+                if "allowedFrom" in item
+                else item.get("allowed_from")
+            )
+        except ValueError:
+            errors.append({"index": i, "barcode": barcode, "message": "allowedFrom 형식 오류 (YYYY-MM-DD)"})
+            continue
+
+        product_name = str(
+            item.get("productName") or item.get("product_name") or ""
+        ).strip()[:255]
+        location = str(item.get("location") or "").strip()[:100]
+        note = str(item.get("note") or "").strip()
+        enabled = item.get("enabled")
+        if enabled is None:
+            enabled = True
+        else:
+            enabled = bool(enabled)
+
+        defaults = {
+            "enabled": enabled,
+            "note": note,
+            "allowed_from": allowed_from,
+        }
+        if product_name:
+            defaults["product_name"] = product_name
+        if location or "location" in item:
+            defaults["location"] = location
+
+        obj, _created = InboundProductRestriction.objects.update_or_create(
+            barcode=barcode,
+            defaults=defaults,
+        )
+        # product_name/location 비어 있으면 기존 유지(update_or_create defaults에 없을 때)
+        if product_name and obj.product_name != product_name:
+            obj.product_name = product_name
+            obj.save(update_fields=["product_name", "updated_at"])
+        saved.append(_restriction_to_dict(obj))
+
+    return Response(
+        {
+            "success": len(errors) == 0,
+            "items": saved,
+            "saved": len(saved),
+            "errors": errors,
+        },
+        status=status.HTTP_200_OK if saved else status.HTTP_400_BAD_REQUEST,
+    )
+
+
+@api_view(["PATCH", "DELETE"])
+def inbound_product_restriction_detail(request, barcode: str):
+    """단일 바코드 수정/삭제(물리 삭제). 해제는 PATCH enabled=false 권장."""
+    bc = (barcode or "").strip()
+    if not bc:
+        return Response(
+            {"success": False, "message": "barcode 필요"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        obj = InboundProductRestriction.objects.get(barcode=bc)
+    except InboundProductRestriction.DoesNotExist:
+        return Response(
+            {"success": False, "message": "not found"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "DELETE":
+        obj.delete()
+        return Response({"success": True, "deleted": bc})
+
+    payload = request.data if isinstance(request.data, dict) else {}
+    update_fields = ["updated_at"]
+    if "enabled" in payload:
+        obj.enabled = bool(payload.get("enabled"))
+        update_fields.append("enabled")
+    if "note" in payload:
+        obj.note = str(payload.get("note") or "")
+        update_fields.append("note")
+    if "productName" in payload or "product_name" in payload:
+        obj.product_name = str(
+            payload.get("productName") or payload.get("product_name") or ""
+        ).strip()[:255]
+        update_fields.append("product_name")
+    if "location" in payload:
+        obj.location = str(payload.get("location") or "").strip()[:100]
+        update_fields.append("location")
+    if "allowedFrom" in payload or "allowed_from" in payload:
+        try:
+            obj.allowed_from = _parse_allowed_from(
+                payload.get("allowedFrom")
+                if "allowedFrom" in payload
+                else payload.get("allowed_from")
+            )
+        except ValueError:
+            return Response(
+                {"success": False, "message": "allowedFrom 형식 오류 (YYYY-MM-DD)"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        update_fields.append("allowed_from")
+    obj.save(update_fields=list(dict.fromkeys(update_fields)))
+    return Response({"success": True, "item": _restriction_to_dict(obj)})
+
+
 @api_view(["GET"])
 def get_fc_inbound_records(request):
     start = request.query_params.get("start")
@@ -9956,7 +12147,7 @@ def get_fc_inbound_stats(request):
         queryset = queryset.exclude(logistics_center="VF67")
 
     if search:
-        queryset = queryset.filter(product_name__icontains=search)
+        queryset = queryset.filter(_fc_inbound_text_search_q(search))
 
     if product:
         queryset = queryset.filter(product_name=product)
@@ -10121,7 +12312,7 @@ def get_fc_inbound_top_products(request):
         queryset = queryset.exclude(logistics_center="VF67")
 
     if search:
-        queryset = queryset.filter(product_name__icontains=search)
+        queryset = queryset.filter(_fc_inbound_text_search_q(search))
 
     if product:
         queryset = queryset.filter(product_name=product)
@@ -10220,7 +12411,7 @@ def get_fc_inbound_pivot(request):
         queryset = queryset.exclude(logistics_center="VF67")
 
     if search:
-        queryset = queryset.filter(product_name__icontains=search)
+        queryset = queryset.filter(_fc_inbound_text_search_q(search))
 
     if product:
         queryset = queryset.filter(product_name=product)
@@ -10339,9 +12530,23 @@ def fc_inbound_upload(request):
         )
 
     file = request.FILES["file"]
-    if not file.name.endswith((".xlsx", ".xls")):
+    fname = (file.name or "").lower()
+    if fname.endswith(".csv") or "inventory_unified" in fname:
         return Response(
-            {"error": "Only Excel files are supported"},
+            {
+                "error": (
+                    "이 API는 쿠팡 입고 엑셀(Coupang_Stocked_Data_List, .xlsx) 전용입니다. "
+                    "inventory_unified CSV(전산 재고 export)는 반영되지 않습니다. "
+                    "전산 재고는 /inventory/enhanced 의 기준 재고 업로드를 사용하세요."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not fname.endswith((".xlsx", ".xls")):
+        return Response(
+            {
+                "error": "엑셀 파일만 지원합니다 (.xlsx, .xls). CSV는 지원하지 않습니다."
+            },
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -10358,11 +12563,35 @@ def fc_inbound_upload(request):
         df = pd.read_excel(io.BytesIO(file_content))
         df.columns = [str(c).strip() for c in df.columns]
 
+        # 전산 재고 export를 xlsx로 저장해 올린 경우 감지
+        inv_headers = {"barcode", "currentstock", "inventorydate", "skuid"}
+        col_lower = {str(c).strip().lower().replace("_", "") for c in df.columns}
+        if inv_headers.issubset(col_lower) or (
+            "barcode" in col_lower and "currentstock" in col_lower
+        ):
+            return Response(
+                {
+                    "error": (
+                        "전산 재고(inventory unified) 형식의 파일입니다. "
+                        "FC 입고 실적이 아닙니다. "
+                        "필수: SKU번호, SKU명, 입고/반출시각, 물류센터, 수량. "
+                        "전산 재고 반영은 Enhanced 재고 업로드를 이용하세요."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         required_columns = ["SKU번호", "SKU명", "입고/반출시각", "물류센터", "수량"]
         missing = [col for col in required_columns if col not in df.columns]
         if missing:
             return Response(
-                {"error": f"Missing required columns: {', '.join(missing)}"},
+                {
+                    "error": (
+                        f"필수 컬럼 없음: {', '.join(missing)}. "
+                        "쿠팡 Coupang_Stocked_Data_List 양식(.xlsx)을 사용하세요. "
+                        "inventory_unified 전산재고 파일은 이 탭에서 사용할 수 없습니다."
+                    )
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -10471,10 +12700,12 @@ def fc_inbound_upload(request):
                     records_skipped += 1
                     continue
 
-            # 신규 입고 품목 자동 복구: 3개월 미출고만 해제 (단종은 수동 유지)
+            # FC 입고 = 쿠팡 센터 납품 → 비VF 품목만 미출고 해제
             if processed_skus or processed_barcodes:
                 _clear_no_outbound_3m_on_activity(
-                    barcodes=processed_barcodes, sku_ids=processed_skus
+                    barcodes=processed_barcodes,
+                    sku_ids=processed_skus,
+                    activity="fc_inbound",
                 )
 
             # 파일 업로드 이력 저장
@@ -10502,7 +12733,9 @@ def fc_inbound_upload(request):
                     if s and s.lower() != "nan":
                         skus_in_file.add(s)
                 if skus_in_file:
-                    _clear_no_outbound_3m_on_activity(sku_ids=skus_in_file)
+                    _clear_no_outbound_3m_on_activity(
+                        sku_ids=skus_in_file, activity="fc_inbound"
+                    )
 
         return Response(
             {
@@ -10939,12 +13172,14 @@ def sync_fc_inbound_from_sheet(request):
                 )
                 updated = len(to_update)
 
-            # 신규 입고 품목 자동 복구: 3개월 미출고만 해제 (단종은 수동 유지)
+            # FC 입고 = 쿠팡 센터 납품 → 비VF만 미출고 해제
             inbound_skus = {item.sku_id for item in to_create if item.sku_id} | {item.sku_id for item in to_update if item.sku_id}
             inbound_barcodes = {item.barcode for item in to_create if item.barcode} | {item.barcode for item in to_update if item.barcode}
             if inbound_skus or inbound_barcodes:
                 _clear_no_outbound_3m_on_activity(
-                    barcodes=inbound_barcodes, sku_ids=inbound_skus
+                    barcodes=inbound_barcodes,
+                    sku_ids=inbound_skus,
+                    activity="fc_inbound",
                 )
 
         return Response(
@@ -11437,10 +13672,12 @@ def outbound_upload_excel(request):
             if records:
                 OutboundRecord.objects.bulk_create(records, batch_size=2000)
 
-                # 신규 출고 품목 자동 복구: 3개월 미출고만 해제 (단종은 수동 유지)
+                # VF 창고 고객 출고 → VF 품목만 미출고 해제
                 synced_barcodes = {r.barcode for r in records if r.barcode}
                 if synced_barcodes:
-                    _clear_no_outbound_3m_on_activity(barcodes=synced_barcodes)
+                    _clear_no_outbound_3m_on_activity(
+                        barcodes=synced_barcodes, activity="vf_outbound"
+                    )
 
         logger.info(
             f"Outbound Excel Upload Success: {target_date_str}, {len(records)} rows"

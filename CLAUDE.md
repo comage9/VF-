@@ -56,10 +56,12 @@ views.py에 인라인 재구현 금지. 수정 시 이 파일만 변경.
 
 | 항목 | 규칙 |
 |------|------|
-| 업로드 스냅샷 의미 | 재고 기준일(`as_of`) = **그날 출고 이후 남은 재고** |
-| 현재고 공식 | `baseline + 입고(date > as_of) − 출고(date > as_of)` |
-| 금지 | 기준일 당일 출고/입고를 **다시** 가감 (`>= as_of` 사용 금지) |
-| 증상 | 당일 출고 이중 차감 → 가짜 품절·위험 과다·총재고금액 과소 |
+| 업로드 스냅샷 의미 | 재고 업로드 = **그 시점 기준 수량** (그대로 수용, 전일 출고 재계산 없음) |
+| 현재고 공식 | `baseline + 입고(date >= as_of) − 출고(date >= as_of, 실적만)` |
+| 입고 | 기준일 당일 입고도 **가산** → `receipt_date >= as_of` (as_of 이전만 제외) |
+| 출고 | 일자 맞춤 차감 → `outbound_date >= as_of` (오늘 재고 − 오늘 출고 = 내일 장부) |
+| 예측 출고 | `is_estimated=True` 는 재고 차감 **제외** (실데이터만) |
+| 우회 금지 | as_of+1 날짜 조작 없음 |
 
 ### API 엔드포인트 규칙
 
@@ -178,6 +180,8 @@ cd frontend/client && npm run dev -- --host 0.0.0.0 --port 5174
 
 | 날짜 | 변경 | 이유 |
 |------|------|------|
+| 2026-07-23 | Departure/LS: 매일 15:00 watch+supervisor, LS requestTime SoT, 출차카드=차량정보 N, merge 저장, 파렛트 빈칸 · README §6.0c | 자동등록 단절·시간/호차 오류·카드 2장 깜빡임·PLT 0 입력 불편 |
+| 2026-07-22 | 현재고: 출고 `>= as_of`, 스냅샷=재고+입고 (`inventory_stock.py`) · README 상세 기록 | 당일 출고 미차감 → 전산>실물 |
 | 2026-06-30 | production-log 업로드 버그 수정 (`views.py` line 2265~2351) | `unit_qty`/`unit_label` 컬럼 의미 반전, `update_or_create` lookup 키 보강 |
 | 2026-06-30 | CLAUDE.md에 하네스 4기둥·컨텍스트 관리 추가 | 영상(`6IbdH5jMP00`) 원칙 반영 |
 | 2026-06-30 | harness/references/ `verification-loop.md`, `session-handoff.md` 추가 | 자료(`Harness Engineering: ...`) 보강 — 검증 3방법·셀프 검증 4요소·Fork/Hand-off 절차 |

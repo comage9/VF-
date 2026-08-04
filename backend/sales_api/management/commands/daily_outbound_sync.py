@@ -122,21 +122,72 @@ class Command(BaseCommand):
             unit_qty = int(parse_num(row.get(unit_col)))
             amount = Decimal(str(parse_num(row.get(amount_col))))
 
-            obj, created = OutboundRecord.objects.update_or_create(
-                outbound_date=d,
-                product_name=product,
-                barcode=barcode,
-                category=category,
-                box_quantity=box_qty,
-                defaults={
-                    "unit_count": unit_qty,
-                    "sales_amount": amount,
-                },
+            # box_quantity 는 lookup 키에 넣지 않음 (수량 변경 시 중복 행 생성 방지).
+            # 기존 중복 행이 있어도 MultipleObjectsReturned 없이 첫 행만 갱신 (실서비스 안전).
+            # 예측(is_estimated) 행은 건드리지 않음.
+            existing = (
+                OutboundRecord.objects.filter(
+                    outbound_date=d,
+                    product_name=product,
+                    barcode=barcode or "",
+                    category=category,
+                    is_estimated=False,
+                )
+                .order_by("created_at", "id")
+                .first()
             )
-            if created:
-                new_count += 1
-            else:
+            if existing:
+                existing.box_quantity = box_qty
+                existing.quantity = box_qty
+                existing.unit_count = unit_qty
+                existing.sales_amount = amount
+                existing.save(
+                    update_fields=[
+                        "box_quantity",
+                        "quantity",
+                        "unit_count",
+                        "sales_amount",
+                        "updated_at",
+                    ]
+                )
                 update_count += 1
+            else:
+                OutboundRecord.objects.create(
+                    outbound_date=d,
+                    product_name=product,
+                    barcode=barcode or "",
+                    category=category,
+                    box_quantity=box_qty,
+                    quantity=box_qty,
+                    unit_count=unit_qty,
+                    sales_amount=amount,
+                    is_estimated=False,
+                )
+                new_count += 1
+
+        # 실적이 들어온 날짜의 예측 보정 행 제거 (실적 우선)
+        from sales_api.outbound_estimates import cleanup_estimates_where_real_exists
+        from datetime import date as date_cls
+
+        try:
+            since_d = date_cls.fromisoformat(sync_start)
+            touched = list(
+                OutboundRecord.objects.filter(
+                    is_estimated=False, outbound_date__gte=since_d
+                )
+                .values_list("outbound_date", flat=True)
+                .distinct()
+            )
+            cleaned = cleanup_estimates_where_real_exists(
+                dates=touched, dry_run=False
+            )
+            if cleaned.get("deleted"):
+                self.stdout.write(
+                    f"예측 보정 정리: {cleaned['deleted']}행 "
+                    f"({cleaned['overlap_dates']}일)"
+                )
+        except Exception as e:
+            self.stderr.write(f"예측 보정 정리 스킵: {e}")
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -144,3 +195,15 @@ class Command(BaseCommand):
                 f"(기준일: {sync_start}~)"
             )
         )
+
+        # 출고 반영 후 상태열 갱신 (VF=실출고 / 비VF=FC 입고)
+        try:
+            from django.core.management import call_command
+
+            call_command("update_outbound_status")
+        except Exception as e:
+            self.stderr.write(f"미출고 상태 동기화 스킵: {e}")
+
+        # 참고: VF 지정(is_vf_item)은 엑셀 SoT 운영 — 여기서 자동 해제하지 않음
+        # (과거 apply_vf_item_rules 는 출고 기반 자동 ON 용, 필요 시 수동 실행)
+

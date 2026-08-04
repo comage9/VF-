@@ -35,13 +35,17 @@ def _load_project_env(path: Path):
 
         k, v = s.split('=', 1)
         key = (k or '').strip()
-        # 허용된 환경변수: AI 설정 + Google Sheets URL
+        # 허용된 환경변수: AI + Sheets + DB/보안 (실서비스 하드닝)
         allowed_keys = {
             'AI_BACKEND', 'API_TIMEOUT_MS',
             'FC_GOOGLE_SHEET_CSV_URL', 'MASTER_DATA_CSV_URL', 'OUTBOUND_GOOGLE_SHEET_URL',
-            'GOOGLE_SHEETS_API_KEY'
+            'GOOGLE_SHEETS_API_KEY',
+            'DEBUG', 'SECRET_KEY', 'DJANGO_SECRET_KEY',
+            'ALLOWED_HOSTS', 'CORS_ALLOW_ALL_ORIGINS', 'CORS_ALLOWED_ORIGINS',
+            'DESTRUCTIVE_API_KEY',
+            'DB_NAME', 'DB_USER', 'DB_PASSWORD', 'DB_HOST', 'DB_PORT',
         }
-        allowed_prefixes = ('ANTHROPIC_', 'OLLAMA_')
+        allowed_prefixes = ('ANTHROPIC_', 'OLLAMA_', 'OPENROUTER_', 'AI_', 'DB_')
         import sys
         if _debug and ('GOOGLE' in key or 'MASTER_DATA' in key or 'OUTBOUND' in key):
             print(f'[DEBUG] Found {key} in allowed_keys: {key in allowed_keys}', file=sys.stderr)
@@ -54,7 +58,9 @@ def _load_project_env(path: Path):
         import sys
         if _debug and key in allowed_keys:
             print(f'[DEBUG] Key {key} in allowed, value={repr(value[:50] if len(value) > 50 else value)}, key in os.environ: {key in os.environ}', file=sys.stderr)
-        if key and value and key not in os.environ:
+        # .env.local always overrides; base .env only fills missing keys
+        is_local = path.name.endswith('.local')
+        if key and value and (is_local or key not in os.environ):
             os.environ[key] = value
             if _debug:
                 print(f'[DEBUG] Set {key} = {value[:50]}', file=sys.stderr)
@@ -73,13 +79,19 @@ except Exception:
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-*b1@6n%61-q1ho6p_z#-aqyadphr7$&_7f=##++b!vaetilu%p"
+# SECURITY: env 우선, 없으면 기존 개발용 키 유지 (실서비스 중단 방지)
+SECRET_KEY = (
+    os.environ.get("DJANGO_SECRET_KEY")
+    or os.environ.get("SECRET_KEY")
+    or "django-insecure-*b1@6n%61-q1ho6p_z#-aqyadphr7$&_7f=##++b!vaetilu%p"
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = ['*']
+# comma-separated hosts; default '*' keeps current LAN/dev behavior
+_allowed = (os.environ.get("ALLOWED_HOSTS") or "*").strip()
+ALLOWED_HOSTS = [h.strip() for h in _allowed.split(",") if h.strip()] or ["*"]
 
 # Silence models.W042 warnings and use BigAutoField by default for auto-created primary keys.
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
@@ -87,6 +99,9 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Upload limits (large multi-xlsx uploads for inventory baseline)
 DATA_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024 * 1024  # 1GB
 FILE_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024 * 1024  # 1GB
+
+# Optional: protect full-wipe APIs when set (see sales_api.api_guards)
+DESTRUCTIVE_API_KEY = (os.environ.get("DESTRUCTIVE_API_KEY") or "").strip()
 
 
 # Application definition
@@ -108,6 +123,9 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",  # CORS Middleware (Top)
     "django.middleware.security.SecurityMiddleware",
+    # 대용량 JSON (마스터 목록 등) 전송 압축 — Accept-Encoding: gzip 시 적용
+    # (요청 처리 상단 → 응답 시 맨 마지막에 압축)
+    "django.middleware.gzip.GZipMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -116,7 +134,14 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True
+# CORS: default allow-all. Set CORS_ALLOW_ALL_ORIGINS=False + CORS_ALLOWED_ORIGINS to lock down.
+_cors_all = os.environ.get("CORS_ALLOW_ALL_ORIGINS", "True").strip().lower()
+CORS_ALLOW_ALL_ORIGINS = _cors_all in ("1", "true", "yes", "")
+if not CORS_ALLOW_ALL_ORIGINS:
+    _cors_origins = (os.environ.get("CORS_ALLOWED_ORIGINS") or "").strip()
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_origins.split(",") if o.strip()]
+else:
+    CORS_ALLOWED_ORIGINS = []
 
 ROOT_URLCONF = "config.urls"
 
@@ -195,6 +220,9 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = "static/"
+
+MEDIA_URL = "media/"
+MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 
 LOGGING = {
     'version': 1,

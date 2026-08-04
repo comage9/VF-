@@ -7,7 +7,11 @@ import EditableStockSettings from './editable-stock-settings';
 import ThreeMonthAnalysis from './three-month-analysis';
 import InventoryTable from './inventory-table';
 import InboundAvailabilityTab from './inbound-availability-tab';
+import VarianceCheckTab from './variance-check-tab';
+import StockSurveyTab from './stock-survey-tab';
+import { ProductOutboundChartDialog, type OutboundChartSpec } from '@/components/master/product-outbound-chart-dialog';
 import { UnifiedInventoryResponseEnhanced, InventoryItem, StockStatus } from '../../types/enhanced-inventory';
+import { matchesSearchInFields } from '@/lib/searchMatch';
 
 // React Query 클라이언트 생성
 const queryClient = new QueryClient({
@@ -23,7 +27,7 @@ interface EnhancedInventoryPageProps {
   className?: string;
 }
 
-type ActiveTab = 'inventory' | 'analysis' | 'settings' | 'inbound';
+type ActiveTab = 'inventory' | 'analysis' | 'settings' | 'inbound' | 'variance' | 'survey';
 
 interface InventoryUploadRecord {
   id: string;
@@ -73,10 +77,44 @@ interface OutboundRecord {
 
 function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageProps) {
   const [activeTab, setActiveTab] = useState<ActiveTab>('inventory');
+  /** 품목 클릭 → 마스터와 동일 출고/현재고 리포트 */
+  const [reportSpec, setReportSpec] = useState<OutboundChartSpec | null>(null);
+  const [isReportOpen, setIsReportOpen] = useState(false);
+
+  const openProductReport = (item: {
+    productName?: string;
+    barcode?: string;
+    skuId?: string;
+    category?: string;
+    price?: number;
+    location?: string;
+    id?: string;
+    is_vf_item?: boolean;
+  }) => {
+    setReportSpec({
+      id: Number(String(item.id || '').replace(/\D/g, '').slice(0, 9)) || 0,
+      product_name: item.productName || '',
+      barcode: item.barcode || '',
+      sku_id: item.skuId || '',
+      category_lg: item.category || '',
+      price: Number(item.price || 0),
+      // 목록 SoT = 마스터 VF
+      is_vf_item: item.is_vf_item !== false,
+      location: item.location || '',
+    });
+    setIsReportOpen(true);
+  };
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
-  const [inventoryDate, setInventoryDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [inventoryDate, setInventoryDate] = useState<string>(() => {
+    // 로컬 오늘 (UTC toISOString 사용 시 한국 새벽이 전날로 떨어짐)
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  });
   const [isUploading, setIsUploading] = useState(false);
   const [isUploadingReceipts, setIsUploadingReceipts] = useState(false);
   const [showUploadHistory, setShowUploadHistory] = useState(false);
@@ -143,7 +181,12 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
     await queryClient.refetchQueries({ queryKey: ['outbound-barcode-daily'] });
   };
 
-  // 실제 API에서 최신 재고 데이터 조회 (765건 전체)
+  // 업로드 중 플래그 (버튼 상태용). 쿼리를 enabled=false 로 끄지 않음 —
+  // 끄면 테이블 언마운트/재마운트 + 완료 직후 대량 refetch 로 UI가 멈춘다.
+  const isBusyUploading = isUploading || isUploadingReceipts;
+
+  // 실제 API에서 최신 재고 데이터 조회
+  // 주기 폴링 없음 — 최초 로드 + 업로드/수동 재계산/데이터 변경 시에만 갱신
   const { data: inventoryData, isLoading: isLoadingInventory, error: inventoryError } = useQuery<UnifiedInventoryResponseEnhanced>({
     queryKey: ['enhanced-inventory-overview'],
     queryFn: async () => {
@@ -153,7 +196,10 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
       }
       return response.json();
     },
-    refetchInterval: 30000, // 30초마다 자동 새로고침
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchInterval: false,
   });
 
   // NOTE: 입고 발주 데이터는 InventoryTable / InboundAvailabilityTab 내부에서 필요 시 조회
@@ -170,7 +216,8 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
       }
       return response.json();
     },
-    staleTime: 60_000,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
   });
 
   const barcodeMasterItems = barcodeMasterData?.data || [];
@@ -219,6 +266,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
       return Array.isArray(json.data) ? (json.data as InventoryUploadRecord[]) : [];
     },
     staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
 
   const uploadHistory = uploadHistoryData ?? [];
@@ -259,36 +307,23 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
   const normalizedActiveDate = normalizeDateKey(activeInventoryDate);
 
   const inventoryItemsForInventoryTab = React.useMemo(() => {
-    let filtered = inventoryItems;
-
-    // 위치 정보가 있는 항목만 표시
-    filtered = filtered.filter((item: InventoryItem) => item && item.location && String(item.location).trim() !== '');
-
-    // 재고 현황 탭 정책: 중단/단종은 숨김(카드/필터 집계에서도 제외)
-    filtered = filtered.filter((item: InventoryItem) => {
-      const ls = String(item?.lifecycleStatus || 'active').toLowerCase();
-      return !['paused', 'discontinued'].includes(ls);
-    });
-
-    // 예외(숨김) 처리: barcode 기준으로 테이블에서 제외
-    filtered = filtered.filter((item: InventoryItem) => {
+    // 업로드 바코드 전부 표시. 단종/재고0/VF 여부로 수량·행을 숨기지 않음.
+    // (숨김은 사용자가 수동으로 지정한 hiddenBarcodes 만 예외)
+    let filtered = inventoryItems.filter((item: InventoryItem) => {
       const bc = String(item?.barcode || '').trim();
       if (!bc) return true;
       return !hiddenBarcodes.has(bc);
     });
 
-    // DB 기반 숨김 처리: 단종/중단(paused/discontinued) + 재고0인 경우 backend가 hiddenReason을 내려줌
-    filtered = filtered.filter((item: InventoryItem) => {
-      const reason = item?.hiddenReason;
-      if (!reason) return true;
-      return reason !== 'lifecycle_zero_stock';
-    });
-
+    // 이력에서 날짜를 고른 경우만 필터. 0건이면 필터 무시(최신 전체 표시)
     if (normalizedActiveDate) {
-      filtered = filtered.filter((item) => {
+      const byDate = filtered.filter((item) => {
         if (!item || !item.inventoryDate) return false;
         return normalizeDateKey(item.inventoryDate) === normalizedActiveDate;
       });
+      if (byDate.length > 0) {
+        filtered = byDate;
+      }
     }
 
     return filtered;
@@ -379,6 +414,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
   }, [inventoryItemsForInventoryTab, locationConflictBarcodeSet, locationConflictOnly]);
 
   // 출고 실적 기반 단가 fallback (MasterSpec 단가가 없을 때만 사용)
+  // 90일 출고 JSON이 큼 — 업로드 중에는 조회 중지 (서버 멈춤·UI 대기 방지)
   const { data: outboundRecords } = useQuery({
     queryKey: ['outbound-for-price-calculation'],
     queryFn: async () => {
@@ -394,7 +430,9 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
       const json = await res.json();
       return Array.isArray(json) ? json : [];
     },
-    staleTime: 300000, // 5 minutes
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchInterval: false,
   });
 
   const outboundPriceMap = React.useMemo(() => {
@@ -500,8 +538,10 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
 
   const tabs = [
     { key: 'inventory' as const, label: '📦 재고 현황', description: '최신 데이터 기반 재고 관리' },
+    { key: 'survey' as const, label: '📋 VF 재고 조사', description: '현재고 수량과 품명을 바코드로 표시' },
     { key: 'analysis' as const, label: '📊 출고 분석', description: '3개월 출고 데이터 분석 및 예측' },
     { key: 'inbound' as const, label: '📥 입고 가능', description: '발주서 기반 입고 가능 수량 관리' },
+    { key: 'variance' as const, label: '🔍 차이 확인', description: '전산 vs 창고(WMS) 수량 차이' },
     { key: 'settings' as const, label: '⚙️ 재고 설정', description: '재고 한계값 및 알림 설정' },
   ];
 
@@ -521,41 +561,93 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
     setReceiptFile(file);
   };
 
-  // 파일 업로드 핸들러
+  // 파일 업로드 핸들러 (xlsx/xls/csv · inventory_unified export 포함)
   const handleUpload = async () => {
     if (!selectedFiles.length || !inventoryDate) {
       alert('파일과 재고 기준일을 모두 입력해주세요.');
       return;
     }
 
+    // inventory_unified 파일: 파일 안 inventoryDate와 기준일이 다를 수 있음 → 안내만
+    const hasUnified = selectedFiles.some((f) =>
+      f.name.toLowerCase().includes('inventory_unified')
+    );
+    if (hasUnified) {
+      const ok = window.confirm(
+        `inventory_unified(전산 재고 export)를 기준 스냅샷으로 올립니다.\n\n` +
+          `선택한 재고 기준일: ${inventoryDate}\n` +
+          `※ 파일 안의 inventoryDate(예: 스냅샷 일자)와 맞추는 것을 권장합니다.\n` +
+          `※ 현재고 = 기준 스냅샷 + 이후 입고 − 이후 출고 로 재계산됩니다.\n\n` +
+          `계속할까요?`
+      );
+      if (!ok) return;
+    }
+
     setIsUploading(true);
+    // 진행 중 목록/출고 폴링 취소 — 업로드와 경합하지 않게
+    void queryClient.cancelQueries({ queryKey: ['enhanced-inventory-overview'] });
+    void queryClient.cancelQueries({ queryKey: ['outbound-for-price-calculation'] });
+    void queryClient.cancelQueries({ queryKey: ['inventory-barcode-master'] });
     try {
       const formData = new FormData();
       selectedFiles.forEach((file) => formData.append('files', file));
       formData.append('inventoryDate', inventoryDate);
 
-      const response = await fetch('/api/inventory/baseline-upload', {
-        method: 'POST',
-        body: formData,
-      });
+      // 대용량 엑셀: 서버/프록시 타임아웃과 별도로 실패 메시지 명확화
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 180_000);
 
-      if (response.ok) {
-        alert('업로드가 성공했습니다!');
+      let response: Response;
+      try {
+        response = await fetch('/api/inventory/baseline-upload', {
+          method: 'POST',
+          body: formData,
+          signal: controller.signal,
+        });
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+
+      const raw = await response.text();
+      let json: any = null;
+      try {
+        json = raw ? JSON.parse(raw) : null;
+      } catch {
+        json = null;
+      }
+
+      if (response.ok && (json?.success !== false)) {
+        const msg =
+          json?.message ||
+          `업로드 성공 (바코드 ${json?.barcodesSaved ?? json?.rowsProcessed ?? ''}건)`;
         setSelectedFiles([]);
         setReceiptFile(null);
-        const normalized = normalizeDateKey(inventoryDate);
-        setActiveInventoryDate(normalized);
+        // 최신 스냅샷 전체 표시 (날짜 필터로 빈 목록 되지 않게)
+        const asOf = normalizeDateKey(json?.asOfDate || inventoryDate);
+        if (asOf) setInventoryDate(asOf);
+        setActiveInventoryDate(null);
 
-        // 재고 데이터 다시 불러오기
-        queryClient.invalidateQueries({ queryKey: ['enhanced-inventory-overview'] });
-        queryClient.invalidateQueries({ queryKey: ['inventory-upload-history'] });
+        // 업로드 버튼 대기 종료 후 알림 — 목록 새로고침은 백그라운드
+        setIsUploading(false);
+        alert(msg);
+        void queryClient.invalidateQueries({ queryKey: ['enhanced-inventory-overview'] });
+        void queryClient.invalidateQueries({ queryKey: ['inventory-upload-history'] });
+        void queryClient.invalidateQueries({ queryKey: ['inventory-barcode-master'] });
       } else {
-        const error = await response.text();
-        alert(`업로드 실패: ${error}`);
+        const errMsg = json?.message || raw || response.statusText;
+        setIsUploading(false);
+        alert(`업로드 실패: ${errMsg}`);
       }
     } catch (error) {
       console.error('업로드 오류:', error);
-      alert('업로드 중 오류가 발생했습니다.');
+      const isAbort =
+        (error instanceof DOMException && error.name === 'AbortError') ||
+        (error instanceof Error && /abort/i.test(error.message));
+      const msg = isAbort
+        ? '업로드 시간이 초과되었습니다. 백엔드(5176)가 응답하지 않습니다. 서버를 재시작한 뒤 다시 시도하세요.'
+        : `업로드 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`;
+      setIsUploading(false);
+      alert(msg);
     } finally {
       setIsUploading(false);
     }
@@ -568,28 +660,72 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
     }
 
     setIsUploadingReceipts(true);
+    // 진행 중 무거운 조회만 취소 (쿼리 enabled 는 유지 → 테이블 유지)
+    void queryClient.cancelQueries({ queryKey: ['enhanced-inventory-overview'] });
+    void queryClient.cancelQueries({ queryKey: ['outbound-for-price-calculation'] });
     try {
       const formData = new FormData();
       formData.append('file', receiptFile);
 
-      const response = await fetch('/api/inventory/receipts-upload', {
-        method: 'POST',
-        body: formData,
-      });
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 120_000);
+      let response: Response;
+      try {
+        response = await fetch('/api/inventory/receipts-upload', {
+          method: 'POST',
+          body: formData,
+          signal: controller.signal,
+        });
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
 
-      if (response.ok) {
-        const json = await response.json().catch(() => null);
-        alert(json?.message ? `입고 업로드 완료: ${json.message}` : '입고 업로드가 성공했습니다!');
+      const raw = await response.text();
+      let json: any = null;
+      try {
+        json = raw ? JSON.parse(raw) : null;
+      } catch {
+        json = null;
+      }
+
+      // 버튼 대기 먼저 해제 — 이후 alert/refetch 가 UI를 막지 않게
+      setIsUploadingReceipts(false);
+
+      if (response.ok && (json?.success !== false)) {
+        const msg =
+          json?.message ||
+          `입고 반영 ${json?.rowsProcessed ?? ''}건 (신규 ${json?.rowsCreated ?? 0})`;
         setReceiptFile(null);
-        queryClient.invalidateQueries({ queryKey: ['enhanced-inventory-overview'] });
-        queryClient.invalidateQueries({ queryKey: ['inventory-upload-history'] });
+        setActiveInventoryDate(null);
+
+        // 1프레임 뒤에 알림 → 메인 스레드 페인트 허용
+        window.setTimeout(() => {
+          alert(`입고 업로드 완료: ${msg}`);
+          // 이력만 즉시, 전산재고 unified 는 약간 늦게 (동시 대량 렌더 방지)
+          void queryClient.invalidateQueries({ queryKey: ['inventory-upload-history'] });
+          window.setTimeout(() => {
+            void queryClient.invalidateQueries({ queryKey: ['enhanced-inventory-overview'] });
+          }, 400);
+        }, 0);
       } else {
-        const error = await response.text();
-        alert(`입고 업로드 실패: ${error}`);
+        const errMsg = json?.message || raw || response.statusText;
+        window.setTimeout(() => alert(`입고 업로드 실패: ${errMsg}`), 0);
       }
     } catch (error) {
       console.error('입고 업로드 오류:', error);
-      alert('입고 업로드 중 오류가 발생했습니다.');
+      setIsUploadingReceipts(false);
+      const isAbort =
+        (error instanceof DOMException && error.name === 'AbortError') ||
+        (error instanceof Error && /abort/i.test(error.message));
+      window.setTimeout(
+        () =>
+          alert(
+            isAbort
+              ? '입고 업로드 시간이 초과되었습니다. 백엔드(5176)를 재시작한 뒤 다시 시도하세요.'
+              : `입고 업로드 중 오류: ${error instanceof Error ? error.message : String(error)}`
+          ),
+        0
+      );
     } finally {
       setIsUploadingReceipts(false);
     }
@@ -660,6 +796,41 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
               >
                 {isRefreshingAny ? '재고 재계산 중...' : '재고 재계산'}
               </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const ok = window.confirm(
+                    '전산 현재고 > 0 인 품목을 마스터 VF에 **추가**합니다.\n' +
+                      '· 현재고 > 0 → VF 설정 (추가만)\n' +
+                      '· 기존 VF는 유지 (자동 해제 없음 · 마스터 SoT)\n' +
+                      '계속할까요?'
+                  );
+                  if (!ok) return;
+                  try {
+                    const res = await fetch('/api/master/specs/sync-vf-from-stock', {
+                      method: 'POST',
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) throw new Error(data.message || 'VF 지정 실패');
+                    alert(
+                      `VF 추가 완료\n` +
+                        `· 현재고>0 바코드: ${data.stock_positive_barcodes ?? 0}\n` +
+                        `· VF 신규 설정: ${data.vf_set_true ?? 0}건\n` +
+                        `· VF 해제: 0 (마스터 SoT 유지)\n` +
+                        `· 마스터 없음(스킵): ${data.skipped_no_master ?? 0}건\n` +
+                        `· VF 합계: ${data.vf_total_after ?? 0}건`
+                    );
+                    queryClient.invalidateQueries({ queryKey: ['/api/master/specs'] });
+                    queryClient.invalidateQueries({ queryKey: ['enhanced-inventory-overview'] });
+                  } catch (e: any) {
+                    alert(`VF 지정 실패: ${e?.message || e}`);
+                  }
+                }}
+                className="px-3 py-2 bg-violet-600 text-white rounded-md text-sm hover:bg-violet-700"
+                title="현재고>0 → VF 추가만 (기존 VF 유지 · 마스터 SoT)"
+              >
+                현재고→VF 추가
+              </button>
               <LatestDataIndicator />
             </div>
           </div>
@@ -704,7 +875,10 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                           <p className="text-xs font-medium text-blue-700 uppercase">총 재고금액</p>
                           <h3 className="text-xl font-bold text-blue-900">{statusSummary.totalValue.toLocaleString()}원</h3>
                           <p className="text-xs text-blue-700 mt-1">총 수량: {statusSummary.totalQuantity.toLocaleString()}개</p>
-                          <p className="text-xs text-blue-700 mt-1">등록 품목: {statusSummary.totalItems.toLocaleString()}종</p>
+                          <p className="text-xs text-blue-700 mt-1">
+                            VF 품목: {(inventoryData?.vfMasterCount ?? statusSummary.totalItems).toLocaleString()}종
+                            <span className="text-blue-500"> (마스터 기준)</span>
+                          </p>
                         </div>
                         <DollarSign className="w-8 h-8 text-blue-600 bg-white rounded-full p-1.5" />
                       </div>
@@ -740,9 +914,11 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-xs font-medium text-gray-600 uppercase">총 품목 수</p>
-                          <h3 className="text-xl font-bold text-gray-900">{statusSummary.totalItems}</h3>
-                          <p className="text-xs text-gray-500 mt-1">전체 관리 품목</p>
+                          <p className="text-xs font-medium text-gray-600 uppercase">VF 품목 수</p>
+                          <h3 className="text-xl font-bold text-gray-900">
+                            {inventoryData?.vfMasterCount ?? statusSummary.totalItems}
+                          </h3>
+                          <p className="text-xs text-gray-500 mt-1">제품 마스터 is_vf_item</p>
                         </div>
                         <Package className="w-8 h-8 text-gray-500 bg-white rounded-full p-1.5" />
                       </div>
@@ -825,9 +1001,20 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                       <div className="mt-3 p-3 bg-white border border-blue-200 rounded-md">
                         <p className="text-sm text-gray-600">
                           선택된 파일: <span className="font-medium">{selectedFiles.length}개</span>
+                          {' · '}
+                          {selectedFiles.map((f) => f.name).join(', ')}
                         </p>
                       </div>
                     )}
+                    <p className="mt-3 text-xs text-blue-800 leading-relaxed">
+                      지원: <b>.xlsx / .xls / .csv / .zip</b> · <b>여러 파일 동시 선택</b> 가능
+                      (페이지별재고리스트 전부 선택 또는 zip).
+                      <br />
+                      필수 컬럼: <b>상품바코드</b> + <b>수량</b>(0 재고 포함). 업로드 시 기존 기준 재고를
+                      이 파일 내용으로 <b>전체 교체</b>합니다.
+                      <br />
+                      입고 이력은 유지됩니다. 성공 메시지에 <b>바코드 개수</b>가 표시되면 반영 완료.
+                    </p>
                   </div>
 
                   <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
@@ -1089,10 +1276,20 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                     onItemUpdate={handleItemUpdate}
                     stockStatusFilter={stockStatusFilter}
                     onToggleStockStatus={toggleStockStatusFilter}
+                    onProductClick={(item) => openProductReport(item)}
                   />
                 )}
               </div>
             )}
+
+            <ProductOutboundChartDialog
+              open={isReportOpen}
+              onOpenChange={(open) => {
+                setIsReportOpen(open);
+                if (!open) setReportSpec(null);
+              }}
+              spec={reportSpec}
+            />
 
             {activeTab === 'analysis' && (
               <ThreeMonthAnalysis />
@@ -1100,6 +1297,14 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
 
             {activeTab === 'inbound' && (
               <InboundAvailabilityTab />
+            )}
+
+            {activeTab === 'variance' && (
+              <VarianceCheckTab />
+            )}
+
+            {activeTab === 'survey' && (
+              <StockSurveyTab />
             )}
 
             {activeTab === 'settings' && (
@@ -1146,15 +1351,12 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                     </div>
                   ) : inventoryItemsForSettingsTab.length > 0 ? (
                     (inventoryItemsForSettingsTab
-                      .filter((item: BarcodeMasterRow) => {
-                        const q = settingsSearch.trim().toLowerCase();
-                        if (!q) return true;
-                        return (
-                          String(item.productName || '').toLowerCase().includes(q) ||
-                          String(item.barcode || '').toLowerCase().includes(q) ||
-                          String(item.location || '').toLowerCase().includes(q)
-                        );
-                      })
+                      .filter((item: BarcodeMasterRow) =>
+                        matchesSearchInFields(
+                          [item.productName, item.barcode, item.location],
+                          settingsSearch
+                        )
+                      )
                       .slice(0, 50)
                       .map((item: BarcodeMasterRow) => {
                         const bc = String(item?.barcode || '').trim();
