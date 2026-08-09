@@ -931,16 +931,18 @@ UI 토큰·패턴은 Toss Seed 계열을 사용합니다. 브랜드 색:
 | 항목 | 이전 | 현재 (2026-08-09) |
 |------|------|-------------------|
 | LS 서버 인쇄 | GDI 비트맵 (품질 저하) | **`ShellExecute("printto")` 벡터 PDF 원본** |
-| 코드 | `backend/departure/views.py` `_print_pdf_on_server` | 동일 함수, GDI 경로 제거 |
+| KPP 서버 인쇄 | GDI 150dpi 비트맵 우선 | **벡터 회전 + printto** (`kpp_session._print_pdf_file`) |
+| 코드 LS | `backend/departure/views.py` `_print_pdf_on_server` | 동일 함수, GDI 경로 제거 |
+| 코드 KPP | `backend/kpp_session.py` `_print_pdf_file` | GDI 경로 제거, printto 우선 |
 | 프린터 | Canon G2010 series 명시 | 동일 (Windows 기본 ZM600 라벨 함정 회피) |
-| 에이전트 호출 | UI 클릭 시도 / curl API | **curl API 1회** (표준) |
+| 에이전트 호출 | UI 클릭 시도 / curl API | **curl/스크립트 1회** (표준) |
 
 ### 표준 호출
 ```bash
 # LS (봉인씰 합성 + printto 벡터 인쇄)
 curl -s "http://localhost:5176/departure/api/print/{호차}?plt={N}&date={YYYY-MM-DD}&seal_leftWing=...&seal_rightWing=...&seal_backDoor=..."
 
-# KPP (등록+EDI 인쇄) — 변경 없음, 기존 유지
+# KPP (등록+EDI 인쇄) — printto 벡터 (2026-08-09, GDI 150dpi 폐기)
 python E:/coding/VF-new/backend/scripts/vf_kpp_print.py <호차> <plt> [날짜]
 # 또는
 curl -s "http://localhost:5176/departure/api/print-kpp/{호차}?plt={N}&date={YYYY-MM-DD}"
@@ -948,7 +950,8 @@ curl -s "http://localhost:5176/departure/api/print-kpp/{호차}?plt={N}&date={YY
 
 ### 규칙
 - LS/KPP 모두 **API/스크립트 직접 호출**이 표준. 웹 UI 버튼 클릭(Playwright)은 비표준.
-- LS 성공 응답에 `printto` 문구가 있어야 함. GDI/비트맵 경로 재도입 금지.
+- LS/KPP 성공 응답에 `printto` 문구가 있어야 함. GDI/비트맵 경로 재도입 금지.
+- KPP 코드: `backend/kpp_session.py` `_print_pdf_file` — 벡터 회전(fitz) + printto.
 - 상세 Runbook: Wiki `의사결정/VF-출차관리-권역별-수량-음성합산-입력-20260803.md` §4·§5
 
 ---

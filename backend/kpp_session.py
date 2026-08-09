@@ -1233,12 +1233,12 @@ def _print_pdf_file(
 ) -> tuple[bool, str]:
     """
     Chrome 인쇄 버튼 사용 안 함.
-    1) GDI 다이렉트 — 페이지 90° 회전 후 출력 (물류 전표 방향)
-    2) 회전 PDF 저장 후 ShellExecute printto Canon
-    3) os.startfile print
+    2026-08-09: GDI 비트맵(150dpi) 경로 폐기.
+    1) PDF 벡터 회전(fitz set_rotation) 후 ShellExecute printto Canon
+    2) 회전 실패 시 원본 PDF printto
+    3) os.startfile print (최후)
 
-    rotate_deg: 시계 반대 방향 기준 PIL rotate (기본 90).
-                -90 이면 반대 방향.
+    rotate_deg: PDF 페이지 회전 각도 (기본 90, 물류 전표 방향).
     """
     if not pdf_path or not os.path.isfile(pdf_path):
         return False, "PDF 파일 없음"
@@ -1246,68 +1246,32 @@ def _print_pdf_file(
     if size < 1000:
         return False, f"PDF 크기 이상 ({size})"
 
-    # 1) GDI + 90° 회전
-    try:
-        import fitz
-        from io import BytesIO
-        from PIL import Image, ImageWin
-        import win32ui
+    printer = (
+        os.environ.get("DEPARTURE_PRINTER_NAME")
+        or os.environ.get("KPP_PRINTER_NAME")
+        or "Canon G2010 series"
+    ).strip()
 
-        doc = fitz.open(pdf_path)
-        hDC = win32ui.CreateDC()
-        hDC.CreatePrinterDC("Canon G2010 series")
-        printable_width = hDC.GetDeviceCaps(110)
-        printable_height = hDC.GetDeviceCaps(111)
-        hDC.StartDoc(title)
-        for i in range(len(doc)):
-            page = doc[i]
-            # 렌더 후 회전 (가로 전표 → 용지 방향 맞춤)
-            # dpi 150: 300 대비 ~4배 가벼움, 전표 인쇄 품질 충분
-            pix = page.get_pixmap(dpi=150)
-            img = Image.open(BytesIO(pix.tobytes("png"))).convert("RGB")
-            if rotate_deg:
-                # expand=True: 회전에 맞게 캔버스 확장
-                img = img.rotate(int(rotate_deg), expand=True)
-            hDC.StartPage()
-            img_w, img_h = img.size
-            ratio = min(printable_width / img_w, printable_height / img_h)
-            new_w = int(img_w * ratio)
-            new_h = int(img_h * ratio)
-            dib = ImageWin.Dib(img)
-            x_off = (printable_width - new_w) // 2
-            y_off = (printable_height - new_h) // 2
-            dib.draw(
-                hDC.GetHandleOutput(),
-                (x_off, y_off, x_off + new_w, y_off + new_h),
-            )
-            hDC.EndPage()
-        doc.close()
-        hDC.EndDoc()
-        hDC.DeleteDC()
-        return True, f"GDI 인쇄 완료 (회전 {rotate_deg}°, {size:,} bytes, Canon G2010)"
-    except Exception as e:
-        print(f"[KPP] GDI 인쇄 실패: {e}")
-
-    # 2) 회전 임시 PDF → ShellExecute
+    # 1) 벡터 회전 PDF 생성 (비트맵 렌더 없음)
     rotated_path = pdf_path
-    try:
-        import fitz
+    rot = int(rotate_deg or 0) % 360
+    if rot:
+        try:
+            import fitz
 
-        doc = fitz.open(pdf_path)
-        # 페이지 회전 플래그 (90 시계방향 = +90)
-        rot = int(rotate_deg) % 360
-        # fitz set_rotation 은 절대 각도
-        for i in range(len(doc)):
-            page = doc[i]
-            cur = page.rotation
-            page.set_rotation((cur + rot) % 360)
-        rotated_path = pdf_path.replace(".pdf", f"_r{rot}.pdf")
-        doc.save(rotated_path)
-        doc.close()
-    except Exception as e:
-        print(f"[KPP] 회전 PDF 생성 실패: {e}")
-        rotated_path = pdf_path
+            doc = fitz.open(pdf_path)
+            for i in range(len(doc)):
+                page = doc[i]
+                page.set_rotation((page.rotation + rot) % 360)
+            rotated_path = pdf_path.replace(".pdf", f"_r{rot}.pdf")
+            doc.save(rotated_path)
+            doc.close()
+        except Exception as e:
+            print(f"[KPP] 회전 PDF 생성 실패 → 원본 printto: {e}")
+            rotated_path = pdf_path
+            rot = 0
 
+    # 2) printto 벡터 전송 (표준)
     try:
         import win32api
 
@@ -1315,18 +1279,20 @@ def _print_pdf_file(
             0,
             "printto",
             rotated_path,
-            '"Canon G2010 series"',
-            os.path.dirname(rotated_path),
+            f'"{printer}"',
+            os.path.dirname(rotated_path) or ".",
             0,
         )
-        return True, f"ShellExecute printto 전송 (회전 {rotate_deg}°, {size:,} bytes)"
+        return True, (
+            f"printto 벡터 전송 (회전 {rot}°, {size:,} bytes, {printer})"
+        )
     except Exception as e:
-        print(f"[KPP] ShellExecute 실패: {e}")
+        print(f"[KPP] ShellExecute printto 실패: {e}")
 
-    # 3) startfile
+    # 3) startfile 최후 수단 (기본 프린터 주의 — ZM600 함정)
     try:
         os.startfile(rotated_path, "print")
-        return True, f"os.startfile print 전송 ({size:,} bytes)"
+        return True, f"os.startfile print 전송 ({size:,} bytes) ⚠️기본프린터"
     except Exception as e:
         return False, f"모든 인쇄 경로 실패: {e}"
 
