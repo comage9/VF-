@@ -797,55 +797,26 @@ def _print_pdf_on_server(pdf_path: str, job_title: str) -> list:
     """
     반드시 Django 가 돌아가는 **서버 PC** 의 프린터로 출력.
     (클라이언트 브라우저 window.print 사용 금지 — 외부 PC 클릭도 서버에서 인쇄)
+
+    2026-08-09 변경: GDI 비트맵(300dpi 래스터) 경로 제거.
+    PDF 원본을 ShellExecute("printto")로 벡터 전송 → 품질 저하 방지.
+    프린터는 Canon G2010 series 명시 (Windows 기본=ZM600 라벨 함정 회피).
     """
     results = []
     printer = _server_printer_name()
     try:
-        import win32ui
-        from PIL import Image, ImageWin
-        import fitz as _fitz
-        from io import BytesIO
+        import win32api
 
-        doc = _fitz.open(pdf_path)
-        page = doc[0]
-        pix = page.get_pixmap(dpi=300)
-        img = Image.open(BytesIO(pix.tobytes("png")))
-        doc.close()
-
-        hDC = win32ui.CreateDC()
-        hDC.CreatePrinterDC(printer)
-        printable_width = hDC.GetDeviceCaps(110)  # PHYSICALWIDTH
-        printable_height = hDC.GetDeviceCaps(111)  # PHYSICALHEIGHT
-
-        hDC.StartDoc(job_title[:60] or "VF_LS")
-        hDC.StartPage()
-        img_w, img_h = img.size
-        ratio = min(printable_width / img_w, printable_height / img_h)
-        new_w = int(img_w * ratio)
-        new_h = int(img_h * ratio)
-        dib = ImageWin.Dib(img)
-        x_offset = (printable_width - new_w) // 2
-        y_offset = (printable_height - new_h) // 2
-        dib.draw(
-            hDC.GetHandleOutput(),
-            (x_offset, y_offset, x_offset + new_w, y_offset + new_h),
+        # printto: PDF 벡터 원본을 지정 프린터로 전송 (Acrobat/Edge 핸들러)
+        win32api.ShellExecute(
+            0, "printto", pdf_path, f'"{printer}"', ".", 0
         )
-        hDC.EndPage()
-        hDC.EndDoc()
-        hDC.DeleteDC()
-        results.append(f"✅ 서버 프린터 출력: {printer} · {job_title}")
+        results.append(
+            f"✅ 서버 printto 전송: {printer} · {job_title} · {os.path.basename(pdf_path)}"
+        )
     except Exception as pe:
-        results.append(f"⚠️ GDI 인쇄 실패 ({pe}) → printto 백업")
-        try:
-            import win32api
-
-            win32api.ShellExecute(
-                0, "printto", pdf_path, f'"{printer}"', ".", 0
-            )
-            results.append(f"✅ 서버 printto 전송: {printer} · {os.path.basename(pdf_path)}")
-        except Exception as pe2:
-            results.append(f"❌ 서버 인쇄 실패: {pe2}")
-            raise
+        results.append(f"❌ 서버 printto 실패: {pe}")
+        raise
     return results
 
 
@@ -1234,11 +1205,34 @@ def api_vehicle_extras(request):
     if request.method == "POST":
         raw = json.loads(request.body)
         date_str = raw.get("date") or TODAY
-        extras = _normalize_vehicle_extras_payload(raw.get("extras", {}))
+        incoming = _normalize_vehicle_extras_payload(raw.get("extras", {}))
         path = os.path.join(extras_dir, f"vehicle_extras_{date_str}.json")
+
+        # 기존 파일 읽기 (merge 기반)
+        existing = {}
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    existing = _normalize_vehicle_extras_payload(json.load(f))
+            except Exception:
+                existing = {}
+
+        # 호차별 deep merge: 보내지 않은 호차는 기존값 보존,
+        # 보낸 호차는 필드 단위로 갱신 (안 보낸 필드는 유지).
+        for hoche, data in incoming.items():
+            cur = existing.get(hoche, {})
+            if isinstance(cur, dict) and isinstance(data, dict):
+                cur.update(data)
+                existing[hoche] = cur
+            else:
+                existing[hoche] = data
+
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(extras, f, ensure_ascii=False, indent=2)
-        return JsonResponse({"ok": True, "date": date_str, "count": len(extras)})
+            json.dump(existing, f, ensure_ascii=False, indent=2)
+        return JsonResponse({
+            "ok": True, "date": date_str, "count": len(existing),
+            "merged": True, "merged_hoches": list(incoming.keys()),
+        })
     # GET
     date_str = request.GET.get("date") or TODAY
     path = os.path.join(extras_dir, f"vehicle_extras_{date_str}.json")

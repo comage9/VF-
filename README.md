@@ -914,8 +914,42 @@ UI 토큰·패턴은 Toss Seed 계열을 사용합니다. 브랜드 색:
 | **새로고침 후 카드 비움(데이터 사라진 듯)** | §6.0c G-1 — 날짜 리셋. localStorage/`?date=` · [DATE_REFRESH 문서](docs/DEPARTURE_DATE_REFRESH_ISSUE.md) |
 | **오늘 눌러도 어제 출차카드 남음** | §6.0c G-2 — `LS_DATA` 무조건 교체·폴백 제거 · [PREV_TODAY 문서](docs/DEPARTURE_PREV_TODAY_ISSUE.md) |
 | KPP “행 없음”/인쇄 실패 | CDP :9222·로그인·PBM140, 기존 등록 확인 후 갱신 경로, iframe PDF URL |
+| **LS 인쇄 품질 저하(흐림)** | §6.0d — GDI 비트맵 폐기됨. API `/api/print` → **printto 벡터** 확인. UI 클릭 불필요 |
 | Vite proxy ECONNRESET | 백엔드 5176 단일 실행, OpenRouter 지연 시 로컬 폴백 |
 | AI 과금 우려 | OpenRouter는 `*:free` 만 허용 |
+
+---
+
+## 6.0d 출차 LS/KPP 인쇄 방법 (2026-08-09 확정)
+
+### 문제 (수정 전)
+- 서버 `_print_pdf_on_server()`가 PDF를 **PyMuPDF 300dpi 비트맵 → win32ui GDI**로 출력
+- 벡터(텍스트/선)가 래스터로 변환되어 **인쇄 품질 현격 저하**
+- 우회로 UI 버튼 클릭을 쓰면 느리고 팝업 확인 단계가 생김
+
+### 수정 내용
+| 항목 | 이전 | 현재 (2026-08-09) |
+|------|------|-------------------|
+| LS 서버 인쇄 | GDI 비트맵 (품질 저하) | **`ShellExecute("printto")` 벡터 PDF 원본** |
+| 코드 | `backend/departure/views.py` `_print_pdf_on_server` | 동일 함수, GDI 경로 제거 |
+| 프린터 | Canon G2010 series 명시 | 동일 (Windows 기본 ZM600 라벨 함정 회피) |
+| 에이전트 호출 | UI 클릭 시도 / curl API | **curl API 1회** (표준) |
+
+### 표준 호출
+```bash
+# LS (봉인씰 합성 + printto 벡터 인쇄)
+curl -s "http://localhost:5176/departure/api/print/{호차}?plt={N}&date={YYYY-MM-DD}&seal_leftWing=...&seal_rightWing=...&seal_backDoor=..."
+
+# KPP (등록+EDI 인쇄) — 변경 없음, 기존 유지
+python E:/coding/VF-new/backend/scripts/vf_kpp_print.py <호차> <plt> [날짜]
+# 또는
+curl -s "http://localhost:5176/departure/api/print-kpp/{호차}?plt={N}&date={YYYY-MM-DD}"
+```
+
+### 규칙
+- LS/KPP 모두 **API/스크립트 직접 호출**이 표준. 웹 UI 버튼 클릭(Playwright)은 비표준.
+- LS 성공 응답에 `printto` 문구가 있어야 함. GDI/비트맵 경로 재도입 금지.
+- 상세 Runbook: Wiki `의사결정/VF-출차관리-권역별-수량-음성합산-입력-20260803.md` §4·§5
 
 ---
 
