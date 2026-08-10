@@ -920,6 +920,12 @@ UI 토큰·패턴은 Toss Seed 계열을 사용합니다. 브랜드 색:
 
 ---
 
+### 6.0e 2026-08-10 — VF MCP (Hermes 즉시 실행)
+- 경로: `E:/coding/skill/VF/vf-mcp-server`
+- Hermes `mcp_servers.vf` — 출차 권역/PLT/인쇄, 재고 조회, 생산 등록을 **REST 1회 tool**로 호출
+- 브라우저/Playwright 루프 제거 목적 (지연 단축)
+- 상세: Wiki `의사결정/VF-MCP-서버-20260810.md` · skill `vf-ops-mcp`
+
 ## 6.0d 출차 LS/KPP 인쇄 방법 (2026-08-09 확정)
 
 ### 문제 (수정 전)
