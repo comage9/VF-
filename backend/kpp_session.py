@@ -697,9 +697,23 @@ def find_existing_registration(
         if want_p and _plate_match(car, want_p):
             by_plate.append(r)
 
-    registered = bool(by_hoche or by_plate)
-    # 갱신 대상: 호차 우선
-    target = by_hoche[0] if by_hoche else (by_plate[0] if by_plate else None)
+    register_base = (
+        by_hoche or by_plate
+    )  # 호차·차량번호 중 하나라도 있으면 갱신 후보
+    # ── "진짜 등록" = 같은 행에서 호차+차량이 모두 일치하거나, 차량번호 단독 일치 ──
+    by_both = [
+        r
+        for r in by_hoche
+        if want_p
+        and _plate_match(str(r.get("car") or ""), want_p)
+    ]
+    registered = bool(by_both or by_plate)
+    # 갱신 대상: 호차+차량 일치 행 > 차량번호 단독 행 > 호차만 일치 행
+    target = (
+        (by_both[0] if by_both else None)
+        or (by_plate[0] if by_plate else None)
+        or (by_hoche[0] if by_hoche else None)
+    )
     action = "update" if registered else "create"
 
     conflict = False
