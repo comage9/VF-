@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Edit } from 'lucide-react';
 import { UnifiedInventoryResponseEnhanced } from '../../types/enhanced-inventory';
 import { matchesSearchInFields } from '@/lib/searchMatch';
 
@@ -25,6 +26,8 @@ interface InventoryTableProps {
   onToggleStockStatus?: (status: string) => void;
   /** 품목명 클릭 → 출고/현재고 리포트 팝업 */
   onProductClick?: (item: UnifiedInventoryResponseEnhanced['data'][number]) => void;
+  /** 우측 수정 아이콘 → 제품 마스터 수정 다이얼로그 (masterSpecId 필요) */
+  onEditSpec?: (item: UnifiedInventoryResponseEnhanced['data'][number]) => void;
 }
 
 export default function InventoryTable({
@@ -35,6 +38,7 @@ export default function InventoryTable({
   stockStatusFilter,
   onToggleStockStatus,
   onProductClick,
+  onEditSpec,
 }: InventoryTableProps) {
   const [sortField, setSortField] = useState<string>('location');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -310,6 +314,7 @@ export default function InventoryTable({
                   로케이션 {sortField === 'location' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">업데이트일</th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider sticky right-0 bg-gray-50">수정</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -403,6 +408,28 @@ export default function InventoryTable({
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.location || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {item.lastUpdated ? new Date(item.lastUpdated).toLocaleDateString('ko-KR') : '-'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-center sticky right-0 bg-white">
+                    <button
+                      type="button"
+                      title={
+                        (item as any).masterSpecId
+                          ? '제품 마스터 수정 (마스터 페이지와 동일)'
+                          : '마스터 미연결 품목'
+                      }
+                      disabled={!(item as any).masterSpecId || !onEditSpec}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if ((item as any).masterSpecId) onEditSpec?.(item);
+                      }}
+                      className={`inline-flex h-8 w-8 items-center justify-center rounded-md border ${
+                        (item as any).masterSpecId
+                          ? 'border-violet-200 text-violet-700 hover:bg-violet-50'
+                          : 'border-gray-200 text-gray-300 cursor-not-allowed'
+                      }`}
+                    >
+                      <Edit className="h-4 w-4" />
+                    </button>
                   </td>
                 </tr>
               ))}

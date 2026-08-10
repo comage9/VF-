@@ -6,6 +6,12 @@ import LatestDataIndicator from './latest-data-indicator';
 import EditableStockSettings from './editable-stock-settings';
 import ThreeMonthAnalysis from './three-month-analysis';
 import InventoryTable from './inventory-table';
+import {
+  SpecEditDialog,
+  type Spec,
+  type SpecDraft,
+} from '@/components/master/spec-edit-dialog';
+
 import InboundAvailabilityTab from './inbound-availability-tab';
 import VarianceCheckTab from './variance-check-tab';
 import StockSurveyTab from './stock-survey-tab';
@@ -105,6 +111,9 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
     setIsReportOpen(true);
   };
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [isSpecDialogOpen, setIsSpecDialogOpen] = useState(false);
+  const [editingSpec, setEditingSpec] = useState<Spec | null>(null);
+  const [isSavingSpec, setIsSavingSpec] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [inventoryDate, setInventoryDate] = useState<string>(() => {
@@ -181,7 +190,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
     }
     try {
       const res = await fetch('/api/master/specs/bulk-update', {
-        method: 'POST',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
@@ -200,6 +209,69 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
       alert(e instanceof Error ? e.message : '일괄 수정 실패');
     }
   };
+
+  /** 전산재고 행 → 제품 마스터 수정 다이얼로그 (마스터 페이지와 동일 UI/API) */
+  const openSpecEditFromInventory = async (item: any) => {
+    const specId = Number((item as any).masterSpecId);
+    if (!Number.isFinite(specId) || specId <= 0) {
+      alert('제품 마스터에 연결되지 않은 품목입니다.');
+      return;
+    }
+    try {
+      const res = await fetch(`/api/master/specs/${specId}`);
+      if (res.ok) {
+        setEditingSpec((await res.json()) as Spec);
+      } else {
+        setEditingSpec({
+          id: specId,
+          product_name: String((item as any).productName || ''),
+          barcode: String((item as any).barcode || ''),
+          sku_id: String((item as any).skuId || (item as any).externalSkuId || ''),
+          location: String((item as any).location || ''),
+          is_vf_item: (item as any).is_vf_item !== false,
+          is_discontinued: !!(item as any).is_discontinued,
+          is_no_outbound_3m: !!(item as any).is_no_outbound_3m,
+          price: Number((item as any).price || 0),
+        });
+      }
+    } catch {
+      setEditingSpec({
+        id: specId,
+        product_name: String((item as any).productName || ''),
+        barcode: String((item as any).barcode || ''),
+      });
+    }
+    setIsSpecDialogOpen(true);
+  };
+
+  const handleSaveSpecFromInventory = async (data: Spec | SpecDraft) => {
+    const id = Number((data as Spec).id || editingSpec?.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      alert('저장할 마스터 ID가 없습니다.');
+      return;
+    }
+    setIsSavingSpec(true);
+    try {
+      const res = await fetch(`/api/master/specs/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((body as any).message || '제품 수정 실패');
+      setIsSpecDialogOpen(false);
+      setEditingSpec(null);
+      handleRefreshInventory();
+      queryClient.invalidateQueries({ queryKey: ['/api/master/specs'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/master/specs', 'compact'] });
+    } catch (e: unknown) {
+      console.error(e);
+      alert(e instanceof Error ? e.message : '제품 수정 실패');
+    } finally {
+      setIsSavingSpec(false);
+    }
+  };
+
 
   const handleLifecycleStatusChange = async (item: BarcodeMasterRow, statusValue: string) => {
     const lifecycleStatus = String(statusValue || '').trim().toLowerCase();
@@ -1366,13 +1438,24 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                       stockStatusFilter={stockStatusFilter}
                       onToggleStockStatus={toggleStockStatusFilter}
                       onProductClick={(item) => openProductReport(item)}
+                      onEditSpec={(item) => openSpecEditFromInventory(item)}
                     />
                   </>
                 )}
               </div>
             )}
 
-            <ProductOutboundChartDialog
+                        <SpecEditDialog
+              isOpen={isSpecDialogOpen}
+              onOpenChange={(open) => {
+                setIsSpecDialogOpen(open);
+                if (!open) setEditingSpec(null);
+              }}
+              spec={editingSpec}
+              onSave={handleSaveSpecFromInventory}
+              isSaving={isSavingSpec}
+            />
+<ProductOutboundChartDialog
               open={isReportOpen}
               onOpenChange={(open) => {
                 setIsReportOpen(open);

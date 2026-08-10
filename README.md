@@ -924,6 +924,13 @@ UI 토큰·패턴은 Toss Seed 계열을 사용합니다. 브랜드 색:
 - `inventory_unified` universe = 업로드 바코드 + 이후 입고 + **VF 마스터(비단종)**
 - 재고 0이면 `stockStatus=critical` (긴급). 3개월 미출고/단종은 마스터에서 수동 정리.
 
+
+### 2026-08-10 — 전산재고 ↔ 제품마스터 수정 UI 연동
+- 전산재고 테이블 **우측 수정(연필) 아이콘** → 마스터와 동일 `SpecEditDialog` (`components/master/spec-edit-dialog.tsx`)
+- 저장: `PUT /api/master/specs/:id` (마스터 페이지와 동일)
+- 선택 일괄: `PATCH /api/master/specs/bulk-update` + 양쪽 캐시 무효화
+- 마스터 수정 시 `enhanced-inventory-overview` 도 갱신
+
 ### 6.0e 2026-08-10 — VF MCP (Hermes 즉시 실행)
 - 경로: `E:/coding/skill/VF/vf-mcp-server`
 - Hermes `mcp_servers.vf` — 출차 권역/PLT/인쇄, 재고 조회, 생산 등록을 **REST 1회 tool**로 호출
