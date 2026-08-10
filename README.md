@@ -920,6 +920,10 @@ UI 토큰·패턴은 Toss Seed 계열을 사용합니다. 브랜드 색:
 
 ---
 
+### 2026-08-10 — 전산재고: VF 마스터 비단종 0재고 포함
+- `inventory_unified` universe = 업로드 바코드 + 이후 입고 + **VF 마스터(비단종)**
+- 재고 0이면 `stockStatus=critical` (긴급). 3개월 미출고/단종은 마스터에서 수동 정리.
+
 ### 6.0e 2026-08-10 — VF MCP (Hermes 즉시 실행)
 - 경로: `E:/coding/skill/VF/vf-mcp-server`
 - Hermes `mcp_servers.vf` — 출차 권역/PLT/인쇄, 재고 조회, 생산 등록을 **REST 1회 tool**로 호출

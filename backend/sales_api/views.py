@@ -574,9 +574,10 @@ def inventory_unified(request):
         if row.get("product_name") and bc not in name_by_barcode:
             name_by_barcode[bc] = (row["product_name"] or "").strip()
 
-    # ── 품목 universe SoT: 재고 업로드 바코드 (1바코드 = 1행) ──
-    # 업로드 파일을 그대로 목록·검색. VF active 필터로 숨기지 않음.
-    # 마스터는 이름/단가/분류 보강용. 기준일 이후 입고만 있는 바코드도 목록에 포함.
+    # ── 품목 universe SoT ──
+    # 1) 재고 업로드 바코드  2) 기준일 이후 입고 바코드
+    # 3) VF 마스터(비단종) — 업로드에 없어도 행 유지 → 재고 0 = critical(긴급) 표시
+    #    3개월 미출고/단종 전환은 마스터에서 수동. 단종만 universe에서 제외.
     barcode_universe = list(base_qty_by_barcode.keys())
     # 기준일 이후 입고 발생 바코드 (스냅샷에 없어도 검색·표시)
     try:
@@ -594,6 +595,21 @@ def inventory_unified(request):
             bc = (b or "").strip()
             if bc and bc not in base_qty_by_barcode:
                 barcode_universe.append(bc)
+    except Exception:
+        pass
+    # VF 마스터 비단종 바코드 병합 (0재고 운영 품목 누락 방지)
+    try:
+        _seen_u = set(barcode_universe)
+        for b in (
+            MasterSpec.objects.filter(is_vf_item=True, is_discontinued=False)
+            .exclude(barcode__isnull=True)
+            .exclude(barcode="")
+            .values_list("barcode", flat=True)
+        ):
+            bc = (b or "").strip()
+            if bc and bc not in _seen_u:
+                barcode_universe.append(bc)
+                _seen_u.add(bc)
     except Exception:
         pass
     barcode_universe = list(dict.fromkeys(barcode_universe))
@@ -741,7 +757,7 @@ def inventory_unified(request):
     data = []
     recent_out_bcs = _recent_outbound_barcodes_3m(days=90)
 
-    # 바코드 1개 = 1행. 업로드 파일(및 이후 입고 바코드) 전부 표시 — 제외 없음
+    # 바코드 1개 = 1행. 업로드 + 이후 입고 + VF 마스터 비단종 표시
     for bc in barcode_universe:
         bc = (bc or "").strip()
         if not bc:
@@ -954,8 +970,8 @@ def inventory_unified(request):
     return Response(
         {
             "success": True,
-            # 목록 SoT = 재고 업로드 바코드 (+ 이후 입고 바코드). 1바코드=1행. 제외 없음.
-            "universe": "baseline_barcode",
+            # 목록 SoT = 재고 업로드 바코드 (+ 이후 입고 + VF 마스터 비단종). 1바코드=1행.
+            "universe": "baseline_barcode+vf_master",
             "vfMasterCount": vf_master_count,
             "baselineBarcodeCount": baseline_barcode_count,
             "listBarcodeCount": len(data),
