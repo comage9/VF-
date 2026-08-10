@@ -1,5 +1,28 @@
 from django.db import models
 
+
+class PrintLog(models.Model):
+    """출력(인쇄) 이력 — LS 전표 / KPP EDI 출력 기록."""
+
+    date = models.DateField(db_index=True)
+    hoche = models.IntegerField(db_index=True)
+    plate = models.CharField(max_length=50, blank=True, default="")
+    kind = models.CharField(max_length=20, blank=True, default="LS")  # LS / KPP
+    job_title = models.CharField(max_length=200, blank=True, default="")
+    ok = models.BooleanField(default=True)
+    printer = models.CharField(max_length=100, blank=True, default="")
+    client_ip = models.CharField(max_length=50, blank=True, default="")
+    results = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "departure_print_logs"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.created_at:%m-%d %H:%M} · {self.hoche}호차 · {self.plate} · {'성공' if self.ok else '실패'}"
+
+
 class DepartureRecord(models.Model):
     date = models.DateField(db_index=True)
     hoche = models.IntegerField(db_index=True)

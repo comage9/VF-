@@ -298,6 +298,16 @@
     <div class="card-title">🔒 봉인씰</div>
     <div class="seal-grid" id="sealGrid"></div>
   </div>
+
+  <div class="card seal-section tab-content-sec" id="printLogCard">
+    <div class="card-title">
+      <span>🖨️ 출력 이력</span>
+      <button class="btn btn-sm" onclick="loadPrintLogs()" title="새로고침">🔄</button>
+    </div>
+    <div id="printLogList" style="font-size:12px;max-height:260px;overflow-y:auto">
+      <div style="color:#9ca3af;padding:8px 0">로딩 중...</div>
+    </div>
+  </div>
 </div>
 
 <!-- ═══════ 7. DISPATCH MODAL ═══════ -->
@@ -778,6 +788,7 @@ function renderAllWithData(data) {
 // ── 전체 렌더링 (기존 호환) ──
 function renderAll() {
   loadDateData();
+  loadPrintLogs();
 }
 
 // ── 봉인씰 ──
@@ -2173,15 +2184,51 @@ function executePrint() {
     .then(function(resData){
       if(resData.data) { LS_DATA = resData.data; }
       loadDateData();
+      loadPrintLogs();
     })
     .catch(function(){
       loadDateData();
+      loadPrintLogs();
     });
   })
   .catch(function(err) {
     showToast('❌ 오류: ' + err.message, 'error', 8000);
     if (btn) btn.textContent = origText;
   });
+}
+
+// ── 출력 이력 (PrintLog) ──
+function loadPrintLogs() {
+  var listEl = document.getElementById('printLogList');
+  if (!listEl) return;
+  var dateParam = (typeof currentDate !== 'undefined' && currentDate) ? '?date=' + encodeURIComponent(formatDate(currentDate)) : '';
+  fetch('/departure/api/print-logs' + dateParam + (dateParam ? '&limit=30' : '?limit=30'), { cache: 'no-store' })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d.ok || !d.logs || !d.logs.length) {
+        listEl.innerHTML = '<div style="color:#9ca3af;padding:8px 0">출력 이력 없음</div>';
+        return;
+      }
+      var html = '';
+      d.logs.forEach(function(l) {
+        var badge = l.ok ? '<span style="color:#059669;font-weight:600">✓</span>' : '<span style="color:#dc2626;font-weight:600">✗</span>';
+        html += '<div style="display:flex;justify-content:space-between;gap:6px;padding:5px 0;border-bottom:1px solid #f3f4f6">'
+          + '<div style="flex:1;min-width:0">'
+          + '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
+          + badge
+          + '<span style="font-weight:600">' + l.hoche + '호차</span>'
+          + '<span style="color:#374151">' + (l.plate || '-') + '</span>'
+          + '<span style="background:#eef2ff;color:#4338ca;border-radius:4px;padding:0 4px;font-size:11px">' + l.kind + '</span>'
+          + '</div>'
+          + '<div style="color:#6b7280;font-size:11px">' + l.created_at + ' · ' + (l.printer || '') + (l.ok ? '' : ' · 실패') + '</div>'
+          + '</div>'
+          + '</div>';
+      });
+      listEl.innerHTML = html;
+    })
+    .catch(function() {
+      listEl.innerHTML = '<div style="color:#dc2626;padding:8px 0">이력 로드 실패</div>';
+    });
 }
 
 // ── KPP EDI 전표 (등록 반영 후 출력) ──
@@ -2229,6 +2276,7 @@ function printKppVehicle(hoche) {
     else m += data.message || JSON.stringify(data);
     showToast(m, data.ok ? 'success' : 'error', 12000);
     if (btn) btn.textContent = orig;
+    loadPrintLogs();
   })
   .catch(function(err) {
     clearTimeout(to);

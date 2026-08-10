@@ -19,6 +19,7 @@ urlpatterns = [
     path("api/kpp-session", views.api_kpp_session, name="departure-kpp-session"),
     path("api/ls-pdf-status", views.api_ls_pdf_status, name="departure-ls-pdf"),
     path("api/vehicle-extras", views.api_vehicle_extras, name="departure-vehicle-extras"),
+    path("api/print-logs", views.api_print_logs, name="departure-print-logs"),
     path("api/ls-sync", views.api_ls_sync, name="departure-ls-sync"),
     path("debug", views.debug, name="departure-debug"),
 

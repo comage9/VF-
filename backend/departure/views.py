@@ -934,6 +934,24 @@ def api_print(request, hoche):
         results.append(f"⚠️ LS PDF 없음: {dash_plate} ({target_date})")
         ok = False
 
+    # 출력 이력 기록 (PrintLog)
+    try:
+        from .models import PrintLog
+
+        PrintLog.objects.create(
+            date=target_date,
+            hoche=int(hoche),
+            plate=dash_plate,
+            kind="LS",
+            job_title=f"LS_{hoche}_{dash_plate}_{target_date}",
+            ok=ok,
+            printer=_server_printer_name(),
+            client_ip=client,
+            results=results,
+        )
+    except Exception as log_e:
+        results.append(f"⚠️ 로그 저장 실패: {log_e}")
+
     return JsonResponse(
         {
             "ok": ok,
@@ -1068,6 +1086,32 @@ def api_print_kpp(request, hoche):
         results.append(f"❌ KPP 오류: {err}")
         if "PBM140" in err or "탭" in err or "CDP" in err:
             results.append("💡 python kpp_session.py --step all 후 재시도")
+
+    # 출력 이력 기록 (PrintLog)
+    try:
+        from datetime import date as _dt_date
+        from .models import PrintLog
+
+        _client_ip = (
+            request.META.get("REMOTE_ADDR")
+            or request.META.get("HTTP_X_FORWARDED_FOR")
+            or "?"
+        )
+        _plate = (veh.get("plate") or "") if "veh" in dir() else ""
+        _date = date_str or _dt_date.today().strftime("%Y-%m-%d")
+        PrintLog.objects.create(
+            date=_date,
+            hoche=int(hoche),
+            plate=_plate,
+            kind="KPP",
+            job_title=f"KPP_{hoche}_{_plate}_{_date}",
+            ok=ok,
+            printer=_server_printer_name(),
+            client_ip=_client_ip,
+            results=results,
+        )
+    except Exception as log_e:
+        results.append(f"⚠️ 로그 저장 실패: {log_e}")
 
     return JsonResponse(
         {
@@ -1690,6 +1734,47 @@ def _start_ls_watch_process():
         )
     except Exception as e:
         print(f"[LS] 감시 기동 실패: {e}")
+
+
+@csrf_exempt
+def api_print_logs(request):
+    """출력 이력 조회.
+
+    GET /departure/api/print-logs?date=YYYY-MM-DD&kind=LS|KPP&limit=100
+    """
+    from .models import PrintLog
+
+    date_str = (request.GET.get("date") or "").strip() or None
+    kind = (request.GET.get("kind") or "").strip() or None
+    try:
+        limit = min(int(request.GET.get("limit", "100")), 500)
+    except ValueError:
+        limit = 100
+
+    qs = PrintLog.objects.all()
+    if date_str:
+        qs = qs.filter(date=date_str)
+    if kind:
+        qs = qs.filter(kind=kind.upper())
+    qs = qs.order_by("-created_at")[:limit]
+
+    logs = [
+        {
+            "id": x.id,
+            "date": str(x.date),
+            "hoche": x.hoche,
+            "plate": x.plate,
+            "kind": x.kind,
+            "job_title": x.job_title,
+            "ok": x.ok,
+            "printer": x.printer,
+            "client_ip": x.client_ip,
+            "results": x.results,
+            "created_at": x.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        for x in qs
+    ]
+    return JsonResponse({"ok": True, "logs": logs, "count": len(logs)})
 
 
 # Django 앱 로드 시 LS 감시 (gunicorn 포함). start_server 와 중복 시 lock 으로 1회만.
