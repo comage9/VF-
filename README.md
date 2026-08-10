@@ -936,6 +936,7 @@ UI 토큰·패턴은 Toss Seed 계열을 사용합니다. 브랜드 색:
 - Hermes `mcp_servers.vf` — 출차 권역/PLT/인쇄, 재고 조회, 생산 등록을 **REST 1회 tool**로 호출
 - 브라우저/Playwright 루프 제거 목적 (지연 단축)
 - 상세: Wiki `의사결정/VF-MCP-서버-20260810.md` · skill `vf-ops-mcp`
+- **참고 (KPP MCP도 동일 보안 적용)**: mcp>=1.0.0 → <2, venv Py3.13→3.11 (2026-08-10, `의사결정/KPP-MCP-v2-보안-20260810.md`)
 
 ## 6.0d 출차 LS/KPP 인쇄 방법 (2026-08-09 확정)
 
