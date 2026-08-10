@@ -576,8 +576,8 @@ def inventory_unified(request):
 
     # ── 품목 universe SoT ──
     # 1) 재고 업로드 바코드  2) 기준일 이후 입고 바코드
-    # 3) VF 마스터(비단종) — 업로드에 없어도 행 유지 → 재고 0 = critical(긴급) 표시
-    #    3개월 미출고/단종 전환은 마스터에서 수동. 단종만 universe에서 제외.
+    # 3) VF 마스터 운영(비단종·비3개월미출고) — 업로드 없어도 행 유지 → 재고 0 = critical
+    #    3개월 미출고/단종은 universe 추가·긴급/부족에서 제외 (마스터 수동 분류).
     barcode_universe = list(base_qty_by_barcode.keys())
     # 기준일 이후 입고 발생 바코드 (스냅샷에 없어도 검색·표시)
     try:
@@ -597,19 +597,28 @@ def inventory_unified(request):
                 barcode_universe.append(bc)
     except Exception:
         pass
-    # VF 마스터 비단종 바코드 병합 (0재고 운영 품목 누락 방지)
+    # VF 마스터 비단종 병합 (로케이션 있는 것만 — 로케이션 없음=비VF)
+    # 3개월 미출고도 목록 포함. 상태: 위험→부족 (신규 VF 90일은 운영 유지)
     try:
+        _loc_bcs = set()
+        for _bm in BarcodeMaster.objects.exclude(barcode="").only("barcode", "location"):
+            _b = (_bm.barcode or "").strip()
+            if _b and str(getattr(_bm, "location", "") or "").strip():
+                _loc_bcs.add(_b)
         _seen_u = set(barcode_universe)
-        for b in (
+        for s in (
             MasterSpec.objects.filter(is_vf_item=True, is_discontinued=False)
             .exclude(barcode__isnull=True)
             .exclude(barcode="")
-            .values_list("barcode", flat=True)
+            .only("barcode", "product_number")
         ):
-            bc = (b or "").strip()
-            if bc and bc not in _seen_u:
-                barcode_universe.append(bc)
-                _seen_u.add(bc)
+            bc = (s.barcode or "").strip()
+            if not bc or bc in _seen_u:
+                continue
+            if bc not in _loc_bcs and getattr(s, "product_number", None) is None:
+                continue
+            barcode_universe.append(bc)
+            _seen_u.add(bc)
     except Exception:
         pass
     barcode_universe = list(dict.fromkeys(barcode_universe))
@@ -629,6 +638,7 @@ def inventory_unified(request):
         "is_no_outbound_3m",
         "is_vf_item",
         "vf_registered_at",
+        "product_number",
     ):
         bc = (s.barcode or "").strip()
         if not bc:
@@ -773,6 +783,26 @@ def inventory_unified(request):
         has_out_3m = bc in recent_out_bcs
         is_disc = bool(getattr(spec, "is_discontinued", False)) if spec else False
         is_vf = bool(getattr(spec, "is_vf_item", False)) if spec else False
+        is_no3m = bool(getattr(spec, "is_no_outbound_3m", False)) if spec else False
+        # 로케이션 없음 = VF 아님 (제품번호 있으면 로케이션 파생으로 인정)
+        _row_loc = ""
+        if master and getattr(master, "location", None):
+            _row_loc = str(master.location or "").strip()
+        _has_loc = bool(_row_loc) or (
+            spec is not None and getattr(spec, "product_number", None) is not None
+        )
+        if is_vf and not _has_loc:
+            is_vf = False
+        # 신규 VF(등록 90일 이내)는 미출고 플래그 있어도 운영 VF로 취급
+        _is_new_vf = False
+        if is_vf and spec is not None:
+            _reg = getattr(spec, "vf_registered_at", None)
+            if _reg:
+                try:
+                    _is_new_vf = (timezone.localdate() - _reg).days <= 90
+                except Exception:
+                    _is_new_vf = False
+        _no3m_for_status = bool(is_no3m) and not _is_new_vf
 
         out14 = int(outbound_14_agg.get(bc) or 0)
         avg_daily = (out14 / 14.0) if out14 > 0 else 0.0
@@ -822,6 +852,15 @@ def inventory_unified(request):
         stock_status = _status_from_thresholds(
             int(current_qty), int(min_stock), int(safety_stock), int(max_stock)
         )
+        # 단종: 긴급/부족 제외
+        if is_disc:
+            if stock_status in ("critical", "low"):
+                stock_status = "normal"
+        # 3개월 미출고: VF 여부와 무관하게 위험(critical)→부족(low)
+        # (신규 VF는 is_vf 유지, 다만 위험 집계에서는 부족으로만 표시)
+        elif is_no3m:
+            if stock_status == "critical":
+                stock_status = "low"
 
         # 목록 숨김 사유 없음 — 업로드 바코드는 전부 표시
         hidden_reason = None
@@ -865,10 +904,8 @@ def inventory_unified(request):
                     or outbound_category_map.get(bc)
                     or "기타"
                 ),
-                "location": (
-                    master.location
-                    if (master and master.location)
-                    else ""
+                "location": _row_loc or (
+                    master.location if (master and master.location) else ""
                 ),
                 "barcode": bc,
                 "price": int(unit_price),
@@ -877,6 +914,7 @@ def inventory_unified(request):
                 "outboundQty": int(out_qty),
                 "adjustmentQty": int(adj_qty),
                 "is_vf_item": is_vf,
+                "is_no_outbound_3m": is_no3m,
                 "has_outbound_3m": has_out_3m,
                 "inBaseline": bc in base_qty_by_barcode,
                 "lastUpdated": latest_upload.uploaded_at.isoformat()

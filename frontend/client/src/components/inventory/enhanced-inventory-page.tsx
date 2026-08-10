@@ -151,6 +151,56 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
     queryClient.invalidateQueries({ queryKey: ['outbound-barcode-daily'] });
   };
 
+  /** 전산재고에서 마스터 상태 바로 조정 (3개월 미출고 / 단종 / VF 해제) */
+  const handleInventoryMasterBulk = async (
+    action: 'no_outbound_3m' | 'discontinued' | 'unset_vf'
+  ) => {
+    const selected = inventoryItems.filter((it) => selectedItems.has(String(it.id)));
+    const ids = selected
+      .map((it) => Number((it as any).masterSpecId))
+      .filter((id) => Number.isFinite(id) && id > 0);
+    if (ids.length === 0) {
+      alert('마스터에 연결된 선택 품목이 없습니다. (masterSpecId 없음)');
+      return;
+    }
+    const labels = {
+      no_outbound_3m: '3개월 미출고',
+      discontinued: '단종',
+      unset_vf: 'VF 해제',
+    } as const;
+    if (!confirm(`선택 ${ids.length}건을 「${labels[action]}」 처리할까요?`)) return;
+    const body: Record<string, unknown> = { ids };
+    if (action === 'no_outbound_3m') {
+      body.is_no_outbound_3m = true;
+      body.is_discontinued = false;
+    } else if (action === 'discontinued') {
+      body.is_discontinued = true;
+      body.is_no_outbound_3m = false;
+    } else {
+      body.is_vf_item = false;
+    }
+    try {
+      const res = await fetch('/api/master/specs/bulk-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(txt || '일괄 수정 실패');
+      }
+      setSelectedItems(new Set());
+      // 제품 마스터와 동일 API(bulk-update) — 양쪽 화면 캐시 동기화
+      handleRefreshInventory();
+      queryClient.invalidateQueries({ queryKey: ['/api/master/specs'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/master/specs', 'compact'] });
+      alert(`제품 마스터 반영 완료: ${labels[action]} ${ids.length}건`);
+    } catch (e: unknown) {
+      console.error(e);
+      alert(e instanceof Error ? e.message : '일괄 수정 실패');
+    }
+  };
+
   const handleLifecycleStatusChange = async (item: BarcodeMasterRow, statusValue: string) => {
     const lifecycleStatus = String(statusValue || '').trim().toLowerCase();
     if (!['active', 'paused', 'discontinued'].includes(lifecycleStatus)) return;
@@ -1269,15 +1319,55 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                     <p className="text-red-600">재고 데이터를 불러오는데 실패했습니다.</p>
                   </div>
                 ) : (
-                  <InventoryTable
-                    data={inventoryItemsWithPrice}
-                    selectedItems={selectedItems}
-                    onSelectionChange={setSelectedItems}
-                    onItemUpdate={handleItemUpdate}
-                    stockStatusFilter={stockStatusFilter}
-                    onToggleStockStatus={toggleStockStatusFilter}
-                    onProductClick={(item) => openProductReport(item)}
-                  />
+                  <>
+                    {selectedItems.size > 0 && (
+                      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                        <span className="text-sm font-medium text-amber-900">
+                          선택 {selectedItems.size}건 · 제품 마스터 연동 조정
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleInventoryMasterBulk('no_outbound_3m')}
+                          className="px-3 py-1.5 text-sm rounded-md bg-white border border-amber-300 text-amber-900 hover:bg-amber-100"
+                        title="제품 마스터 is_no_outbound_3m=true (마스터 3개월 미출고 탭과 동일)"
+                        >
+                          3개월 미출고 → 마스터
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleInventoryMasterBulk('discontinued')}
+                          className="px-3 py-1.5 text-sm rounded-md bg-white border border-gray-300 text-gray-800 hover:bg-gray-50"
+                        title="제품 마스터 is_discontinued=true (마스터 단종 탭과 동일)"
+                        >
+                          단종 → 마스터
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleInventoryMasterBulk('unset_vf')}
+                          className="px-3 py-1.5 text-sm rounded-md bg-white border border-blue-300 text-blue-800 hover:bg-blue-50"
+                        title="제품 마스터 is_vf_item=false (VF 카드에서 제외, 마스터와 동일)"
+                        >
+                          VF 해제 → 마스터
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedItems(new Set())}
+                          className="px-2 py-1.5 text-sm text-gray-600 hover:text-gray-900"
+                        >
+                          선택 해제
+                        </button>
+                      </div>
+                    )}
+                    <InventoryTable
+                      data={inventoryItemsWithPrice}
+                      selectedItems={selectedItems}
+                      onSelectionChange={setSelectedItems}
+                      onItemUpdate={handleItemUpdate}
+                      stockStatusFilter={stockStatusFilter}
+                      onToggleStockStatus={toggleStockStatusFilter}
+                      onProductClick={(item) => openProductReport(item)}
+                    />
+                  </>
                 )}
               </div>
             )}
