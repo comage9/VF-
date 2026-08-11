@@ -3601,13 +3601,13 @@ def _sync_vf_no_outbound_to_db(specs_and_flags) -> int:
     """VF 3개월 미출고 자동 동기화: 분류 결과 → MasterSpec.is_no_outbound_3m 필드.
 
     - is_vf_no_outbound=True & is_vf_item=True & is_discontinued=False → is_no_outbound_3m=True
-    - is_vf_no_outbound=False & is_vf_item=True & is_discontinued=False → is_no_outbound_3m=False
+    - **OFF 방향은 동기화하지 않음** (수동 지정 보존). 비즈니스 규칙: VF 3개월 미출고 조건 충족 시
+      자동으로 True로 승격하지만, 조건 불충족 시에도 사용자 수동 지정을 존중한다.
     - 비VF 품목(is_vf_item=False)은 건드리지 않음 (FC 사이드 별도 관리)
     - 단종(is_discontinued=True)은 건드리지 않음
     """
     from django.db.models import Case, Value, When
     ids_on = []
-    ids_off = []
 
     for s, vf_no in specs_and_flags:
         if not bool(getattr(s, "is_vf_item", False)):
@@ -3616,18 +3616,12 @@ def _sync_vf_no_outbound_to_db(specs_and_flags) -> int:
             continue
         if bool(vf_no):
             ids_on.append(s.id)
-        else:
-            ids_off.append(s.id)
+        # OFF 방향은 의도적으로 동기화하지 않음 — 수동 지정 보존
 
     updated = 0
     if ids_on:
         n = MasterSpec.objects.filter(id__in=ids_on).update(
             is_no_outbound_3m=True
-        )
-        updated += n
-    if ids_off:
-        n = MasterSpec.objects.filter(id__in=ids_off).update(
-            is_no_outbound_3m=False
         )
         updated += n
     return updated
