@@ -97,6 +97,20 @@ export default function InventoryTable({
     return map;
   }, [barcodeMasterData]);
 
+  // 바코드별 비고(notes) 맵 생성
+  const notesMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (barcodeMasterData?.data) {
+      barcodeMasterData.data.forEach((item: any) => {
+        const notes = String(item.notes || '').trim();
+        if (item.barcode && notes) {
+          map.set(item.barcode, notes);
+        }
+      });
+    }
+    return map;
+  }, [barcodeMasterData]);
+
   // 바코드별 입고 가능 수량 맵 생성
   const inboundAvailableMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -324,6 +338,7 @@ export default function InventoryTable({
                   로케이션 {sortField === 'location' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">업데이트일</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">비고</th>
                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider sticky right-0 bg-gray-50">수정</th>
               </tr>
             </thead>
@@ -418,6 +433,22 @@ export default function InventoryTable({
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.location || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {item.lastUpdated ? new Date(item.lastUpdated).toLocaleDateString('ko-KR') : '-'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    {(() => {
+                      const notes = notesMap.get(item.barcode || '');
+                      return notes ? (
+                        <span
+                          title={notes}
+                          className="cursor-help inline-flex items-center gap-1 text-amber-600 hover:text-amber-800"
+                        >
+                          <span role="img" aria-label="비고">📝</span>
+                          <span className="text-xs text-amber-500 font-medium">내용 있음</span>
+                        </span>
+                      ) : (
+                        <span className="text-gray-300">-</span>
+                      );
+                    })()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-center sticky right-0 bg-white">
                     <button
