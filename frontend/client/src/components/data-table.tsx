@@ -1,3 +1,4 @@
+import { isLocationPattern } from "@/lib/searchMatch";
 import { useState } from "react";
 
 interface Column {
@@ -48,10 +49,13 @@ export default function DataTable({
   let filteredData = data;
   
   if (searchQuery && searchQuery.length >= 2) {
+    const isLoc = isLocationPattern(searchQuery);
     filteredData = filteredData.filter(item =>
-      Object.values(item).some(value => 
-        String(value).toLowerCase().includes(searchQuery.toLowerCase())
-      )
+      isLoc
+        ? (item.location && String(item.location).includes(searchQuery.trim()))
+        : Object.values(item).some(value => 
+            String(value).toLowerCase().includes(searchQuery.toLowerCase())
+          )
     );
   }
   

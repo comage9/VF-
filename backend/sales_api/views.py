@@ -3340,6 +3340,20 @@ def master_specs(request):
         if vf_only:
             qs = qs.filter(is_vf_item=True)
 
+        # location 파라미터: BarcodeMaster.location → barcode → MasterSpec
+        location = (request.query_params.get("location") or "").strip()
+        if location:
+            loc_barcodes = BarcodeMaster.objects.filter(
+                location__icontains=location
+            ).values_list("barcode", flat=True)
+            loc_barcodes = {
+                b.strip() for b in loc_barcodes if b and b.strip()
+            }
+            if loc_barcodes:
+                qs = qs.filter(barcode__in=loc_barcodes)
+            else:
+                qs = qs.none()
+
         if compact:
             # 목록에 쓰는 필드만 (components·mold 등 제외 → ORM/페이로드 부담 감소)
             qs = qs.only(
@@ -3430,6 +3444,33 @@ def master_specs(request):
                     row["is_vf_active"] = vf_active
                     row["is_vf_no_outbound"] = vf_no
                 out.append(row)
+        # VF 3개월 미출고 DB 동기화: is_vf_no_outbound 계산값 → is_no_outbound_3m 필드 기록
+        _sync_vf_no_outbound_to_db(
+            [
+                (
+                    s,
+                    vf_no,
+                )
+                for s, vf_no in zip(
+                    specs,
+                    [
+                        is_vf_no_outbound_bucket(
+                            is_vf_item=bool(getattr(s, "is_vf_item", False)),
+                            is_discontinued=bool(
+                                getattr(s, "is_discontinued", False)
+                            ),
+                            current_stock=int(stock_map.get((s.barcode or "").strip(), 0)),
+                            has_outbound_3m=bool(
+                                (s.barcode or "").strip() in recent_out_bcs
+                            ),
+                            vf_registered_at=getattr(s, "vf_registered_at", None),
+                            as_of=as_of_today,
+                        )
+                        for s in specs
+                    ],
+                )
+            ]
+        )
         return Response(out)
 
     payload = request.data if isinstance(request.data, dict) else {}
@@ -3554,6 +3595,42 @@ def _clear_no_outbound_3m_on_activity(
         qs = qs.filter(is_vf_item=False)
 
     return qs.update(is_no_outbound_3m=False)
+
+
+def _sync_vf_no_outbound_to_db(specs_and_flags) -> int:
+    """VF 3개월 미출고 자동 동기화: 분류 결과 → MasterSpec.is_no_outbound_3m 필드.
+
+    - is_vf_no_outbound=True & is_vf_item=True & is_discontinued=False → is_no_outbound_3m=True
+    - is_vf_no_outbound=False & is_vf_item=True & is_discontinued=False → is_no_outbound_3m=False
+    - 비VF 품목(is_vf_item=False)은 건드리지 않음 (FC 사이드 별도 관리)
+    - 단종(is_discontinued=True)은 건드리지 않음
+    """
+    from django.db.models import Case, Value, When
+    ids_on = []
+    ids_off = []
+
+    for s, vf_no in specs_and_flags:
+        if not bool(getattr(s, "is_vf_item", False)):
+            continue
+        if bool(getattr(s, "is_discontinued", False)):
+            continue
+        if bool(vf_no):
+            ids_on.append(s.id)
+        else:
+            ids_off.append(s.id)
+
+    updated = 0
+    if ids_on:
+        n = MasterSpec.objects.filter(id__in=ids_on).update(
+            is_no_outbound_3m=True
+        )
+        updated += n
+    if ids_off:
+        n = MasterSpec.objects.filter(id__in=ids_off).update(
+            is_no_outbound_3m=False
+        )
+        updated += n
+    return updated
 
 
 def _normalize_master_status_flags(is_discontinued, is_no_outbound_3m, *, has_disc, has_no_out):
@@ -9673,6 +9750,7 @@ def _order_recommendation(stock_status: str) -> str:
 @api_view(["GET"])
 def inventory_integrated(request):
     search = (request.query_params.get("search") or "").strip()
+    location = (request.query_params.get("location") or "").strip()
     stock_status = (request.query_params.get("stockStatus") or "").strip()
 
     all_qs = InventoryItem.objects.all()
@@ -9683,6 +9761,16 @@ def inventory_integrated(request):
             | models.Q(category__icontains=search)
             | models.Q(barcode__icontains=search)
         )
+    if location:
+        # BarcodeMaster.location → barcode → InventoryItem
+        loc_barcodes = BarcodeMaster.objects.filter(
+            location__icontains=location
+        ).values_list("barcode", flat=True)
+        loc_barcodes = {b.strip() for b in loc_barcodes if b and b.strip()}
+        if loc_barcodes:
+            qs = qs.filter(barcode__in=loc_barcodes)
+        else:
+            qs = qs.none()
 
     items = []
     for item in qs:

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { isLocationPattern } from '@/lib/searchMatch';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -78,7 +79,13 @@ export default function ImprovedInventoryPage() {
     queryKey: ['integrated-inventory', searchTerm, statusFilter],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (searchTerm.trim()) params.append('search', searchTerm.trim());
+      if (searchTerm.trim()) {
+          if (isLocationPattern(searchTerm)) {
+            params.append('location', searchTerm.trim());
+          } else {
+            params.append('search', searchTerm.trim());
+          }
+        }
       if (statusFilter) params.append('stockStatus', statusFilter);
 
       const response = await fetch(`/api/inventory/integrated?${params}`);

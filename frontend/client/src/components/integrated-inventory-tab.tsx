@@ -1,3 +1,4 @@
+import { isLocationPattern } from '@/lib/searchMatch';
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -74,7 +75,11 @@ export function IntegratedInventoryTab() {
 
       const params = new URLSearchParams();
       if (searchTerm.trim()) {
-        params.append('search', searchTerm.trim());
+        if (isLocationPattern(searchTerm)) {
+          params.append('location', searchTerm.trim());
+        } else {
+          params.append('search', searchTerm.trim());
+        }
       }
       if (statusFilter) {
         params.append('stockStatus', statusFilter);

@@ -413,14 +413,30 @@ export function SpecEditDialog({
                                     onClick={() => {
                                         handleSelectChange('is_discontinued', false);
                                         handleSelectChange('is_no_outbound_3m', true);
+                                        handleSelectChange('is_vf_item', false);
                                     }}
                                     className={`flex-1 py-1.5 text-[11px] font-semibold rounded border transition-all ${
-                                        !formData.is_discontinued && formData.is_no_outbound_3m
+                                        !formData.is_discontinued && formData.is_no_outbound_3m && !formData.is_vf_item
                                             ? 'bg-amber-50 border-amber-500 text-amber-700'
                                             : 'bg-white border-input text-gray-500 hover:bg-gray-50'
                                     }`}
                                 >
                                     FC 3개월 미출고
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        handleSelectChange('is_discontinued', false);
+                                        handleSelectChange('is_no_outbound_3m', true);
+                                        handleSelectChange('is_vf_item', true);
+                                    }}
+                                    className={`flex-1 py-1.5 text-[11px] font-semibold rounded border transition-all ${
+                                        !formData.is_discontinued && formData.is_no_outbound_3m && formData.is_vf_item
+                                            ? 'bg-blue-50 border-blue-500 text-blue-700'
+                                            : 'bg-white border-input text-gray-500 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    VF 3개월 미출고
                                 </button>
                                 <button
                                     type="button"
