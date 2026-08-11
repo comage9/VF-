@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Edit } from 'lucide-react';
 import { UnifiedInventoryResponseEnhanced } from '../../types/enhanced-inventory';
-import { matchesSearchInFields } from '@/lib/searchMatch';
+import { matchesSearchInFields, isLocationPattern } from '@/lib/searchMatch';
 
 interface InboundOrderLine {
   id: string;
@@ -168,8 +168,18 @@ export default function InventoryTable({
       return matchesCategory && matchesLocation && matchesStockStatus && matchesSearch;
     });
 
-    // 정렬
+    // 정렬 — 검색어가 로케이션 패턴이면 정확일치 우선
     filtered.sort((a, b) => {
+      // 검색어가 있으면 로케이션 정확일치/시작일치 부스트
+      if (searchTerm.trim() && isLocationPattern(searchTerm)) {
+        const q = searchTerm.trim().toLowerCase();
+        const aLoc = String(a.location || '').toLowerCase();
+        const bLoc = String(b.location || '').toLowerCase();
+        const aExact = aLoc === q ? 0 : aLoc.startsWith(q) ? 1 : 2;
+        const bExact = bLoc === q ? 0 : bLoc.startsWith(q) ? 1 : 2;
+        if (aExact !== bExact) return aExact - bExact;
+      }
+
       let aValue = a[sortField as keyof typeof a];
       let bValue = b[sortField as keyof typeof b];
 
