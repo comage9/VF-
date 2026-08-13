@@ -171,7 +171,11 @@ export default function InventoryTable({
     let filtered = data.filter(item => {
       const matchesCategory = !filterCategory || item.category === filterCategory;
       const matchesLocation = !filterLocation || item.location === filterLocation;
-      const matchesStockStatus = !stockStatusFilter || (item.stockStatus || 'normal') === stockStatusFilter;
+      const matchesStockStatus = !stockStatusFilter || (
+        stockStatusFilter === 'long_term_no_order'
+          ? !!item.is_long_term_no_order
+          : (item.stockStatus || 'normal') === stockStatusFilter
+      );
       const matchesSearch =
         !searchTerm.trim() ||
         matchesSearchInFields(
@@ -436,14 +440,17 @@ export default function InventoryTable({
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm">
                     {(() => {
-                      const notes = notesMap.get(item.barcode || '');
+                      const bc = String(item.barcode || '').trim();
+                      const notes = String(item.notes || notesMap.get(bc) || '').trim();
                       return notes ? (
                         <span
                           title={notes}
                           className="cursor-help inline-flex items-center gap-1 text-amber-600 hover:text-amber-800"
                         >
                           <span role="img" aria-label="비고">📝</span>
-                          <span className="text-xs text-amber-500 font-medium">내용 있음</span>
+                          <span className="text-xs text-amber-500 font-medium">
+                            {notes.length > 15 ? `${notes.substring(0, 15)}…` : notes}
+                          </span>
                         </span>
                       ) : (
                         <span className="text-gray-300">-</span>

@@ -834,6 +834,7 @@ def inventory_unified(request):
             if master
             else "active"
         )
+        bm_long_term_no_order = bool(getattr(master, "is_long_term_no_order", False)) if master else False
         if is_disc:
             bm_lifecycle_status = "discontinued"
 
@@ -861,6 +862,10 @@ def inventory_unified(request):
         elif is_no3m:
             if stock_status == "critical":
                 stock_status = "low"
+        # 장기 미발주: 수동 설정된 품목만 critical에서 제외 (별도 카드 관리)
+        elif bm_long_term_no_order:
+            if stock_status == "critical":
+                stock_status = "normal"
 
         # 목록 숨김 사유 없음 — 업로드 바코드는 전부 표시
         hidden_reason = None
@@ -874,6 +879,11 @@ def inventory_unified(request):
         sku_id = (
             ((spec.sku_id or "").strip() if spec else "")
             or ((master.sku_id if master else None) or "")
+        )
+        notes = (
+            ((spec.notes or "").strip() if spec else "")
+            or ((master.notes or "").strip() if master else "")
+            or ""
         )
         unit_price = (
             (int(spec.price or 0) if spec else 0)
@@ -889,6 +899,7 @@ def inventory_unified(request):
                 "masterSpecId": spec.id if spec else None,
                 "skuId": sku_id or None,
                 "productName": product_name,
+                "notes": notes,
                 "currentStock": int(current_qty),
                 "minStock": int(min_stock),
                 "maxStock": int(max_stock),
@@ -916,6 +927,7 @@ def inventory_unified(request):
                 "is_vf_item": is_vf,
                 "is_no_outbound_3m": is_no3m,
                 "has_outbound_3m": has_out_3m,
+                "is_long_term_no_order": bm_long_term_no_order,
                 "inBaseline": bc in base_qty_by_barcode,
                 "lastUpdated": latest_upload.uploaded_at.isoformat()
                 if latest_upload.uploaded_at
@@ -940,6 +952,8 @@ def inventory_unified(request):
     summary_high = 0
     summary_critical_qty = 0
     summary_low_qty = 0
+    summary_long_term_no_order = 0
+    summary_long_term_no_order_qty = 0
     summary_total_value = 0
     summary_total_qty = 0
     for row in data:
@@ -948,7 +962,11 @@ def inventory_unified(request):
         price = int(row.get("price") or 0)
         val = stock_value(qty, price)
         qty_pos = max(0, qty)
-        if st == "critical":
+        is_ltn = bool(row.get("is_long_term_no_order"))
+        if is_ltn:
+            summary_long_term_no_order += 1
+            summary_long_term_no_order_qty += qty_pos
+        elif st == "critical":
             summary_critical += 1
             summary_critical_qty += qty_pos
         elif st == "low":
@@ -1029,6 +1047,8 @@ def inventory_unified(request):
                     "high": summary_high,
                     "criticalQuantity": summary_critical_qty,
                     "lowQuantity": summary_low_qty,
+                    "longTermNoOrder": summary_long_term_no_order,
+                    "longTermNoOrderQuantity": summary_long_term_no_order_qty,
                     "totalValue": summary_total_value,
                     "totalQuantity": summary_total_qty,
                     "totalItems": len(data),
@@ -2927,6 +2947,7 @@ def inventory_barcode_master(request):
                 "reorderPoint": int(bm.reorder_point or 0),
                 "safetyStock": int(bm.safety_stock or 0),
                 "notes": bm.notes or "",
+                "isLongTermNoOrder": bool(getattr(bm, "is_long_term_no_order", False)),
                 "createdAt": bm.created_at.isoformat() if bm.created_at else None,
                 "updatedAt": bm.updated_at.isoformat() if bm.updated_at else None,
             }
@@ -3007,6 +3028,11 @@ def inventory_unified_patch(request, _id: str):
         lifecycle_status = lifecycle_status.lower()
         if lifecycle_status in ("active", "paused", "discontinued"):
             bm.lifecycle_status = lifecycle_status
+
+    # 장기 미발주 품목 플래그 (수동 설정만 허용)
+    is_long_term_no_order = payload.get("is_long_term_no_order")
+    if is_long_term_no_order is not None:
+        bm.is_long_term_no_order = bool(is_long_term_no_order)
 
     bm.save()
 
@@ -3246,10 +3272,18 @@ def _master_spec_dict(s, location: str = "", *, has_outbound_3m: bool | None = N
         "finish_type": (getattr(s, "finish_type", None) or "").strip(),
         "product_number": getattr(s, "product_number", None),
     }
+    # BarcodeMaster.is_long_term_no_order lookup
+    if bc:
+        try:
+            bm = BarcodeMaster.objects.filter(barcode=bc).first()
+            row["is_long_term_no_order"] = bool(bm.is_long_term_no_order) if bm else False
+        except Exception:
+            row["is_long_term_no_order"] = False
+    else:
+        row["is_long_term_no_order"] = False
     if has_outbound_3m is not None:
         row["has_outbound_3m"] = bool(has_outbound_3m)
     elif bc:
-        # 단건 상세: 즉시 계산
         row["has_outbound_3m"] = bc in _recent_outbound_barcodes_3m()
     else:
         row["has_outbound_3m"] = False
@@ -3870,9 +3904,15 @@ def master_specs_detail(request, id: int):
         MasterSpec.objects.filter(pk=spec.pk).update(product_number=pn_out)
         spec.product_number = pn_out
 
+    # 장기 미발주 품목 플래그 -> BarcodeMaster에 저장 (수동 설정만)
+    if "is_long_term_no_order" in payload:
+        bc_save = (spec.barcode or "").strip()
+        if bc_save:
+            bm_obj, _ = BarcodeMaster.objects.get_or_create(barcode=bc_save)
+            bm_obj.is_long_term_no_order = bool(payload.get("is_long_term_no_order"))
+            bm_obj.save(update_fields=["is_long_term_no_order", "updated_at"])
+
     return Response(_master_spec_dict(spec, location=loc_out))
-
-
 @api_view(["POST"])
 def master_specs_sync_outbound_status(request):
     """최근 3개월간 출고 실적이 없는 품목들의 마스터 상태(is_no_outbound_3m)를 수동 갱신하는 API"""

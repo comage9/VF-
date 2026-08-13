@@ -105,6 +105,10 @@ export interface InventoryItem {
   price?: number;
   /** 제품 마스터 is_vf_item (목록 SoT) */
   is_vf_item?: boolean;
+  /** BarcodeMaster.is_long_term_no_order (수동 설정) */
+  is_long_term_no_order?: boolean;
+  /** 제품 비고 (MasterSpec 우선, BarcodeMaster 폴back) */
+  notes?: string;
   masterSpecId?: number;
   inBaseline?: boolean;
 }
@@ -170,6 +174,8 @@ export interface UnifiedInventoryResponseEnhanced {
       normalCount?: number;
       highCount?: number;
       vfMasterCount?: number;
+      longTermNoOrder?: number;
+      longTermNoOrderQuantity?: number;
     };
     filtered: {
       totalItems?: number;

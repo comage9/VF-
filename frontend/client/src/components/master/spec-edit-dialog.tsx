@@ -48,7 +48,8 @@ export interface Spec {
   is_discontinued?: boolean;
   is_no_outbound_3m?: boolean;
   is_vf_item?: boolean;
-  finish_type?: string;
+    is_long_term_no_order?: boolean;
+    finish_type?: string;
   has_outbound_3m?: boolean;
   current_stock?: number;
   is_vf_active?: boolean;
@@ -395,64 +396,84 @@ export function SpecEditDialog({
                             </p>
                             <div className="flex gap-2">
                                 <button
-                                    type="button"
-                                    onClick={() => {
-                                        handleSelectChange('is_discontinued', false);
-                                        handleSelectChange('is_no_outbound_3m', false);
-                                    }}
-                                    className={`flex-1 py-1.5 text-[11px] font-semibold rounded border transition-all ${
-                                        !formData.is_discontinued && !formData.is_no_outbound_3m
-                                            ? 'bg-green-50 border-green-500 text-green-700'
-                                            : 'bg-white border-input text-gray-500 hover:bg-gray-50'
-                                    }`}
-                                >
-                                    FC 출고 품목
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        handleSelectChange('is_discontinued', false);
-                                        handleSelectChange('is_no_outbound_3m', true);
-                                        handleSelectChange('is_vf_item', false);
-                                    }}
-                                    className={`flex-1 py-1.5 text-[11px] font-semibold rounded border transition-all ${
-                                        !formData.is_discontinued && formData.is_no_outbound_3m && !formData.is_vf_item
-                                            ? 'bg-amber-50 border-amber-500 text-amber-700'
-                                            : 'bg-white border-input text-gray-500 hover:bg-gray-50'
-                                    }`}
-                                >
-                                    FC 3개월 미출고
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        handleSelectChange('is_discontinued', false);
-                                        handleSelectChange('is_no_outbound_3m', true);
-                                        handleSelectChange('is_vf_item', true);
-                                    }}
-                                    className={`flex-1 py-1.5 text-[11px] font-semibold rounded border transition-all ${
-                                        !formData.is_discontinued && formData.is_no_outbound_3m && formData.is_vf_item
-                                            ? 'bg-blue-50 border-blue-500 text-blue-700'
-                                            : 'bg-white border-input text-gray-500 hover:bg-gray-50'
-                                    }`}
-                                >
-                                    VF 3개월 미출고
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        handleSelectChange('is_discontinued', true);
-                                        handleSelectChange('is_no_outbound_3m', false);
-                                    }}
-                                    className={`flex-1 py-1.5 text-[11px] font-semibold rounded border transition-all ${
-                                        formData.is_discontinued
-                                            ? 'bg-red-50 border-red-500 text-red-700'
-                                            : 'bg-white border-input text-gray-500 hover:bg-gray-50'
-                                    }`}
-                                    title="단종은 수동으로만 지정·해제됩니다"
-                                >
-                                    단종
-                                </button>
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        handleSelectChange('is_discontinued', false);
+                                                                        handleSelectChange('is_no_outbound_3m', false);
+                                                                        handleSelectChange('is_long_term_no_order', false);
+                                                                    }}
+                                                                    className={`flex-1 py-1.5 text-[11px] font-semibold rounded border transition-all ${
+                                                                        !formData.is_discontinued && !formData.is_no_outbound_3m && !formData.is_long_term_no_order
+                                                                            ? 'bg-green-50 border-green-500 text-green-700'
+                                                                            : 'bg-white border-input text-gray-500 hover:bg-gray-50'
+                                                                    }`}
+                                                                >
+                                                                    FC 출고 품목
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        handleSelectChange('is_discontinued', false);
+                                                                        handleSelectChange('is_no_outbound_3m', true);
+                                                                        handleSelectChange('is_vf_item', false);
+                                                                        handleSelectChange('is_long_term_no_order', false);
+                                                                    }}
+                                                                    className={`flex-1 py-1.5 text-[11px] font-semibold rounded border transition-all ${
+                                                                        !formData.is_discontinued && formData.is_no_outbound_3m && !formData.is_vf_item && !formData.is_long_term_no_order
+                                                                            ? 'bg-amber-50 border-amber-500 text-amber-700'
+                                                                            : 'bg-white border-input text-gray-500 hover:bg-gray-50'
+                                                                    }`}
+                                                                >
+                                                                    FC 3개월 미출고
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        handleSelectChange('is_discontinued', false);
+                                                                        handleSelectChange('is_no_outbound_3m', true);
+                                                                        handleSelectChange('is_vf_item', true);
+                                                                        handleSelectChange('is_long_term_no_order', false);
+                                                                    }}
+                                                                    className={`flex-1 py-1.5 text-[11px] font-semibold rounded border transition-all ${
+                                                                        !formData.is_discontinued && formData.is_no_outbound_3m && formData.is_vf_item && !formData.is_long_term_no_order
+                                                                            ? 'bg-blue-50 border-blue-500 text-blue-700'
+                                                                            : 'bg-white border-input text-gray-500 hover:bg-gray-50'
+                                                                    }`}
+                                                                >
+                                                                    VF 3개월 미출고
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        handleSelectChange('is_discontinued', true);
+                                                                        handleSelectChange('is_no_outbound_3m', false);
+                                                                        handleSelectChange('is_long_term_no_order', false);
+                                                                    }}
+                                                                    className={`flex-1 py-1.5 text-[11px] font-semibold rounded border transition-all ${
+                                                                        formData.is_discontinued
+                                                                            ? 'bg-red-50 border-red-500 text-red-700'
+                                                                            : 'bg-white border-input text-gray-500 hover:bg-gray-50'
+                                                                    }`}
+                                                                    title="단종은 수동으로만 지정·해제됩니다"
+                                                                >
+                                                                    단종
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        handleSelectChange('is_discontinued', false);
+                                                                        handleSelectChange('is_no_outbound_3m', false);
+                                                                        handleSelectChange('is_long_term_no_order', true);
+                                                                    }}
+                                                                    className={`flex-1 py-1.5 text-[11px] font-semibold rounded border transition-all ${
+                                                                        formData.is_long_term_no_order && !formData.is_discontinued
+                                                                            ? 'bg-purple-50 border-purple-500 text-purple-700'
+                                                                            : 'bg-white border-input text-gray-500 hover:bg-gray-50'
+                                                                    }`}
+                                                                    title="위험 품목에서 제외되고 '장기 미발주 요청 품목' 카드로 이동합니다"
+                                                                >
+                                                                    장기 미출고 발주 요청
+                                                                </button>
                             </div>
                         </div>
                     </div>

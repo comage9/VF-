@@ -143,6 +143,15 @@ class BarcodeMaster(models.Model):
     reorder_point = models.IntegerField(default=0)
     safety_stock = models.IntegerField(default=0)
     notes = models.TextField(null=True, blank=True)
+    is_long_term_no_order = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text=(
+            "장기 미발주 요청 품목. "
+            "재고=0이면서 발주처 미수락 또는 생산 지연으로 즉시 입고 불가능한 품목. "
+            "True면 위험 품목(critical) 집계에서 제외되고 '장기 미발주 요청 품목' 카드로 별도 관리."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

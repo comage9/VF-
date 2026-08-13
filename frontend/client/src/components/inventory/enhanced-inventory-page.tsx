@@ -61,6 +61,7 @@ interface BarcodeMasterRow {
   reorderPoint: number;
   safetyStock: number;
   notes: string;
+  isLongTermNoOrder?: boolean;
   createdAt?: string | null;
   updatedAt?: string | null;
 }
@@ -293,6 +294,28 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
     } catch (e: unknown) {
       console.error('lifecycle status update failed', e);
       alert(e instanceof Error ? e.message : '상태 변경에 실패했습니다.');
+    }
+  };
+
+  /** 장기 미발주 품목 설정 (수동) */
+  const handleLongTermNoOrderChange = async (item: BarcodeMasterRow, checked: boolean) => {
+    const barcode = String(item?.barcode || '').trim();
+    if (!barcode) return;
+    try {
+      const res = await fetch(`/api/inventory/unified/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ barcode, is_long_term_no_order: checked }),
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(txt || '장기 미발주 설정에 실패했습니다.');
+      }
+      queryClient.invalidateQueries({ queryKey: ['enhanced-inventory-overview'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-barcode-master'] });
+    } catch (e: unknown) {
+      console.error('long term no order update failed', e);
+      alert(e instanceof Error ? e.message : '장기 미발주 설정에 실패했습니다.');
     }
   };
 
@@ -615,6 +638,8 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
       low: 0,
       normal: 0,
       high: 0,
+      longTermNoOrder: 0,
+      longTermNoOrderQty: 0,
       criticalQuantity: 0,
       lowQuantity: 0,
       totalValue: 0,
@@ -627,8 +652,12 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
       // 금액·수량 집계는 음수 재고를 0으로 (데이터 오류 방어)
       const stockPos = Math.max(0, stockQty);
       const unitPrice = Number(item?.price || 0);
+      const isLongTermNoOrder = !!item?.is_long_term_no_order;
 
-      if (key === 'critical') {
+      if (isLongTermNoOrder) {
+        summary.longTermNoOrder += 1;
+        summary.longTermNoOrderQty += stockPos;
+      } else if (key === 'critical') {
         summary.critical += 1;
         summary.criticalQuantity += stockPos;
       } else if (key === 'low') {
@@ -985,7 +1014,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
             {activeTab === 'inventory' && (
               <div className="space-y-4">
                 {/* KPI Overview - Z-Layout 기반 */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                   {/* 1순위: 총 재고금액 - 가장 강조 */}
                   <Card
                     className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200 cursor-pointer hover:shadow-lg transition-shadow"
@@ -1065,6 +1094,26 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                         <AlertTriangle className="w-8 h-8 text-amber-500 bg-white rounded-full p-1.5" />
                       </div>
                       <p className="text-xs text-gray-500 mt-2">클릭시 부족 품목만 표시</p>
+                    </CardContent>
+                  </Card>
+
+                  {/* 5순위: 장기 미발주 요청 품목 */}
+                  <Card
+                    className="bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-200 cursor-pointer hover:shadow-lg transition-shadow"
+                    onClick={() => setStockStatusFilter('long_term_no_order')}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-medium text-purple-700 uppercase">장기 미발주 요청 품목</p>
+                          <h3 className="text-xl font-bold text-purple-900">{statusSummary.longTermNoOrder}</h3>
+                          <p className="text-xs text-purple-700 mt-1">
+                            재고 {(statusSummary.longTermNoOrderQty ?? 0).toLocaleString()}개 · 발주 요청중
+                          </p>
+                        </div>
+                        <Package className="w-8 h-8 text-purple-600 bg-white rounded-full p-1.5" />
+                      </div>
+                      <p className="text-xs text-purple-600 mt-2">클릭시 장기 미발주 품목만 표시</p>
                     </CardContent>
                   </Card>
                 </div>
@@ -1200,6 +1249,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                     { key: 'low', label: '부족', count: statusSummary.low, color: 'yellow' },
                     { key: 'normal', label: '안전', count: statusSummary.normal, color: 'green' },
                     { key: 'high', label: '과잉', count: statusSummary.high, color: 'blue' },
+                    { key: 'long_term_no_order', label: '장기 미발주', count: statusSummary.longTermNoOrder, color: 'purple' },
                   ].map((filter) => (
                     <button
                       key={filter.key}
@@ -1535,6 +1585,7 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                         const bc = String(item?.barcode || '').trim();
                         const isHidden = bc ? hiddenBarcodes.has(bc) : false;
                         const lifecycleStatus = String(item?.lifecycleStatus || 'active');
+                        const isLongTermNoOrder = !!item.isLongTermNoOrder;
                         return (
                           <div key={item.id} className="space-y-2">
                             <div className="flex items-center justify-between bg-white border rounded-lg px-4 py-2">
@@ -1556,6 +1607,15 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
                                     <option value="discontinued">단종</option>
                                   </select>
                                 </div>
+                                <label className="flex items-center gap-2 text-sm text-gray-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={isLongTermNoOrder}
+                                    onChange={(e) => handleLongTermNoOrderChange(item, e.target.checked)}
+                                    disabled={!bc}
+                                  />
+                                  장기 미발주
+                                </label>
                                 <label className="flex items-center gap-2 text-sm text-gray-700">
                                   <input
                                     type="checkbox"
