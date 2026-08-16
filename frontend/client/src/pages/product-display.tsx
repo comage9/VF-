@@ -486,21 +486,15 @@ const C_BUILT = buildCDongLayout("C");
 
 function defaultAPlacement(): PlacementMap {
   const base: PlacementMap = { ...A_RANK_PLACEMENT };
-  // B동 하단: 핸들러 바스켓 미배치 15건을 분류별 배치 (한 칸 최대 3개)
-  const bBottom: Record<string, string> = {
-    // 슬림형 (5)
-    "B-B하단1-1": "273,271,381",
-    "B-B하단1-2": "270,380",
-    // 베이직 (6)
-    "B-B하단1-3": "283,276,277",
-    "B-B하단1-4": "379,274,275",
-    // 와이드 (4)
-    "B-B하단2-1": "282,382,278",
-    "B-B하단2-2": "279",
-  };
-  for (const [id, val] of Object.entries(bBottom)) {
-    base[id] = val;
-  }
+  // B동 하단 순번: B하단1(4칸) → B하단2(7칸) 순으로 b-1 ~ b-11
+  const bBottom: string[] = [
+    "B-B하단1-1", "B-B하단1-2", "B-B하단1-3", "B-B하단1-4",
+    "B-B하단2-1", "B-B하단2-2", "B-B하단2-3", "B-B하단2-4",
+    "B-B하단2-5", "B-B하단2-6", "B-B하단2-7",
+  ];
+  bBottom.forEach((id, i) => {
+    base[id] = `b-${i + 1}`;
+  });
   return base;
 }
 
@@ -875,7 +869,6 @@ export default function ProductDisplayPage() {
               const assigned = Boolean(data[z.id]);
               const isL7 = z.line === 7;
               const display = assigned ? data[z.id] : "";
-              const items = display ? display.split(",").map((s) => s.trim()).filter(Boolean) : [];
               return (
                 <button
                   key={z.id}
@@ -896,13 +889,10 @@ export default function ProductDisplayPage() {
                     <span
                       className={
                         "font-semibold text-[10px] leading-tight tabular-nums " +
-                        (isL7 ? "text-orange-900" : "text-blue-900") +
-                        (items.length > 1 ? " flex flex-col items-center text-[8px] leading-[1.15]" : "")
+                        (isL7 ? "text-orange-900" : "text-blue-900")
                       }
                     >
-                      {items.length > 1
-                        ? items.map((it, i) => <span key={i}>{it}</span>)
-                        : display}
+                      {display}
                     </span>
                   ) : (
                     <span className="text-[9px] text-slate-300 leading-none">·</span>
