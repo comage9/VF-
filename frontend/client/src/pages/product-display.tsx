@@ -279,8 +279,8 @@ function loadPlacement(): PlacementMap {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return defaults;
     // 버전 키: 순위표 배정 적용 시 강제 덮어쓰기 플래그
-    // rank-a-v5 = 대분류 블록 + serpentine L1↑L2↓L3↑L4↓ (분류 연결), L5 비움
-    if (parsed.__v === "rank-a-v5" && parsed.data && typeof parsed.data === "object") {
+    // rank-a-v6 = 통로 페어 지그재그: cell n에 L1-n→L2-n, 이어서 L3-n→L4-n
+    if (parsed.__v === "rank-a-v6" && parsed.data && typeof parsed.data === "object") {
       return { ...defaults, ...parsed.data };
     }
     return defaults;
@@ -326,19 +326,19 @@ export default function ProductDisplayPage() {
   const saveData = () => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v5", data })
+      JSON.stringify({ __v: "rank-a-v6", data })
     );
     setSaveMsg("저장되었습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
   };
 
   const resetData = () => {
-    if (!window.confirm("A동을 대분류 연결(지그재그 L1↑L2↓L3↑L4↓) 기본 배치로 되돌릴까요?")) return;
+    if (!window.confirm("A동을 통로 지그재그(1↔2, 3↔4) 기본 배치로 되돌릴까요?")) return;
     const defaults = defaultAPlacement();
     setData(defaults);
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v5", data: defaults })
+      JSON.stringify({ __v: "rank-a-v6", data: defaults })
     );
     setSaveMsg("순위표 기본 배정으로 초기화했습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
@@ -372,8 +372,8 @@ export default function ProductDisplayPage() {
     <div className="space-y-4 w-full max-w-none">
       <div className="rounded-xl border bg-card p-4 shadow-sm">
         <p className="text-sm text-muted-foreground mb-3">
-          A동 · 대분류 블록 유지 + 라인 지그재그(1↑ 2↓ 3↑ 4↓)로 같은 분류 연결.
-          예: 1-19=212↔2-19=223(슬림), 3-19=690↔4-19=698(이유). 5번 비움.
+          A동 · 통로 지그재그: 같은 칸 높이에서 1↔2, 3↔4 교차 적재 (1-1→2-1→1-2→2-2…).
+          예: 1-1=1, 2-1=2, 1-2=3, 2-2=601. 대분류 블록 유지. 5번 비움.
         </p>
 
         <div className="flex flex-wrap gap-2 mb-4">
