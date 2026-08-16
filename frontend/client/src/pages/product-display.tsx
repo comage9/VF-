@@ -19,7 +19,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  A_PLACED_COUNT,
   A_RANK_PLACEMENT,
   A_SLOT_CONFLICTS,
   A_TOTAL_PRODUCTS,
@@ -834,8 +833,8 @@ export default function ProductDisplayPage() {
           7번=바퀴 슬림(1칸 2품목) · 호버 시 분류·제품명·재고 표시
         </p>
         <p className="text-base font-bold text-slate-800 mb-3">
-          배치 {A_PLACED_COUNT} / {A_TOTAL_PRODUCTS}
-          <span className="text-sm font-normal text-muted-foreground ml-2">
+          배치 {placedPnums.size} / {A_TOTAL_PRODUCTS}
+          <span className="text-sm font-bold text-red-600 ml-2">
             미배치 {unplaced.length}
           </span>
         </p>
@@ -1023,10 +1022,12 @@ export default function ProductDisplayPage() {
                         onClick={() => { setPanelTab("unplaced"); setSelPnum(null); setSelZone(null); }}
                         className={
                           "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
-                          (panelTab === "unplaced" ? "bg-[#721FE5] text-white" : "bg-muted text-foreground hover:bg-muted/80")
+                          (panelTab === "unplaced"
+                            ? "bg-red-600 text-white"
+                            : "bg-red-50 text-red-700 hover:bg-red-100")
                         }
                       >
-                        미배치 내역
+                        미배치 내역 ({unplaced.length})
                       </button>
                     </div>
                     {panelTab === "placed" ? (
@@ -1252,8 +1253,8 @@ export default function ProductDisplayPage() {
 
       {dong === "A" ? (
         <div className="rounded-xl border bg-card p-4 shadow-sm space-y-3">
-          <h3 className="text-sm font-semibold">
-            미배치 ({unplaced.length}건) — 순위·분류 · A/B동 배치 제외
+          <h3 className="text-sm font-semibold text-red-600">
+            미배치 ({unplaced.length}건) — 순위·분류 · A/B/C동 배치 제외
           </h3>
           <div className="overflow-auto max-h-80 border rounded-md">
             <table className="w-full text-xs">
