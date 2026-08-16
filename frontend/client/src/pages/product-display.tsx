@@ -65,23 +65,27 @@ const SLOT = {
   padB: 20,
   /** 통로(일반) 간격 */
   lineGap: 28,
-  /** 2-3 / 5-6 밀착(통로 없음) */
+  /** 2-3 / 4-5 밀착(통로 없음) */
   tightGap: 6,
   rowIdxW: 22,
   rowIdxGap: 6,
+  bottomLineGap: 20,
+  bottomLabelH: 18,
 };
 
 const A_SLOTS_PER_LINE = 19;
+/** 하단 가로 라인 zone line id (A-LB-n) */
+const A_BOTTOM_LINE_ID = 0;
+const A_BOTTOM_CELLS = 4;
 /** 붙어 있는 라인 쌍 (통로 없음) */
 const TIGHT_PAIRS: [number, number][] = [
   [2, 3],
-  [5, 6],
+  [4, 5],
 ];
 
 type LineSpec = {
   line: number;
   count: number;
-  /** 라인 헤더 부가 표시 */
   badge?: string;
   fillNumbers?: boolean;
   startNum?: number;
@@ -97,7 +101,8 @@ function isTightPair(a: number, b: number): boolean {
 /**
  * A동 레이아웃
  * - 시각 좌→우: 6 · 5 · 4 · 3 · 2 · 1
- * - gap: 2-3·5-6 밀착, 나머지 통로
+ * - 밀착: 2-3 · 4-5 / 통로: 1|2 · 3|4 · 5|6
+ * - 하단 가로 4칸: 세로 1~4번 열 아래
  */
 function buildADongLayout(
   dong: DongKey = "A",
@@ -107,8 +112,7 @@ function buildADongLayout(
   const zones: ZoneDef[] = [];
   const lineLabels: LineLabel[] = [];
   const maxCount = Math.max(1, ...vertLines.map((l) => l.count));
-  // 좌→우: 큰 라인 번호 먼저 (6…1)
-  const ordered = [...vertLines].sort((a, b) => b.line - a.line);
+  const ordered = [...vertLines].sort((a, b) => b.line - a.line); // 6…1
 
   const colLefts: number[] = [];
   let x = slot.padL;
@@ -120,6 +124,11 @@ function buildADongLayout(
       x += slot.w + gap;
     }
   });
+
+  const lineLeftOf = (lineNo: number) => {
+    const idx = ordered.findIndex((l) => l.line === lineNo);
+    return idx >= 0 ? colLefts[idx] : slot.padL;
+  };
 
   ordered.forEach((lineSpec, visualCol) => {
     const colLeft = colLefts[visualCol];
@@ -167,10 +176,8 @@ function buildADongLayout(
   });
 
   // 1번 라인 우측 칸 순번 1~19
-  const line1Idx = ordered.findIndex((l) => l.line === 1);
-  const line1Left = colLefts[line1Idx] ?? slot.padL;
-  const rowIdxLeft = line1Left + slot.w + slot.rowIdxGap;
   const line1Count = ordered.find((l) => l.line === 1)?.count ?? A_SLOTS_PER_LINE;
+  const rowIdxLeft = lineLeftOf(1) + slot.w + slot.rowIdxGap;
   for (let cell = 1; cell <= line1Count; cell++) {
     const placeFromTop = line1Count - cell;
     lineLabels.push({
@@ -188,15 +195,45 @@ function buildADongLayout(
     });
   }
 
+  // 하단 가로 4칸 — 세로 1~4번 열 아래 (좌→우: 4·3·2·1 아래)
+  const vertBottom =
+    slot.padT + maxCount * slot.h + Math.max(0, maxCount - 1) * slot.gapY;
+  const bottomTop = vertBottom + slot.bottomLineGap + slot.bottomLabelH;
+  const bottomLineNos = [4, 3, 2, 1];
+  const bottomLeft = lineLeftOf(4);
+  const bottomRight = lineLeftOf(1) + slot.w;
+  lineLabels.push({
+    text: "하단",
+    style: {
+      left: bottomLeft,
+      top: vertBottom + slot.bottomLineGap - 2,
+      width: Math.max(slot.w * 4, bottomRight - bottomLeft),
+      textAlign: "left",
+    },
+  });
+  bottomLineNos.forEach((lineNo, i) => {
+    zones.push({
+      id: `A-LB-${i + 1}`,
+      num: "",
+      line: A_BOTTOM_LINE_ID,
+      showNumAsProduct: false,
+      style: {
+        left: lineLeftOf(lineNo),
+        top: bottomTop,
+        width: slot.w,
+        height: slot.h,
+      },
+    });
+  });
+
   const lastLeft = colLefts[colLefts.length - 1] ?? slot.padL;
   const width = lastLeft + slot.w + slot.rowIdxGap + slot.rowIdxW + slot.padR;
-  const height =
-    slot.padT + maxCount * slot.h + Math.max(0, maxCount - 1) * slot.gapY + slot.padB;
+  const height = bottomTop + slot.h + slot.padB;
 
   return { zones, lineLabels, width, height };
 }
 
-/** 우측=1 … 좌측=6. 5·6=신규 예정. 2-3·5-6 밀착 */
+/** 우측=1 … 좌측=6. 5·6=신규 예정. 밀착=2-3·4-5, 통로=1|2·3|4·5|6 */
 const A_LINES: LineSpec[] = [
   { line: 1, count: A_SLOTS_PER_LINE },
   { line: 2, count: A_SLOTS_PER_LINE },
@@ -264,8 +301,8 @@ function loadPlacement(): PlacementMap {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return defaults;
     // 버전 키: 순위표 배정 적용 시 강제 덮어쓰기 플래그
-    // rank-a-v7 = 통로 페어 지그재그: cell n에 L1-n→L2-n, 이어서 L3-n→L4-n
-    if (parsed.__v === "rank-a-v7" && parsed.data && typeof parsed.data === "object") {
+    // rank-a-v8 = 통로 페어 지그재그: cell n에 L1-n→L2-n, 이어서 L3-n→L4-n
+    if (parsed.__v === "rank-a-v8" && parsed.data && typeof parsed.data === "object") {
       return { ...defaults, ...parsed.data };
     }
     return defaults;
@@ -311,19 +348,19 @@ export default function ProductDisplayPage() {
   const saveData = () => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v7", data })
+      JSON.stringify({ __v: "rank-a-v8", data })
     );
     setSaveMsg("저장되었습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
   };
 
   const resetData = () => {
-    if (!window.confirm("A동을 통로 지그재그(1|2, 2·3붙음, 3|4) + 5·6 신규예정 기본으로 되돌릴까요?")) return;
+    if (!window.confirm("A동을 통로/밀착(2·3·4·5붙음, 5|6통로)+하단4칸 기본으로 되돌릴까요?")) return;
     const defaults = defaultAPlacement();
     setData(defaults);
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v7", data: defaults })
+      JSON.stringify({ __v: "rank-a-v8", data: defaults })
     );
     setSaveMsg("순위표 기본 배정으로 초기화했습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
@@ -357,8 +394,8 @@ export default function ProductDisplayPage() {
     <div className="space-y-4 w-full max-w-none">
       <div className="rounded-xl border bg-card p-4 shadow-sm">
         <p className="text-sm text-muted-foreground mb-3">
-          A동 · 통로: 1|2, 3|4 (2·3 붙음). 지그재그 1↔2·3↔4. 5·6번=신규 예정.
-          예: 1-1=1, 2-1=2, 1-2=3, 2-2=601.
+          A동 · 통로 1|2·3|4·5|6 / 밀착 2·3·4·5. 지그재그 1↔2·3↔4. 5·6=신규 예정.
+          하단 가로 4칸(1~4번 열 아래). 예: 1-1=1, 2-1=2, 1-2=3, 2-2=601.
         </p>
 
         <div className="flex flex-wrap gap-2 mb-4">
@@ -412,7 +449,7 @@ export default function ProductDisplayPage() {
 
             {current.zones.map((z) => {
               const assigned = Boolean(data[z.id]);
-              const planned = z.line >= 5 && !assigned;
+              const planned = (z.line === 5 || z.line === 6) && !assigned;
               const display = assigned ? data[z.id] : planned ? "예정" : "";
               const filled = Boolean(display);
               return (
