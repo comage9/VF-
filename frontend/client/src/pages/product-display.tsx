@@ -19,6 +19,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  A_RANK_PLACEMENT,
+  A_SLOT_CONFLICTS,
+  A_UNPLACED,
+} from "@/pages/product-display-a-data";
 
 const STORAGE_KEY = "vf_product_display_v1";
 
@@ -177,9 +182,9 @@ function buildADongLayout(
   return { zones, lineLabels, width, height };
 }
 
-/** A동 1~4번 세로: 우측=1 … 좌측=4. 1번만 번호 채움 */
+/** A동 1~4번 세로: 우측=1 … 좌측=4. 번호는 순위표 배정(data)으로만 표시 */
 const A_LINES: LineSpec[] = [
-  { line: 1, count: A_SLOTS_PER_LINE, fillNumbers: true, startNum: 1, bottomIsStart: true },
+  { line: 1, count: A_SLOTS_PER_LINE, fillNumbers: false },
   { line: 2, count: A_SLOTS_PER_LINE, fillNumbers: false },
   { line: 3, count: A_SLOTS_PER_LINE, fillNumbers: false },
   { line: 4, count: A_SLOTS_PER_LINE, fillNumbers: false },
@@ -187,13 +192,9 @@ const A_LINES: LineSpec[] = [
 
 const A_BUILT = buildADongLayout("A", A_LINES);
 
-/** 1번 라인 기본 배정: 제품번호 = 로케이션 1~19 */
-function defaultLine1Placement(): PlacementMap {
-  const m: PlacementMap = {};
-  for (let n = 1; n <= A_SLOTS_PER_LINE; n++) {
-    m[`A-L1-${n}`] = String(n);
-  }
-  return m;
+/** 1개월 출고순위 표(slot 1~80) → A동 기본 배정. 비면 빈 칸. */
+function defaultAPlacement(): PlacementMap {
+  return { ...A_RANK_PLACEMENT };
 }
 
 const DONG_LAYOUTS: DongLayout[] = [
@@ -240,14 +241,18 @@ const DONG_LAYOUTS: DongLayout[] = [
 ];
 
 function loadPlacement(): PlacementMap {
-  const defaults = defaultLine1Placement();
+  const defaults = defaultAPlacement();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaults;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return defaults;
-    // 기존 저장값 우선, 1번 라인 비어 있으면 기본 1~19 채움
-    return { ...defaults, ...parsed };
+    // 버전 키: 순위표 배정 적용 시 강제 덮어쓰기 플래그
+    if (parsed.__v === "rank-a-v1" && parsed.data && typeof parsed.data === "object") {
+      return { ...defaults, ...parsed.data };
+    }
+    // 구버전 localStorage면 순위표 기본으로 교체 (수동 저장 후엔 __v 붙음)
+    return defaults;
   } catch {
     return defaults;
   }
@@ -288,17 +293,23 @@ export default function ProductDisplayPage() {
   };
 
   const saveData = () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ __v: "rank-a-v1", data })
+    );
     setSaveMsg("저장되었습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
   };
 
   const resetData = () => {
-    if (!window.confirm("배정을 1번 라인 기본(1~19)으로 되돌릴까요?")) return;
-    const defaults = defaultLine1Placement();
+    if (!window.confirm("A동 배정을 1개월 출고순위 기본값으로 되돌릴까요?")) return;
+    const defaults = defaultAPlacement();
     setData(defaults);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults));
-    setSaveMsg("1번 라인 기본값으로 초기화했습니다.");
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ __v: "rank-a-v1", data: defaults })
+    );
+    setSaveMsg("순위표 기본 배정으로 초기화했습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
   };
 
@@ -330,8 +341,8 @@ export default function ProductDisplayPage() {
     <div className="space-y-4 w-full max-w-none">
       <div className="rounded-xl border bg-card p-4 shadow-sm">
         <p className="text-sm text-muted-foreground mb-3">
-          A동 세로 1~{A_VERT_LINES}번(우측=1 … 좌측=4) + 하단 {A_BOTTOM_LINE}번 가로 {A_BOTTOM_CELLS}칸 · 슬롯{" "}
-          {SLOT.w}×{SLOT.h}. 1번 라인 제품번호 1~19(아래 1·위 19). 2~5번은 빈 칸.
+          A동 · 1개월 출고순위 표 기준 1차 배치 (slot 1~80 → 세로1~4+하단5). 우측=1번.
+          칸 값=제품번호. 미배치(slot≥90)는 아래 목록.
         </p>
 
         <div className="flex flex-wrap gap-2 mb-4">
@@ -380,7 +391,7 @@ export default function ProductDisplayPage() {
 
             {current.zones.map((z) => {
               const assigned = Boolean(data[z.id]);
-              const display = assigned ? data[z.id] : z.showNumAsProduct ? z.num : "";
+              const display = assigned ? data[z.id] : "";
               const filled = Boolean(display);
               return (
                 <button
@@ -397,7 +408,7 @@ export default function ProductDisplayPage() {
                   style={z.style}
                 >
                   {filled ? (
-                    <span className="font-semibold text-xs leading-none text-blue-900 tabular-nums">
+                    <span className="font-semibold text-[11px] leading-none text-blue-900 tabular-nums">
                       {display}
                     </span>
                   ) : (
@@ -427,11 +438,58 @@ export default function ProductDisplayPage() {
           ) : null}
           {dong === "A" ? (
             <span className="text-xs text-muted-foreground ml-2">
-              A동 세로{A_VERT_LINES}+가로{A_BOTTOM_LINE} · {A_SLOTS_PER_LINE}칸/열 · 슬롯 {SLOT.w}×{SLOT.h}
+              배치 {Object.keys(data).filter((k) => k.startsWith("A-") && data[k]).length}칸 · 미배치{" "}
+              {A_UNPLACED.length} · 슬롯충돌 {A_SLOT_CONFLICTS.length}
             </span>
           ) : null}
         </div>
       </div>
+
+      {dong === "A" ? (
+        <div className="rounded-xl border bg-card p-4 shadow-sm space-y-3">
+          <h3 className="text-sm font-semibold">
+            A동 미배치 ({A_UNPLACED.length}건) — 순위표 slot ≥ 90 (A동 80칸 밖)
+          </h3>
+          <div className="overflow-auto max-h-64 border rounded-md">
+            <table className="w-full text-xs">
+              <thead className="bg-muted sticky top-0">
+                <tr className="text-left">
+                  <th className="p-2">slot</th>
+                  <th className="p-2">제품번호</th>
+                  <th className="p-2">1개월박스</th>
+                  <th className="p-2">분류</th>
+                  <th className="p-2">로케이션</th>
+                  <th className="p-2">제품명</th>
+                </tr>
+              </thead>
+              <tbody>
+                {A_UNPLACED.map((u) => (
+                  <tr key={`${u.slot}-${u.barcode}`} className="border-t">
+                    <td className="p-2 tabular-nums">{u.slot}</td>
+                    <td className="p-2 font-semibold tabular-nums">{u.pnum}</td>
+                    <td className="p-2 tabular-nums">{u.boxes}</td>
+                    <td className="p-2">{u.cat}</td>
+                    <td className="p-2 font-mono text-[10px]">{u.loc}</td>
+                    <td className="p-2 max-w-[280px] truncate" title={u.name}>
+                      {u.name}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {A_SLOT_CONFLICTS.length > 0 ? (
+            <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2 space-y-1">
+              <div className="font-semibold">동일 slot 복수 SKU (출고 많은 쪽만 칸 표시)</div>
+              {A_SLOT_CONFLICTS.map((c) => (
+                <div key={c.slot}>
+                  slot {c.slot} → {c.zone}: {c.note}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="sm:max-w-md">
