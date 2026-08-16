@@ -485,7 +485,17 @@ function buildCDongLayout(
 const C_BUILT = buildCDongLayout("C");
 
 function defaultAPlacement(): PlacementMap {
-  return { ...A_RANK_PLACEMENT };
+  const base: PlacementMap = { ...A_RANK_PLACEMENT };
+  // B동 하단 순번: B하단1(4칸) → B하단2(7칸) 순으로 b-1 ~ b-11
+  const bBottom: string[] = [
+    "B-B하단1-1", "B-B하단1-2", "B-B하단1-3", "B-B하단1-4",
+    "B-B하단2-1", "B-B하단2-2", "B-B하단2-3", "B-B하단2-4",
+    "B-B하단2-5", "B-B하단2-6", "B-B하단2-7",
+  ];
+  bBottom.forEach((id, i) => {
+    base[id] = `b-${i + 1}`;
+  });
+  return base;
 }
 
 const DONG_LAYOUTS: DongLayout[] = [
