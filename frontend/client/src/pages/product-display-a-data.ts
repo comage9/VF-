@@ -1,6 +1,6 @@
 /** A동: L7 슬롯 분리(7-N-1=아래, 7-N-2=위), 20번 라인(20-1,20-2) 추가, 마스터 연계 툴팁 */
 export const A_TOTAL_PRODUCTS = 875;
-export const A_PLACED_COUNT = 124;
+export const A_PLACED_COUNT = 130;
 export const A_RANK_PLACEMENT: Record<string, string> = {
   "A-L1-1": "1",
   "A-L1-2": "3",
@@ -126,6 +126,13 @@ export const A_RANK_PLACEMENT: Record<string, string> = {
   "A-L7-4-2": "241",
   "A-L7-5-1": "253",
   "A-L7-5-2": "251",
+  "A-L7-6-1": "210",
+  "A-L7-6-2": "214",
+  "A-L7-7-1": "203",
+  "A-L7-7-2": "225",
+  "A-L7-8-1": "246",
+  "A-L7-8-2": "201",
+
 };
 export const A_ZONE_CAT: Record<string, string> = {
   "A-L1-1": "모던 플러스",
