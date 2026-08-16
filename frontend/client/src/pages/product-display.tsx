@@ -1,8 +1,9 @@
 /**
  * 제품 배치도 (A~E동)
- * - 기본 양식: 초기 렉 칸(세로 긴 슬롯) 스타일
- * - A동: 라인 단위 배치 (1번 라인 로케이션 1~19, 아래=1 · 위=19)
- * - 2~4번 라인은 동일 양식으로 확장 가능
+ * - 기본 양식: 초기 렉 칸(세로 슬롯) — 폰트에 맞춘 콤팩트 테두리
+ * - A동: 1~4번 라인 전체 윤곽 (같은 세로 길이)
+ *   - 1번: 제품번호 1~19 (아래 1 · 위 19) 배정 표시
+ *   - 2~4번: 동일 높이 빈 칸 (품목은 추후 입력)
  * - localStorage 저장 + JSON 내보내기
  */
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
@@ -24,8 +25,11 @@ type DongKey = "A" | "B" | "C" | "D" | "E";
 
 type ZoneDef = {
   id: string;
+  /** 칸에 기본으로 찍는 라벨 (빈 칸이면 "") */
   num: string;
-  line?: number;
+  line: number;
+  /** true면 번호 라벨을 제품번호처럼 표시(1번 라인) */
+  showNumAsProduct: boolean;
   style: CSSProperties;
 };
 
@@ -45,37 +49,30 @@ type DongLayout = {
 
 type PlacementMap = Record<string, string>;
 
-/** 초기 렉 칸 양식(세로 긴 슬롯) 치수 — 원본 A형 슬롯 비율 유지·확대 */
+/** 폰트(번호 2자리)에 맞춘 콤팩트 슬롯 — 전체 윤곽 확인용 */
 const SLOT = {
-  w: 88,
-  h: 168,
-  gapX: 14,
-  gapY: 12,
-  padL: 28,
-  padT: 52,
-  padR: 28,
-  padB: 28,
-  lineGap: 48, // 라인 사이 가로 간격
-  lineTitleH: 28,
+  w: 48,
+  h: 34,
+  gapY: 4,
+  padL: 20,
+  padT: 36,
+  padR: 20,
+  padB: 16,
+  lineGap: 28,
 };
+
+const A_LINE_COUNT = 4;
+const A_SLOTS_PER_LINE = 19; // 1번 라인 기준 세로 길이
 
 type LineSpec = {
   line: number;
-  /** 로케이션 개수 */
   count: number;
-  /** 시작 번호 (기본 1) */
+  /** 1번 라인처럼 아래→위 번호 채움 */
+  fillNumbers: boolean;
   startNum?: number;
-  /**
-   * true: 맨 아래=startNum, 맨 위=startNum+count-1
-   * (1번 라인: 아래 1 → 위 19)
-   */
   bottomIsStart?: boolean;
 };
 
-/**
- * 한 라인을 세로 슬롯 열로 생성 (초기 양식).
- * 여러 라인을 가로로 나란히 배치해 2·3·4번 라인 확장.
- */
 function buildVerticalLineZones(
   dong: DongKey,
   lines: LineSpec[],
@@ -91,31 +88,29 @@ function buildVerticalLineZones(
     const colLeft = slot.padL + lineIdx * (slot.w + slot.lineGap);
 
     lineLabels.push({
-      text: `${lineSpec.line}번 라인`,
+      text: `${lineSpec.line}번`,
       style: {
         left: colLeft,
-        top: 14,
+        top: 10,
         width: slot.w,
         textAlign: "center",
       },
     });
 
     for (let i = 0; i < lineSpec.count; i++) {
-      // visualIdx 0 = 맨 위
-      const visualIdx = bottomIsStart ? lineSpec.count - 1 - i : i;
-      // i=0 → startNum (아래), i=count-1 → startNum+count-1 (위) when bottomIsStart
-      const num = bottomIsStart
-        ? startNum + i
-        : startNum + (lineSpec.count - 1 - i);
-      // place by visual: bottom row gets startNum
-      const placeFromTop = bottomIsStart
-        ? lineSpec.count - 1 - i
-        : i;
+      const placeFromTop = bottomIsStart ? lineSpec.count - 1 - i : i;
+      const numVal = lineSpec.fillNumbers
+        ? bottomIsStart
+          ? startNum + i
+          : startNum + (lineSpec.count - 1 - i)
+        : i + 1;
+      const id = `${dong}-L${lineSpec.line}-${numVal}`;
 
       zones.push({
-        id: `${dong}-L${lineSpec.line}-${num}`,
-        num: String(num),
+        id,
+        num: lineSpec.fillNumbers ? String(numVal) : "",
         line: lineSpec.line,
+        showNumAsProduct: lineSpec.fillNumbers,
         style: {
           left: colLeft,
           top: slot.padT + placeFromTop * (slot.h + slot.gapY),
@@ -137,69 +132,79 @@ function buildVerticalLineZones(
   return { zones, lineLabels, width, height };
 }
 
-// A동: 우선 1번 라인만 (1~19, 아래=1 · 위=19). 2~4번은 같은 빌더로 추가.
+/** A동 1~4번 라인: 세로 길이 = 1번(19칸)과 동일. 1번만 번호 채움 */
 const A_LINES: LineSpec[] = [
-  { line: 1, count: 19, startNum: 1, bottomIsStart: true },
-  // 이후 예:
-  // { line: 2, count: N, startNum: 1, bottomIsStart: true },
-  // { line: 3, count: N, startNum: 1, bottomIsStart: true },
-  // { line: 4, count: N, startNum: 1, bottomIsStart: true },
+  { line: 1, count: A_SLOTS_PER_LINE, fillNumbers: true, startNum: 1, bottomIsStart: true },
+  { line: 2, count: A_SLOTS_PER_LINE, fillNumbers: false },
+  { line: 3, count: A_SLOTS_PER_LINE, fillNumbers: false },
+  { line: 4, count: A_SLOTS_PER_LINE, fillNumbers: false },
 ];
 
 const A_BUILT = buildVerticalLineZones("A", A_LINES);
+
+/** 1번 라인 기본 배정: 제품번호 = 로케이션 1~19 */
+function defaultLine1Placement(): PlacementMap {
+  const m: PlacementMap = {};
+  for (let n = 1; n <= A_SLOTS_PER_LINE; n++) {
+    m[`A-L1-${n}`] = String(n);
+  }
+  return m;
+}
 
 const DONG_LAYOUTS: DongLayout[] = [
   {
     key: "A",
     label: "A동",
-    width: Math.max(A_BUILT.width, 420),
+    width: Math.max(A_BUILT.width, 320),
     height: A_BUILT.height,
     zones: A_BUILT.zones,
     lineLabels: A_BUILT.lineLabels,
   },
-  // B~E: 자리만 유지 (아직 라인 미배치) — A동 확정 후 동일 양식 적용
   {
     key: "B",
     label: "B동",
-    width: 480,
-    height: 360,
+    width: 360,
+    height: 280,
     zones: [],
-    lineLabels: [{ text: "라인 배치 대기", style: { left: 24, top: 16, width: 200 } }],
+    lineLabels: [{ text: "라인 배치 대기", style: { left: 16, top: 12, width: 160 } }],
   },
   {
     key: "C",
     label: "C동",
-    width: 480,
-    height: 360,
+    width: 360,
+    height: 280,
     zones: [],
-    lineLabels: [{ text: "라인 배치 대기", style: { left: 24, top: 16, width: 200 } }],
+    lineLabels: [{ text: "라인 배치 대기", style: { left: 16, top: 12, width: 160 } }],
   },
   {
     key: "D",
     label: "D동",
-    width: 480,
-    height: 360,
+    width: 360,
+    height: 280,
     zones: [],
-    lineLabels: [{ text: "라인 배치 대기", style: { left: 24, top: 16, width: 200 } }],
+    lineLabels: [{ text: "라인 배치 대기", style: { left: 16, top: 12, width: 160 } }],
   },
   {
     key: "E",
     label: "E동",
-    width: 480,
-    height: 360,
+    width: 360,
+    height: 280,
     zones: [],
-    lineLabels: [{ text: "라인 배치 대기", style: { left: 24, top: 16, width: 200 } }],
+    lineLabels: [{ text: "라인 배치 대기", style: { left: 16, top: 12, width: 160 } }],
   },
 ];
 
 function loadPlacement(): PlacementMap {
+  const defaults = defaultLine1Placement();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
+    if (!raw) return defaults;
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
+    if (!parsed || typeof parsed !== "object") return defaults;
+    // 기존 저장값 우선, 1번 라인 비어 있으면 기본 1~19 채움
+    return { ...defaults, ...parsed };
   } catch {
-    return {};
+    return defaults;
   }
 }
 
@@ -244,10 +249,11 @@ export default function ProductDisplayPage() {
   };
 
   const resetData = () => {
-    if (!window.confirm("모든 배정 내용을 초기화할까요?")) return;
-    setData({});
-    localStorage.removeItem(STORAGE_KEY);
-    setSaveMsg("초기화되었습니다.");
+    if (!window.confirm("배정을 1번 라인 기본(1~19)으로 되돌릴까요?")) return;
+    const defaults = defaultLine1Placement();
+    setData(defaults);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults));
+    setSaveMsg("1번 라인 기본값으로 초기화했습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
   };
 
@@ -277,20 +283,20 @@ export default function ProductDisplayPage() {
 
   return (
     <div className="space-y-4 w-full max-w-none">
-      <div className="rounded-xl border bg-card p-5 shadow-sm">
-        <p className="text-sm text-muted-foreground mb-4">
-          A~E동 배치도 · 초기 렉 칸(세로 슬롯) 양식. A동 1번 라인: 로케이션 1~19 (맨 아래 1 · 맨 위
-          19). 2~4번 라인은 같은 양식으로 추가합니다.
+      <div className="rounded-xl border bg-card p-4 shadow-sm">
+        <p className="text-sm text-muted-foreground mb-3">
+          A동 1~{A_LINE_COUNT}번 라인 전체 윤곽 · 슬롯 {SLOT.w}×{SLOT.h}(폰트 맞춤). 1번 라인
+          제품번호 1~19(아래 1·위 19). 2~4번은 같은 세로 길이 빈 칸.
         </p>
 
-        <div className="flex flex-wrap gap-2 mb-5">
+        <div className="flex flex-wrap gap-2 mb-4">
           {DONG_LAYOUTS.map((r) => (
             <button
               key={r.key}
               type="button"
               onClick={() => setDong(r.key)}
               className={
-                "px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors " +
+                "px-4 py-2 rounded-lg text-sm font-semibold transition-colors " +
                 (dong === r.key
                   ? "bg-[#721FE5] text-white"
                   : "bg-muted text-foreground hover:bg-muted/80")
@@ -301,7 +307,7 @@ export default function ProductDisplayPage() {
           ))}
         </div>
 
-        <div className="w-full overflow-auto pb-2" style={{ maxHeight: "calc(100vh - 260px)" }}>
+        <div className="w-full overflow-auto pb-2" style={{ maxHeight: "calc(100vh - 240px)" }}>
           <div
             className="relative rounded-xl border bg-slate-50 shrink-0"
             style={{
@@ -314,7 +320,7 @@ export default function ProductDisplayPage() {
             {current.lineLabels.map((lb, i) => (
               <div
                 key={`ll-${i}`}
-                className="absolute text-xs font-semibold text-slate-700 pointer-events-none"
+                className="absolute text-[11px] font-semibold text-slate-700 pointer-events-none"
                 style={lb.style}
               >
                 {lb.text}
@@ -323,12 +329,14 @@ export default function ProductDisplayPage() {
 
             {current.zones.length === 0 ? (
               <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
-                {current.label} 라인 배치 대기 — A동 확정 후 동일 양식 적용
+                {current.label} 라인 배치 대기
               </div>
             ) : null}
 
             {current.zones.map((z) => {
               const assigned = Boolean(data[z.id]);
+              const display = assigned ? data[z.id] : z.showNumAsProduct ? z.num : "";
+              const filled = Boolean(display);
               return (
                 <button
                   key={z.id}
@@ -336,20 +344,19 @@ export default function ProductDisplayPage() {
                   onClick={() => openAssign(z.id)}
                   title={`${z.id} 클릭하여 제품 배정`}
                   className={
-                    "absolute flex flex-col items-center justify-center rounded-md border-2 text-center px-1 transition-colors shadow-sm " +
-                    (assigned
-                      ? "border-blue-700 bg-blue-100"
-                      : "border-slate-700 bg-white hover:bg-sky-50 hover:border-blue-600")
+                    "absolute flex items-center justify-center rounded border text-center px-0.5 transition-colors " +
+                    (filled
+                      ? "border-blue-700 bg-blue-50"
+                      : "border-slate-500 bg-white hover:bg-sky-50 hover:border-blue-500")
                   }
                   style={z.style}
                 >
-                  <span className="font-bold text-lg leading-none">{z.num}</span>
-                  {assigned ? (
-                    <span className="mt-1 text-[11px] font-medium text-blue-800 break-all leading-tight px-0.5">
-                      {data[z.id]}
+                  {filled ? (
+                    <span className="font-semibold text-xs leading-none text-blue-900 tabular-nums">
+                      {display}
                     </span>
                   ) : (
-                    <span className="mt-1 text-[10px] text-muted-foreground">배정</span>
+                    <span className="text-[9px] text-slate-300 leading-none">·</span>
                   )}
                 </button>
               );
@@ -357,7 +364,7 @@ export default function ProductDisplayPage() {
           </div>
         </div>
 
-        <div className="mt-5 flex flex-wrap items-center gap-2">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           <Button type="button" className="bg-green-600 hover:bg-green-700" onClick={saveData}>
             <Save className="w-4 h-4 mr-1.5" />
             저장
@@ -375,7 +382,7 @@ export default function ProductDisplayPage() {
           ) : null}
           {dong === "A" ? (
             <span className="text-xs text-muted-foreground ml-2">
-              A동 1번 라인 {A_LINES[0]?.count ?? 0}칸 · 슬롯 {SLOT.w}×{SLOT.h}
+              A동 {A_LINE_COUNT}라인 × {A_SLOTS_PER_LINE}칸 · 슬롯 {SLOT.w}×{SLOT.h}
             </span>
           ) : null}
         </div>
