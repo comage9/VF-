@@ -499,6 +499,8 @@ export default function ProductMasterPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [filterCategoryLg, setFilterCategoryLg] = useState<string>("all");
   const [filterCategoryMd, setFilterCategoryMd] = useState<string>("all");
+  /** 제품 형태 필터: all | finished | needs_packaging */
+  const [filterFinishType, setFilterFinishType] = useState<string>("all");
 
   /** 테이블 헤더 정렬: 컬럼 클릭 시 토글 */
   type SortKey = MasterSortKey;
@@ -651,6 +653,7 @@ export default function ProductMasterPage() {
     setSearchQuery("");
     setFilterCategoryLg("all");
     setFilterCategoryMd("all");
+    setFilterFinishType("all");
     if (kpiFocus === "vf" || kpiFocus === "vf_no_outbound") {
       setKpiFocus("all");
     }
@@ -685,12 +688,26 @@ export default function ProductMasterPage() {
         result = result.filter((s) => s.category_md === filterCategoryMd);
       }
       if (searchQuery.trim()) {
+        const q = searchQuery.trim();
         result = result.filter((s) =>
           matchesSearchInFields(
             [s.product_name, s.sku_id, s.barcode, s.product_number != null ? String(s.product_number) : undefined, s.location, s.category_lg, s.category_md],
-            searchQuery
+            q
           )
         );
+        // 제품번호 정확 일치 최상단
+        const numQ = /^\d+$/.test(q) ? parseInt(q, 10) : null;
+        if (numQ !== null) {
+          result = [...result].sort((a, b) => {
+            const am = a.product_number === numQ ? 0 : 1;
+            const bm = b.product_number === numQ ? 0 : 1;
+            return am - bm;
+          });
+        }
+      }
+      // 제품 형태 필터 (완제품 / 포장 필요)
+      if (filterFinishType !== "all") {
+        result = result.filter((s) => (s.finish_type || "") === filterFinishType);
       }
       if (sortKey) {
         result = [...result].sort((a, b) =>
@@ -710,6 +727,9 @@ export default function ProductMasterPage() {
             searchQuery
           )
         );
+      }
+      if (filterFinishType !== "all") {
+        result = result.filter((s) => (s.finish_type || "") === filterFinishType);
       }
       return result;
     }
@@ -739,6 +759,9 @@ export default function ProductMasterPage() {
             searchQuery
           )
         );
+      }
+      if (filterFinishType !== "all") {
+        result = result.filter((s) => (s.finish_type || "") === filterFinishType);
       }
       // VF 뷰도 헤더 정렬 공통 로직 사용 (보유 재고·단가 등 포함)
       if (sortKey) {
@@ -779,6 +802,7 @@ export default function ProductMasterPage() {
 
     // 4. 검색 쿼리 필터링 (단어 순서 무시 AND)
     if (searchQuery.trim()) {
+      const q = searchQuery.trim();
       result = result.filter((s) =>
         matchesSearchInFields(
           [
@@ -791,12 +815,26 @@ export default function ProductMasterPage() {
             s.category_md,
             s.product_name_eng,
           ],
-          searchQuery
+          q
         )
       );
+      // 제품번호 정확 일치 최상단 (573 → 573번 먼저, 573453 등은 뒤로)
+      const numQ = /^\d+$/.test(q) ? parseInt(q, 10) : null;
+      if (numQ !== null) {
+        result = [...result].sort((a, b) => {
+          const am = a.product_number === numQ ? 0 : 1;
+          const bm = b.product_number === numQ ? 0 : 1;
+          return am - bm;
+        });
+      }
     }
 
-    // 5. 헤더 정렬
+    // 5. 제품 형태 필터 (완제품 / 포장 필요)
+    if (filterFinishType !== "all") {
+      result = result.filter((s) => (s.finish_type || "") === filterFinishType);
+    }
+
+    // 6. 헤더 정렬
     if (sortKey) {
       result = [...result].sort((a, b) =>
         compareSpecsForSort(a, b, sortKey, sortDir, stockByBarcode)
@@ -804,7 +842,7 @@ export default function ProductMasterPage() {
     }
 
     return result;
-  }, [specs, activeTab, filterCategoryLg, filterCategoryMd, searchQuery, kpiFocus, selectedIds, sortKey, sortDir, vfOnly, stockByBarcode]);
+  }, [specs, activeTab, filterCategoryLg, filterCategoryMd, searchQuery, kpiFocus, selectedIds, sortKey, sortDir, vfOnly, stockByBarcode, filterFinishType]);
 
   const handleSort = (key: SortKey) => {
     // 기본 방향: 재고·VF·사진 = 내림차순, 그 외 = 오름차순
@@ -902,7 +940,7 @@ export default function ProductMasterPage() {
   // 필터, 탭 및 검색 변경 시 페이지 리셋 (선택 유지 — 선택 품목 카드와 충돌 방지)
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, filterCategoryLg, filterCategoryMd, activeTab, kpiFocus, sortKey, sortDir]);
+  }, [searchQuery, filterCategoryLg, filterCategoryMd, filterFinishType, activeTab, kpiFocus, sortKey, sortDir]);
 
   // 탭 전환 시에만 체크 선택 초기 (선택 품목 보기 제외)
   useEffect(() => {
@@ -994,14 +1032,23 @@ export default function ProductMasterPage() {
     setFilterCategoryMd("all");
   };
 
-  // 체크박스 핸들러
+  // 헤더 체크박스 ("전체 선택")
+  // **반드시 현재 페이지(pagedSpecs)에 보이는 품목만** 선택/해제한다.
+  // 전체 filteredSpecs(773건 등)를 절대 선택하지 않는다. 한 페이지 = 최대 50개.
   const handleSelectAll = (checked: boolean) => {
+    // pagedSpecs 변수가 렌더에서 이미 계산한 "현재 페이지에 보이는 정확한 목록"이다.
+    // 이걸 그대로 사용하면 50개만 선택된다는 보장이 가장 확실하다.
+    const pageIds = pagedSpecs.map((s) => s.id);
+
     if (checked) {
-      const newSelected = new Set<number>();
-      filteredSpecs.forEach(s => newSelected.add(s.id));
-      setSelectedIds(newSelected);
+      // 헤더 체크박스 클릭 시: 이 페이지에 보이는 품목 **정확히 50개(또는 마지막 페이지 개수)** 만 선택
+      // 다른 페이지에서 선택했던 것은 모두 버리고 현재 페이지만으로 교체
+      setSelectedIds(new Set(pageIds));
     } else {
-      setSelectedIds(new Set());
+      // 현재 페이지 품목만 해제 (다른 페이지 선택 유지)
+      const newSelected = new Set(selectedIds);
+      pageIds.forEach((id) => newSelected.delete(id));
+      setSelectedIds(newSelected);
     }
   };
 
@@ -1015,10 +1062,16 @@ export default function ProductMasterPage() {
     setSelectedIds(newSelected);
   };
 
+  // 헤더 체크박스: 현재 페이지의 모든 품목이 선택되었는지
   const isAllSelected = useMemo(() => {
-    if (filteredSpecs.length === 0) return false;
-    return filteredSpecs.every(s => selectedIds.has(s.id));
-  }, [filteredSpecs, selectedIds]);
+    if (pagedSpecs.length === 0) return false;
+    return pagedSpecs.every(s => selectedIds.has(s.id));
+  }, [pagedSpecs, selectedIds]);
+
+  // 현재 페이지에 선택된 개수 (디버그/표시용)
+  const selectedOnCurrentPage = useMemo(() => {
+    return pagedSpecs.filter(s => selectedIds.has(s.id)).length;
+  }, [pagedSpecs, selectedIds]);
 
   const handleOpenDialog = async (spec: Spec | null = null) => {
     if (!spec) {
@@ -1031,12 +1084,18 @@ export default function ProductMasterPage() {
       const res = await fetch(`/api/master/specs/${spec.id}`);
       if (res.ok) {
         const full = (await res.json()) as Spec;
+        // Normalize finish_type so dialog buttons always have a concrete string value
+        if (full && (full as any).finish_type == null) (full as any).finish_type = '';
         setEditingSpec(full);
       } else {
-        setEditingSpec(spec);
+        const s = { ...spec };
+        if ((s as any).finish_type == null) (s as any).finish_type = '';
+        setEditingSpec(s);
       }
     } catch {
-      setEditingSpec(spec);
+      const s = { ...spec };
+      if ((s as any).finish_type == null) (s as any).finish_type = '';
+      setEditingSpec(s);
     }
     setIsDialogOpen(true);
   };
@@ -1052,12 +1111,13 @@ export default function ProductMasterPage() {
    * 카드 scope 와 서버 export scope 1:1 매핑.
    */
   const handleExportBulkForm = () => {
-    // 선택·카테고리·검색이 걸린 목록은 화면과 동일하게 id 목록으로 다운로드
+    // 선택·카테고리·검색·제품형태가 걸린 목록은 화면과 동일하게 id 목록으로 다운로드
     const useIds =
       kpiFocus === "selected" ||
       searchQuery.trim() !== "" ||
       filterCategoryLg !== "all" ||
-      filterCategoryMd !== "all";
+      filterCategoryMd !== "all" ||
+      filterFinishType !== "all";
 
     if (useIds) {
       if (filteredSpecs.length === 0) {
@@ -1428,7 +1488,7 @@ export default function ProductMasterPage() {
             <div className="relative w-full md:w-[280px] lg:w-[320px]">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400 z-10" />
               <Input
-                placeholder="제품명, 바코드, SKU ID 검색..."
+                placeholder="제품명, 바코드, SKU ID, 제품번호(573) 검색..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 pr-8 h-9 text-sm bg-white border-indigo-200/80 shadow-sm"
@@ -1443,6 +1503,21 @@ export default function ProductMasterPage() {
                   ✕
                 </button>
               )}
+            </div>
+
+            {/* 제품 형태 필터: 완제품 / 포장 필요 (초기화 버튼 바로 옆) */}
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-xs font-semibold text-indigo-800 whitespace-nowrap">제품 형태</span>
+              <select
+                value={filterFinishType}
+                onChange={(e) => setFilterFinishType(e.target.value)}
+                className="h-9 min-w-[110px] rounded-md border border-indigo-200/80 bg-white px-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                title="완제품 또는 포장 필요 필터"
+              >
+                <option value="all">전체</option>
+                <option value="finished">완제품</option>
+                <option value="needs_packaging">포장 필요</option>
+              </select>
             </div>
 
             <Button
@@ -1577,7 +1652,7 @@ export default function ProductMasterPage() {
         <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600 relative z-[1]">
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white border border-indigo-100">
             표시 {filteredSpecs.length.toLocaleString()}건
-            {(searchQuery || filterCategoryLg !== "all" || filterCategoryMd !== "all") && (
+            {(searchQuery || filterCategoryLg !== "all" || filterCategoryMd !== "all" || filterFinishType !== "all") && (
               <span className="text-indigo-600 font-medium">· 필터 적용 중</span>
             )}
           </span>
@@ -1608,7 +1683,7 @@ export default function ProductMasterPage() {
             {/* 검색 결과 정보 */}
             <div className="flex justify-between items-center text-sm text-muted-foreground mb-3">
               <div>
-                {searchQuery || filterCategoryLg !== "all" || filterCategoryMd !== "all" ? (
+                {searchQuery || filterCategoryLg !== "all" || filterCategoryMd !== "all" || filterFinishType !== "all" ? (
                   <span>{filteredSpecs.length.toLocaleString()}건 필터링됨 (현재 탭 {filteredSpecs.length.toLocaleString()}건)</span>
                 ) : (
                   <span>현재 탭 전체 {filteredSpecs.length.toLocaleString()}건</span>
@@ -1627,6 +1702,7 @@ export default function ProductMasterPage() {
                         type="checkbox"
                         checked={isAllSelected}
                         onChange={(e) => handleSelectAll(e.target.checked)}
+                        title="현재 페이지 전체 선택 (최대 50개)"
                         className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
                       />
                     </th>
@@ -1972,7 +2048,7 @@ export default function ProductMasterPage() {
                   {pagedSpecs.length === 0 && (
                     <tr>
                       <td colSpan={20} className="text-center py-10 text-muted-foreground">
-                        {searchQuery || filterCategoryLg !== "all" || filterCategoryMd !== "all" ? "조건에 맞는 검색 결과가 없습니다." : "등록된 제품이 없습니다."}
+                        {searchQuery || filterCategoryLg !== "all" || filterCategoryMd !== "all" || filterFinishType !== "all" ? "조건에 맞는 검색 결과가 없습니다." : "등록된 제품이 없습니다."}
                       </td>
                     </tr>
                   )}
@@ -2145,7 +2221,7 @@ export default function ProductMasterPage() {
               ))}
               {pagedSpecs.length === 0 && (
                 <div className="text-center py-10 text-muted-foreground text-sm">
-                  {searchQuery || filterCategoryLg !== "all" || filterCategoryMd !== "all" ? "조건에 맞는 검색 결과가 없습니다." : "등록된 제품이 없습니다."}
+                  {searchQuery || filterCategoryLg !== "all" || filterCategoryMd !== "all" || filterFinishType !== "all" ? "조건에 맞는 검색 결과가 없습니다." : "등록된 제품이 없습니다."}
                 </div>
               )}
             </div>
