@@ -31,6 +31,7 @@ import {
 } from "@/pages/product-display-a-data";
 import { B_PNUM_INFO, B_RANK_PLACEMENT } from "@/pages/product-display-b-data";
 import { C_PNUM_INFO, C_RANK_PLACEMENT } from "@/pages/product-display-c-data";
+import { D_PNUM_INFO, D_RANK_PLACEMENT } from "@/pages/product-display-d-data";
 
 const STORAGE_KEY = "vf_product_display_v1";
 
@@ -429,6 +430,22 @@ const C_CELLS_RAW: [number, number][] = [
   [18, 14], [18, 15], [18, 16], [18, 17], [18, 18], [18, 19], [18, 20], [18, 21],
 ];
 
+/** D동 셀 (엑셀 d동.xlsx 그대로, 2026-08-16) — 상단 8 + 중앙1 8 + 중앙2 8 + 우측1(K) 6 + 우측2(M) 6 + 하단 5 = 41 */
+const D_CELLS_RAW: [number, number][] = [
+  // D상단 (B4~I4 = 열 2~9, 행 4) = 8
+  [4, 2], [4, 3], [4, 4], [4, 5], [4, 6], [4, 7], [4, 8], [4, 9],
+  // D중앙1 (B7~I7 = 열 2~9, 행 7) = 8
+  [7, 2], [7, 3], [7, 4], [7, 5], [7, 6], [7, 7], [7, 8], [7, 9],
+  // D중앙2 (B8~I8 = 열 2~9, 행 8) = 8
+  [8, 2], [8, 3], [8, 4], [8, 5], [8, 6], [8, 7], [8, 8], [8, 9],
+  // D우측1 (K6~K11 = 열 11, 행 6~11) = 6
+  [6, 11], [7, 11], [8, 11], [9, 11], [10, 11], [11, 11],
+  // D우측2 (M6~M11 = 열 13, 행 6~11) = 6
+  [6, 13], [7, 13], [8, 13], [9, 13], [10, 13], [11, 13],
+  // D하단 (B13~F13 = 열 2~6, 행 13) = 5
+  [13, 2], [13, 3], [13, 4], [13, 5], [13, 6],
+];
+
 function buildCDongLayout(
   dong: DongKey = "C",
   slot = SLOT
@@ -487,6 +504,68 @@ function buildCDongLayout(
   return { zones, lineLabels, width, height };
 }
 
+/** D동: 엑셀 d동.xlsx 셀 위치 그대로 (2026-08-16) */
+function buildDDongLayout(
+  dong: DongKey = "D",
+  slot = SLOT
+): { zones: ZoneDef[]; lineLabels: LineLabel[]; width: number; height: number } {
+  const zones: ZoneDef[] = [];
+  const lineLabels: LineLabel[] = [];
+  const gap = 4;
+
+  const xOf = (col: number) => slot.padL + (col - 1) * (slot.w + gap);
+  const yOf = (row: number) => slot.padT + (row - 3) * (slot.h + slot.gapY);
+
+  for (const [row, col] of D_CELLS_RAW) {
+    zones.push({
+      id: `${dong}-R${row}-C${col}`,
+      num: "",
+      line: 0,
+      showNumAsProduct: false,
+      style: {
+        left: xOf(col),
+        top: yOf(row),
+        width: slot.w,
+        height: slot.h,
+      },
+    });
+  }
+
+  // 컬럼 그룹 헤더 (파일 위치 그대로)
+  lineLabels.push(
+    {
+      text: "D상단",
+      style: { left: xOf(2), top: slot.padT - 18, width: 8 * (slot.w + gap), textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
+    },
+    {
+      text: "D중앙1",
+      style: { left: xOf(2), top: yOf(7) - 18, width: 8 * (slot.w + gap), textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
+    },
+    {
+      text: "D중앙2",
+      style: { left: xOf(2), top: yOf(8) - 18, width: 8 * (slot.w + gap), textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
+    },
+    {
+      text: "D우측1",
+      style: { left: xOf(11), top: slot.padT - 18, width: slot.w, textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
+    },
+    {
+      text: "D우측2",
+      style: { left: xOf(13), top: slot.padT - 18, width: slot.w, textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
+    },
+    {
+      text: "D하단",
+      style: { left: xOf(2), top: yOf(13) - 18, width: 5 * (slot.w + gap), textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
+    }
+  );
+
+  const width = xOf(13) + slot.w + slot.padR;
+  const height = yOf(13) + slot.h + slot.padB;
+  return { zones, lineLabels, width, height };
+}
+
+const D_BUILT = buildDDongLayout("D");
+
 const C_BUILT = buildCDongLayout("C");
 
 function defaultAPlacement(): PlacementMap {
@@ -497,6 +576,10 @@ function defaultAPlacement(): PlacementMap {
   }
   // C동 배치: 와이드 서랍장 (한 칸 2품목)
   for (const [id, val] of Object.entries(C_RANK_PLACEMENT)) {
+    base[id] = val;
+  }
+  // D동 배치: (대기)
+  for (const [id, val] of Object.entries(D_RANK_PLACEMENT)) {
     base[id] = val;
   }
   return base;
@@ -530,10 +613,10 @@ const DONG_LAYOUTS: DongLayout[] = [
   {
     key: "D",
     label: "D동",
-    width: 360,
-    height: 280,
-    zones: [],
-    lineLabels: [{ text: "라인 배치 대기", style: { left: 16, top: 12, width: 160 } }],
+    width: D_BUILT.width,
+    height: D_BUILT.height,
+    zones: D_BUILT.zones,
+    lineLabels: D_BUILT.lineLabels,
   },
   {
     key: "E",
@@ -662,7 +745,7 @@ export default function ProductDisplayPage() {
     // 1) 배치된 제품 (data)
     for (const [zid, val] of Object.entries(data)) {
       for (const pn of val.split(",").map((s) => s.trim()).filter(Boolean)) {
-        const binfo = B_PNUM_INFO[pn] || C_PNUM_INFO[pn];
+        const binfo = B_PNUM_INFO[pn] || C_PNUM_INFO[pn] || D_PNUM_INFO[pn];
         const name = binfo?.name || A_ZONE_MASTER_NAME[zid] || "";
         const barcode = binfo?.barcode || A_ZONE_BARCODE[zid] || "";
         const loc = pnumToLoc(pn);
@@ -781,13 +864,13 @@ export default function ProductDisplayPage() {
     const assigned = data[zid] || "";
     const pnums = assigned ? assigned.split(",").map((s) => s.trim()).filter(Boolean) : [];
 
-    if (zid.startsWith("B-") || zid.startsWith("C-")) {
-      // B동/C동: 한 칸 다품목 → 각 품목 정보 나열
+    if (zid.startsWith("B-") || zid.startsWith("C-") || zid.startsWith("D-")) {
+      // B/C/D동: 한 칸 다품목 → 각 품목 정보 나열
       if (pnums.length === 0) {
         return parts.join("\n");
       }
       for (const pn of pnums) {
-        const info = B_PNUM_INFO[pn] || C_PNUM_INFO[pn];
+        const info = B_PNUM_INFO[pn] || C_PNUM_INFO[pn] || D_PNUM_INFO[pn];
         if (info) {
           const sub = [`${pn}: ${info.name}`];
           if (info.lg || info.md) sub.push(`분류: ${info.lg}${info.md ? " / " + info.md : ""}`);
@@ -1045,7 +1128,7 @@ export default function ProductDisplayPage() {
                           for (const [zid, val] of Object.entries(data)) {
                             const pnums = val.split(",").map((s) => s.trim()).filter(Boolean);
                             for (const pn of pnums) {
-                              const info = B_PNUM_INFO[pn] || C_PNUM_INFO[pn];
+                              const info = B_PNUM_INFO[pn] || C_PNUM_INFO[pn] || D_PNUM_INFO[pn];
                               const lg = info ? info.lg : (A_ZONE_CATEGORY_LG[zid] || "기타");
                               const md = info ? info.md : (A_ZONE_CATEGORY_MD[zid] || "");
                               const name = info ? info.name : (A_ZONE_MASTER_NAME[zid] || "");
@@ -1128,7 +1211,7 @@ export default function ProductDisplayPage() {
                       <div className="border rounded-md bg-slate-50 p-2 text-[11px] space-y-1">
                         {panelTab === "placed" && selZone && data[selZone] ? (
                           (() => {
-                            const info = B_PNUM_INFO[selPnum] || C_PNUM_INFO[selPnum];
+                            const info = B_PNUM_INFO[selPnum] || C_PNUM_INFO[selPnum] || D_PNUM_INFO[selPnum];
                             return (
                               <>
                                 <div className="font-bold text-sm text-blue-900">{selPnum}번</div>
