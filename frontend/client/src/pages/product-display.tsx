@@ -1,11 +1,10 @@
 /**
  * 제품 배치도 (A~E동)
- * - 기본 양식: 초기 렉 칸(세로 슬롯) — 폰트에 맞춘 콤팩트 테두리
- * - A동 가로 순서(우측→좌측): 1번 · 2번 · 3번 · 4번
- *   - 1번: 제품번호 1~19 (아래 1 · 위 19)
- *   - 2~4번: 동일 세로 빈 칸
- *   - 5번: 하단 가로 4칸 (1~4번 열 아래 정렬)
- * - localStorage 저장 + JSON 내보내기
+ * - 기본 양식: 세로 슬롯 콤팩트
+ * - A동 가로(좌→우): 6 · 5 · 4 · 3 · 2 · 1 (우측=1번)
+ * - 통로: 1|2, 3|4, 4|5 — **2와 3은 붙음(통로 없음)**, 5·6은 신규 예정
+ * - 배치: 통로 지그재그 1↔2, 3↔4 (data). 5·6 = 신규 예정
+ * - localStorage + JSON 내보내기
  */
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Download, RotateCcw, Save } from "lucide-react";
@@ -55,42 +54,50 @@ type DongLayout = {
 
 type PlacementMap = Record<string, string>;
 
-/** 폰트(번호 2자리)에 맞춘 콤팩트 슬롯 — 전체 윤곽 확인용 */
+/** 폰트(번호 2자리)에 맞춘 콤팩트 슬롯 */
 const SLOT = {
   w: 48,
   h: 34,
   gapY: 4,
   padL: 20,
-  padT: 36,
+  padT: 44,
   padR: 20,
-  padB: 16,
+  padB: 20,
+  /** 통로(일반) 간격 */
   lineGap: 28,
-  /** 세로 블록과 5번 가로 라인 사이 */
-  bottomLineGap: 20,
-  bottomLabelH: 18,
-  /** 1번 라인 우측 칸 순번(1~19) 표시 폭 */
+  /** 2-3 / 5-6 밀착(통로 없음) */
+  tightGap: 6,
   rowIdxW: 22,
   rowIdxGap: 6,
 };
 
-const A_VERT_LINES = 4;
-const A_SLOTS_PER_LINE = 19; // 1~4번 세로 칸 수
-const A_BOTTOM_LINE = 5;
-const A_BOTTOM_CELLS = 4; // 5번 가로 4칸
+const A_SLOTS_PER_LINE = 19;
+/** 붙어 있는 라인 쌍 (통로 없음) */
+const TIGHT_PAIRS: [number, number][] = [
+  [2, 3],
+  [5, 6],
+];
 
 type LineSpec = {
   line: number;
   count: number;
-  /** 1번 라인처럼 아래→위 번호 채움 */
-  fillNumbers: boolean;
+  /** 라인 헤더 부가 표시 */
+  badge?: string;
+  fillNumbers?: boolean;
   startNum?: number;
   bottomIsStart?: boolean;
 };
 
+function isTightPair(a: number, b: number): boolean {
+  return TIGHT_PAIRS.some(
+    ([x, y]) => (x === a && y === b) || (x === b && y === a)
+  );
+}
+
 /**
  * A동 레이아웃
- * - 가로 열 순서(왼쪽→오른쪽 시각): 4 · 3 · 2 · 1  ⇒ 우측이 1번
- * - 하단 5번: 가로 4칸 (각 세로 열 아래에 정렬)
+ * - 시각 좌→우: 6 · 5 · 4 · 3 · 2 · 1
+ * - gap: 2-3·5-6 밀착, 나머지 통로
  */
 function buildADongLayout(
   dong: DongKey = "A",
@@ -100,43 +107,55 @@ function buildADongLayout(
   const zones: ZoneDef[] = [];
   const lineLabels: LineLabel[] = [];
   const maxCount = Math.max(1, ...vertLines.map((l) => l.count));
-  const nCols = vertLines.length;
+  // 좌→우: 큰 라인 번호 먼저 (6…1)
+  const ordered = [...vertLines].sort((a, b) => b.line - a.line);
 
-  // visualCol 0 = 맨 왼쪽 = 가장 큰 line 번호(4), visualCol last = 맨 오른쪽 = line 1
-  // 입력 배열은 line 1..4 순서라고 가정 → reverse 해서 왼쪽부터 배치
-  const ordered = [...vertLines].sort((a, b) => b.line - a.line); // 4,3,2,1
-
-  const colLeftOf = (visualCol: number) =>
-    slot.padL + visualCol * (slot.w + slot.lineGap);
+  const colLefts: number[] = [];
+  let x = slot.padL;
+  ordered.forEach((lineSpec, i) => {
+    colLefts.push(x);
+    if (i < ordered.length - 1) {
+      const next = ordered[i + 1];
+      const gap = isTightPair(lineSpec.line, next.line) ? slot.tightGap : slot.lineGap;
+      x += slot.w + gap;
+    }
+  });
 
   ordered.forEach((lineSpec, visualCol) => {
-    const startNum = lineSpec.startNum ?? 1;
+    const colLeft = colLefts[visualCol];
     const bottomIsStart = lineSpec.bottomIsStart !== false;
-    const colLeft = colLeftOf(visualCol);
+    const startNum = lineSpec.startNum ?? 1;
+    const header = lineSpec.badge
+      ? `${lineSpec.line}번\n${lineSpec.badge}`
+      : `${lineSpec.line}번`;
 
     lineLabels.push({
-      text: `${lineSpec.line}번`,
+      text: header,
       style: {
-        left: colLeft,
-        top: 10,
-        width: slot.w,
+        left: colLeft - 4,
+        top: lineSpec.badge ? 2 : 10,
+        width: slot.w + 8,
         textAlign: "center",
+        whiteSpace: "pre-line",
+        lineHeight: 1.15,
+        fontSize: lineSpec.badge ? 10 : undefined,
       },
     });
 
     for (let i = 0; i < lineSpec.count; i++) {
-      const placeFromTop = bottomIsStart ? lineSpec.count - 1 - i : i;
       const numVal = lineSpec.fillNumbers
         ? bottomIsStart
           ? startNum + i
           : startNum + (lineSpec.count - 1 - i)
         : i + 1;
+      const placeFromTop = bottomIsStart ? lineSpec.count - 1 - i : i;
+      const isPlanned = Boolean(lineSpec.badge);
 
       zones.push({
         id: `${dong}-L${lineSpec.line}-${numVal}`,
-        num: lineSpec.fillNumbers ? String(numVal) : "",
+        num: isPlanned ? "예정" : lineSpec.fillNumbers ? String(numVal) : "",
         line: lineSpec.line,
-        showNumAsProduct: lineSpec.fillNumbers,
+        showNumAsProduct: Boolean(lineSpec.fillNumbers),
         style: {
           left: colLeft,
           top: slot.padT + placeFromTop * (slot.h + slot.gapY),
@@ -147,45 +166,13 @@ function buildADongLayout(
     }
   });
 
-  const vertBottom =
-    slot.padT + maxCount * slot.h + Math.max(0, maxCount - 1) * slot.gapY;
-
-  // 5번 가로 라인 라벨 + 4칸 (열 정렬: 왼쪽 4열 위치 = 세로 4·3·2·1 아래)
-  const bottomTop = vertBottom + slot.bottomLineGap + slot.bottomLabelH;
-  lineLabels.push({
-    text: `${A_BOTTOM_LINE}번`,
-    style: {
-      left: slot.padL,
-      top: vertBottom + slot.bottomLineGap - 2,
-      width: nCols * slot.w + Math.max(0, nCols - 1) * slot.lineGap,
-      textAlign: "left",
-    },
-  });
-
-  for (let c = 0; c < A_BOTTOM_CELLS; c++) {
-    const cellNum = c + 1;
-    zones.push({
-      id: `${dong}-L${A_BOTTOM_LINE}-${cellNum}`,
-      num: "",
-      line: A_BOTTOM_LINE,
-      showNumAsProduct: false,
-      style: {
-        left: colLeftOf(c),
-        top: bottomTop,
-        width: slot.w,
-        height: slot.h,
-      },
-    });
-  }
-
-  // 1번 라인(맨 오른쪽 열) 우측: 칸 순번 1~19 (아래=1 · 위=19) — 위치 확인용 A동 1-n
-  const line1VisualCol = nCols - 1; // ordered 끝 = line 1
-  const line1Left = colLeftOf(line1VisualCol);
+  // 1번 라인 우측 칸 순번 1~19
+  const line1Idx = ordered.findIndex((l) => l.line === 1);
+  const line1Left = colLefts[line1Idx] ?? slot.padL;
   const rowIdxLeft = line1Left + slot.w + slot.rowIdxGap;
-  const line1Count =
-    vertLines.find((l) => l.line === 1)?.count ?? A_SLOTS_PER_LINE;
+  const line1Count = ordered.find((l) => l.line === 1)?.count ?? A_SLOTS_PER_LINE;
   for (let cell = 1; cell <= line1Count; cell++) {
-    const placeFromTop = line1Count - cell; // cell1 = bottom
+    const placeFromTop = line1Count - cell;
     lineLabels.push({
       text: String(cell),
       style: {
@@ -201,24 +188,22 @@ function buildADongLayout(
     });
   }
 
-  const width =
-    slot.padL +
-    nCols * slot.w +
-    Math.max(0, nCols - 1) * slot.lineGap +
-    slot.rowIdxGap +
-    slot.rowIdxW +
-    slot.padR;
-  const height = bottomTop + slot.h + slot.padB;
+  const lastLeft = colLefts[colLefts.length - 1] ?? slot.padL;
+  const width = lastLeft + slot.w + slot.rowIdxGap + slot.rowIdxW + slot.padR;
+  const height =
+    slot.padT + maxCount * slot.h + Math.max(0, maxCount - 1) * slot.gapY + slot.padB;
 
   return { zones, lineLabels, width, height };
 }
 
-/** A동 1~4번 세로: 우측=1 … 좌측=4. 번호는 순위표 배정(data)으로만 표시 */
+/** 우측=1 … 좌측=6. 5·6=신규 예정. 2-3·5-6 밀착 */
 const A_LINES: LineSpec[] = [
-  { line: 1, count: A_SLOTS_PER_LINE, fillNumbers: false },
-  { line: 2, count: A_SLOTS_PER_LINE, fillNumbers: false },
-  { line: 3, count: A_SLOTS_PER_LINE, fillNumbers: false },
-  { line: 4, count: A_SLOTS_PER_LINE, fillNumbers: false },
+  { line: 1, count: A_SLOTS_PER_LINE },
+  { line: 2, count: A_SLOTS_PER_LINE },
+  { line: 3, count: A_SLOTS_PER_LINE },
+  { line: 4, count: A_SLOTS_PER_LINE },
+  { line: 5, count: A_SLOTS_PER_LINE, badge: "신규 예정" },
+  { line: 6, count: A_SLOTS_PER_LINE, badge: "신규 예정" },
 ];
 
 const A_BUILT = buildADongLayout("A", A_LINES);
@@ -279,8 +264,8 @@ function loadPlacement(): PlacementMap {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return defaults;
     // 버전 키: 순위표 배정 적용 시 강제 덮어쓰기 플래그
-    // rank-a-v6 = 통로 페어 지그재그: cell n에 L1-n→L2-n, 이어서 L3-n→L4-n
-    if (parsed.__v === "rank-a-v6" && parsed.data && typeof parsed.data === "object") {
+    // rank-a-v7 = 통로 페어 지그재그: cell n에 L1-n→L2-n, 이어서 L3-n→L4-n
+    if (parsed.__v === "rank-a-v7" && parsed.data && typeof parsed.data === "object") {
       return { ...defaults, ...parsed.data };
     }
     return defaults;
@@ -326,19 +311,19 @@ export default function ProductDisplayPage() {
   const saveData = () => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v6", data })
+      JSON.stringify({ __v: "rank-a-v7", data })
     );
     setSaveMsg("저장되었습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
   };
 
   const resetData = () => {
-    if (!window.confirm("A동을 통로 지그재그(1↔2, 3↔4) 기본 배치로 되돌릴까요?")) return;
+    if (!window.confirm("A동을 통로 지그재그(1|2, 2·3붙음, 3|4) + 5·6 신규예정 기본으로 되돌릴까요?")) return;
     const defaults = defaultAPlacement();
     setData(defaults);
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v6", data: defaults })
+      JSON.stringify({ __v: "rank-a-v7", data: defaults })
     );
     setSaveMsg("순위표 기본 배정으로 초기화했습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
@@ -372,8 +357,8 @@ export default function ProductDisplayPage() {
     <div className="space-y-4 w-full max-w-none">
       <div className="rounded-xl border bg-card p-4 shadow-sm">
         <p className="text-sm text-muted-foreground mb-3">
-          A동 · 통로 지그재그: 같은 칸 높이에서 1↔2, 3↔4 교차 적재 (1-1→2-1→1-2→2-2…).
-          예: 1-1=1, 2-1=2, 1-2=3, 2-2=601. 대분류 블록 유지. 5번 비움.
+          A동 · 통로: 1|2, 3|4 (2·3 붙음). 지그재그 1↔2·3↔4. 5·6번=신규 예정.
+          예: 1-1=1, 2-1=2, 1-2=3, 2-2=601.
         </p>
 
         <div className="flex flex-wrap gap-2 mb-4">
@@ -427,7 +412,8 @@ export default function ProductDisplayPage() {
 
             {current.zones.map((z) => {
               const assigned = Boolean(data[z.id]);
-              const display = assigned ? data[z.id] : "";
+              const planned = z.line >= 5 && !assigned;
+              const display = assigned ? data[z.id] : planned ? "예정" : "";
               const filled = Boolean(display);
               return (
                 <button
@@ -437,9 +423,11 @@ export default function ProductDisplayPage() {
                   title={`${z.id} 클릭하여 제품 배정`}
                   className={
                     "absolute flex items-center justify-center rounded border text-center px-0.5 transition-colors " +
-                    (filled
+                    (assigned
                       ? "border-blue-700 bg-blue-50"
-                      : "border-slate-500 bg-white hover:bg-sky-50 hover:border-blue-500")
+                      : planned
+                        ? "border-dashed border-amber-400 bg-amber-50/40 text-amber-700"
+                        : "border-slate-500 bg-white hover:bg-sky-50 hover:border-blue-500")
                   }
                   style={z.style}
                 >
