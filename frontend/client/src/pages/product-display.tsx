@@ -401,19 +401,23 @@ const B_BLOCKS: BlockSpec[] = [
 ];
 const B_BUILT = buildBlockLayout("B", B_BLOCKS);
 
-/** C동: 엑셀(통합 문서2) 기준 — 세로 16라인, 중앙 8칸 + 우측 8칸 블록 */
+/** C동: 엑셀(통합 문서2) 기준 — 107칸 그대로 재현 */
 const C_LINE_COUNT = 16;
+const C_RACK1_COUNT = 16; // 좌측 랙1: 1~12 + 1,1,1,1
+const C_RACK2_COUNT = 16; // 좌측 랙2: 1~16
 const C_CENTER_COLS = 8;
 const C_RIGHT_COLS = 8;
-// 라인별 배치 (중앙/우측 칸 번호). 1~10은 빈 라인
-const C_CELLS: Record<number, { center: number[]; right: number[] }> = {
-  11: { center: [], right: [1] },
-  12: { center: [1, 2, 3, 4, 5, 6, 7, 8], right: [1, 2, 3, 4, 5, 6, 7, 8] },
-  13: { center: [1, 2, 3, 4, 5, 6, 7, 8], right: [] },
-  14: { center: [2], right: [] },
-  15: { center: [1, 2, 3, 4, 5, 6, 7, 8], right: [1, 2, 3, 4, 5, 6, 7, 8] },
-  16: { center: [1, 2, 3, 4, 5, 6, 7, 8], right: [1, 2, 3, 4, 5, 6, 7, 8] },
+// 라인별 중앙/우측 배치
+const C_LINES: Record<number, { center: number[]; right: number[]; m: boolean }> = {
+  11: { center: [], right: [], m: true },
+  12: { center: [1, 2, 3, 4, 5, 6, 7, 8], right: [1, 2, 3, 4, 5, 6, 7, 8], m: true },
+  13: { center: [1, 2, 3, 4, 5, 6, 7, 8], right: [], m: false },
+  14: { center: [2], right: [], m: false },
+  15: { center: [1, 2, 3, 4, 5, 6, 7, 8], right: [1, 2, 3, 4, 5, 6, 7, 8], m: false },
+  16: { center: [1, 2, 3, 4, 5, 6, 7, 8], right: [1, 2, 3, 4, 5, 6, 7, 8], m: false },
 };
+// 하단 블록 2줄 (1~8)
+const C_BOTTOM_ROWS = 2;
 
 function buildCDongLayout(
   dong: DongKey = "C",
@@ -424,56 +428,51 @@ function buildCDongLayout(
   const gap = 4;
   const aisle = 42;
 
-  const centerLeft = slot.padL;
-  const rightLeft = centerLeft + C_CENTER_COLS * (slot.w + gap) + aisle;
+  const rack1X = 4; // 좌측 랙1 (A열)
+  const rack2X = rack1X + slot.w + 10; // 좌측 랙2 (C열)
+  const centerX = rack2X + slot.w + aisle; // 중앙 블록
+  const rightX = centerX + C_CENTER_COLS * (slot.w + gap) + aisle; // 우측 블록
+  const mX = rightX - slot.w - gap - 6; // M열 (우측 블록 바로 왼쪽)
 
   const yOf = (line: number) =>
     slot.padT + (C_LINE_COUNT - line) * (slot.h + slot.gapY);
+  const bottomY = yOf(1) + slot.h + slot.gapY + 8;
 
-  // 라인 번호 라벨 (좌측 인덱스)
-  for (let line = 1; line <= C_LINE_COUNT; line++) {
-    lineLabels.push({
-      text: String(line),
+  // ===== 좌측 랙1 (A열): 1~12 + 1,1,1,1 = 16칸 (세로) =====
+  for (let i = 0; i < C_RACK1_COUNT; i++) {
+    zones.push({
+      id: `${dong}-A${i + 1}`,
+      num: "",
+      line: 0,
+      showNumAsProduct: false,
       style: {
-        left: 2,
-        top: yOf(line) + slot.h / 2 - 6,
-        width: slot.rowIdxW - 6,
-        textAlign: "right",
-        fontSize: 10,
-        color: "#94a3b8",
+        left: rack1X,
+        top: slot.padT + i * (slot.h + slot.gapY),
+        width: slot.w,
+        height: slot.h,
       },
     });
   }
-  // 중앙/우측 블록 헤더
-  lineLabels.push(
-    {
-      text: "중앙",
+  // ===== 좌측 랙2 (C열): 1~16 = 16칸 (세로) =====
+  for (let i = 0; i < C_RACK2_COUNT; i++) {
+    zones.push({
+      id: `${dong}-B${i + 1}`,
+      num: "",
+      line: 0,
+      showNumAsProduct: false,
       style: {
-        left: centerLeft,
-        top: slot.padT - 18,
-        width: C_CENTER_COLS * (slot.w + gap),
-        textAlign: "center",
-        fontSize: 10,
-        fontWeight: 700,
-        color: "#475569",
+        left: rack2X,
+        top: slot.padT + i * (slot.h + slot.gapY),
+        width: slot.w,
+        height: slot.h,
       },
-    },
-    {
-      text: "우측",
-      style: {
-        left: rightLeft,
-        top: slot.padT - 18,
-        width: C_RIGHT_COLS * (slot.w + gap),
-        textAlign: "center",
-        fontSize: 10,
-        fontWeight: 700,
-        color: "#475569",
-      },
-    }
-  );
+    });
+  }
 
-  for (const line of Object.keys(C_CELLS).map(Number).sort((a, b) => b - a)) {
-    const cell = C_CELLS[line];
+  // ===== 중앙/우측/M 블록 =====
+  for (const line of Object.keys(C_LINES).map(Number).sort((a, b) => b - a)) {
+    const cell = C_LINES[line];
+    const y = yOf(line);
     for (const idx of cell.center) {
       zones.push({
         id: `${dong}-L${line}-C${idx}`,
@@ -481,8 +480,22 @@ function buildCDongLayout(
         line,
         showNumAsProduct: false,
         style: {
-          left: centerLeft + (idx - 1) * (slot.w + gap),
-          top: yOf(line),
+          left: centerX + (idx - 1) * (slot.w + gap),
+          top: y,
+          width: slot.w,
+          height: slot.h,
+        },
+      });
+    }
+    if (cell.m) {
+      zones.push({
+        id: `${dong}-L${line}-M`,
+        num: "",
+        line,
+        showNumAsProduct: false,
+        style: {
+          left: mX,
+          top: y,
           width: slot.w,
           height: slot.h,
         },
@@ -495,8 +508,8 @@ function buildCDongLayout(
         line,
         showNumAsProduct: false,
         style: {
-          left: rightLeft + (idx - 1) * (slot.w + gap),
-          top: yOf(line),
+          left: rightX + (idx - 1) * (slot.w + gap),
+          top: y,
           width: slot.w,
           height: slot.h,
         },
@@ -504,8 +517,50 @@ function buildCDongLayout(
     }
   }
 
-  const width = rightLeft + C_RIGHT_COLS * (slot.w + gap) + slot.padR;
-  const height = yOf(1) + slot.h + slot.padB;
+  // ===== 하단 블록: 1~8 × 2줄 =====
+  for (let r = 0; r < C_BOTTOM_ROWS; r++) {
+    for (let idx = 1; idx <= 8; idx++) {
+      zones.push({
+        id: `${dong}-BOT${r + 1}-${idx}`,
+        num: "",
+        line: 0,
+        showNumAsProduct: false,
+        style: {
+          left: centerX + (idx - 1) * (slot.w + gap),
+          top: bottomY + r * (slot.h + slot.gapY),
+          width: slot.w,
+          height: slot.h,
+        },
+      });
+    }
+  }
+
+  // 라벨
+  lineLabels.push(
+    {
+      text: "좌1",
+      style: { left: rack1X, top: slot.padT - 18, width: slot.w, textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
+    },
+    {
+      text: "좌2",
+      style: { left: rack2X, top: slot.padT - 18, width: slot.w, textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
+    },
+    {
+      text: "중앙",
+      style: { left: centerX, top: slot.padT - 18, width: C_CENTER_COLS * (slot.w + gap), textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
+    },
+    {
+      text: "우측",
+      style: { left: rightX, top: slot.padT - 18, width: C_RIGHT_COLS * (slot.w + gap), textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
+    },
+    {
+      text: "하단",
+      style: { left: centerX, top: bottomY - 18, width: 8 * (slot.w + gap), textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
+    }
+  );
+
+  const width = rightX + C_RIGHT_COLS * (slot.w + gap) + slot.padR;
+  const height = bottomY + C_BOTTOM_ROWS * (slot.h + slot.gapY) + slot.padB;
   return { zones, lineLabels, width, height };
 }
 
@@ -766,10 +821,11 @@ export default function ProductDisplayPage() {
         </div>
 
         {dong === "ALL" ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
             {DONG_LAYOUTS.map((dl) => {
-              // A/B/C동은 원본 크기, D/E동만 작게(0.3배)
-              const scale = dl.key === "D" || dl.key === "E" ? 0.3 : 1;
+              // A/B동 원본, C동 0.55배(다 보이도록), D/E동 0.3배(작게)
+              const scale =
+                dl.key === "D" || dl.key === "E" ? 0.3 : dl.key === "C" ? 0.55 : 1;
               const boxW = Math.round(dl.width * scale);
               const boxH = Math.round(dl.height * scale);
               // C동은 B동 아래(우측 열)로
