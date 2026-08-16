@@ -548,6 +548,10 @@ export default function ProductDisplayPage() {
   const [currentZone, setCurrentZone] = useState<string | null>(null);
   const [inputVal, setInputVal] = useState("");
   const [saveMsg, setSaveMsg] = useState("");
+  // 총괄 우측 패널: 배치/미배치 대분류별 목록 + 선택 상세
+  const [panelTab, setPanelTab] = useState<"placed" | "unplaced">("placed");
+  const [selPnum, setSelPnum] = useState<string | null>(null);
+  const [selZone, setSelZone] = useState<string | null>(null);
   // 출고 이력: barcode → dailyData (최근 90일)
   const [outboundMap, setOutboundMap] = useState<Record<string, { date: string; quantity: number }[]>>({});
 
@@ -815,6 +819,8 @@ export default function ProductDisplayPage() {
                         ))}
                         {dl.zones.map((z) => {
                           const assigned = Boolean(data[z.id]);
+                          const display = assigned ? data[z.id] : "";
+                          const items = display ? display.split(",").map((s) => s.trim()).filter(Boolean) : [];
                           return (
                             <button
                               key={z.id}
@@ -827,8 +833,15 @@ export default function ProductDisplayPage() {
                               style={z.style}
                             >
                               {assigned ? (
-                                <span className="font-semibold text-[10px] leading-tight tabular-nums text-blue-900">
-                                  {data[z.id]}
+                                <span
+                                  className={
+                                    "font-semibold text-[10px] leading-tight tabular-nums text-blue-900" +
+                                    (items.length > 1 ? " flex flex-col items-center text-[8px] leading-[1.15]" : "")
+                                  }
+                                >
+                                  {items.length > 1
+                                    ? items.map((it, i) => <span key={i}>{it}</span>)
+                                    : display}
                                 </span>
                               ) : null}
                             </button>
@@ -851,6 +864,148 @@ export default function ProductDisplayPage() {
                     {renderCard("B", 0.9906)}
                     {renderCard("C", 0.558)}
                     {renderCard("E", 1, 634, 140)}
+                  </div>
+                  {/* 제일 우측: 배치/미배치 대분류별 목록 + 상세 */}
+                  <div className="rounded-xl border bg-card p-3 shrink-0 w-[340px] flex flex-col gap-2">
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => { setPanelTab("placed"); setSelPnum(null); setSelZone(null); }}
+                        className={
+                          "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
+                          (panelTab === "placed" ? "bg-[#721FE5] text-white" : "bg-muted text-foreground hover:bg-muted/80")
+                        }
+                      >
+                        배치 내역
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setPanelTab("unplaced"); setSelPnum(null); setSelZone(null); }}
+                        className={
+                          "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
+                          (panelTab === "unplaced" ? "bg-[#721FE5] text-white" : "bg-muted text-foreground hover:bg-muted/80")
+                        }
+                      >
+                        미배치 내역
+                      </button>
+                    </div>
+                    {panelTab === "placed" ? (
+                      <div className="overflow-auto max-h-[560px] space-y-1 pr-1">
+                        {(() => {
+                          // 배치된 제품: data에서 zone → pnum 수집 → 대분류 그룹
+                          const groups: Record<string, { pnum: string; name: string; stock: number | null; lg: string; md: string; zone: string }[]> = {};
+                          for (const [zid, val] of Object.entries(data)) {
+                            const pnums = val.split(",").map((s) => s.trim()).filter(Boolean);
+                            for (const pn of pnums) {
+                              const info = B_PNUM_INFO[pn];
+                              const lg = info ? info.lg : (A_ZONE_CATEGORY_LG[zid] || "기타");
+                              const md = info ? info.md : (A_ZONE_CATEGORY_MD[zid] || "");
+                              const name = info ? info.name : (A_ZONE_MASTER_NAME[zid] || "");
+                              const stock = info ? info.stock : (A_ZONE_STOCK[zid] ?? null);
+                              if (!groups[lg]) groups[lg] = [];
+                              groups[lg].push({ pnum: pn, name, stock, lg, md, zone: zid });
+                            }
+                          }
+                          const keys = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
+                          return keys.map((lg) => (
+                            <div key={lg} className="border rounded-md overflow-hidden">
+                              <div className="bg-muted px-2 py-1 text-[11px] font-bold flex justify-between">
+                                <span>{lg}</span>
+                                <span className="text-muted-foreground">{groups[lg].length}품목</span>
+                              </div>
+                              <div className="max-h-40 overflow-auto">
+                                {groups[lg].map((g) => (
+                                  <button
+                                    key={`${g.zone}-${g.pnum}`}
+                                    type="button"
+                                    onClick={() => { setSelPnum(g.pnum); setSelZone(g.zone); }}
+                                    className={
+                                      "w-full text-left px-2 py-1 text-[11px] border-t first:border-t-0 hover:bg-sky-50 flex justify-between gap-1 " +
+                                      (selPnum === g.pnum && selZone === g.zone ? "bg-sky-100" : "")
+                                    }
+                                  >
+                                    <span className="font-semibold tabular-nums">{g.pnum}</span>
+                                    <span className="truncate text-muted-foreground">{g.name || "-"}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                    ) : (
+                      <div className="overflow-auto max-h-[560px] space-y-1 pr-1">
+                        {(() => {
+                          // 미배치: A_UNPLACED를 대분류 그룹
+                          const groups: Record<string, typeof A_UNPLACED> = {};
+                          for (const u of A_UNPLACED) {
+                            const lg = u.category_lg || u.cat || "기타";
+                            if (!groups[lg]) groups[lg] = [];
+                            groups[lg].push(u);
+                          }
+                          const keys = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
+                          return keys.map((lg) => (
+                            <div key={lg} className="border rounded-md overflow-hidden">
+                              <div className="bg-muted px-2 py-1 text-[11px] font-bold flex justify-between">
+                                <span>{lg}</span>
+                                <span className="text-muted-foreground">{groups[lg].length}품목</span>
+                              </div>
+                              <div className="max-h-40 overflow-auto">
+                                {groups[lg].map((u) => (
+                                  <button
+                                    key={`${u.barcode}-${u.pnum}`}
+                                    type="button"
+                                    onClick={() => { setSelPnum(u.pnum); setSelZone(u.loc); }}
+                                    className={
+                                      "w-full text-left px-2 py-1 text-[11px] border-t first:border-t-0 hover:bg-sky-50 flex justify-between gap-1 " +
+                                      (selPnum === u.pnum && selZone === u.loc ? "bg-sky-100" : "")
+                                    }
+                                  >
+                                    <span className="font-semibold tabular-nums">{u.pnum}</span>
+                                    <span className="truncate text-muted-foreground">{u.master_name || u.name}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                    )}
+                    {/* 선택 상세 */}
+                    {selPnum ? (
+                      <div className="border rounded-md bg-slate-50 p-2 text-[11px] space-y-1">
+                        {panelTab === "placed" && selZone && data[selZone] ? (
+                          (() => {
+                            const info = B_PNUM_INFO[selPnum];
+                            return (
+                              <>
+                                <div className="font-bold text-sm text-blue-900">{selPnum}번</div>
+                                <div>{info ? info.name : (A_ZONE_MASTER_NAME[selZone] || "-")}</div>
+                                <div>분류: {info ? `${info.lg}${info.md ? " / " + info.md : ""}` : (A_ZONE_CATEGORY_LG[selZone] || "-")}</div>
+                                <div>재고: {info ? (info.stock ?? "-") : (A_ZONE_STOCK[selZone] ?? "-")}</div>
+                                {info?.barcode ? (() => { const ob = calcOutbound4d(info.barcode); return ob !== null ? <div>출고 4일치: {ob}박스</div> : null; })() : null}
+                                <div className="text-muted-foreground">위치: {selZone}</div>
+                              </>
+                            );
+                          })()
+                        ) : (
+                          (() => {
+                            const u = A_UNPLACED.find((x) => x.pnum === selPnum && x.loc === selZone);
+                            if (!u) return null;
+                            return (
+                              <>
+                                <div className="font-bold text-sm text-blue-900">{u.pnum}번</div>
+                                <div>{u.master_name || u.name}</div>
+                                <div>분류: {u.category_lg || u.cat}{u.category_md ? " / " + u.category_md : ""}</div>
+                                <div>1개월 출고: {u.boxes}박스</div>
+                                <div>현재고: {u.stock ?? "-"}</div>
+                                <div className="text-muted-foreground">로케이션: {u.loc}</div>
+                              </>
+                            );
+                          })()
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 </>
               );
