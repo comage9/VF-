@@ -226,6 +226,16 @@ body.monochrome {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+/* 제품배치도 검색 위치 깜박임 (flash) */
+@keyframes vf-zone-flash {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.95); background-color: #ffedd5; }
+  50% { box-shadow: 0 0 0 7px rgba(234, 88, 12, 1); background-color: #fdba74; }
+}
+.vf-zone-flash {
+  animation: vf-zone-flash 0.45s ease-in-out 8;
+  z-index: 10;
+}
+
 /* Table hover effects */
 table tr {
   transition: background-color 0.2s ease;

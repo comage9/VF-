@@ -561,6 +561,8 @@ export default function ProductDisplayPage() {
   const [selPnum, setSelPnum] = useState<string | null>(null);
   const [selZone, setSelZone] = useState<string | null>(null);
   const [searchQ, setSearchQ] = useState("");
+  // 검색 결과로 이동한 슬롯 (깜박임 표시)
+  const [flashZone, setFlashZone] = useState<string | null>(null);
   // 출고 이력: barcode → dailyData (최근 90일)
   const [outboundMap, setOutboundMap] = useState<Record<string, { date: string; quantity: number }[]>>({});
 
@@ -685,6 +687,10 @@ export default function ProductDisplayPage() {
       setDong(h.dong);
       setSelPnum(h.pnum);
       setSelZone(h.zone);
+      // 깜박임: 먼저 제거 후 재트리거
+      setFlashZone(null);
+      requestAnimationFrame(() => setFlashZone(h.zone));
+      window.setTimeout(() => setFlashZone(null), 8000);
     } else {
       // 미배치 → 총괄 탭 + 미배치 패널 + 선택 상세
       setDong("ALL");
@@ -967,7 +973,8 @@ export default function ProductDisplayPage() {
                               title={makeTooltip(z)}
                               className={
                                 "absolute flex items-center justify-center rounded border text-center px-0.5 " +
-                                (assigned ? "border-blue-700 bg-blue-50" : "border-slate-500 bg-white")
+                                (assigned ? "border-blue-700 bg-blue-50" : "border-slate-500 bg-white") +
+                                (flashZone === z.id ? " vf-zone-flash" : "")
                               }
                               style={z.style}
                             >
@@ -1206,7 +1213,8 @@ export default function ProductDisplayPage() {
                         ? "border-orange-600 bg-orange-50"
                         : "border-blue-700 bg-blue-50"
                       : "border-slate-500 bg-white hover:bg-sky-50 hover:border-blue-500") +
-                    (selZone === z.id ? " ring-2 ring-amber-400 ring-offset-1" : "")
+                    (selZone === z.id ? " ring-2 ring-amber-400 ring-offset-1" : "") +
+                    (flashZone === z.id ? " vf-zone-flash" : "")
                   }
                   style={z.style}
                 >
