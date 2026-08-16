@@ -391,12 +391,12 @@ const A_BUILT = buildADongLayout("A", A_LINES);
 
 /** B동: 이미지 기준 블록 구성 */
 const B_BLOCKS: BlockSpec[] = [
-  { name: "B상단", x: 28, y: 60, cols: 8, rows: 1, horizontal: true },
-  { name: "B우측", x: 460, y: 60, cols: 1, rows: 5, horizontal: false },
-  { name: "B중앙1", x: 28, y: 140, cols: 6, rows: 1, horizontal: true },
-  { name: "B중앙2", x: 28, y: 200, cols: 8, rows: 1, horizontal: true },
+  { name: "B상단", x: 70, y: 60, cols: 8, rows: 1, horizontal: true },
+  { name: "B우측", x: 520, y: 60, cols: 1, rows: 5, horizontal: false },
+  { name: "B중앙1", x: 70, y: 140, cols: 6, rows: 1, horizontal: true },
+  { name: "B중앙2", x: 70, y: 200, cols: 8, rows: 1, horizontal: true },
   { name: "B좌측", x: 4, y: 60, cols: 1, rows: 4, horizontal: false },
-  { name: "B하단1", x: 28, y: 260, cols: 4, rows: 1, horizontal: true },
+  { name: "B하단1", x: 4, y: 260, cols: 4, rows: 1, horizontal: true },
   { name: "B하단2", x: 260, y: 260, cols: 7, rows: 1, horizontal: true },
 ];
 const B_BUILT = buildBlockLayout("B", B_BLOCKS);
@@ -663,53 +663,74 @@ export default function ProductDisplayPage() {
         </div>
 
         {dong === "ALL" ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {DONG_LAYOUTS.map((dl) => (
-              <div
-                key={dl.key}
-                className="rounded-xl border bg-slate-50 p-3 shrink-0 cursor-pointer"
-                style={{ maxWidth: "100%" }}
-                onClick={() => setDong(dl.key)}
-              >
-                <div className="text-sm font-bold text-slate-800 mb-2 flex items-center justify-between">
-                  <span>{dl.label}</span>
-                  <span className="text-[10px] font-normal text-muted-foreground">
-                    {dl.zones.length}칸
-                  </span>
+          <div className="flex flex-wrap gap-6 items-start">
+            {DONG_LAYOUTS.map((dl) => {
+              // A/B/C동은 원본 크기, D/E동만 작게(0.3배)
+              const scale = dl.key === "D" || dl.key === "E" ? 0.3 : 1;
+              const boxW = Math.round(dl.width * scale);
+              const boxH = Math.round(dl.height * scale);
+              return (
+                <div
+                  key={dl.key}
+                  className="rounded-xl border bg-slate-50 p-3 shrink-0 cursor-pointer"
+                  onClick={() => setDong(dl.key)}
+                >
+                  <div className="text-sm font-bold text-slate-800 mb-2 flex items-center justify-between gap-3">
+                    <span>{dl.label}</span>
+                    <span className="text-[10px] font-normal text-muted-foreground">
+                      {dl.zones.length}칸
+                    </span>
+                  </div>
+                  <div
+                    className="relative overflow-hidden"
+                    style={{ width: boxW, height: boxH }}
+                  >
+                    <div
+                      className="relative"
+                      style={{
+                        width: dl.width,
+                        height: dl.height,
+                        transform: `scale(${scale})`,
+                        transformOrigin: "top left",
+                      }}
+                    >
+                      {dl.lineLabels.map((lb, i) => (
+                        <div
+                          key={`all-ll-${dl.key}-${i}`}
+                          className="absolute pointer-events-none text-[10px] font-semibold text-slate-600"
+                          style={lb.style}
+                        >
+                          {lb.text}
+                        </div>
+                      ))}
+                      {dl.zones.map((z) => {
+                        const assigned = Boolean(data[z.id]);
+                        return (
+                          <button
+                            key={z.id}
+                            type="button"
+                            title={makeTooltip(z)}
+                            className={
+                              "absolute flex items-center justify-center rounded border text-center px-0.5 " +
+                              (assigned
+                                ? "border-blue-700 bg-blue-50"
+                                : "border-slate-500 bg-white")
+                            }
+                            style={z.style}
+                          >
+                            {assigned ? (
+                              <span className="font-semibold text-[10px] leading-tight tabular-nums text-blue-900">
+                                {data[z.id]}
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
-                <div className="relative" style={{ height: 120, overflow: "hidden" }}>
-                  {/* 미니 배치: 좌표를 0.18배 축소 */}
-                  {dl.zones.map((z) => {
-                    const assigned = Boolean(data[z.id]);
-                    return (
-                      <button
-                        key={z.id}
-                        type="button"
-                        title={makeTooltip(z)}
-                        className={
-                          "absolute flex items-center justify-center rounded-sm border " +
-                          (assigned
-                            ? "border-blue-700 bg-blue-50"
-                            : "border-slate-400 bg-white")
-                        }
-                        style={{
-                          left: (z.style.left as number) * 0.18,
-                          top: (z.style.top as number) * 0.18,
-                          width: Math.max(4, (z.style.width as number) * 0.18),
-                          height: Math.max(4, (z.style.height as number) * 0.18),
-                        }}
-                      >
-                        {assigned ? (
-                          <span className="text-[6px] font-semibold text-blue-900 leading-none">
-                            {data[z.id]}
-                          </span>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
         <div className="w-full overflow-auto pb-2" style={{ maxHeight: "calc(100vh - 240px)" }}>
