@@ -401,23 +401,28 @@ const B_BLOCKS: BlockSpec[] = [
 ];
 const B_BUILT = buildBlockLayout("B", B_BLOCKS);
 
-/** C동: 엑셀(통합 문서2) 기준 — 107칸 그대로 재현 */
-const C_LINE_COUNT = 16;
-const C_RACK1_COUNT = 16; // 좌측 랙1: 1~12 + 1,1,1,1
-const C_RACK2_COUNT = 16; // 좌측 랙2: 1~16
-const C_CENTER_COLS = 8;
-const C_RIGHT_COLS = 8;
-// 라인별 중앙/우측 배치
-const C_LINES: Record<number, { center: number[]; right: number[]; m: boolean }> = {
-  11: { center: [], right: [], m: true },
-  12: { center: [1, 2, 3, 4, 5, 6, 7, 8], right: [1, 2, 3, 4, 5, 6, 7, 8], m: true },
-  13: { center: [1, 2, 3, 4, 5, 6, 7, 8], right: [], m: false },
-  14: { center: [2], right: [], m: false },
-  15: { center: [1, 2, 3, 4, 5, 6, 7, 8], right: [1, 2, 3, 4, 5, 6, 7, 8], m: false },
-  16: { center: [1, 2, 3, 4, 5, 6, 7, 8], right: [1, 2, 3, 4, 5, 6, 7, 8], m: false },
-};
-// 하단 블록 2줄 (1~8)
-const C_BOTTOM_ROWS = 2;
+/** C동: 엑셀 "통합 문서2.xlsx" 셀 위치 그대로 재현 — (row, col) 좌표 */
+// 셀 위치: [행, 열] (엑셀 R3~R23, A~U열)
+const C_CELLS_RAW: [number, number][] = [
+  // A열 (1열): R5~R16 (12칸) + R18, R20, R21, R22 (4칸) = 16
+  [5, 1], [6, 1], [7, 1], [8, 1], [9, 1], [10, 1], [11, 1], [12, 1], [13, 1], [14, 1], [15, 1], [16, 1], [18, 1], [20, 1], [21, 1], [22, 1],
+  // C열 (3열): R3~R18 (16칸)
+  [3, 3], [4, 3], [5, 3], [6, 3], [7, 3], [8, 3], [9, 3], [10, 3], [11, 3], [12, 3], [13, 3], [14, 3], [15, 3], [16, 3], [17, 3], [18, 3],
+  // 중앙 D~K (4~11열): R14, R15, R17, R18, R21, R23 (각 8) + R16 (1) = 49
+  [14, 4], [14, 5], [14, 6], [14, 7], [14, 8], [14, 9], [14, 10], [14, 11],
+  [15, 4], [15, 5], [15, 6], [15, 7], [15, 8], [15, 9], [15, 10], [15, 11],
+  [16, 4],
+  [17, 4], [17, 5], [17, 6], [17, 7], [17, 8], [17, 9], [17, 10], [17, 11],
+  [18, 4], [18, 5], [18, 6], [18, 7], [18, 8], [18, 9], [18, 10], [18, 11],
+  [21, 4], [21, 5], [21, 6], [21, 7], [21, 8], [21, 9], [21, 10], [21, 11],
+  [23, 4], [23, 5], [23, 6], [23, 7], [23, 8], [23, 9], [23, 10], [23, 11],
+  // M열 (13열): R13, R14 (2칸)
+  [13, 13], [14, 13],
+  // 우측 N~U (14~21열): R14, R17, R18 (각 8) = 24
+  [14, 14], [14, 15], [14, 16], [14, 17], [14, 18], [14, 19], [14, 20], [14, 21],
+  [17, 14], [17, 15], [17, 16], [17, 17], [17, 18], [17, 19], [17, 20], [17, 21],
+  [18, 14], [18, 15], [18, 16], [18, 17], [18, 18], [18, 19], [18, 20], [18, 21],
+];
 
 function buildCDongLayout(
   dong: DongKey = "C",
@@ -426,141 +431,54 @@ function buildCDongLayout(
   const zones: ZoneDef[] = [];
   const lineLabels: LineLabel[] = [];
   const gap = 4;
-  const aisle = 42;
 
-  const rack1X = 4; // 좌측 랙1 (A열)
-  const rack2X = rack1X + slot.w + 10; // 좌측 랙2 (C열)
-  const centerX = rack2X + slot.w + aisle; // 중앙 블록
-  const rightX = centerX + C_CENTER_COLS * (slot.w + gap) + aisle; // 우측 블록
-  const mX = rightX - slot.w - gap - 6; // M열 (우측 블록 바로 왼쪽)
+  // 엑셀 열 → x (열 간격 일정)
+  const xOf = (col: number) => slot.padL + (col - 1) * (slot.w + gap);
+  // 엑셀 행 → y (R3가 첫 줄)
+  const yOf = (row: number) => slot.padT + (row - 3) * (slot.h + slot.gapY);
 
-  const yOf = (line: number) =>
-    slot.padT + (C_LINE_COUNT - line) * (slot.h + slot.gapY);
-  const bottomY = yOf(1) + slot.h + slot.gapY + 8;
-
-  // ===== 좌측 랙1 (A열): 1~12 + 1,1,1,1 = 16칸 (세로) =====
-  for (let i = 0; i < C_RACK1_COUNT; i++) {
+  // 셀 생성 (파일 위치 그대로)
+  for (const [row, col] of C_CELLS_RAW) {
     zones.push({
-      id: `${dong}-A${i + 1}`,
+      id: `${dong}-R${row}-C${col}`,
       num: "",
       line: 0,
       showNumAsProduct: false,
       style: {
-        left: rack1X,
-        top: slot.padT + i * (slot.h + slot.gapY),
-        width: slot.w,
-        height: slot.h,
-      },
-    });
-  }
-  // ===== 좌측 랙2 (C열): 1~16 = 16칸 (세로) =====
-  for (let i = 0; i < C_RACK2_COUNT; i++) {
-    zones.push({
-      id: `${dong}-B${i + 1}`,
-      num: "",
-      line: 0,
-      showNumAsProduct: false,
-      style: {
-        left: rack2X,
-        top: slot.padT + i * (slot.h + slot.gapY),
+        left: xOf(col),
+        top: yOf(row),
         width: slot.w,
         height: slot.h,
       },
     });
   }
 
-  // ===== 중앙/우측/M 블록 =====
-  for (const line of Object.keys(C_LINES).map(Number).sort((a, b) => b - a)) {
-    const cell = C_LINES[line];
-    const y = yOf(line);
-    for (const idx of cell.center) {
-      zones.push({
-        id: `${dong}-L${line}-C${idx}`,
-        num: "",
-        line,
-        showNumAsProduct: false,
-        style: {
-          left: centerX + (idx - 1) * (slot.w + gap),
-          top: y,
-          width: slot.w,
-          height: slot.h,
-        },
-      });
-    }
-    if (cell.m) {
-      zones.push({
-        id: `${dong}-L${line}-M`,
-        num: "",
-        line,
-        showNumAsProduct: false,
-        style: {
-          left: mX,
-          top: y,
-          width: slot.w,
-          height: slot.h,
-        },
-      });
-    }
-    for (const idx of cell.right) {
-      zones.push({
-        id: `${dong}-L${line}-R${idx}`,
-        num: "",
-        line,
-        showNumAsProduct: false,
-        style: {
-          left: rightX + (idx - 1) * (slot.w + gap),
-          top: y,
-          width: slot.w,
-          height: slot.h,
-        },
-      });
-    }
-  }
-
-  // ===== 하단 블록: 1~8 × 2줄 =====
-  for (let r = 0; r < C_BOTTOM_ROWS; r++) {
-    for (let idx = 1; idx <= 8; idx++) {
-      zones.push({
-        id: `${dong}-BOT${r + 1}-${idx}`,
-        num: "",
-        line: 0,
-        showNumAsProduct: false,
-        style: {
-          left: centerX + (idx - 1) * (slot.w + gap),
-          top: bottomY + r * (slot.h + slot.gapY),
-          width: slot.w,
-          height: slot.h,
-        },
-      });
-    }
-  }
-
-  // 라벨
+  // 컬럼 그룹 헤더 (파일 위치 그대로)
   lineLabels.push(
     {
-      text: "좌1",
-      style: { left: rack1X, top: slot.padT - 18, width: slot.w, textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
+      text: "A",
+      style: { left: xOf(1), top: slot.padT - 18, width: slot.w, textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
     },
     {
-      text: "좌2",
-      style: { left: rack2X, top: slot.padT - 18, width: slot.w, textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
+      text: "C",
+      style: { left: xOf(3), top: slot.padT - 18, width: slot.w, textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
     },
     {
       text: "중앙",
-      style: { left: centerX, top: slot.padT - 18, width: C_CENTER_COLS * (slot.w + gap), textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
+      style: { left: xOf(4), top: slot.padT - 18, width: 8 * (slot.w + gap), textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
+    },
+    {
+      text: "M",
+      style: { left: xOf(13), top: slot.padT - 18, width: slot.w, textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
     },
     {
       text: "우측",
-      style: { left: rightX, top: slot.padT - 18, width: C_RIGHT_COLS * (slot.w + gap), textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
-    },
-    {
-      text: "하단",
-      style: { left: centerX, top: bottomY - 18, width: 8 * (slot.w + gap), textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
+      style: { left: xOf(14), top: slot.padT - 18, width: 8 * (slot.w + gap), textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
     }
   );
 
-  const width = rightX + C_RIGHT_COLS * (slot.w + gap) + slot.padR;
-  const height = bottomY + C_BOTTOM_ROWS * (slot.h + slot.gapY) + slot.padB;
+  const width = xOf(21) + slot.w + slot.padR;
+  const height = yOf(23) + slot.h + slot.padB;
   return { zones, lineLabels, width, height };
 }
 
