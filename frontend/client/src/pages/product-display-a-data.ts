@@ -1,4 +1,4 @@
-/** A동: 1111.txt 첫열 로케이션(slot) 오름차순 → 빈칸 없이 L1→L5 순차 채움 (75 unique). 실배치105 스냅샷 별도 보존 */
+/** A동: 1111.txt 첫열 로케이션(slot) 오름차순 확인 후 L1→L4 빈칸 없이 순차 채움. L5는 맨 나중(현재 미사용). 실배치105 스냅샷 docs 보존 */
 export const A_RANK_PLACEMENT: Record<string, string> = {
   "A-L1-1": "1",
   "A-L1-2": "2",
@@ -81,7 +81,7 @@ export type UnplacedItem = {
   slot: number; pnum: string; boxes: number; cat: string; name: string; loc: string; barcode: string;
 };
 
-/** A 80칸 초과 시에만 (현재 75 unique → 0건 예상) */
+/** L1~L4(76) 초과분만 — 현재 고유 75 → 0 */
 export const A_UNPLACED: UnplacedItem[] = [
 ];
 

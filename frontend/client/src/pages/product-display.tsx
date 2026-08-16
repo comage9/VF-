@@ -248,8 +248,8 @@ function loadPlacement(): PlacementMap {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return defaults;
     // 버전 키: 순위표 배정 적용 시 강제 덮어쓰기 플래그
-    // rank-a-v3 = slot 오름차순 빈칸 없이 L1→L5 순차 채움
-    if (parsed.__v === "rank-a-v3" && parsed.data && typeof parsed.data === "object") {
+    // rank-a-v4 = 1111 slot ASC dense L1→L4 only; L5 reserved last (empty)
+    if (parsed.__v === "rank-a-v4" && parsed.data && typeof parsed.data === "object") {
       return { ...defaults, ...parsed.data };
     }
     return defaults;
@@ -295,19 +295,19 @@ export default function ProductDisplayPage() {
   const saveData = () => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v3", data })
+      JSON.stringify({ __v: "rank-a-v4", data })
     );
     setSaveMsg("저장되었습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
   };
 
   const resetData = () => {
-    if (!window.confirm("A동 배정을 로케이션(slot) 오름차순 순차 채움으로 되돌릴까요?")) return;
+    if (!window.confirm("A동을 1111 로케이션 순·1~4번 라인 순차 채움(5번 비움)으로 되돌릴까요?")) return;
     const defaults = defaultAPlacement();
     setData(defaults);
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v3", data: defaults })
+      JSON.stringify({ __v: "rank-a-v4", data: defaults })
     );
     setSaveMsg("순위표 기본 배정으로 초기화했습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
@@ -341,8 +341,8 @@ export default function ProductDisplayPage() {
     <div className="space-y-4 w-full max-w-none">
       <div className="rounded-xl border bg-card p-4 shadow-sm">
         <p className="text-sm text-muted-foreground mb-3">
-          A동 · 1111 첫 열 로케이션(slot) **작은 순** → 빈칸 없이 1→2→3→4→5번 순차 채움.
-          고유 75칸 배치 · 남는 칸만 빈칸. 실배치105 스냅샷은 docs 보존.
+          A동 · 1111.txt 첫 열 로케이션 확인·오름차순 → **1~4번 라인 빈칸 없이** 순차 채움.
+          **5번 라인은 맨 나중(현재 비움)**. 고유 75칸 · L4 끝 1칸+ L5만 빈칸.
         </p>
 
         <div className="flex flex-wrap gap-2 mb-4">
