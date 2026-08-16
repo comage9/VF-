@@ -68,6 +68,9 @@ const SLOT = {
   /** 세로 블록과 5번 가로 라인 사이 */
   bottomLineGap: 20,
   bottomLabelH: 18,
+  /** 1번 라인 우측 칸 순번(1~19) 표시 폭 */
+  rowIdxW: 22,
+  rowIdxGap: 6,
 };
 
 const A_VERT_LINES = 4;
@@ -175,8 +178,36 @@ function buildADongLayout(
     });
   }
 
+  // 1번 라인(맨 오른쪽 열) 우측: 칸 순번 1~19 (아래=1 · 위=19) — 위치 확인용 A동 1-n
+  const line1VisualCol = nCols - 1; // ordered 끝 = line 1
+  const line1Left = colLeftOf(line1VisualCol);
+  const rowIdxLeft = line1Left + slot.w + slot.rowIdxGap;
+  const line1Count =
+    vertLines.find((l) => l.line === 1)?.count ?? A_SLOTS_PER_LINE;
+  for (let cell = 1; cell <= line1Count; cell++) {
+    const placeFromTop = line1Count - cell; // cell1 = bottom
+    lineLabels.push({
+      text: String(cell),
+      style: {
+        left: rowIdxLeft,
+        top: slot.padT + placeFromTop * (slot.h + slot.gapY),
+        width: slot.rowIdxW,
+        height: slot.h,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-start",
+        textAlign: "left",
+      },
+    });
+  }
+
   const width =
-    slot.padL + nCols * slot.w + Math.max(0, nCols - 1) * slot.lineGap + slot.padR;
+    slot.padL +
+    nCols * slot.w +
+    Math.max(0, nCols - 1) * slot.lineGap +
+    slot.rowIdxGap +
+    slot.rowIdxW +
+    slot.padR;
   const height = bottomTop + slot.h + slot.padB;
 
   return { zones, lineLabels, width, height };
@@ -376,7 +407,12 @@ export default function ProductDisplayPage() {
             {current.lineLabels.map((lb, i) => (
               <div
                 key={`ll-${i}`}
-                className="absolute text-[11px] font-semibold text-slate-700 pointer-events-none"
+                className={
+                  "absolute pointer-events-none " +
+                  (lb.style.height
+                    ? "text-[10px] font-bold text-slate-500 leading-none"
+                    : "text-[11px] font-semibold text-slate-700")
+                }
                 style={lb.style}
               >
                 {lb.text}
