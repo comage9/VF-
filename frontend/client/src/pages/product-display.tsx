@@ -394,11 +394,12 @@ const A_BUILT = buildADongLayout("A", A_LINES);
 const B_BLOCKS: BlockSpec[] = [
   { name: "B상단", x: 70, y: 60, cols: 8, rows: 1, horizontal: true },
   { name: "B우측", x: 520, y: 60, cols: 1, rows: 5, horizontal: false },
-  { name: "B중앙1", x: 70, y: 140, cols: 6, rows: 1, horizontal: true },
+  { name: "B중앙1", x: 70, y: 140, cols: 9, rows: 1, horizontal: true },
   { name: "B중앙2", x: 70, y: 200, cols: 8, rows: 1, horizontal: true },
-  { name: "B좌측", x: 4, y: 60, cols: 1, rows: 4, horizontal: false },
+  { name: "B좌측", x: 4, y: 22, cols: 1, rows: 5, horizontal: false },
   { name: "B하단1", x: 4, y: 260, cols: 4, rows: 1, horizontal: true },
   { name: "B하단2", x: 260, y: 260, cols: 7, rows: 1, horizontal: true },
+  { name: "B통로", x: 70, y: 100, cols: 1, rows: 1, horizontal: true },
 ];
 const B_BUILT = buildBlockLayout("B", B_BLOCKS);
 
