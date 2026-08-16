@@ -401,12 +401,115 @@ const B_BLOCKS: BlockSpec[] = [
 ];
 const B_BUILT = buildBlockLayout("B", B_BLOCKS);
 
-/** C동: 이미지 기준 블록 구성 (중앙 8 + 우측 8) */
-const C_BLOCKS: BlockSpec[] = [
-  { name: "C중앙", x: 40, y: 60, cols: 8, rows: 1, horizontal: true },
-  { name: "C우측", x: 460, y: 60, cols: 8, rows: 1, horizontal: true },
-];
-const C_BUILT = buildBlockLayout("C", C_BLOCKS);
+/** C동: 엑셀(통합 문서2) 기준 — 세로 16라인, 중앙 8칸 + 우측 8칸 블록 */
+const C_LINE_COUNT = 16;
+const C_CENTER_COLS = 8;
+const C_RIGHT_COLS = 8;
+// 라인별 배치 (중앙/우측 칸 번호). 1~10은 빈 라인
+const C_CELLS: Record<number, { center: number[]; right: number[] }> = {
+  11: { center: [], right: [1] },
+  12: { center: [1, 2, 3, 4, 5, 6, 7, 8], right: [1, 2, 3, 4, 5, 6, 7, 8] },
+  13: { center: [1, 2, 3, 4, 5, 6, 7, 8], right: [] },
+  14: { center: [2], right: [] },
+  15: { center: [1, 2, 3, 4, 5, 6, 7, 8], right: [1, 2, 3, 4, 5, 6, 7, 8] },
+  16: { center: [1, 2, 3, 4, 5, 6, 7, 8], right: [1, 2, 3, 4, 5, 6, 7, 8] },
+};
+
+function buildCDongLayout(
+  dong: DongKey = "C",
+  slot = SLOT
+): { zones: ZoneDef[]; lineLabels: LineLabel[]; width: number; height: number } {
+  const zones: ZoneDef[] = [];
+  const lineLabels: LineLabel[] = [];
+  const gap = 4;
+  const aisle = 42;
+
+  const centerLeft = slot.padL;
+  const rightLeft = centerLeft + C_CENTER_COLS * (slot.w + gap) + aisle;
+
+  const yOf = (line: number) =>
+    slot.padT + (C_LINE_COUNT - line) * (slot.h + slot.gapY);
+
+  // 라인 번호 라벨 (좌측 인덱스)
+  for (let line = 1; line <= C_LINE_COUNT; line++) {
+    lineLabels.push({
+      text: String(line),
+      style: {
+        left: 2,
+        top: yOf(line) + slot.h / 2 - 6,
+        width: slot.rowIdxW - 6,
+        textAlign: "right",
+        fontSize: 10,
+        color: "#94a3b8",
+      },
+    });
+  }
+  // 중앙/우측 블록 헤더
+  lineLabels.push(
+    {
+      text: "중앙",
+      style: {
+        left: centerLeft,
+        top: slot.padT - 18,
+        width: C_CENTER_COLS * (slot.w + gap),
+        textAlign: "center",
+        fontSize: 10,
+        fontWeight: 700,
+        color: "#475569",
+      },
+    },
+    {
+      text: "우측",
+      style: {
+        left: rightLeft,
+        top: slot.padT - 18,
+        width: C_RIGHT_COLS * (slot.w + gap),
+        textAlign: "center",
+        fontSize: 10,
+        fontWeight: 700,
+        color: "#475569",
+      },
+    }
+  );
+
+  for (const line of Object.keys(C_CELLS).map(Number).sort((a, b) => b - a)) {
+    const cell = C_CELLS[line];
+    for (const idx of cell.center) {
+      zones.push({
+        id: `${dong}-L${line}-C${idx}`,
+        num: "",
+        line,
+        showNumAsProduct: false,
+        style: {
+          left: centerLeft + (idx - 1) * (slot.w + gap),
+          top: yOf(line),
+          width: slot.w,
+          height: slot.h,
+        },
+      });
+    }
+    for (const idx of cell.right) {
+      zones.push({
+        id: `${dong}-L${line}-R${idx}`,
+        num: "",
+        line,
+        showNumAsProduct: false,
+        style: {
+          left: rightLeft + (idx - 1) * (slot.w + gap),
+          top: yOf(line),
+          width: slot.w,
+          height: slot.h,
+        },
+      });
+    }
+  }
+
+  const width = rightLeft + C_RIGHT_COLS * (slot.w + gap) + slot.padR;
+  const height = yOf(1) + slot.h + slot.padB;
+  return { zones, lineLabels, width, height };
+}
+
+const C_BUILT = buildCDongLayout("C");
 
 function defaultAPlacement(): PlacementMap {
   return { ...A_RANK_PLACEMENT };
@@ -663,16 +766,18 @@ export default function ProductDisplayPage() {
         </div>
 
         {dong === "ALL" ? (
-          <div className="flex flex-wrap gap-6 items-start">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
             {DONG_LAYOUTS.map((dl) => {
               // A/B/C동은 원본 크기, D/E동만 작게(0.3배)
               const scale = dl.key === "D" || dl.key === "E" ? 0.3 : 1;
               const boxW = Math.round(dl.width * scale);
               const boxH = Math.round(dl.height * scale);
+              // C동은 B동 아래(우측 열)로
+              const colClass = dl.key === "C" ? "md:col-start-2" : "";
               return (
                 <div
                   key={dl.key}
-                  className="rounded-xl border bg-slate-50 p-3 shrink-0 cursor-pointer"
+                  className={`rounded-xl border bg-slate-50 p-3 shrink-0 cursor-pointer ${colClass}`}
                   onClick={() => setDong(dl.key)}
                 >
                   <div className="text-sm font-bold text-slate-800 mb-2 flex items-center justify-between gap-3">
