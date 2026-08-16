@@ -740,63 +740,16 @@ export default function ProductDisplayPage() {
 
         {dong === "ALL" ? (
           <div className="flex flex-wrap gap-3 items-start">
-            {/* 좌측: A동 (원본) */}
-            <div
-              key="A"
-              className="rounded-xl border bg-slate-50 p-3 shrink-0 cursor-pointer w-fit"
-              onClick={() => setDong("A")}
-            >
-              <div className="text-sm font-bold text-slate-800 mb-2 flex items-center justify-between gap-3">
-                <span>A동</span>
-                <span className="text-[10px] font-normal text-muted-foreground">
-                  {DONG_LAYOUTS[0].zones.length}칸
-                </span>
-              </div>
-              <div
-                className="relative overflow-hidden"
-                style={{ width: Math.round(DONG_LAYOUTS[0].width), height: Math.round(DONG_LAYOUTS[0].height) }}
-              >
-                <div
-                  className="relative"
-                  style={{ width: DONG_LAYOUTS[0].width, height: DONG_LAYOUTS[0].height }}
-                >
-                  {DONG_LAYOUTS[0].lineLabels.map((lb, i) => (
-                    <div key={`all-ll-A-${i}`} className="absolute pointer-events-none text-[10px] font-semibold text-slate-600" style={lb.style}>
-                      {lb.text}
-                    </div>
-                  ))}
-                  {DONG_LAYOUTS[0].zones.map((z) => {
-                    const assigned = Boolean(data[z.id]);
-                    return (
-                      <button
-                        key={z.id}
-                        type="button"
-                        title={makeTooltip(z)}
-                        className={
-                          "absolute flex items-center justify-center rounded border text-center px-0.5 " +
-                          (assigned ? "border-blue-700 bg-blue-50" : "border-slate-500 bg-white")
-                        }
-                        style={z.style}
-                      >
-                        {assigned ? (
-                          <span className="font-semibold text-[10px] leading-tight tabular-nums text-blue-900">
-                            {data[z.id]}
-                          </span>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* 우측: B동(1.2배) + C동(0.55배) 세로 붙임 */}
-            <div className="flex flex-col gap-3 w-fit">
-              {(["B", "C"] as DongKey[]).map((k) => {
+            {(() => {
+              const renderCard = (
+                k: DongKey,
+                scale: number,
+                wOverride?: number,
+                hOverride?: number
+              ) => {
                 const dl = DONG_LAYOUTS.find((r) => r.key === k)!;
-                const scale = k === "B" ? 1.2 : 0.55;
-                const boxW = Math.round(dl.width * scale);
-                const boxH = Math.round(dl.height * scale);
+                const boxW = wOverride ?? Math.round(dl.width * scale);
+                const boxH = hOverride ?? Math.round(dl.height * scale);
                 return (
                   <div
                     key={k}
@@ -852,73 +805,23 @@ export default function ProductDisplayPage() {
                     </div>
                   </div>
                 );
-              })}
-            </div>
-
-            {/* 하단: D/E 작게 */}
-            <div className="flex flex-wrap gap-3 w-full">
-              {(["D", "E"] as DongKey[]).map((k) => {
-                const dl = DONG_LAYOUTS.find((r) => r.key === k)!;
-                const scale = 0.3;
-                const boxW = Math.round(dl.width * scale);
-                const boxH = Math.round(dl.height * scale);
-                return (
-                  <div
-                    key={k}
-                    className="rounded-xl border bg-slate-50 p-3 shrink-0 cursor-pointer w-fit"
-                    onClick={() => setDong(k)}
-                  >
-                    <div className="text-sm font-bold text-slate-800 mb-2 flex items-center justify-between gap-3">
-                      <span>{dl.label}</span>
-                      <span className="text-[10px] font-normal text-muted-foreground">
-                        {dl.zones.length}칸
-                      </span>
-                    </div>
-                    <div
-                      className="relative overflow-hidden"
-                      style={{ width: boxW, height: boxH }}
-                    >
-                      <div
-                        className="relative"
-                        style={{
-                          width: dl.width,
-                          height: dl.height,
-                          transform: `scale(${scale})`,
-                          transformOrigin: "top left",
-                        }}
-                      >
-                        {dl.lineLabels.map((lb, i) => (
-                          <div key={`all-ll-${k}-${i}`} className="absolute pointer-events-none text-[10px] font-semibold text-slate-600" style={lb.style}>
-                            {lb.text}
-                          </div>
-                        ))}
-                        {dl.zones.map((z) => {
-                          const assigned = Boolean(data[z.id]);
-                          return (
-                            <button
-                              key={z.id}
-                              type="button"
-                              title={makeTooltip(z)}
-                              className={
-                                "absolute flex items-center justify-center rounded border text-center px-0.5 " +
-                                (assigned ? "border-blue-700 bg-blue-50" : "border-slate-500 bg-white")
-                              }
-                              style={z.style}
-                            >
-                              {assigned ? (
-                                <span className="font-semibold text-[10px] leading-tight tabular-nums text-blue-900">
-                                  {data[z.id]}
-                                </span>
-                              ) : null}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+              };
+              return (
+                <>
+                  {/* 좌측 컬럼: A동(원본) + D동(작게) */}
+                  <div className="flex flex-col gap-3 w-fit">
+                    {renderCard("A", 1)}
+                    {renderCard("D", 0.3)}
                   </div>
-                );
-              })}
-            </div>
+                  {/* 우측 컬럼: B동(1.058) + C동(0.596) + E동(가로 677 고정) */}
+                  <div className="flex flex-col gap-3 w-fit">
+                    {renderCard("B", 1.058)}
+                    {renderCard("C", 0.596)}
+                    {renderCard("E", 1, 677, 140)}
+                  </div>
+                </>
+              );
+            })()}
           </div>
         ) : (
         <div className="w-full overflow-auto pb-2" style={{ maxHeight: "calc(100vh - 240px)" }}>
