@@ -81,7 +81,7 @@ VF-new/
 | `/departure` | 출차 관리 | 호차·LS PDF·**KPP EDI 등록·인쇄**·봉인 |
 | `/scanner` | VF 입고 바코드 | 발주 xlsx·스캔·로케이션 저장 |
 | `/truck-freight` | 트럭 운송비 | 운임 입력·월별 통계 |
-| `/product-display` | **제품 배치도** | A~E동 · 세로 슬롯 라인 배치(A동 1번 1~19 아래1·위19) · localStorage |
+| `/product-display` | **제품 배치도** | 총괄(A~E동 미니) + 동별 상세 · A동 세로 슬롯 라인(1~19)·L7 바퀴슬림 2품목/칸 · B동/C동 블록 · 툴팁(분류+제품명+재고+출고 4일치 가중) · localStorage |
 
 **관련 백엔드 전용 화면**
 
