@@ -1,4 +1,4 @@
-/** A동 1개월 출고순위 기반 기본 배정 (1111.txt → slot 1~80 → A-L*) */
+/** A동 배치: 1111.txt 첫열 로케이션(slot) 순 → L1~L5. 기존 실배치105는 docs 스냅샷 보존 */
 export const A_RANK_PLACEMENT: Record<string, string> = {
   "A-L1-1": "1",
   "A-L1-2": "2",
@@ -62,7 +62,7 @@ export type UnplacedItem = {
   slot: number; pnum: string; boxes: number; cat: string; name: string; loc: string; barcode: string;
 };
 
-/** A동 80칸 밖(slot>=90) — 다른 동/확장 필요 */
+/** slot≥90 — A동 80칸 밖 */
 export const A_UNPLACED: UnplacedItem[] = [
   { slot: 90, pnum: "690", boxes: 388, cat: "이유 정리함", name: "보노하우스 워크박스 부품 공구 수납함 옐로우 9개 15.5 x 23.5 x 11.2 cm", loc: "320-A1-1-690", barcode: "R246905800010" },
   { slot: 91, pnum: "698", boxes: 81, cat: "이유 정리함", name: "보노하우스 워크박스 부품 공구 수납함 레드 9개 15.5 x 23.5 x 11.2 cm", loc: "320-A1-1-698", barcode: "R246905810011" },
@@ -85,7 +85,6 @@ export const A_UNPLACED: UnplacedItem[] = [
   { slot: 140, pnum: "452", boxes: 80, cat: "슬림형 서랍장", name: "보노하우스 심플리 슬림 서랍장 5단 화이트 1개", loc: "320-A1-1-452", barcode: "R011191900003" },
 ];
 
-/** 동일 슬롯 복수 SKU — 출고 많은 바코드만 칸에 표시 */
 export const A_SLOT_CONFLICTS: { slot: number; zone: string; note: string }[] = [
   { slot: 60, zone: "A-L4-3", note: "primary R006596970003(658) vs R012319330004(82)" },
   { slot: 75, zone: "A-L4-18", note: "primary R012320360003(992) vs R006596890002(183)" },

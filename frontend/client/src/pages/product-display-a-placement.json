@@ -60,815 +60,885 @@
   "meta": {
     "A-L1-1": {
       "slot": 1,
+      "line": 1,
+      "cell": 1,
       "loc": "320-A1-1-1",
+      "pnum": "1",
       "name": "모던플러스 내츄럴오크 우드상판형 5단",
       "barcode": "R003750270003",
       "boxes": 301.0,
       "cat": "모던 플러스",
-      "pnum": "1",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L1-2": {
       "slot": 2,
+      "line": 1,
+      "cell": 2,
       "loc": "320-A1-1-2",
+      "pnum": "2",
       "name": "뉴모던플러스 우드형상판 5단 화이트",
       "barcode": "R000150580042",
       "boxes": 251.0,
       "cat": "모던 플러스",
-      "pnum": "2",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L1-3": {
       "slot": 3,
+      "line": 1,
+      "cell": 3,
       "loc": "320-A1-1-3",
+      "pnum": "3",
       "name": "보노하우스 템바보드 서랍장 5단 화이트",
       "barcode": "R013022860004",
       "boxes": 160.0,
       "cat": "모던 플러스",
-      "pnum": "3",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L1-4": {
       "slot": 4,
+      "line": 1,
+      "cell": 4,
       "loc": "320-A1-1-601",
+      "pnum": "601",
       "name": "보노하우스 카밀라 템바보드 서랍장 딥 그린 5단 1개",
       "barcode": "R205947030002",
       "boxes": 126.0,
       "cat": "모던 플러스",
-      "pnum": "601",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L1-5": {
       "slot": 5,
+      "line": 1,
+      "cell": 5,
       "loc": "320-A1-1-6",
+      "pnum": "6",
       "name": "보노하우스 템바보드 서랍장 5단 모던핑크",
       "barcode": "R013022860001",
       "boxes": 66.0,
       "cat": "모던 플러스",
-      "pnum": "6",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L1-6": {
       "slot": 6,
+      "line": 1,
+      "cell": 6,
       "loc": "320-A1-1-4",
+      "pnum": "4",
       "name": "보노하우스 라탄플러스 우드상판 서랍장 모던 화이트 6단 1개 562mm",
       "barcode": "R222633100013",
       "boxes": 125.0,
       "cat": "모던 플러스",
-      "pnum": "4",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L1-7": {
       "slot": 7,
+      "line": 1,
+      "cell": 7,
       "loc": "320-A1-1-31",
+      "pnum": "31",
       "name": "보노하우스 국내제조 모던플러스 우드상판 서랍장 화이트+내추럴 오크 1개 6단 550 x 400 x 1210 mm",
       "barcode": "R243081150002",
       "boxes": 95.0,
       "cat": "모던 플러스",
-      "pnum": "31",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L1-8": {
       "slot": 8,
+      "line": 1,
+      "cell": 8,
       "loc": "320-A1-1-33",
+      "pnum": "33",
       "name": "보노하우스 국내제조 템바보드 서랍장 화이트 1개 2단 562mm",
       "barcode": "R243348770001",
       "boxes": 84.0,
       "cat": "모던 플러스",
-      "pnum": "33",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L1-9": {
       "slot": 9,
+      "line": 1,
+      "cell": 9,
       "loc": "320-A1-1-39",
+      "pnum": "39",
       "name": "보노하우스 국내제조 템바보드 서랍장 6단 화이트 1개 6단 562 x 420 x 1172 mm",
       "barcode": "R245371620001",
       "boxes": 70.0,
       "cat": "모던 플러스",
-      "pnum": "39",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L1-10": {
       "slot": 10,
+      "line": 1,
+      "cell": 10,
       "loc": "320-A1-1-603",
+      "pnum": "603",
       "name": "보노하우스 카밀라 템바보드 서랍장 딥 그린 4단 1개",
       "barcode": "R205947020001",
       "boxes": 161.0,
       "cat": "모던 플러스",
-      "pnum": "603",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L1-11": {
       "slot": 11,
+      "line": 1,
+      "cell": 11,
       "loc": "320-A1-1-7",
+      "pnum": "7",
       "name": "모던플러스 내츄럴오크 우드상판형 4단 서랍장",
       "barcode": "R007758550001",
       "boxes": 144.0,
       "cat": "모던 플러스",
-      "pnum": "7",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L1-12": {
       "slot": 12,
+      "line": 1,
+      "cell": 12,
       "loc": "320-A1-1-9",
+      "pnum": "9",
       "name": "보노하우스 템바보드 서랍장 4단 화이트",
       "barcode": "R013022780004",
       "boxes": 132.0,
       "cat": "모던 플러스",
-      "pnum": "9",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L1-13": {
       "slot": 13,
+      "line": 1,
+      "cell": 13,
       "loc": "320-A1-1-14",
+      "pnum": "14",
       "name": "보노하우스 카밀라 템바보드 서랍장 3단 화이트",
       "barcode": "R013022310004",
       "boxes": 77.0,
       "cat": "모던 플러스",
-      "pnum": "14",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L1-14": {
       "slot": 14,
+      "line": 1,
+      "cell": 14,
       "loc": "320-A1-1-12",
+      "pnum": "12",
       "name": "모던플러스 내츄럴오크 우드상판형 3단 서랍장",
       "barcode": "R007758550002",
       "boxes": 66.0,
       "cat": "모던 플러스",
-      "pnum": "12",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L1-15": {
       "slot": 15,
+      "line": 1,
+      "cell": 15,
       "loc": "320-A1-1-28",
+      "pnum": "28",
       "name": "보노하우스 모던플러스 서랍장 2단 화이트 2단 1개 550*400*432mm",
       "barcode": "R236660680001",
       "boxes": 206.0,
       "cat": "모던 플러스",
-      "pnum": "28",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L2-1": {
       "slot": 20,
+      "line": 2,
+      "cell": 1,
       "loc": "320-A1-1-202",
+      "pnum": "202",
       "name": "모던 틈새 수납장 8단 투명",
       "barcode": "R004464600001",
       "boxes": 131.0,
       "cat": "슬림서랍장",
-      "pnum": "202",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L2-2": {
       "slot": 21,
+      "line": 2,
+      "cell": 2,
       "loc": "320-A1-1-200",
+      "pnum": "200",
       "name": "모던 틈새 수납장 8단 화이트",
       "barcode": "R004464600003",
       "boxes": 89.0,
       "cat": "슬림서랍장",
-      "pnum": "200",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L2-3": {
       "slot": 22,
+      "line": 2,
+      "cell": 3,
       "loc": "320-A1-1-224",
+      "pnum": "224",
       "name": "보노하우스 우드상판 슬림 서랍장 6단 투명 1개",
       "barcode": "R012219050001",
       "boxes": 84.0,
       "cat": "슬림서랍장",
-      "pnum": "224",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L2-4": {
       "slot": 23,
+      "line": 2,
+      "cell": 4,
       "loc": "320-A1-1-212",
+      "pnum": "212",
       "name": "화이트앤컬러_슬림서랍장_화이트5단",
       "barcode": "R000240980016",
       "boxes": 71.0,
       "cat": "슬림서랍장",
-      "pnum": "212",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L2-5": {
       "slot": 24,
+      "line": 2,
+      "cell": 5,
       "loc": "320-A1-1-223",
+      "pnum": "223",
       "name": "보노하우스 우드상판 슬림 서랍장 5단 화이트 1개",
       "barcode": "R012219050004",
       "boxes": 119.0,
       "cat": "슬림서랍장",
-      "pnum": "223",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L2-6": {
       "slot": 25,
+      "line": 2,
+      "cell": 6,
       "loc": "320-A1-1-236",
+      "pnum": "236",
       "name": "보노하우스 우드상판 슬림 서랍장 4단 화이트 1개",
       "barcode": "R012219050006",
       "boxes": 76.0,
       "cat": "슬림서랍장",
-      "pnum": "236",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L2-7": {
       "slot": 26,
+      "line": 2,
+      "cell": 7,
       "loc": "320-A1-1-240",
+      "pnum": "240",
       "name": "슬림 서랍장 3단 화이트",
       "barcode": "R000695390011",
       "boxes": 105.0,
       "cat": "슬림서랍장",
-      "pnum": "240",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L2-8": {
       "slot": 27,
+      "line": 2,
+      "cell": 8,
       "loc": "320-A1-1-245",
+      "pnum": "245",
       "name": "보노하우스 우드상판 슬림 서랍장 3단 화이트 1개",
       "barcode": "R012219050008",
       "boxes": 88.0,
       "cat": "슬림서랍장",
-      "pnum": "245",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L2-9": {
       "slot": 28,
+      "line": 2,
+      "cell": 9,
       "loc": "320-A1-1-242",
+      "pnum": "242",
       "name": "슬림 서랍장 3단 투명",
       "barcode": "R000695390012",
       "boxes": 149.0,
       "cat": "슬림서랍장",
-      "pnum": "242",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L2-10": {
       "slot": 29,
+      "line": 2,
+      "cell": 10,
       "loc": "320-A1-1-252",
+      "pnum": "252",
       "name": "슬림 서랍장 2단 투명",
       "barcode": "R000695390006",
       "boxes": 134.0,
       "cat": "슬림서랍장",
-      "pnum": "252",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L2-11": {
       "slot": 30,
+      "line": 2,
+      "cell": 11,
       "loc": "320-A1-1-115",
+      "pnum": "115",
       "name": "보노하우스 모던 와이드 해피박스 그레이 2개 1세트 46L 450X400X250mm",
       "barcode": "R231382280003",
       "boxes": 68.0,
       "cat": "초대형",
-      "pnum": "115",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L3-2": {
       "slot": 40,
+      "line": 3,
+      "cell": 2,
       "loc": "320-A1-1-504",
+      "pnum": "504",
       "name": "보노하우스 맥스 서랍장 투명 2단 1개",
       "barcode": "R013797030002",
       "boxes": 206.0,
       "cat": "맥스",
-      "pnum": "504",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L3-3": {
       "slot": 41,
+      "line": 3,
+      "cell": 3,
       "loc": "320-A1-1-500",
+      "pnum": "500",
       "name": "보노하우스 맥스 화이트 서랍장 2단 1개",
       "barcode": "R014689640005",
       "boxes": 157.0,
       "cat": "맥스",
-      "pnum": "500",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L3-4": {
       "slot": 42,
+      "line": 3,
+      "cell": 4,
       "loc": "320-A1-1-508",
+      "pnum": "508",
       "name": "보노하우스 맥스 서랍장 다크투명 2단 1개",
       "barcode": "R013797030001",
       "boxes": 70.0,
       "cat": "맥스",
-      "pnum": "508",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L3-12": {
       "slot": 50,
+      "line": 3,
+      "cell": 12,
       "loc": "320-A1-1-264",
+      "pnum": "264",
       "name": "BOX_모던 해피박스 2P 블루+아이보리",
       "barcode": "R001327720021",
       "boxes": 219.0,
       "cat": "해피",
-      "pnum": "264",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L3-13": {
       "slot": 51,
+      "line": 3,
+      "cell": 13,
       "loc": "320-A1-2-39",
+      "pnum": "2039",
       "name": "02 코지 바스켓 타워 3단 브라운",
       "barcode": "R000764170002",
       "boxes": 83.0,
       "cat": "야채바구니",
-      "pnum": "2039",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L3-14": {
       "slot": 52,
+      "line": 3,
+      "cell": 14,
       "loc": "320-A1-1-261",
+      "pnum": "261",
       "name": "BOX_모던 해피박스 2P 바이올렛+아이보리",
       "barcode": "R001327720028",
       "boxes": 70.0,
       "cat": "해피",
-      "pnum": "261",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L3-15": {
       "slot": 53,
+      "line": 3,
+      "cell": 15,
       "loc": "320-A1-2-34",
+      "pnum": "2034",
       "name": "보노하우스 슬라이딩 옷정리 적층 트레이 중형 10개",
       "barcode": "R014930400001",
       "boxes": 384.0,
       "cat": "슬라이딩 스텝",
-      "pnum": "2034",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L3-16": {
       "slot": 54,
+      "line": 3,
+      "cell": 16,
       "loc": "320-A1-2-31",
+      "pnum": "2031",
       "name": "보노하우스 슬라이딩 옷정리 적층 트레이 소형 10개",
       "barcode": "R014930400006",
       "boxes": 251.0,
       "cat": "슬라이딩 스텝",
-      "pnum": "2031",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L3-17": {
       "slot": 55,
+      "line": 3,
+      "cell": 17,
       "loc": "320-A1-2-14",
+      "pnum": "2014",
       "name": "보노하우스 탑백 리빙박스 72리터 화이트 2개",
       "barcode": "R013009910001",
       "boxes": 73.0,
       "cat": "탑백 리빙박스",
-      "pnum": "2014",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L4-3": {
       "slot": 60,
+      "line": 4,
+      "cell": 3,
       "loc": "320-A1-1-150",
+      "pnum": "150",
       "name": "로코스 수납 바스켓 L 4개 화이트",
       "barcode": "R006596970003",
       "boxes": 658.0,
       "cat": "리빙박스 로코스",
-      "pnum": "150",
-      "extra_skus": 1
+      "extra": 1
     },
     "A-L4-4": {
       "slot": 61,
+      "line": 4,
+      "cell": 4,
       "loc": "320-A1-1-300",
+      "pnum": "300",
       "name": "로코스 수납 바스켓 L 3개 화이트",
       "barcode": "R006878000002",
       "boxes": 460.0,
       "cat": "리빙박스 로코스",
-      "pnum": "300",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L4-5": {
       "slot": 62,
+      "line": 4,
+      "cell": 5,
       "loc": "320-A1-1-152",
+      "pnum": "152",
       "name": "보노하우스 로코스 수납정리함 화이트 L 6개 1팩",
       "barcode": "R012319980005",
       "boxes": 316.0,
       "cat": "리빙박스 로코스",
-      "pnum": "152",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L4-6": {
       "slot": 63,
+      "line": 4,
+      "cell": 6,
       "loc": "320-A1-1-284",
+      "pnum": "284",
       "name": "보노하우스 팬트리 리빙박스  화이트 L 4개 1팩",
       "barcode": "R014052850008",
       "boxes": 259.0,
       "cat": "리빙박스 로코스",
-      "pnum": "284",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L4-7": {
       "slot": 64,
+      "line": 4,
+      "cell": 7,
       "loc": "320-A1-1-306",
+      "pnum": "306",
       "name": "보노하우스 로코스 수납 바스켓 L 라이트 화이트 8개",
       "barcode": "R012319330002",
       "boxes": 81.0,
       "cat": "리빙박스 로코스",
-      "pnum": "306",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L4-8": {
       "slot": 65,
+      "line": 4,
+      "cell": 8,
       "loc": "320-A1-1-153",
+      "pnum": "153",
       "name": "보노하우스 로코스 수납정리함 크림 L 6개 1팩",
       "barcode": "R012319980006",
       "boxes": 696.0,
       "cat": "리빙박스 로코스",
-      "pnum": "153",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L4-9": {
       "slot": 66,
+      "line": 4,
+      "cell": 9,
       "loc": "320-A1-1-301",
+      "pnum": "301",
       "name": "로코스 수납 바스켓 L 3개 크림",
       "barcode": "R006878000001",
       "boxes": 408.0,
       "cat": "리빙박스 로코스",
-      "pnum": "301",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L4-10": {
       "slot": 67,
+      "line": 4,
+      "cell": 10,
       "loc": "320-A1-1-151",
+      "pnum": "151",
       "name": "로코스 수납 바스켓 L 4개 크림",
       "barcode": "R006596970004",
       "boxes": 381.0,
       "cat": "리빙박스 로코스",
-      "pnum": "151",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L4-11": {
       "slot": 68,
+      "line": 4,
+      "cell": 11,
       "loc": "320-A1-1-285",
+      "pnum": "285",
       "name": "보노하우스 팬트리 리빙박스  크림 L 4개 1팩",
       "barcode": "R014052850009",
       "boxes": 79.0,
       "cat": "리빙박스 로코스",
-      "pnum": "285",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L4-12": {
       "slot": 69,
+      "line": 4,
+      "cell": 12,
       "loc": "320-A1-1-287",
+      "pnum": "287",
       "name": "보노하우스 국내제조 리빙박스 팬트리 정리함 반투명 4개 L",
       "barcode": "R243081130006",
       "boxes": 135.0,
       "cat": "리빙박스 로코스",
-      "pnum": "287",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L4-13": {
       "slot": 70,
+      "line": 4,
+      "cell": 13,
       "loc": "320-A1-1-164",
+      "pnum": "164",
       "name": "로코스 수납 바스켓 M 4개 화이트 화이트 1팩",
       "barcode": "R010268740001",
       "boxes": 192.0,
       "cat": "리빙박스 로코스",
-      "pnum": "164",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L4-14": {
       "slot": 71,
+      "line": 4,
+      "cell": 14,
       "loc": "320-A1-1-288",
+      "pnum": "288",
       "name": "보노하우스 팬트리 리빙박스  화이트 M 4개 1팩",
       "barcode": "R014052850005",
       "boxes": 144.0,
       "cat": "리빙박스 로코스",
-      "pnum": "288",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L4-15": {
       "slot": 72,
+      "line": 4,
+      "cell": 15,
       "loc": "320-A1-1-161",
+      "pnum": "161",
       "name": "보노하우스 로코스 수납 바스켓 M 라이트 화이트 8개",
       "barcode": "R012320360002",
       "boxes": 156.0,
       "cat": "리빙박스 로코스",
-      "pnum": "161",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L4-16": {
       "slot": 73,
+      "line": 4,
+      "cell": 16,
       "loc": "320-A1-1-161",
+      "pnum": "161",
       "name": "로코스 수납 바스켓 M 8개 화이트",
       "barcode": "R006596970006",
       "boxes": 121.0,
       "cat": "리빙박스 로코스",
-      "pnum": "161",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L4-17": {
       "slot": 74,
+      "line": 4,
+      "cell": 17,
       "loc": "320-A1-1-268",
+      "pnum": "268",
       "name": "보노하우스 로코스 수납정리함 화이트 M 6개 1팩",
       "barcode": "R012319980003",
       "boxes": 82.0,
       "cat": "리빙박스 로코스",
-      "pnum": "268",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L4-18": {
       "slot": 75,
+      "line": 4,
+      "cell": 18,
       "loc": "320-A1-1-163",
+      "pnum": "163",
       "name": "보노하우스 로코스 수납 바스켓 M 아이보리 4개",
       "barcode": "R012320360003",
       "boxes": 992.0,
       "cat": "리빙박스 로코스",
-      "pnum": "163",
-      "extra_skus": 1
+      "extra": 1
     },
     "A-L4-19": {
       "slot": 76,
+      "line": 4,
+      "cell": 19,
       "loc": "320-A1-1-162",
+      "pnum": "162",
       "name": "보노하우스 로코스 수납 바스켓 M 아이보리 8개",
       "barcode": "R012320360001",
       "boxes": 128.0,
       "cat": "리빙박스 로코스",
-      "pnum": "162",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L5-1": {
       "slot": 77,
+      "line": 5,
+      "cell": 1,
       "loc": "320-A1-1-170",
+      "pnum": "170",
       "name": "보노하우스 로코스 수납정리함 화이트 S 4개 1팩",
       "barcode": "R012319980001",
       "boxes": 204.0,
       "cat": "리빙박스 로코스",
-      "pnum": "170",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L5-2": {
       "slot": 78,
+      "line": 5,
+      "cell": 2,
       "loc": "320-A1-1-292",
+      "pnum": "292",
       "name": "보노하우스 팬트리 리빙박스  화이트 S 4개 1팩",
       "barcode": "R014052850002",
       "boxes": 153.0,
       "cat": "리빙박스 로코스",
-      "pnum": "292",
-      "extra_skus": 0
+      "extra": 0
     },
     "A-L5-3": {
       "slot": 79,
+      "line": 5,
+      "cell": 3,
       "loc": "320-A1-1-171",
+      "pnum": "171",
       "name": "Box_로코스 수납 바스켓 S 8개 화이트",
       "barcode": "R006596970005",
       "boxes": 97.0,
       "cat": "리빙박스 로코스",
-      "pnum": "171",
-      "extra_skus": 1
+      "extra": 1
     },
     "A-L5-4": {
       "slot": 80,
+      "line": 5,
+      "cell": 4,
       "loc": "320-A1-1-173",
+      "pnum": "173",
       "name": "보노하우스 로코스 수납정리함 크림 S 4개 1팩",
       "barcode": "R012319980002",
       "boxes": 153.0,
       "cat": "리빙박스 로코스",
-      "pnum": "173",
-      "extra_skus": 0
+      "extra": 0
     }
   },
   "unplaced": [
     {
       "slot": 90,
-      "rank": 6,
-      "cat": "이유 정리함",
-      "loc": "320-A1-1-690",
-      "name": "보노하우스 워크박스 부품 공구 수납함 옐로우 9개 15.5 x 23.5 x 11.2 cm",
-      "barcode": "R246905800010",
-      "boxes": 388.0,
       "pnum": "690",
-      "reason": "slot 90 out of A-dong range (1-80)"
+      "boxes": 388.0,
+      "cat": "이유 정리함",
+      "name": "보노하우스 워크박스 부품 공구 수납함 옐로우 9개 15.5 x 23.5 x 11.2 cm",
+      "loc": "320-A1-1-690",
+      "barcode": "R246905800010",
+      "reason": "slot>=90 out of A"
     },
     {
       "slot": 91,
-      "rank": 61,
-      "cat": "이유 정리함",
-      "loc": "320-A1-1-698",
-      "name": "보노하우스 워크박스 부품 공구 수납함 레드 9개 15.5 x 23.5 x 11.2 cm",
-      "barcode": "R246905810011",
-      "boxes": 81.0,
       "pnum": "698",
-      "reason": "slot 91 out of A-dong range (1-80)"
+      "boxes": 81.0,
+      "cat": "이유 정리함",
+      "name": "보노하우스 워크박스 부품 공구 수납함 레드 9개 15.5 x 23.5 x 11.2 cm",
+      "loc": "320-A1-1-698",
+      "barcode": "R246905810011",
+      "reason": "slot>=90 out of A"
     },
     {
       "slot": 92,
-      "rank": 79,
-      "cat": "이유 정리함",
-      "loc": "320-A1-1-699",
-      "name": "보노하우스 워크박스 부품 공구 수납함 블루 9개 15.5 x 23.5 x 11.2 cm",
-      "barcode": "R246905820012",
-      "boxes": 66.0,
       "pnum": "699",
-      "reason": "slot 92 out of A-dong range (1-80)"
+      "boxes": 66.0,
+      "cat": "이유 정리함",
+      "name": "보노하우스 워크박스 부품 공구 수납함 블루 9개 15.5 x 23.5 x 11.2 cm",
+      "loc": "320-A1-1-699",
+      "barcode": "R246905820012",
+      "reason": "slot>=90 out of A"
     },
     {
       "slot": 93,
-      "rank": 14,
-      "cat": "이유 정리함",
-      "loc": "320-A1-1-692",
-      "name": "보노하우스 워크박스 부품 공구 수납함 블루 2개 15.5 x 23.5 x 11.2 cm",
-      "barcode": "R246905730003",
-      "boxes": 246.0,
       "pnum": "692",
-      "reason": "slot 93 out of A-dong range (1-80)"
+      "boxes": 246.0,
+      "cat": "이유 정리함",
+      "name": "보노하우스 워크박스 부품 공구 수납함 블루 2개 15.5 x 23.5 x 11.2 cm",
+      "loc": "320-A1-1-692",
+      "barcode": "R246905730003",
+      "reason": "slot>=90 out of A"
     },
     {
       "slot": 94,
-      "rank": 16,
-      "cat": "이유 정리함",
-      "loc": "320-A1-1-691",
-      "name": "보노하우스 워크박스 부품 공구 수납함 레드 2개 15.5 x 23.5 x 11.2 cm",
-      "barcode": "R246905720002",
-      "boxes": 221.0,
       "pnum": "691",
-      "reason": "slot 94 out of A-dong range (1-80)"
+      "boxes": 221.0,
+      "cat": "이유 정리함",
+      "name": "보노하우스 워크박스 부품 공구 수납함 레드 2개 15.5 x 23.5 x 11.2 cm",
+      "loc": "320-A1-1-691",
+      "barcode": "R246905720002",
+      "reason": "slot>=90 out of A"
     },
     {
       "slot": 95,
-      "rank": 31,
-      "cat": "이유 정리함",
-      "loc": "320-A1-2-146",
-      "name": "보노하우스 이유 적층형 다용도 정리함 화이트 6개 15.5 X 23.5 X 11.2cm",
-      "barcode": "R226361720002",
-      "boxes": 148.0,
       "pnum": "2146",
-      "reason": "slot 95 out of A-dong range (1-80)"
+      "boxes": 148.0,
+      "cat": "이유 정리함",
+      "name": "보노하우스 이유 적층형 다용도 정리함 화이트 6개 15.5 X 23.5 X 11.2cm",
+      "loc": "320-A1-2-146",
+      "barcode": "R226361720002",
+      "reason": "slot>=90 out of A"
     },
     {
       "slot": 96,
-      "rank": 34,
-      "cat": "이유 정리함",
-      "loc": "320-A1-1-695",
-      "name": "보노하우스 워크박스 부품 공구 수납함 옐로우 6개 15.5 x 23.5 x 11.2 cm",
-      "barcode": "R246905770007",
-      "boxes": 139.0,
       "pnum": "695",
-      "reason": "slot 96 out of A-dong range (1-80)"
+      "boxes": 139.0,
+      "cat": "이유 정리함",
+      "name": "보노하우스 워크박스 부품 공구 수납함 옐로우 6개 15.5 x 23.5 x 11.2 cm",
+      "loc": "320-A1-1-695",
+      "barcode": "R246905770007",
+      "reason": "slot>=90 out of A"
     },
     {
       "slot": 100,
-      "rank": 15,
-      "cat": "트레이",
-      "loc": "320-A1-1-177",
-      "name": "옷정리 트레이 30개",
-      "barcode": "R004514090001",
-      "boxes": 230.0,
       "pnum": "177",
-      "reason": "slot 100 out of A-dong range (1-80)"
+      "boxes": 230.0,
+      "cat": "트레이",
+      "name": "옷정리 트레이 30개",
+      "loc": "320-A1-1-177",
+      "barcode": "R004514090001",
+      "reason": "slot>=90 out of A"
     },
     {
       "slot": 101,
-      "rank": 51,
-      "cat": "트레이",
-      "loc": "320-A1-1-176",
-      "name": "보노하우스 슬라이딩 옷정리 적층 트레이 티셔츠 트레이 20개",
-      "barcode": "R014930400004",
-      "boxes": 96.0,
       "pnum": "176",
-      "reason": "slot 101 out of A-dong range (1-80)"
+      "boxes": 96.0,
+      "cat": "트레이",
+      "name": "보노하우스 슬라이딩 옷정리 적층 트레이 티셔츠 트레이 20개",
+      "loc": "320-A1-1-176",
+      "barcode": "R014930400004",
+      "reason": "slot>=90 out of A"
     },
     {
       "slot": 102,
-      "rank": 80,
-      "cat": "트레이",
-      "loc": "320-A1-1-175",
-      "name": "셔츠트레이 10개",
-      "barcode": "R003071410001",
-      "boxes": 65.0,
       "pnum": "175",
-      "reason": "slot 102 out of A-dong range (1-80)"
+      "boxes": 65.0,
+      "cat": "트레이",
+      "name": "셔츠트레이 10개",
+      "loc": "320-A1-1-175",
+      "barcode": "R003071410001",
+      "reason": "slot>=90 out of A"
     },
     {
       "slot": 104,
-      "rank": 74,
-      "cat": "핸들러 바스켓",
-      "loc": "320-A1-1-280",
-      "name": "보노하우스 리빙 그립 바스켓  L 화이트 4개",
-      "barcode": "R012426740006",
-      "boxes": 69.0,
       "pnum": "280",
-      "reason": "slot 104 out of A-dong range (1-80)"
+      "boxes": 69.0,
+      "cat": "핸들러 바스켓",
+      "name": "보노하우스 리빙 그립 바스켓  L 화이트 4개",
+      "loc": "320-A1-1-280",
+      "barcode": "R012426740006",
+      "reason": "slot>=90 out of A"
     },
     {
       "slot": 105,
-      "rank": 76,
-      "cat": "핸들러 바스켓",
-      "loc": "320-A1-1-281",
-      "name": "보노하우스 리빙 그립 바스켓  L 크림 4개",
-      "barcode": "R012426740005",
-      "boxes": 68.0,
       "pnum": "281",
-      "reason": "slot 105 out of A-dong range (1-80)"
+      "boxes": 68.0,
+      "cat": "핸들러 바스켓",
+      "name": "보노하우스 리빙 그립 바스켓  L 크림 4개",
+      "loc": "320-A1-1-281",
+      "barcode": "R012426740005",
+      "reason": "slot>=90 out of A"
     },
     {
       "slot": 110,
-      "rank": 27,
-      "cat": "옷걸이",
-      "loc": "320-A1-1-184",
-      "name": "보노하우스 어반 어깨뿔 방지 옷걸이 화이트 30개 화이트 30개 1팩",
-      "barcode": "R010417210001",
-      "boxes": 156.0,
       "pnum": "184",
-      "reason": "slot 110 out of A-dong range (1-80)"
+      "boxes": 156.0,
+      "cat": "옷걸이",
+      "name": "보노하우스 어반 어깨뿔 방지 옷걸이 화이트 30개 화이트 30개 1팩",
+      "loc": "320-A1-1-184",
+      "barcode": "R010417210001",
+      "reason": "slot>=90 out of A"
     },
     {
       "slot": 111,
-      "rank": 73,
-      "cat": "옷걸이",
-      "loc": "320-A1-1-180",
-      "name": "보노하우스 어반 어깨뿔 방지 옷걸이 크림 30개",
-      "barcode": "R013338780001",
-      "boxes": 70.0,
       "pnum": "180",
-      "reason": "slot 111 out of A-dong range (1-80)"
+      "boxes": 70.0,
+      "cat": "옷걸이",
+      "name": "보노하우스 어반 어깨뿔 방지 옷걸이 크림 30개",
+      "loc": "320-A1-1-180",
+      "barcode": "R013338780001",
+      "reason": "slot>=90 out of A"
     },
     {
       "slot": 120,
-      "rank": 36,
-      "cat": "북 트롤리",
-      "loc": "320-A1-2-115",
-      "name": "보노하우스 모던 북 트롤리 수납 정리함 화이트 5단 1개",
-      "barcode": "R016128090006",
-      "boxes": 134.0,
       "pnum": "2115",
-      "reason": "slot 120 out of A-dong range (1-80)"
+      "boxes": 134.0,
+      "cat": "북 트롤리",
+      "name": "보노하우스 모던 북 트롤리 수납 정리함 화이트 5단 1개",
+      "loc": "320-A1-2-115",
+      "barcode": "R016128090006",
+      "reason": "slot>=90 out of A"
     },
     {
       "slot": 121,
-      "rank": 46,
-      "cat": "북 트롤리",
-      "loc": "320-A1-2-80",
-      "name": "보노하우스 틈새 수납 슬림 트롤리  화이트 2단 1개",
-      "barcode": "R204398150002",
-      "boxes": 116.0,
       "pnum": "2080",
-      "reason": "slot 121 out of A-dong range (1-80)"
+      "boxes": 116.0,
+      "cat": "북 트롤리",
+      "name": "보노하우스 틈새 수납 슬림 트롤리  화이트 2단 1개",
+      "loc": "320-A1-2-80",
+      "barcode": "R204398150002",
+      "reason": "slot>=90 out of A"
     },
     {
       "slot": 130,
-      "rank": 49,
-      "cat": "데크 타일",
-      "loc": "320-A1-2-70",
-      "name": "보노하우스 조립식 데크타일 크림 9장",
-      "barcode": "R015202640001",
-      "boxes": 99.0,
       "pnum": "2070",
-      "reason": "slot 130 out of A-dong range (1-80)"
+      "boxes": 99.0,
+      "cat": "데크 타일",
+      "name": "보노하우스 조립식 데크타일 크림 9장",
+      "loc": "320-A1-2-70",
+      "barcode": "R015202640001",
+      "reason": "slot>=90 out of A"
     },
     {
       "slot": 131,
-      "rank": 43,
-      "cat": "데크 타일",
-      "loc": "320-A1-2-75",
-      "name": "보노하우스 조립식 데크타일 크림 18장",
-      "barcode": "R015202640011",
-      "boxes": 122.0,
       "pnum": "2075",
-      "reason": "slot 131 out of A-dong range (1-80)"
+      "boxes": 122.0,
+      "cat": "데크 타일",
+      "name": "보노하우스 조립식 데크타일 크림 18장",
+      "loc": "320-A1-2-75",
+      "barcode": "R015202640011",
+      "reason": "slot>=90 out of A"
     },
     {
       "slot": 140,
-      "rank": 62,
-      "cat": "슬림형 서랍장",
-      "loc": "320-A1-1-452",
-      "name": "보노하우스 심플리 슬림 서랍장 5단 화이트 1개",
-      "barcode": "R011191900003",
-      "boxes": 80.0,
       "pnum": "452",
-      "reason": "slot 140 out of A-dong range (1-80)"
+      "boxes": 80.0,
+      "cat": "슬림형 서랍장",
+      "name": "보노하우스 심플리 슬림 서랍장 5단 화이트 1개",
+      "loc": "320-A1-1-452",
+      "barcode": "R011191900003",
+      "reason": "slot>=90 out of A"
     }
   ],
   "conflicts": [
     {
       "slot": 60,
       "zone": "A-L4-3",
-      "primary_barcode": "R006596970003",
-      "primary_boxes": 658.0,
-      "other_barcodes": [
-        "R012319330004"
-      ],
-      "other_boxes": [
-        82.0
-      ],
       "pnum": "150"
     },
     {
       "slot": 75,
       "zone": "A-L4-18",
-      "primary_barcode": "R012320360003",
-      "primary_boxes": 992.0,
-      "other_barcodes": [
-        "R006596890002"
-      ],
-      "other_boxes": [
-        183.0
-      ],
       "pnum": "163"
     },
     {
       "slot": 79,
       "zone": "A-L5-3",
-      "primary_barcode": "R006596970005",
-      "primary_boxes": 97.0,
-      "other_barcodes": [
-        "R012318560002"
-      ],
-      "other_boxes": [
-        75.0
-      ],
       "pnum": "171"
     }
-  ]
+  ],
+  "rule": "1111.txt first col slot → A L1-5 in order; physical 105 kept in docs snapshot"
 }

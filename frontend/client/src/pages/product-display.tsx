@@ -248,10 +248,10 @@ function loadPlacement(): PlacementMap {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return defaults;
     // 버전 키: 순위표 배정 적용 시 강제 덮어쓰기 플래그
-    if (parsed.__v === "rank-a-v1" && parsed.data && typeof parsed.data === "object") {
+    // rank-a-v2 = 1111.txt 첫열 slot 순 L1~5 배치. 구버전은 기본값으로 교체.
+    if (parsed.__v === "rank-a-v2" && parsed.data && typeof parsed.data === "object") {
       return { ...defaults, ...parsed.data };
     }
-    // 구버전 localStorage면 순위표 기본으로 교체 (수동 저장 후엔 __v 붙음)
     return defaults;
   } catch {
     return defaults;
@@ -295,19 +295,19 @@ export default function ProductDisplayPage() {
   const saveData = () => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v1", data })
+      JSON.stringify({ __v: "rank-a-v2", data })
     );
     setSaveMsg("저장되었습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
   };
 
   const resetData = () => {
-    if (!window.confirm("A동 배정을 1개월 출고순위 기본값으로 되돌릴까요?")) return;
+    if (!window.confirm("A동 배정을 1111 로케이션(slot) 순 기본값으로 되돌릴까요?")) return;
     const defaults = defaultAPlacement();
     setData(defaults);
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v1", data: defaults })
+      JSON.stringify({ __v: "rank-a-v2", data: defaults })
     );
     setSaveMsg("순위표 기본 배정으로 초기화했습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
@@ -341,8 +341,8 @@ export default function ProductDisplayPage() {
     <div className="space-y-4 w-full max-w-none">
       <div className="rounded-xl border bg-card p-4 shadow-sm">
         <p className="text-sm text-muted-foreground mb-3">
-          A동 · 1개월 출고순위 표 기준 1차 배치 (slot 1~80 → 세로1~4+하단5). 우측=1번.
-          칸 값=제품번호. 미배치(slot≥90)는 아래 목록.
+          A동 · 1111.txt 첫 열 로케이션(slot) 순 → 1~5번 라인 (우측=1). 칸=제품번호.
+          기존 실배치105는 docs 스냅샷 보존. 미배치(slot≥90)는 아래 목록.
         </p>
 
         <div className="flex flex-wrap gap-2 mb-4">
