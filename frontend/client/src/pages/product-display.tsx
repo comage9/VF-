@@ -31,6 +31,7 @@ import {
   A_ZONE_STOCK,
 } from "@/pages/product-display-a-data";
 import { B_PNUM_INFO, B_RANK_PLACEMENT } from "@/pages/product-display-b-data";
+import { C_PNUM_INFO, C_RANK_PLACEMENT } from "@/pages/product-display-c-data";
 
 const STORAGE_KEY = "vf_product_display_v1";
 
@@ -491,8 +492,12 @@ const C_BUILT = buildCDongLayout("C");
 
 function defaultAPlacement(): PlacementMap {
   const base: PlacementMap = { ...A_RANK_PLACEMENT };
-  // B동 배치: 옷걸이/슬림형 서랍장/핸들러 바스켓 (한 칸 3품목)
+  // B동 배치: 옷걸이/바지걸이/핸들러/로코스/슬림웨건/리빙카트 (한 칸 3품목)
   for (const [id, val] of Object.entries(B_RANK_PLACEMENT)) {
+    base[id] = val;
+  }
+  // C동 배치: 와이드 서랍장 (한 칸 2품목)
+  for (const [id, val] of Object.entries(C_RANK_PLACEMENT)) {
     base[id] = val;
   }
   return base;
@@ -656,7 +661,7 @@ export default function ProductDisplayPage() {
     // 1) 배치된 제품 (data)
     for (const [zid, val] of Object.entries(data)) {
       for (const pn of val.split(",").map((s) => s.trim()).filter(Boolean)) {
-        const binfo = B_PNUM_INFO[pn];
+        const binfo = B_PNUM_INFO[pn] || C_PNUM_INFO[pn];
         const name = binfo?.name || A_ZONE_MASTER_NAME[zid] || "";
         const barcode = binfo?.barcode || A_ZONE_BARCODE[zid] || "";
         const loc = pnumToLoc(pn);
@@ -771,13 +776,13 @@ export default function ProductDisplayPage() {
     const assigned = data[zid] || "";
     const pnums = assigned ? assigned.split(",").map((s) => s.trim()).filter(Boolean) : [];
 
-    if (zid.startsWith("B-")) {
-      // B동: 한 칸 3품목 → 각 품목 정보 나열
+    if (zid.startsWith("B-") || zid.startsWith("C-")) {
+      // B동/C동: 한 칸 다품목 → 각 품목 정보 나열
       if (pnums.length === 0) {
         return parts.join("\n");
       }
       for (const pn of pnums) {
-        const info = B_PNUM_INFO[pn];
+        const info = B_PNUM_INFO[pn] || C_PNUM_INFO[pn];
         if (info) {
           const sub = [`${pn}: ${info.name}`];
           if (info.lg || info.md) sub.push(`분류: ${info.lg}${info.md ? " / " + info.md : ""}`);
@@ -1032,7 +1037,7 @@ export default function ProductDisplayPage() {
                           for (const [zid, val] of Object.entries(data)) {
                             const pnums = val.split(",").map((s) => s.trim()).filter(Boolean);
                             for (const pn of pnums) {
-                              const info = B_PNUM_INFO[pn];
+                              const info = B_PNUM_INFO[pn] || C_PNUM_INFO[pn];
                               const lg = info ? info.lg : (A_ZONE_CATEGORY_LG[zid] || "기타");
                               const md = info ? info.md : (A_ZONE_CATEGORY_MD[zid] || "");
                               const name = info ? info.name : (A_ZONE_MASTER_NAME[zid] || "");
@@ -1115,7 +1120,7 @@ export default function ProductDisplayPage() {
                       <div className="border rounded-md bg-slate-50 p-2 text-[11px] space-y-1">
                         {panelTab === "placed" && selZone && data[selZone] ? (
                           (() => {
-                            const info = B_PNUM_INFO[selPnum];
+                            const info = B_PNUM_INFO[selPnum] || C_PNUM_INFO[selPnum];
                             return (
                               <>
                                 <div className="font-bold text-sm text-blue-900">{selPnum}번</div>
