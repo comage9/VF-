@@ -63,9 +63,7 @@ const SLOT = {
   padT: 44,
   padR: 20,
   padB: 20,
-  /** 통로(일반) 간격 */
   lineGap: 28,
-  /** 2-3 / 4-5 밀착(통로 없음) */
   tightGap: 6,
   rowIdxW: 22,
   rowIdxGap: 6,
@@ -74,10 +72,9 @@ const SLOT = {
 };
 
 const A_SLOTS_PER_LINE = 19;
-/** 하단 가로 라인 zone line id (A-LB-n) */
 const A_BOTTOM_LINE_ID = 0;
 const A_BOTTOM_CELLS = 4;
-/** 붙어 있는 라인 쌍 (통로 없음) */
+/** 밀착(통로 없음): 2-3, 4-5 */
 const TIGHT_PAIRS: [number, number][] = [
   [2, 3],
   [4, 5],
@@ -102,7 +99,7 @@ function isTightPair(a: number, b: number): boolean {
  * A동 레이아웃
  * - 시각 좌→우: 6 · 5 · 4 · 3 · 2 · 1
  * - 밀착: 2-3 · 4-5 / 통로: 1|2 · 3|4 · 5|6
- * - 하단 가로 4칸: 세로 1~4번 열 아래
+ * - 하단 가로 4칸: 6·5·4·3번 열 아래 (왼쪽)
  */
 function buildADongLayout(
   dong: DongKey = "A",
@@ -112,7 +109,7 @@ function buildADongLayout(
   const zones: ZoneDef[] = [];
   const lineLabels: LineLabel[] = [];
   const maxCount = Math.max(1, ...vertLines.map((l) => l.count));
-  const ordered = [...vertLines].sort((a, b) => b.line - a.line); // 6…1
+  const ordered = [...vertLines].sort((a, b) => b.line - a.line);
 
   const colLefts: number[] = [];
   let x = slot.padL;
@@ -130,8 +127,8 @@ function buildADongLayout(
     return idx >= 0 ? colLefts[idx] : slot.padL;
   };
 
-  ordered.forEach((lineSpec, visualCol) => {
-    const colLeft = colLefts[visualCol];
+  ordered.forEach((lineSpec) => {
+    const colLeft = lineLeftOf(lineSpec.line);
     const bottomIsStart = lineSpec.bottomIsStart !== false;
     const startNum = lineSpec.startNum ?? 1;
     const header = lineSpec.badge
@@ -175,7 +172,6 @@ function buildADongLayout(
     }
   });
 
-  // 1번 라인 우측 칸 순번 1~19
   const line1Count = ordered.find((l) => l.line === 1)?.count ?? A_SLOTS_PER_LINE;
   const rowIdxLeft = lineLeftOf(1) + slot.w + slot.rowIdxGap;
   for (let cell = 1; cell <= line1Count; cell++) {
@@ -195,13 +191,12 @@ function buildADongLayout(
     });
   }
 
-  // 하단 가로 4칸 — 세로 1~4번 열 아래 (좌→우: 4·3·2·1 아래)
   const vertBottom =
     slot.padT + maxCount * slot.h + Math.max(0, maxCount - 1) * slot.gapY;
   const bottomTop = vertBottom + slot.bottomLineGap + slot.bottomLabelH;
-  const bottomLineNos = [4, 3, 2, 1];
-  const bottomLeft = lineLeftOf(4);
-  const bottomRight = lineLeftOf(1) + slot.w;
+  const bottomLineNos = [6, 5, 4, 3];
+  const bottomLeft = lineLeftOf(6);
+  const bottomRight = lineLeftOf(3) + slot.w;
   lineLabels.push({
     text: "하단",
     style: {
@@ -233,7 +228,6 @@ function buildADongLayout(
   return { zones, lineLabels, width, height };
 }
 
-/** 우측=1 … 좌측=6. 5·6=신규 예정. 밀착=2-3·4-5, 통로=1|2·3|4·5|6 */
 const A_LINES: LineSpec[] = [
   { line: 1, count: A_SLOTS_PER_LINE },
   { line: 2, count: A_SLOTS_PER_LINE },
@@ -301,8 +295,8 @@ function loadPlacement(): PlacementMap {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return defaults;
     // 버전 키: 순위표 배정 적용 시 강제 덮어쓰기 플래그
-    // rank-a-v8 = 통로 페어 지그재그: cell n에 L1-n→L2-n, 이어서 L3-n→L4-n
-    if (parsed.__v === "rank-a-v8" && parsed.data && typeof parsed.data === "object") {
+    // rank-a-v9 = 통로 페어 지그재그: cell n에 L1-n→L2-n, 이어서 L3-n→L4-n
+    if (parsed.__v === "rank-a-v9" && parsed.data && typeof parsed.data === "object") {
       return { ...defaults, ...parsed.data };
     }
     return defaults;
@@ -348,7 +342,7 @@ export default function ProductDisplayPage() {
   const saveData = () => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v8", data })
+      JSON.stringify({ __v: "rank-a-v9", data })
     );
     setSaveMsg("저장되었습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
@@ -360,7 +354,7 @@ export default function ProductDisplayPage() {
     setData(defaults);
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v8", data: defaults })
+      JSON.stringify({ __v: "rank-a-v9", data: defaults })
     );
     setSaveMsg("순위표 기본 배정으로 초기화했습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
@@ -395,7 +389,7 @@ export default function ProductDisplayPage() {
       <div className="rounded-xl border bg-card p-4 shadow-sm">
         <p className="text-sm text-muted-foreground mb-3">
           A동 · 통로 1|2·3|4·5|6 / 밀착 2·3·4·5. 지그재그 1↔2·3↔4. 5·6=신규 예정.
-          하단 가로 4칸(1~4번 열 아래). 예: 1-1=1, 2-1=2, 1-2=3, 2-2=601.
+          하단 가로 4칸(6·5·4·3번 열 아래). 예: 1-1=1, 2-1=2, 1-2=3, 2-2=601.
         </p>
 
         <div className="flex flex-wrap gap-2 mb-4">
