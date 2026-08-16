@@ -30,6 +30,7 @@ import {
   A_ZONE_CATEGORY_MD,
   A_ZONE_STOCK,
 } from "@/pages/product-display-a-data";
+import { B_PNUM_INFO, B_RANK_PLACEMENT } from "@/pages/product-display-b-data";
 
 const STORAGE_KEY = "vf_product_display_v1";
 
@@ -486,15 +487,10 @@ const C_BUILT = buildCDongLayout("C");
 
 function defaultAPlacement(): PlacementMap {
   const base: PlacementMap = { ...A_RANK_PLACEMENT };
-  // B동 하단 순번: B하단1(4칸) → B하단2(7칸) 순으로 b-1 ~ b-11
-  const bBottom: string[] = [
-    "B-B하단1-1", "B-B하단1-2", "B-B하단1-3", "B-B하단1-4",
-    "B-B하단2-1", "B-B하단2-2", "B-B하단2-3", "B-B하단2-4",
-    "B-B하단2-5", "B-B하단2-6", "B-B하단2-7",
-  ];
-  bBottom.forEach((id, i) => {
-    base[id] = `b-${i + 1}`;
-  });
+  // B동 배치: 옷걸이/슬림형 서랍장/핸들러 바스켓 (한 칸 3품목)
+  for (const [id, val] of Object.entries(B_RANK_PLACEMENT)) {
+    base[id] = val;
+  }
   return base;
 }
 
@@ -670,17 +666,44 @@ export default function ProductDisplayPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modalOpen, inputVal, currentZone]);
 
-  // 툴팁 생성: 분류(대분류/중분류) + 제품명 + 현재고
+  // 툴팁 생성: A동=zone 기반(분류+제품명+현재고+출고), B동=pnum 기반(3품목 모두 표시)
   const makeTooltip = (z: ZoneDef): string => {
     const zid = z.id;
     const isL7 = z.line === 7;
+    const posName = zid.replace(/^(A-L|B-)/, "");
+    const parts: string[] = [posName];
+
+    const assigned = data[zid] || "";
+    const pnums = assigned ? assigned.split(",").map((s) => s.trim()).filter(Boolean) : [];
+
+    if (zid.startsWith("B-")) {
+      // B동: 한 칸 3품목 → 각 품목 정보 나열
+      if (pnums.length === 0) {
+        return parts.join("\n");
+      }
+      for (const pn of pnums) {
+        const info = B_PNUM_INFO[pn];
+        if (info) {
+          const sub = [`${pn}: ${info.name}`];
+          if (info.lg || info.md) sub.push(`분류: ${info.lg}${info.md ? " / " + info.md : ""}`);
+          if (info.stock !== null && info.stock !== undefined) sub.push(`재고: ${info.stock}`);
+          if (info.barcode) {
+            const ob4d = calcOutbound4d(info.barcode);
+            if (ob4d !== null) sub.push(`출고 4일치: ${ob4d}박스`);
+          }
+          parts.push(sub.join("\n"));
+        } else {
+          parts.push(`${pn}: (정보 없음)`);
+        }
+      }
+      return parts.join("\n\n");
+    }
+
+    // A동: 기존 zone 기반
     const masterName = A_ZONE_MASTER_NAME[zid] || "";
     const catLg = A_ZONE_CATEGORY_LG[zid] || "";
     const catMd = A_ZONE_CATEGORY_MD[zid] || "";
     const stock = A_ZONE_STOCK[zid];
-    // 위치 번호: A-L7-1-2 → 7-1-2, A-L20-1 → 20-1
-    const posName = zid.replace(/^A-L/, "");
-    const parts: string[] = [posName];
     if (catLg || catMd) {
       parts.push(`분류: ${catLg}${catMd ? " / " + catMd : ""}`);
     }
@@ -869,6 +892,7 @@ export default function ProductDisplayPage() {
               const assigned = Boolean(data[z.id]);
               const isL7 = z.line === 7;
               const display = assigned ? data[z.id] : "";
+              const items = display ? display.split(",").map((s) => s.trim()).filter(Boolean) : [];
               return (
                 <button
                   key={z.id}
@@ -889,10 +913,13 @@ export default function ProductDisplayPage() {
                     <span
                       className={
                         "font-semibold text-[10px] leading-tight tabular-nums " +
-                        (isL7 ? "text-orange-900" : "text-blue-900")
+                        (isL7 ? "text-orange-900" : "text-blue-900") +
+                        (items.length > 1 ? " flex flex-col items-center text-[8px] leading-[1.15]" : "")
                       }
                     >
-                      {display}
+                      {items.length > 1
+                        ? items.map((it, i) => <span key={i}>{it}</span>)
+                        : display}
                     </span>
                   ) : (
                     <span className="text-[9px] text-slate-300 leading-none">·</span>
