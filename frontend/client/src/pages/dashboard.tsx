@@ -14,6 +14,8 @@ import { ErrorBoundary } from "@/components/error-boundary";
 
 /** 트럭 운송비 — lazy 로드 (해당 페이지 오류가 전체 대시보드를 깨지 않도록) */
 const TruckFreightPage = lazy(() => import("@/pages/truck-freight"));
+/** 제품 배치도 — A~E형 렉 진열 */
+const ProductDisplayPage = lazy(() => import("@/pages/product-display"));
 
 interface PageMeta {
   key: string;
@@ -87,6 +89,13 @@ const NAV_ITEMS: SidebarItem[] = [
     icon: "fa-truck-loading",
     description: "트럭 운송비 내역 조회, 입력 및 월별/계산서 종류별 통계를 확인합니다.",
   },
+  {
+    key: "product-display",
+    path: "/product-display",
+    label: "제품 배치도",
+    icon: "fa-th-large",
+    description: "A~E형 렉 도면에 제품 번호/이름을 배정하고 저장합니다.",
+  },
 ];
 
 const PAGE_META: Record<string, PageMeta> = {
@@ -138,6 +147,11 @@ const PAGE_META: Record<string, PageMeta> = {
     title: "트럭 운송비 관리",
     description: "운송비 내역 조회, 입력 및 월별/계산서 종류별 통계",
   },
+  "product-display": {
+    key: "product-display",
+    title: "제품 배치도",
+    description: "A~E동 배치도에 제품을 배정하고 진열 현황을 관리합니다.",
+  },
 };
 
 function normalizePath(location: string | undefined): string {
@@ -176,6 +190,8 @@ function resolveActiveKey(pathname: string): string {
       return "scanner";
     case "/truck-freight":
       return "truck-freight";
+    case "/product-display":
+      return "product-display";
     default:
       return "unknown";
   }
@@ -287,6 +303,18 @@ export default function Dashboard() {
             }
           >
             <TruckFreightPage />
+          </Suspense>
+        );
+      case "/product-display":
+        return (
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center p-12 text-muted-foreground text-sm">
+                제품 배치도 로딩…
+              </div>
+            }
+          >
+            <ProductDisplayPage />
           </Suspense>
         );
       default:
