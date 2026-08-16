@@ -813,11 +813,11 @@ export default function ProductDisplayPage() {
                     {renderCard("A", 1)}
                     {renderCard("D", 0.3)}
                   </div>
-                  {/* 우측 컬럼: B동(1.058) + C동(0.596) + E동(가로 677 고정) */}
+                  {/* 우측 컬럼: B동(0.9906) + C동(0.558) — 가로 634 통일, 하단=A동 하단 */}
                   <div className="flex flex-col gap-3 w-fit">
-                    {renderCard("B", 1.058)}
-                    {renderCard("C", 0.596)}
-                    {renderCard("E", 1, 677, 140)}
+                    {renderCard("B", 0.9906)}
+                    {renderCard("C", 0.558)}
+                    {renderCard("E", 1, 634, 140)}
                   </div>
                 </>
               );
