@@ -7,7 +7,7 @@
  * - 호버 툴팁: 분류(대분류/중분류) + 상세 제품명 + 현재고
  */
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
-import { Download, RotateCcw, Save } from "lucide-react";
+import { Download, RotateCcw, Save, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -553,6 +553,7 @@ export default function ProductDisplayPage() {
   const [panelTab, setPanelTab] = useState<"placed" | "unplaced">("placed");
   const [selPnum, setSelPnum] = useState<string | null>(null);
   const [selZone, setSelZone] = useState<string | null>(null);
+  const [searchQ, setSearchQ] = useState("");
   // 출고 이력: barcode → dailyData (최근 90일)
   const [outboundMap, setOutboundMap] = useState<Record<string, { date: string; quantity: number }[]>>({});
 
@@ -599,6 +600,92 @@ export default function ProductDisplayPage() {
     const weighted = (avg90 + avg30 * 1.3) / 2;
     const fourDay = Math.round(weighted * 4);
     return fourDay >= 0 ? String(fourDay) : null;
+  };
+
+  // 제품번호 → 로케이션 문자열 (A동 규칙: 320-A1-1-N / 2XXX → 320-A1-2-XX)
+  const pnumToLoc = (pn: string): string => {
+    const n = parseInt(pn, 10);
+    if (Number.isNaN(n)) return "";
+    if (n >= 2000) return `320-A1-2-${String(n).slice(1)}`;
+    return `320-A1-1-${n}`;
+  };
+
+  // 전체 배치된 제품번호 집합 (A동 순위 + B동 + 사용자 배정) — 통합 기준
+  const placedPnums = useMemo(() => {
+    const s = new Set<string>();
+    for (const [, val] of Object.entries(data)) {
+      for (const pn of val.split(",").map((x) => x.trim()).filter(Boolean)) {
+        s.add(pn);
+      }
+    }
+    return s;
+  }, [data]);
+
+  // 통합 미배치: A_UNPLACED에서 어떤 동에든 배치된 제품 제외
+  const unplaced = useMemo(
+    () => A_UNPLACED.filter((u) => !placedPnums.has(u.pnum)),
+    [placedPnums]
+  );
+
+  // 검색: 제품명 / 로케이션 / 제품번호 / 바코드
+  const searchResults = useMemo(() => {
+    const q = searchQ.trim().toLowerCase();
+    if (!q) return [];
+    type Hit = {
+      pnum: string;
+      name: string;
+      loc: string;
+      zone: string | null;
+      dong: DongKey | null;
+      placed: boolean;
+    };
+    const hits: Hit[] = [];
+    const seen = new Set<string>();
+    const hitOf = (h: Hit) => {
+      const key = `${h.placed ? "P" : "U"}-${h.pnum}-${h.zone ?? h.loc}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      hits.push(h);
+    };
+    const match = (text: string | undefined) =>
+      text ? text.toLowerCase().includes(q) : false;
+
+    // 1) 배치된 제품 (data)
+    for (const [zid, val] of Object.entries(data)) {
+      for (const pn of val.split(",").map((s) => s.trim()).filter(Boolean)) {
+        const binfo = B_PNUM_INFO[pn];
+        const name = binfo?.name || A_ZONE_MASTER_NAME[zid] || "";
+        const barcode = binfo?.barcode || A_ZONE_BARCODE[zid] || "";
+        const loc = pnumToLoc(pn);
+        const dong: DongKey = zid.startsWith("B-") ? "B" : zid.startsWith("C-") ? "C" : "A";
+        if (match(pn) || match(name) || match(loc) || match(zid) || match(barcode)) {
+          hitOf({ pnum: pn, name, loc: loc || zid, zone: zid, dong, placed: true });
+        }
+      }
+    }
+    // 2) 미배치 제품 (통합 미배치)
+    for (const u of unplaced) {
+      const name = u.master_name || u.name || "";
+      if (match(u.pnum) || match(name) || match(u.loc) || match(u.barcode)) {
+        hitOf({ pnum: u.pnum, name, loc: u.loc, zone: null, dong: null, placed: false });
+      }
+    }
+    return hits.slice(0, 40);
+  }, [searchQ, data, unplaced]);
+
+  const gotoSearchHit = (h: (typeof searchResults)[number]) => {
+    if (h.placed && h.zone && h.dong) {
+      setDong(h.dong);
+      setSelPnum(h.pnum);
+      setSelZone(h.zone);
+    } else {
+      // 미배치 → 총괄 탭 + 미배치 패널 + 선택 상세
+      setDong("ALL");
+      setPanelTab("unplaced");
+      setSelPnum(h.pnum);
+      setSelZone(h.loc);
+    }
+    setSearchQ("");
   };
 
   const current = useMemo(
@@ -741,9 +828,53 @@ export default function ProductDisplayPage() {
         <p className="text-base font-bold text-slate-800 mb-3">
           배치 {A_PLACED_COUNT} / {A_TOTAL_PRODUCTS}
           <span className="text-sm font-normal text-muted-foreground ml-2">
-            미배치 {A_UNPLACED.length}
+            미배치 {unplaced.length}
           </span>
         </p>
+
+        {/* 제품 위치 검색: 제품명 / 로케이션 / 제품번호 / 바코드 */}
+        <div className="relative mb-3">
+          <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none" />
+          <Input
+            value={searchQ}
+            onChange={(e) => setSearchQ(e.target.value)}
+            placeholder="제품명 · 로케이션(320-A1-1-111) · 제품번호 · 바코드 검색"
+            className="pl-8"
+          />
+          {searchQ.trim() && (
+            <div className="absolute z-20 mt-1 w-full max-h-80 overflow-auto rounded-md border bg-white shadow-lg">
+              {searchResults.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-muted-foreground">검색 결과 없음</div>
+              ) : (
+                searchResults.map((h, i) => (
+                  <button
+                    key={`${h.placed ? "P" : "U"}-${h.pnum}-${h.zone ?? h.loc}-${i}`}
+                    type="button"
+                    onClick={() => gotoSearchHit(h)}
+                    className="w-full text-left px-3 py-1.5 text-[11px] border-b last:border-b-0 hover:bg-sky-50 flex items-center justify-between gap-2"
+                  >
+                    <span className="flex flex-col min-w-0">
+                      <span className="font-semibold tabular-nums">{h.pnum} · {h.name || "-"}</span>
+                      <span className="text-[10px] text-muted-foreground truncate">
+                        {h.placed ? `위치 ${h.dong}동 ${h.zone}` : `미배치 · 로케이션 ${h.loc}`}
+                      </span>
+                    </span>
+                    <span
+                      className={
+                        "shrink-0 text-[10px] px-1.5 py-0.5 rounded " +
+                        (h.placed
+                          ? "bg-blue-100 text-blue-800"
+                          : "bg-amber-100 text-amber-800")
+                      }
+                    >
+                      {h.placed ? "배치" : "미배치"}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
 
         <div className="flex flex-wrap gap-2 mb-4">
           <button
@@ -937,15 +1068,19 @@ export default function ProductDisplayPage() {
                     ) : (
                       <div className="overflow-auto max-h-[560px] space-y-1 pr-1">
                         {(() => {
-                          // 미배치: A_UNPLACED를 대분류 그룹
-                          const groups: Record<string, typeof A_UNPLACED> = {};
-                          for (const u of A_UNPLACED) {
+                          // 미배치: 통합 기준 — A_UNPLACED에서 A/B동+사용자 배정 제외 후 대분류 그룹
+                          const groups: Record<string, typeof unplaced> = {};
+                          for (const u of unplaced) {
                             const lg = u.category_lg || u.cat || "기타";
                             if (!groups[lg]) groups[lg] = [];
                             groups[lg].push(u);
                           }
                           const keys = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
-                          return keys.map((lg) => (
+                          return keys.length === 0 ? (
+                            <div className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-3 text-center">
+                              미배치 제품이 없습니다 🎉
+                            </div>
+                          ) : keys.map((lg) => (
                             <div key={lg} className="border rounded-md overflow-hidden">
                               <div className="bg-muted px-2 py-1 text-[11px] font-bold flex justify-between">
                                 <span>{lg}</span>
@@ -991,7 +1126,7 @@ export default function ProductDisplayPage() {
                           })()
                         ) : (
                           (() => {
-                            const u = A_UNPLACED.find((x) => x.pnum === selPnum && x.loc === selZone);
+                            const u = unplaced.find((x) => x.pnum === selPnum && x.loc === selZone);
                             if (!u) return null;
                             return (
                               <>
@@ -1061,7 +1196,8 @@ export default function ProductDisplayPage() {
                       ? isL7
                         ? "border-orange-600 bg-orange-50"
                         : "border-blue-700 bg-blue-50"
-                      : "border-slate-500 bg-white hover:bg-sky-50 hover:border-blue-500")
+                      : "border-slate-500 bg-white hover:bg-sky-50 hover:border-blue-500") +
+                    (selZone === z.id ? " ring-2 ring-amber-400 ring-offset-1" : "")
                   }
                   style={z.style}
                 >
@@ -1109,7 +1245,7 @@ export default function ProductDisplayPage() {
       {dong === "A" ? (
         <div className="rounded-xl border bg-card p-4 shadow-sm space-y-3">
           <h3 className="text-sm font-semibold">
-            미배치 ({A_UNPLACED.length}건) — 순위·분류 · B/C동 참고
+            미배치 ({unplaced.length}건) — 순위·분류 · A/B동 배치 제외
           </h3>
           <div className="overflow-auto max-h-80 border rounded-md">
             <table className="w-full text-xs">
@@ -1125,7 +1261,7 @@ export default function ProductDisplayPage() {
                 </tr>
               </thead>
               <tbody>
-                {A_UNPLACED.map((u) => (
+                {unplaced.map((u) => (
                   <tr key={`${u.rank}-${u.barcode}-${u.pnum}`} className="border-t">
                     <td className="p-2 tabular-nums">{u.rank}</td>
                     <td className="p-2 font-semibold tabular-nums">{u.pnum}</td>
