@@ -390,16 +390,19 @@ const A_LINES: LineSpec[] = [
 
 const A_BUILT = buildADongLayout("A", A_LINES);
 
-/** B동: 이미지 기준 블록 구성 */
+/** B동: 엑셀 b동.xlsx 도면 그대로 (2026-08-16) */
+// 도면: B좌측=왼쪽 세로(B상단 옆~B하단 위), B중앙1-9=B우측 옆 통로, B통로 없음
 const B_BLOCKS: BlockSpec[] = [
   { name: "B상단", x: 70, y: 60, cols: 8, rows: 1, horizontal: true },
   { name: "B우측", x: 520, y: 60, cols: 1, rows: 5, horizontal: false },
-  { name: "B중앙1", x: 70, y: 140, cols: 9, rows: 1, horizontal: true },
+  { name: "B중앙1", x: 70, y: 140, cols: 8, rows: 1, horizontal: true },
+  // B-B중앙1-9: B우측 옆 통로 중앙 (도면 N8)
+  { name: "B중앙1", x: 477, y: 98, cols: 1, rows: 1, horizontal: true, startIdx: 9 },
   { name: "B중앙2", x: 70, y: 200, cols: 8, rows: 1, horizontal: true },
-  { name: "B좌측", x: 4, y: 22, cols: 1, rows: 5, horizontal: false },
-  { name: "B하단1", x: 4, y: 260, cols: 4, rows: 1, horizontal: true },
-  { name: "B하단2", x: 260, y: 260, cols: 7, rows: 1, horizontal: true },
-  { name: "B통로", x: 70, y: 100, cols: 1, rows: 1, horizontal: true },
+  // B좌측: 왼쪽 세로 7칸 (B상단 옆 y:60에서 시작)
+  { name: "B좌측", x: 4, y: 60, cols: 1, rows: 7, horizontal: false },
+  { name: "B하단1", x: 4, y: 340, cols: 4, rows: 1, horizontal: true },
+  { name: "B하단2", x: 260, y: 340, cols: 7, rows: 1, horizontal: true },
 ];
 const B_BUILT = buildBlockLayout("B", B_BLOCKS);
 
@@ -410,9 +413,9 @@ const C_CELLS_RAW: [number, number][] = [
   [5, 1], [6, 1], [7, 1], [8, 1], [9, 1], [10, 1], [11, 1], [12, 1], [13, 1], [14, 1], [15, 1], [16, 1], [18, 1], [20, 1], [21, 1], [22, 1],
   // C열 (3열): R3~R18 (16칸)
   [3, 3], [4, 3], [5, 3], [6, 3], [7, 3], [8, 3], [9, 3], [10, 3], [11, 3], [12, 3], [13, 3], [14, 3], [15, 3], [16, 3], [17, 3], [18, 3],
-  // 중앙 D~K (4~11열): R14, R15, R17, R18, R21, R23 (각 8) + R16 (1) = 49
+  // 중앙 D~K (4~11열): R14, R15, R17, R18, R21, R23 + R16 (1) — R15-C5~C11 삭제됨 (2026-08-16)
   [14, 4], [14, 5], [14, 6], [14, 7], [14, 8], [14, 9], [14, 10], [14, 11],
-  [15, 4], [15, 5], [15, 6], [15, 7], [15, 8], [15, 9], [15, 10], [15, 11],
+  [15, 4],
   [16, 4],
   [17, 4], [17, 5], [17, 6], [17, 7], [17, 8], [17, 9], [17, 10], [17, 11],
   [18, 4], [18, 5], [18, 6], [18, 7], [18, 8], [18, 9], [18, 10], [18, 11],
