@@ -1,9 +1,10 @@
 /**
  * 제품 배치도 (A~E동)
  * - 기본 양식: 초기 렉 칸(세로 슬롯) — 폰트에 맞춘 콤팩트 테두리
- * - A동: 1~4번 라인 전체 윤곽 (같은 세로 길이)
- *   - 1번: 제품번호 1~19 (아래 1 · 위 19) 배정 표시
- *   - 2~4번: 동일 높이 빈 칸 (품목은 추후 입력)
+ * - A동 가로 순서(우측→좌측): 1번 · 2번 · 3번 · 4번
+ *   - 1번: 제품번호 1~19 (아래 1 · 위 19)
+ *   - 2~4번: 동일 세로 빈 칸
+ *   - 5번: 하단 가로 4칸 (1~4번 열 아래 정렬)
  * - localStorage 저장 + JSON 내보내기
  */
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
@@ -59,10 +60,15 @@ const SLOT = {
   padR: 20,
   padB: 16,
   lineGap: 28,
+  /** 세로 블록과 5번 가로 라인 사이 */
+  bottomLineGap: 20,
+  bottomLabelH: 18,
 };
 
-const A_LINE_COUNT = 4;
-const A_SLOTS_PER_LINE = 19; // 1번 라인 기준 세로 길이
+const A_VERT_LINES = 4;
+const A_SLOTS_PER_LINE = 19; // 1~4번 세로 칸 수
+const A_BOTTOM_LINE = 5;
+const A_BOTTOM_CELLS = 4; // 5번 가로 4칸
 
 type LineSpec = {
   line: number;
@@ -73,19 +79,32 @@ type LineSpec = {
   bottomIsStart?: boolean;
 };
 
-function buildVerticalLineZones(
-  dong: DongKey,
-  lines: LineSpec[],
+/**
+ * A동 레이아웃
+ * - 가로 열 순서(왼쪽→오른쪽 시각): 4 · 3 · 2 · 1  ⇒ 우측이 1번
+ * - 하단 5번: 가로 4칸 (각 세로 열 아래에 정렬)
+ */
+function buildADongLayout(
+  dong: DongKey = "A",
+  vertLines: LineSpec[] = A_LINES,
   slot = SLOT
 ): { zones: ZoneDef[]; lineLabels: LineLabel[]; width: number; height: number } {
   const zones: ZoneDef[] = [];
   const lineLabels: LineLabel[] = [];
-  const maxCount = Math.max(1, ...lines.map((l) => l.count));
+  const maxCount = Math.max(1, ...vertLines.map((l) => l.count));
+  const nCols = vertLines.length;
 
-  lines.forEach((lineSpec, lineIdx) => {
+  // visualCol 0 = 맨 왼쪽 = 가장 큰 line 번호(4), visualCol last = 맨 오른쪽 = line 1
+  // 입력 배열은 line 1..4 순서라고 가정 → reverse 해서 왼쪽부터 배치
+  const ordered = [...vertLines].sort((a, b) => b.line - a.line); // 4,3,2,1
+
+  const colLeftOf = (visualCol: number) =>
+    slot.padL + visualCol * (slot.w + slot.lineGap);
+
+  ordered.forEach((lineSpec, visualCol) => {
     const startNum = lineSpec.startNum ?? 1;
     const bottomIsStart = lineSpec.bottomIsStart !== false;
-    const colLeft = slot.padL + lineIdx * (slot.w + slot.lineGap);
+    const colLeft = colLeftOf(visualCol);
 
     lineLabels.push({
       text: `${lineSpec.line}번`,
@@ -104,10 +123,9 @@ function buildVerticalLineZones(
           ? startNum + i
           : startNum + (lineSpec.count - 1 - i)
         : i + 1;
-      const id = `${dong}-L${lineSpec.line}-${numVal}`;
 
       zones.push({
-        id,
+        id: `${dong}-L${lineSpec.line}-${numVal}`,
         num: lineSpec.fillNumbers ? String(numVal) : "",
         line: lineSpec.line,
         showNumAsProduct: lineSpec.fillNumbers,
@@ -121,18 +139,45 @@ function buildVerticalLineZones(
     }
   });
 
+  const vertBottom =
+    slot.padT + maxCount * slot.h + Math.max(0, maxCount - 1) * slot.gapY;
+
+  // 5번 가로 라인 라벨 + 4칸 (열 정렬: 왼쪽 4열 위치 = 세로 4·3·2·1 아래)
+  const bottomTop = vertBottom + slot.bottomLineGap + slot.bottomLabelH;
+  lineLabels.push({
+    text: `${A_BOTTOM_LINE}번`,
+    style: {
+      left: slot.padL,
+      top: vertBottom + slot.bottomLineGap - 2,
+      width: nCols * slot.w + Math.max(0, nCols - 1) * slot.lineGap,
+      textAlign: "left",
+    },
+  });
+
+  for (let c = 0; c < A_BOTTOM_CELLS; c++) {
+    const cellNum = c + 1;
+    zones.push({
+      id: `${dong}-L${A_BOTTOM_LINE}-${cellNum}`,
+      num: "",
+      line: A_BOTTOM_LINE,
+      showNumAsProduct: false,
+      style: {
+        left: colLeftOf(c),
+        top: bottomTop,
+        width: slot.w,
+        height: slot.h,
+      },
+    });
+  }
+
   const width =
-    slot.padL +
-    lines.length * slot.w +
-    Math.max(0, lines.length - 1) * slot.lineGap +
-    slot.padR;
-  const height =
-    slot.padT + maxCount * slot.h + Math.max(0, maxCount - 1) * slot.gapY + slot.padB;
+    slot.padL + nCols * slot.w + Math.max(0, nCols - 1) * slot.lineGap + slot.padR;
+  const height = bottomTop + slot.h + slot.padB;
 
   return { zones, lineLabels, width, height };
 }
 
-/** A동 1~4번 라인: 세로 길이 = 1번(19칸)과 동일. 1번만 번호 채움 */
+/** A동 1~4번 세로: 우측=1 … 좌측=4. 1번만 번호 채움 */
 const A_LINES: LineSpec[] = [
   { line: 1, count: A_SLOTS_PER_LINE, fillNumbers: true, startNum: 1, bottomIsStart: true },
   { line: 2, count: A_SLOTS_PER_LINE, fillNumbers: false },
@@ -140,7 +185,7 @@ const A_LINES: LineSpec[] = [
   { line: 4, count: A_SLOTS_PER_LINE, fillNumbers: false },
 ];
 
-const A_BUILT = buildVerticalLineZones("A", A_LINES);
+const A_BUILT = buildADongLayout("A", A_LINES);
 
 /** 1번 라인 기본 배정: 제품번호 = 로케이션 1~19 */
 function defaultLine1Placement(): PlacementMap {
@@ -285,8 +330,8 @@ export default function ProductDisplayPage() {
     <div className="space-y-4 w-full max-w-none">
       <div className="rounded-xl border bg-card p-4 shadow-sm">
         <p className="text-sm text-muted-foreground mb-3">
-          A동 1~{A_LINE_COUNT}번 라인 전체 윤곽 · 슬롯 {SLOT.w}×{SLOT.h}(폰트 맞춤). 1번 라인
-          제품번호 1~19(아래 1·위 19). 2~4번은 같은 세로 길이 빈 칸.
+          A동 세로 1~{A_VERT_LINES}번(우측=1 … 좌측=4) + 하단 {A_BOTTOM_LINE}번 가로 {A_BOTTOM_CELLS}칸 · 슬롯{" "}
+          {SLOT.w}×{SLOT.h}. 1번 라인 제품번호 1~19(아래 1·위 19). 2~5번은 빈 칸.
         </p>
 
         <div className="flex flex-wrap gap-2 mb-4">
@@ -382,7 +427,7 @@ export default function ProductDisplayPage() {
           ) : null}
           {dong === "A" ? (
             <span className="text-xs text-muted-foreground ml-2">
-              A동 {A_LINE_COUNT}라인 × {A_SLOTS_PER_LINE}칸 · 슬롯 {SLOT.w}×{SLOT.h}
+              A동 세로{A_VERT_LINES}+가로{A_BOTTOM_LINE} · {A_SLOTS_PER_LINE}칸/열 · 슬롯 {SLOT.w}×{SLOT.h}
             </span>
           ) : null}
         </div>
