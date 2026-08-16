@@ -751,7 +751,7 @@ export default function ProductDisplayPage() {
               return (
                 <div
                   key={dl.key}
-                  className={`rounded-xl border bg-slate-50 p-3 shrink-0 cursor-pointer ${colClass}`}
+                  className={`rounded-xl border bg-slate-50 p-3 shrink-0 cursor-pointer w-fit ${colClass}`}
                   onClick={() => setDong(dl.key)}
                 >
                   <div className="text-sm font-bold text-slate-800 mb-2 flex items-center justify-between gap-3">
