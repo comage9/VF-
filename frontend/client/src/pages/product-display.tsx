@@ -1925,11 +1925,11 @@ export default function ProductDisplayPage() {
                                     type="button"
                                     onClick={() => { setSelPnum(g.pnum); setSelZone(g.zone); }}
                                     className={
-                                      "w-full text-left px-2 py-1 text-[11px] border-t first:border-t-0 hover:bg-sky-50 flex justify-between gap-1 " +
+                                      "w-full text-left px-2 py-1 text-[11px] border-t first:border-t-0 hover:bg-sky-50 flex items-center gap-2 " +
                                       (selPnum === g.pnum && selZone === g.zone ? "bg-sky-100" : "")
                                     }
                                   >
-                                    <span className="font-semibold tabular-nums">{g.pnum}</span>
+                                    <span className="font-semibold tabular-nums shrink-0">{g.pnum}</span>
                                     <span className="truncate text-muted-foreground">{g.name || "-"}</span>
                                   </button>
                                 ))}
@@ -1974,11 +1974,11 @@ export default function ProductDisplayPage() {
                                     type="button"
                                     onClick={() => { setSelPnum(u.pnum); setSelZone(u.loc); }}
                                     className={
-                                      "w-full text-left px-2 py-1 text-[11px] border-t first:border-t-0 hover:bg-sky-50 flex justify-between gap-1 " +
+                                      "w-full text-left px-2 py-1 text-[11px] border-t first:border-t-0 hover:bg-sky-50 flex items-center gap-2 " +
                                       (selPnum === u.pnum && selZone === u.loc ? "bg-sky-100" : "")
                                     }
                                   >
-                                    <span className="font-semibold tabular-nums">{u.pnum}</span>
+                                    <span className="font-semibold tabular-nums shrink-0">{u.pnum}</span>
                                     <span className="truncate text-muted-foreground">{u.master_name || u.name}</span>
                                   </button>
                                 ))}
