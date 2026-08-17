@@ -705,6 +705,8 @@ export default function ProductDisplayPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [currentZone, setCurrentZone] = useState<string | null>(null);
   const [inputVal, setInputVal] = useState("");
+  const [assignSearch, setAssignSearch] = useState(""); // 제품 배정 다이얼로그 검색어
+  const [movePnum, setMovePnum] = useState<string | null>(null); // 자리이탈 품목 이동 모드 (클릭한 칸으로 배치)
   const [saveMsg, setSaveMsg] = useState("");
   // 총괄 우측 패널: 배치/미배치 대분류별 목록 + 선택 상세
   const [panelTab, setPanelTab] = useState<"placed" | "unplaced" | "overflow">("placed");
@@ -1436,9 +1438,77 @@ export default function ProductDisplayPage() {
     [data]
   );
 
-  const confirmAssign = () => {
+  // 제품 배정 다이얼로그 검색 후보: B/C/D_PNUM_INFO + 미배치 통합 (제품번호/이름/분류/바코드)
+  const assignCandidates = useMemo(() => {
+    const map = new Map<string, { pnum: string; name: string; lgmd: string; barcode: string; loc: string }>();
+    const put = (pn: string, name: string, lgmd: string, barcode: string, loc: string) => {
+      if (!map.has(pn)) map.set(pn, { pnum: pn, name, lgmd, barcode, loc });
+    };
+    for (const info of [B_PNUM_INFO, C_PNUM_INFO, D_PNUM_INFO]) {
+      for (const [pn, v] of Object.entries(info)) put(pn, v.name, v.lg + (v.md ? " / " + v.md : ""), v.barcode, "");
+    }
+    for (const u of unplaced) put(u.pnum, u.master_name || u.name, u.category_lg || u.cat || "", "", u.loc || "");
+    return Array.from(map.values());
+  }, [unplaced]);
+  const assignFiltered = useMemo(() => {
+    const q = assignSearch.trim().toLowerCase();
+    if (!q) return [];
+    return assignCandidates
+      .filter((c) => c.pnum.includes(q) || c.name.toLowerCase().includes(q) || c.lgmd.toLowerCase().includes(q) || c.barcode.toLowerCase().includes(q) || c.loc.toLowerCase().includes(q))
+      .slice(0, 50);
+  }, [assignSearch, assignCandidates]);
+
+  // 자리이탈 품목 이동 모드: 클릭한 칸으로 배치 (기존 제품은 자리이탈로)
+  const handleMoveToZone = (zid: string): boolean => {
+    if (!movePnum) return false;
+    // 기존 제품 → 자리이탈 (setData 밖에서 처리 — 업데이터 함수 내 setState 금지)
+    const oldVal = data[zid];
+    if (oldVal && oldVal !== movePnum) {
+      const oldPnums = oldVal.split(",").map((s) => s.trim()).filter(Boolean);
+      setOverflow((ov) => {
+        const existing = new Set(ov.map((o) => o.pnum));
+        const add = oldPnums
+          .filter((pn) => !existing.has(pn))
+          .map((pn) => {
+            const info = B_PNUM_INFO[pn] || C_PNUM_INFO[pn] || D_PNUM_INFO[pn];
+            return { pnum: pn, name: info ? info.name : "", dansu: info ? info.dansu : "", fromZone: zid } as OverflowItem;
+          });
+        return add.length ? [...ov, ...add] : ov;
+      });
+    }
+    setData((prev) => {
+      const next = { ...prev };
+      next[zid] = movePnum;
+      return next;
+    });
+    setOverflow((ov) => ov.filter((o) => o.pnum !== movePnum));
+    setMovePnum(null);
+    return true;
+  };
+
+  const confirmAssign = (forceVal?: string) => {
     if (!currentZone) return;
-    const val = inputVal.trim();
+    const val = (forceVal ?? inputVal).trim();
+    // 현재 칸의 기존 제품 → 자리이탈(overflow)로 자동 이동 (setData 밖에서 처리)
+    const oldVal = data[currentZone];
+    if (oldVal && oldVal !== val) {
+      const oldPnums = oldVal.split(",").map((s) => s.trim()).filter(Boolean);
+      setOverflow((ov) => {
+        const existing = new Set(ov.map((o) => o.pnum));
+        const add = oldPnums
+          .filter((pn) => !existing.has(pn))
+          .map((pn) => {
+            const info = B_PNUM_INFO[pn] || C_PNUM_INFO[pn] || D_PNUM_INFO[pn];
+            return {
+              pnum: pn,
+              name: info ? info.name : "",
+              dansu: info ? info.dansu : "",
+              fromZone: currentZone,
+            } as OverflowItem;
+          });
+        return add.length ? [...ov, ...add] : ov;
+      });
+    }
     setData((prev) => {
       const next = { ...prev };
       if (val) next[currentZone] = val;
@@ -1446,6 +1516,7 @@ export default function ProductDisplayPage() {
       return next;
     });
     setModalOpen(false);
+    setAssignSearch("");
   };
 
   const saveData = () => {
@@ -1493,13 +1564,14 @@ export default function ProductDisplayPage() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Enter" && modalOpen) {
         e.preventDefault();
-        confirmAssign();
+        if (assignFiltered.length > 0) confirmAssign(assignFiltered[0].pnum);
+        else confirmAssign();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modalOpen, inputVal, currentZone]);
+  }, [modalOpen, inputVal, currentZone, assignFiltered]);
 
   // 툴팁 생성: A동=zone 기반(분류+제품명+현재고+출고), B동=pnum 기반(3품목 모두 표시)
   const makeTooltip = (z: ZoneDef): string => {
@@ -1754,7 +1826,7 @@ export default function ProductDisplayPage() {
                             tip={makeTooltip(z)}
                             flash={flashZone === z.id}
                             editMode={editMode}
-                            onNavigate={() => setDong(k)}
+                            onNavigate={() => { if (!handleMoveToZone(z.id)) setDong(k); }}
                           />
                         ))}
                       </div>
@@ -1926,12 +1998,22 @@ export default function ProductDisplayPage() {
                           <>
                             <p className="text-[10px] text-amber-800 bg-amber-50 rounded px-2 py-1 leading-snug">
                               드래그 이동으로 밀려나 배치를 못 하는 품목입니다.
-                              <br />① <b>미배치로</b> 보내거나 ② 번호를 <b>드래그</b>해 다른 동 칸에 재배치하세요.
+                              <br />① 품목을 <b>클릭</b> 후 이동할 칸을 선택하거나 ② <b>미배치로</b> 보내세요.
                             </p>
+                            {movePnum && (
+                              <p className="text-[11px] text-blue-800 bg-blue-50 border border-blue-200 rounded px-2 py-1 leading-snug">
+                                ▶ {movePnum}번 이동 중 — <b>미니맵(지도)에서 이동할 칸을 클릭</b>하세요. 기존 제품은 자리이탈로 이동합니다.
+                              </p>
+                            )}
                             {overflow.map((o, oi) => (
                               <div
                                 key={`${o.pnum}-${o.fromZone}-${oi}`}
-                                className="border rounded-md px-2 py-1.5 flex items-center justify-between gap-2"
+                                onClick={() => { setMovePnum(o.pnum); setSelPnum(o.pnum); setSelZone(null); }}
+                                className={
+                                  "border rounded-md px-2 py-1.5 flex items-center justify-between gap-2 cursor-pointer " +
+                                  (movePnum === o.pnum ? "border-amber-500 bg-amber-100" : "hover:border-amber-300")
+                                }
+                                title="클릭 후 이동할 칸을 선택하세요 (기존 제품은 자리이탈로 이동)"
                               >
                                 <div className="min-w-0">
                                   <div className="text-[11px] font-bold tabular-nums text-amber-900">
@@ -1953,9 +2035,7 @@ export default function ProductDisplayPage() {
                                 </div>
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    setOverflow((ov) => ov.filter((x) => x !== o))
-                                  }
+                                  onClick={(ev) => { ev.stopPropagation(); setOverflow((ov) => ov.filter((x) => x !== o)); }}
                                   className="shrink-0 text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded hover:bg-amber-200"
                                   title="미배치 상태로 보내기 (이 탭에서 제거)"
                                 >
@@ -2222,21 +2302,45 @@ export default function ProductDisplayPage() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-2 py-2">
-            <Label htmlFor="prod-assign">제품 번호 또는 이름</Label>
+            <Label htmlFor="prod-assign">제품 검색 (번호 / 이름 / 분류 / 바코드 / 로케이션)</Label>
             <Input
               id="prod-assign"
-              value={inputVal}
-              onChange={(e) => setInputVal(e.target.value)}
-              placeholder="예: 663 / 모던 3단 화이트"
+              value={assignSearch}
+              onChange={(e) => setAssignSearch(e.target.value)}
+              placeholder="예: 663 / 모던 3단 화이트 / R0104…"
               autoFocus
             />
-            <p className="text-xs text-muted-foreground">비우고 확인하면 배정이 해제됩니다.</p>
+            {assignFiltered.length > 0 && (
+              <div className="max-h-48 overflow-auto border rounded-md divide-y divide-slate-100">
+                {assignFiltered.map((c) => (
+                  <button
+                    key={c.pnum}
+                    type="button"
+                    onClick={() => { setInputVal(c.pnum); setAssignSearch(""); }}
+                    className={
+                      "w-full text-left px-2 py-1 text-[11px] hover:bg-sky-50 flex justify-between gap-1 " +
+                      (inputVal === c.pnum ? "bg-sky-100" : "")
+                    }
+                  >
+                    <span className="font-semibold tabular-nums shrink-0">{c.pnum}</span>
+                    <span className="truncate text-muted-foreground">{c.name || "-"}</span>
+                    {c.lgmd && <span className="shrink-0 text-[10px] text-muted-foreground">{c.lgmd}</span>}
+                    {c.loc && <span className="shrink-0 text-[10px] text-muted-foreground">📍{c.loc}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+            {inputVal ? (
+              <p className="text-xs text-green-700">선택됨: {inputVal}번 — 확인 시 {currentZone}에 배정됩니다.</p>
+            ) : (
+              <p className="text-xs text-muted-foreground">비우고 확인하면 배정이 해제됩니다. (기존 제품은 자리이탈로 이동)</p>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
               취소
             </Button>
-            <Button type="button" onClick={confirmAssign}>
+            <Button type="button" onClick={() => confirmAssign()}>
               확인
             </Button>
           </DialogFooter>
