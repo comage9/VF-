@@ -7,6 +7,17 @@
  * - 호버 툴팁: 분류(대분류/중분류) + 상세 제품명 + 현재고
  */
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
 import { Download, RotateCcw, Save, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,8 +43,25 @@ import {
 import { B_PNUM_INFO, B_RANK_PLACEMENT } from "@/pages/product-display-b-data";
 import { C_PNUM_INFO, C_RANK_PLACEMENT } from "@/pages/product-display-c-data";
 import { D_PNUM_INFO, D_RANK_PLACEMENT } from "@/pages/product-display-d-data";
+import { aShiftInsert, extractDansu, reorderInZone } from "@/pages/product-display-utils";
 
 const STORAGE_KEY = "vf_product_display_v1";
+
+/** 드래그 소스: A동=칸(zoneId), B/C/D=칸 내 품목 인덱스 */
+type DragSource = {
+  kind: "zone" | "overflow";
+  zoneId: string;
+  itemIdx: number; // 다품목 칸 내 인덱스 (A동은 0)
+  pnum: string;
+};
+
+/** A동 shift로 밀려나 배치를 못 하는 품목 (우측 패널 표시 → 사용자 결정) */
+type OverflowItem = {
+  pnum: string;
+  name: string;
+  dansu: string;
+  fromZone: string;
+};
 
 type DongKey = "ALL" | "A" | "B" | "C" | "D" | "E";
 
@@ -631,6 +659,17 @@ const DONG_LAYOUTS: DongLayout[] = [
 ];
 
 function loadPlacement(): PlacementMap {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && parsed.data) {
+        return parsed.data as PlacementMap;
+      }
+    }
+  } catch {
+    /* 손상 시 기본값 */
+  }
   return defaultAPlacement();
 }
 
@@ -642,7 +681,7 @@ export default function ProductDisplayPage() {
   const [inputVal, setInputVal] = useState("");
   const [saveMsg, setSaveMsg] = useState("");
   // 총괄 우측 패널: 배치/미배치 대분류별 목록 + 선택 상세
-  const [panelTab, setPanelTab] = useState<"placed" | "unplaced">("placed");
+  const [panelTab, setPanelTab] = useState<"placed" | "unplaced" | "overflow">("placed");
   const [selPnum, setSelPnum] = useState<string | null>(null);
   const [selZone, setSelZone] = useState<string | null>(null);
   const [searchQ, setSearchQ] = useState("");
@@ -650,6 +689,11 @@ export default function ProductDisplayPage() {
   const [flashZone, setFlashZone] = useState<string | null>(null);
   // 출고 이력: barcode → dailyData (최근 90일)
   const [outboundMap, setOutboundMap] = useState<Record<string, { date: string; quantity: number }[]>>({});
+  // 드래그앤드롭: 현재 드래그 소스 / 밀려난 품목(자리이탈) / 분류·단수 필터
+  const [dragSource, setDragSource] = useState<DragSource | null>(null);
+  const [overflow, setOverflow] = useState<OverflowItem[]>([]);
+  const [filterCat, setFilterCat] = useState("");
+  const [filterDansu, setFilterDansu] = useState("");
 
   useEffect(() => {
     fetch("/api/outbound/barcode-daily?days=90")
@@ -790,6 +834,157 @@ export default function ProductDisplayPage() {
     () => DONG_LAYOUTS.find((r) => r.key === dong) ?? DONG_LAYOUTS[0],
     [dong]
   );
+
+  // A동 zone 시퀀스 (물리 순서) — shift 기준
+  const aSeq = useMemo(
+    () => DONG_LAYOUTS.find((r) => r.key === "A")?.zones.map((z) => z.id) ?? [],
+    []
+  );
+
+  // 현재 동 배치 품목 정보 (필터/드래그 공용)
+  const zoneItems = useMemo(() => {
+    const out: Record<string, { pnum: string; name: string; lg: string; dansu: string; idx: number }[]> = {};
+    for (const z of current.zones) {
+      const val = data[z.id];
+      if (!val) continue;
+      const pnums = val.split(",").map((s) => s.trim()).filter(Boolean);
+      const arr: { pnum: string; name: string; lg: string; dansu: string; idx: number }[] = [];
+      pnums.forEach((pn, idx) => {
+        const binfo = B_PNUM_INFO[pn] || C_PNUM_INFO[pn] || D_PNUM_INFO[pn];
+        const name = binfo?.name || A_ZONE_MASTER_NAME[z.id] || "";
+        const lg = binfo?.lg || A_ZONE_CATEGORY_LG[z.id] || "";
+        arr.push({ pnum: pn, name, lg, dansu: extractDansu(name), idx });
+      });
+      out[z.id] = arr;
+    }
+    return out;
+  }, [current.zones, data]);
+
+  // 분류 옵션 (현재 동 배치 품목)
+  const filterCats = useMemo(() => {
+    const s = new Set<string>();
+    for (const arr of Object.values(zoneItems)) {
+      for (const it of arr) if (it.lg) s.add(it.lg);
+    }
+    return Array.from(s).sort();
+  }, [zoneItems]);
+
+  // 선택 분류 내 단수 옵션 (숫자 오름차순)
+  const filterDansus = useMemo(() => {
+    if (!filterCat) return [];
+    const s = new Set<string>();
+    for (const arr of Object.values(zoneItems)) {
+      for (const it of arr) {
+        if (it.lg === filterCat && it.dansu) s.add(it.dansu);
+      }
+    }
+    return Array.from(s).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+  }, [zoneItems, filterCat]);
+
+  // 필터 매칭 zone (하이라이트용)
+  const filterMatchedZones = useMemo(() => {
+    if (!filterCat && !filterDansu) return new Set<string>();
+    const s = new Set<string>();
+    for (const [zid, arr] of Object.entries(zoneItems)) {
+      for (const it of arr) {
+        if (filterCat && it.lg !== filterCat) continue;
+        if (filterDansu && it.dansu !== filterDansu) continue;
+        s.add(zid);
+      }
+    }
+    return s;
+  }, [zoneItems, filterCat, filterDansu]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
+
+  const handleDragStart = (e: DragStartEvent) => {
+    const src = e.active.data.current as DragSource | undefined;
+    if (src) setDragSource(src);
+  };
+
+  const handleDragEnd = (e: DragEndEvent) => {
+    const src = e.active.data.current as DragSource | undefined;
+    const dst = e.over?.data.current as { zoneId: string; itemIdx?: number } | undefined;
+    if (!src || !dst || !dst.zoneId) {
+      setDragSource(null);
+      return;
+    }
+    setData((prev) => {
+      const next = { ...prev };
+      let changed = false;
+
+      if (src.kind === "overflow") {
+        // 밀려난 품목 → 대상 칸에 추가 (B/C/D/A 칸 공통: 칸 값 뒤에 덧붙임)
+        const dstVal = next[dst.zoneId] || "";
+        const items = dstVal.split(",").map((s) => s.trim()).filter(Boolean);
+        if (!items.includes(src.pnum)) {
+          items.push(src.pnum);
+          next[dst.zoneId] = items.join(",");
+          changed = true;
+        }
+        if (changed) {
+          setOverflow((ov) => ov.filter((o) => o.pnum !== src.pnum));
+          persistLocal(next);
+        }
+        return next;
+      }
+
+      const srcVal = next[src.zoneId];
+      if (!srcVal) return prev;
+      const srcItems = srcVal.split(",").map((s) => s.trim()).filter(Boolean);
+      const srcItem = srcItems[src.itemIdx];
+      if (!srcItem || srcItem !== src.pnum) return prev;
+
+      const isA = src.zoneId.startsWith("A-") && dst.zoneId.startsWith("A-");
+      if (isA) {
+        // A동: 칸 단위 insert (1칸 1품목, A-X는 다품목이지만 칸 단위)
+        const { next: n2, overflow: ov } = aShiftInsert(aSeq, prev, src.zoneId, dst.zoneId);
+        if (n2 !== prev) {
+          if (ov.length) {
+            setOverflow((o) => {
+              const names = ov.map((pn) => {
+                const m = A_ZONE_MASTER_NAME[src.zoneId] || "";
+                return { pnum: pn, name: m, dansu: extractDansu(m), fromZone: dst.zoneId };
+              });
+              return [...o, ...names];
+            });
+          }
+          persistLocal(n2);
+          return n2;
+        }
+        return prev;
+      }
+        // B/C/D 또는 A↔다른동: 칸 내부 재정렬 or 대상 칸 추가
+        if (src.zoneId === dst.zoneId) {
+          // 같은 칸 내부 순서 변경
+          const toIdx = (dst.itemIdx ?? src.itemIdx);
+          const reordered = reorderInZone(srcVal, src.itemIdx, toIdx);
+          if (reordered !== srcVal) {
+            next[src.zoneId] = reordered;
+            changed = true;
+          }
+        } else {
+          // 다른 칸으로: 소스에서 제거 + 대상에 추가
+          const filtered = srcItems.filter((_, i) => i !== src.itemIdx);
+          const dstVal = next[dst.zoneId] || "";
+          const dstItems = dstVal.split(",").map((s) => s.trim()).filter(Boolean);
+          dstItems.push(srcItem);
+          if (filtered.length) next[src.zoneId] = filtered.join(",");
+          else delete next[src.zoneId];
+          next[dst.zoneId] = dstItems.join(",");
+          changed = true;
+        }
+      if (changed) persistLocal(next);
+      return next;
+    });
+    setDragSource(null);
+  };
+
+  const persistLocal = (d: PlacementMap) => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: "rank-a-v14", data: d }));
+  };
   const openAssign = useCallback(
     (zoneId: string) => {
       setCurrentZone(zoneId);
@@ -1005,6 +1200,59 @@ export default function ProductDisplayPage() {
           ))}
         </div>
 
+        {/* 분류·단수 필터 (드래그 재배치용) — E동/총괄 제외 */}
+        {dong !== "ALL" && dong !== "E" && (
+          <div className="flex flex-wrap items-center gap-2 mb-3 rounded-lg border bg-slate-50 px-3 py-2">
+            <span className="text-[11px] font-bold text-slate-600">필터</span>
+            <select
+              value={filterCat}
+              onChange={(e) => {
+                setFilterCat(e.target.value);
+                setFilterDansu("");
+              }}
+              className="h-7 rounded border bg-white px-2 text-xs"
+            >
+              <option value="">전체 분류</option>
+              {filterCats.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            {filterCat && (
+              <select
+                value={filterDansu}
+                onChange={(e) => setFilterDansu(e.target.value)}
+                className="h-7 rounded border bg-white px-2 text-xs"
+              >
+                <option value="">전체 단수</option>
+                {filterDansus.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            )}
+            {(filterCat || filterDansu) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterCat("");
+                  setFilterDansu("");
+                }}
+                className="h-7 rounded bg-muted px-2 text-xs font-semibold hover:bg-muted/70"
+              >
+                초기화
+              </button>
+            )}
+            {filterMatchedZones.size > 0 && (
+              <span className="text-[11px] text-emerald-700 font-semibold">
+                {filterMatchedZones.size}칸 매칭 — 초록 테두리 칸을 드래그해 이동하세요
+              </span>
+            )}
+          </div>
+        )}
+
         {dong === "ALL" ? (
           <div className="flex flex-wrap gap-3 items-start">
             {(() => {
@@ -1121,6 +1369,20 @@ export default function ProductDisplayPage() {
                       >
                         미배치 내역 ({unplaced.length})
                       </button>
+                      {overflow.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => { setPanelTab("overflow"); setSelPnum(null); setSelZone(null); }}
+                          className={
+                            "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
+                            (panelTab === "overflow"
+                              ? "bg-amber-500 text-white"
+                              : "bg-amber-50 text-amber-700 hover:bg-amber-100")
+                          }
+                        >
+                          자리이탈 ({overflow.length})
+                        </button>
+                      )}
                     </div>
                     {panelTab === "placed" ? (
                       <div className="overflow-auto max-h-[560px] space-y-1 pr-1">
@@ -1166,7 +1428,7 @@ export default function ProductDisplayPage() {
                           ));
                         })()}
                       </div>
-                    ) : (
+                    ) : panelTab === "unplaced" ? (
                       <div className="overflow-auto max-h-[560px] space-y-1 pr-1">
                         {(() => {
                           // 미배치: 통합 기준 — A_UNPLACED에서 A/B동+사용자 배정 제외 후 대분류 그룹
@@ -1207,8 +1469,56 @@ export default function ProductDisplayPage() {
                           ));
                         })()}
                       </div>
+                    ) : (
+                      <div className="overflow-auto max-h-[560px] space-y-1 pr-1">
+                        {overflow.length === 0 ? (
+                          <div className="text-xs text-muted-foreground px-2 py-3 text-center">
+                            자리이탈 품목 없음
+                          </div>
+                        ) : (
+                          <>
+                            <p className="text-[10px] text-amber-800 bg-amber-50 rounded px-2 py-1 leading-snug">
+                              드래그 이동으로 밀려나 배치를 못 하는 품목입니다.
+                              <br />① <b>미배치로</b> 보내거나 ② 번호를 <b>드래그</b>해 다른 동 칸에 재배치하세요.
+                            </p>
+                            {overflow.map((o, oi) => (
+                              <div
+                                key={`${o.pnum}-${o.fromZone}-${oi}`}
+                                className="border rounded-md px-2 py-1.5 flex items-center justify-between gap-2"
+                              >
+                                <div className="min-w-0">
+                                  <div className="text-[11px] font-bold tabular-nums text-amber-900">
+                                    <DragChip
+                                      zoneId={o.fromZone || "overflow"}
+                                      itemIdx={0}
+                                      pnum={o.pnum}
+                                      text={o.pnum}
+                                      kind="overflow"
+                                    />
+                                  </div>
+                                  <div className="text-[10px] text-muted-foreground truncate">
+                                    {o.name} {o.dansu}
+                                  </div>
+                                  <div className="text-[9px] text-muted-foreground">
+                                    이전 위치: {o.fromZone}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setOverflow((ov) => ov.filter((x) => x !== o))
+                                  }
+                                  className="shrink-0 text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded hover:bg-amber-200"
+                                  title="미배치 상태로 보내기 (이 탭에서 제거)"
+                                >
+                                  미배치로
+                                </button>
+                              </div>
+                            ))}
+                          </>
+                        )}
+                      </div>
                     )}
-                    {/* 선택 상세 */}
                     {selPnum ? (
                       <div className="border rounded-md bg-slate-50 p-2 text-[11px] space-y-1">
                         {panelTab === "placed" && selZone && data[selZone] ? (
@@ -1274,53 +1584,35 @@ export default function ProductDisplayPage() {
               </div>
             ))}
 
-            {current.zones.length === 0 ? (
+          {current.zones.length === 0 ? (
               <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
                 {current.label} 라인 배치 대기
               </div>
             ) : null}
 
-            {current.zones.map((z) => {
-              const assigned = Boolean(data[z.id]);
-              const isL7 = z.line === 7;
-              const display = assigned ? data[z.id] : "";
-              const items = display ? display.split(",").map((s) => s.trim()).filter(Boolean) : [];
-              return (
-                <button
-                  key={z.id}
-                  type="button"
-                  onClick={() => openAssign(z.id)}
-                  title={makeTooltip(z)}
-                  className={
-                    "absolute flex items-center justify-center rounded border text-center px-0.5 transition-colors " +
-                    (assigned
-                      ? isL7
-                        ? "border-orange-600 bg-orange-50"
-                        : "border-blue-700 bg-blue-50"
-                      : "border-slate-500 bg-white hover:bg-sky-50 hover:border-blue-500") +
-                    (selZone === z.id ? " ring-2 ring-amber-400 ring-offset-1" : "") +
-                    (flashZone === z.id ? " vf-zone-flash" : "")
-                  }
-                  style={z.style}
-                >
-                  {assigned ? (
-                    <span
-                      className={
-                        "font-semibold text-[10px] leading-tight tabular-nums " +
-                        (isL7 ? "text-orange-900" : "text-blue-900") +
-                        (items.length > 1 ? " flex flex-col items-center text-[8px] leading-[1.15]" : "")
-                      }
-                    >
-                      {items.length > 1
-                        ? items.map((it, i) => <span key={i}>{it}</span>)
-                        : display}
-                    </span>
-                  ) : (
-                    <span className="text-[9px] text-slate-300 leading-none">·</span>
-                  )}
-                </button>
-              );
-            })}
+            <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+            {current.zones.map((z) => (
+              <ZoneCell
+                key={z.id}
+                z={z}
+                value={data[z.id]}
+                isL7={z.line === 7}
+                matched={filterMatchedZones.has(z.id)}
+                flash={flashZone === z.id}
+                sel={selZone === z.id}
+                onOpen={() => openAssign(z.id)}
+                tip={makeTooltip(z)}
+              />
+            ))}
+            <DragOverlay>
+              {dragSource ? (
+                <div className="rounded border border-blue-600 bg-blue-50 px-2 py-1 text-[11px] font-bold text-blue-900 shadow-md">
+                  {dragSource.pnum}
+                  {dragSource.kind === "overflow" ? " (자리이탈)" : ""}
+                </div>
+              ) : null}
+            </DragOverlay>
+            </DndContext>
           </div>
         </div>
         )}
@@ -1421,4 +1713,123 @@ export default function ProductDisplayPage() {
       </Dialog>
     </div>
   );
+}
+/* ===== 드래그앤드롭 셀 컴포넌트 (2026-08-17) ===== */
+function DragChip({
+  zoneId,
+  itemIdx,
+  pnum,
+  text,
+  kind = "zone",
+}: {
+  zoneId: string;
+  itemIdx: number;
+  pnum: string;
+  text: string;
+  kind?: "zone" | "overflow";
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `drag-${kind === "overflow" ? "ov" : zoneId}-${itemIdx}-${pnum}`,
+    data: { kind, zoneId, itemIdx, pnum } as DragSource,
+  });
+  return (
+    <span
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className={
+        "cursor-grab active:cursor-grabbing select-none " +
+        (isDragging ? "opacity-40" : "")
+      }
+      title="드래그하여 이동 (놓으면 밀려남)"
+    >
+      {text}
+    </span>
+  );
+}
+
+function ZoneCell({
+  z,
+  value,
+  isL7,
+  matched,
+  flash,
+  sel,
+  onOpen,
+  tip,
+}: {
+  z: ZoneDef;
+  value: string;
+  isL7: boolean;
+  matched: boolean;
+  flash: boolean;
+  sel: boolean;
+  onOpen: () => void;
+  tip: string;
+}) {
+  const assigned = Boolean(value);
+  const items = value ? value.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  const isA = z.id.startsWith("A-");
+  const { setNodeRef: dropRef, isOver } = useDroppable({
+    id: `drop-${z.id}`,
+    data: { zoneId: z.id } as { zoneId: string; itemIdx?: number },
+  });
+  const aDrag = useDraggable({
+    id: `adrag-${z.id}`,
+    disabled: !assigned || !isA,
+    data: { kind: "zone", zoneId: z.id, itemIdx: 0, pnum: items[0] || "" } as DragSource,
+  });
+  const nodeRef = (node: HTMLButtonElement | null) => {
+    dropRef(node);
+    if (isA) aDrag.setNodeRef(node);
+  };
+  return (
+    <button
+      ref={nodeRef}
+      type="button"
+      onClick={onOpen}
+      title={tip}
+      {...(isA ? aDrag.listeners : {})}
+      {...(isA ? aDrag.attributes : {})}
+      className={
+        "absolute flex items-center justify-center rounded border text-center px-0.5 transition-colors " +
+        (assigned
+          ? isL7
+            ? "border-orange-600 bg-orange-50"
+            : "border-blue-700 bg-blue-50"
+          : "border-slate-500 bg-white hover:bg-sky-50 hover:border-blue-500") +
+        (sel ? " ring-2 ring-amber-400 ring-offset-1" : "") +
+        (flash ? " vf-zone-flash" : "") +
+        (matched ? " ring-2 ring-emerald-500 ring-offset-1" : "") +
+        (isOver ? " ring-2 ring-blue-500 ring-offset-1 scale-[1.03]" : "")
+      }
+      style={z.style}
+    >
+      {assigned ? (
+        <span
+          className={
+            "font-semibold text-[10px] leading-tight tabular-nums " +
+            (isL7 ? "text-orange-900" : "text-blue-900") +
+            (items.length > 1 ? " flex flex-col items-center text-[8px] leading-[1.15]" : "")
+          }
+        >
+          {items.length > 1 && !isA
+            ? items.map((it, i) => (
+                <DragChip key={`${z.id}-${i}`} zoneId={z.id} itemIdx={i} pnum={it} text={it} />
+              ))
+            : isA && items[0]
+              ? (
+                <DragChip zoneId={z.id} itemIdx={0} pnum={items[0]} text={items[0]} />
+              )
+              : displayOnly(items[0])}
+        </span>
+      ) : (
+        <span className="text-[9px] text-slate-300 leading-none">·</span>
+      )}
+    </button>
+  );
+}
+
+function displayOnly(t: string | undefined): string {
+  return t ?? "";
 }
