@@ -1,0 +1,10 @@
+{
+  "date": "2026-08-14",
+  "ok": false,
+  "login_url": "https://xauth.coupang.com/auth/realms/fts/login-actions/authenticate?execution=096ca155-d9b0-465e-89b8-94aa8f681e65&client_id=ls&tab_id=hVp-1Djc8_o&client_data=eyJydSI6Imh0dHBzOi8vbHMuY291cGFuZy5jb20vbG9naW4vb2F1dGgyL2NvZGUva2V5Y2xvYWsiLCJydCI6ImNvZGUiLCJzdCI6IlNWYmd0UWxiQmJKaXBYR3pRbVFsLXk3aGtCUVUyek4yS2x5cjR2a2Rrc3c9In0",
+  "ok_login": false,
+  "query": {
+    "error": "no login"
+  },
+  "message": "login failed"
+}

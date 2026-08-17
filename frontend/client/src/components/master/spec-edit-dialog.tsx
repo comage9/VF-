@@ -49,6 +49,8 @@ export interface Spec {
   is_no_outbound_3m?: boolean;
   is_vf_item?: boolean;
     is_long_term_no_order?: boolean;
+  /** 입고 제한 수량 (null/0/없음 = 제한 없음, 스캐너와 공유) */
+  inbound_limit_qty?: number | null;
     finish_type?: string;
   has_outbound_3m?: boolean;
   current_stock?: number;
@@ -159,9 +161,37 @@ export function SpecEditDialog({
 
     useEffect(() => {
         if (isOpen) {
-            setFormData(spec || { is_discontinued: false });
+            const initial = spec ? { ...spec } : { is_discontinued: false };
+            // Ensure finish_type is always a string ('' | 'finished' | 'needs_packaging') for reliable button state + save
+            if (initial.finish_type === undefined || initial.finish_type === null) {
+                initial.finish_type = '';
+            }
+            setFormData(initial);
         }
     }, [isOpen, spec]);
+
+    // 입고 제한 수량: DB 배치값(default_inbound_limit_qty) / 저장값 — 실시간 계산 금지
+    useEffect(() => {
+        if (!isOpen) return;
+        const saved = formData.inbound_limit_qty;
+        if (saved !== null && saved !== undefined && String(saved).trim() !== '') {
+            const n = parseInt(String(saved), 10);
+            if (Number.isFinite(n) && n > 0) return;
+        }
+        // GET detail 응답에 이미 inbound_limit_qty = 배치 기본이 실림
+        const fromSpec = (spec as any)?.inbound_limit_qty ?? (spec as any)?.default_inbound_limit_qty;
+        const n = parseInt(String(fromSpec ?? ''), 10);
+        const v = Number.isFinite(n) && n > 0 ? Math.max(2, n) : 2;
+        setFormData((prev) => {
+            const p = prev.inbound_limit_qty;
+            if (p !== null && p !== undefined && String(p).trim() !== '') {
+                const pn = parseInt(String(p), 10);
+                if (Number.isFinite(pn) && pn > 0) return prev;
+            }
+            return { ...prev, inbound_limit_qty: v };
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, spec?.id, (spec as any)?.inbound_limit_qty, (spec as any)?.default_inbound_limit_qty]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -205,7 +235,19 @@ export function SpecEditDialog({
             alert('대분류를 입력해 주세요. (필수)');
             return;
         }
-        onSave(formData as Spec | SpecDraft);
+        // Always ensure finish_type is present as a string so backend receives it reliably
+        let limitQ: number | null = null;
+        const rawLq = formData.inbound_limit_qty;
+        if (rawLq !== null && rawLq !== undefined && String(rawLq).trim() !== "") {
+          const n = parseInt(String(rawLq), 10);
+          limitQ = Number.isFinite(n) && n > 0 ? Math.max(2, n) : null;
+        }
+        const toSave = {
+            ...formData,
+            finish_type: (formData.finish_type ?? '').toString().trim() === '' ? '' : formData.finish_type,
+            inbound_limit_qty: limitQ,
+        };
+        onSave(toSave as Spec | SpecDraft);
     }
 
     return (
@@ -332,7 +374,7 @@ export function SpecEditDialog({
                               handleSelectChange("finish_type", FINISH_FINISHED)
                             }
                             className={`flex-1 py-1.5 text-[11px] font-semibold rounded border transition-all ${
-                              formData.finish_type === FINISH_FINISHED
+                              String(formData.finish_type || "").trim() === FINISH_FINISHED
                                 ? "bg-emerald-50 border-emerald-500 text-emerald-800"
                                 : "bg-white border-input text-muted-foreground hover:bg-muted/40"
                             }`}
@@ -348,7 +390,7 @@ export function SpecEditDialog({
                               )
                             }
                             className={`flex-1 py-1.5 text-[11px] font-semibold rounded border transition-all ${
-                              formData.finish_type === FINISH_NEEDS_PACKAGING
+                              String(formData.finish_type || "").trim() === FINISH_NEEDS_PACKAGING
                                 ? "bg-orange-50 border-orange-500 text-orange-800"
                                 : "bg-white border-input text-muted-foreground hover:bg-muted/40"
                             }`}
@@ -359,7 +401,7 @@ export function SpecEditDialog({
                             type="button"
                             onClick={() => handleSelectChange("finish_type", "")}
                             className={`flex-1 py-1.5 text-[11px] font-semibold rounded border transition-all ${
-                              !formData.finish_type
+                              !String(formData.finish_type || "").trim()
                                 ? "bg-slate-100 border-slate-400 text-slate-800"
                                 : "bg-white border-input text-muted-foreground hover:bg-muted/40"
                             }`}
@@ -530,6 +572,33 @@ export function SpecEditDialog({
                             <Label htmlFor="mold_number">금형번호</Label>
                             <Input id="mold_number" name="mold_number" value={formData.mold_number || ''} onChange={handleChange} />
                         </div>
+                    </div>
+                    <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50/50 p-3">
+                        <Label htmlFor="inbound_limit_qty">입고 제한 수량</Label>
+                        <Input
+                          id="inbound_limit_qty"
+                          name="inbound_limit_qty"
+                          type="number"
+                          min={2}
+                          value={
+                            formData.inbound_limit_qty === null || formData.inbound_limit_qty === undefined
+                              ? ""
+                              : formData.inbound_limit_qty
+                          }
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === "" || v == null) {
+                              handleSelectChange("inbound_limit_qty", null);
+                              return;
+                            }
+                            const n = parseInt(v, 10);
+                            handleSelectChange(
+                              "inbound_limit_qty",
+                              Number.isFinite(n) && n > 0 ? Math.max(2, n) : null
+                            );
+                          }}
+                          placeholder=""
+                        />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="product_name_eng">영문명</Label>

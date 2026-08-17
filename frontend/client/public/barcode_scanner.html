@@ -694,7 +694,7 @@
             <span id="excelFileName" style="color:var(--text-secondary); font-size:13px;"></span>
         </div>
         <p style="margin:8px 0 0; font-size:12px; color:#9ca3af; line-height:1.45;">
-            입고 제한: 바코드만 붙여넣기 → 제품명·로케이션 조회 → <b style="color:#e5e7eb;">입고 가능일</b>·비고 저장.
+            입고 제한: 바코드 → 제품명·로케이션 조회 → <b style="color:#e5e7eb;">가능일</b>·<b style="color:#e5e7eb;">제한 수량</b>·비고 저장. 최소2 · 기본=4일 출고평균. 비움=제한 없음.
             (발주 업로드 없이도 설정 가능)
         </p>
         <textarea id="dataInput" placeholder="동일 헤더 텍스트 붙여넣기 (탭 또는 콤마)&#10;xlsx: 발주번호 … 상품바코드 상품이름 … 확정수량 … 입고예정일&#10;csv: 발주번호 … SKU Barcode … 확정수량,입고수량,…"></textarea>
@@ -749,6 +749,7 @@
                     <button type="button" id="openRestrictionModalBtn" style="padding:6px 10px; border-radius:8px; border:1px solid #f59e0b; background:#3d2a00; color:#fbbf24; cursor:pointer; font-weight:700; font-size:12px;">⚙️ 입고 제한 설정</button>
                 </div>
                 <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                    <button type="button" class="period-btn" data-days="4" style="padding:8px 12px; border-radius:8px; border:none; cursor:pointer; font-weight:700; font-size:13px;">4일</button>
                     <button type="button" class="period-btn" data-days="10" style="padding:8px 12px; border-radius:8px; border:none; cursor:pointer; font-weight:700; font-size:13px;">10일</button>
                     <button type="button" class="period-btn" data-days="14" style="padding:8px 12px; border-radius:8px; border:none; cursor:pointer; font-weight:700; font-size:13px;">14일</button>
                     <button type="button" class="period-btn" data-days="30" style="padding:8px 12px; border-radius:8px; border:none; cursor:pointer; font-weight:700; font-size:13px;">30일</button>
@@ -957,7 +958,7 @@
             <div style="padding:14px 18px; overflow-y:auto; flex:1;">
                 <p style="margin:0 0 10px; font-size:12px; color:#9ca3af; line-height:1.5;">
                     바코드만 입력·붙여넣기하면 <b style="color:#e5e7eb;">제품명·로케이션</b>을 조회합니다.
-                    <b style="color:#e5e7eb;">입고 가능일</b>(이 날부터 허용)과 <b style="color:#e5e7eb;">비고</b>를 입력한 뒤 저장하세요.
+                    <b style="color:#e5e7eb;">입고 가능일</b>·<b style="color:#e5e7eb;">제한 수량</b>(비우면 제한 없음)과 비고를 입력한 뒤 저장하세요. 마스터 페이지와 공유됩니다.
                 </p>
                 <label style="display:block; font-size:12px; color:#aaa; margin-bottom:4px; font-weight:600;">바코드 (한 줄에 하나)</label>
                 <textarea id="restrictionBarcodeInput" rows="5" placeholder="R256047180001&#10;R256047190002&#10;R256047220005&#10;R256047230006"
@@ -1004,7 +1005,7 @@
          * - 10|14|30: 전산 기준 입고 가능 계산
          * - 'raw'(전체): 일수 계산 없음 · 업로드 수량 그대로
          */
-        const PERIOD_OPTIONS = [10, 14, 30];
+        const PERIOD_OPTIONS = [4, 10, 14, 30];
         let selectedPeriodMode = 10;
         /** dataIndex(string) -> 수동 입력 로케이션 */
         let locationOverrides = {};
@@ -1220,6 +1221,7 @@
                                 avgDailyOutbound60d: Number(item.avgDailyOutbound60d) || 0,
                                 // 입고가능 SoT: 3개월(90d) 일평균 (inbound-period-metrics.js)
                                 avgDailyOutbound90d: Number(item.avgDailyOutbound90d) || 0,
+                                defaultInboundLimitQty: Math.max(2, parseInt(item.defaultInboundLimitQty != null ? item.defaultInboundLimitQty : (item.default_inbound_limit_qty || 2), 10) || 2),
                                 location: (item.location || '').trim(),
                                 productName: (item.productName || item.product_name || item.name || '').trim()
                             };
@@ -1375,6 +1377,25 @@
             return { ...m, isRaw: false, missingStock: false };
         }
 
+        const _metricsForRowRaw = metricsForRow;
+        metricsForRow = function(row, daysOrMode) {
+            const m = _metricsForRowRaw(row, daysOrMode) || {};
+            try {
+                const bc = getRowBarcode(row);
+                const lim = getRestrictionLimitQty(bc);
+                if (lim != null && m && m.isRaw !== true) {
+                    const avail = Math.min(Math.max(0, Number(m.available) || 0), lim);
+                    m.available = avail;
+                    m.need = avail;
+                    m.limitQty = lim;
+                } else if (m) {
+                    m.limitQty = lim;
+                }
+            } catch (e) { /* ignore */ }
+            return m;
+        };
+
+
         function syncPeriodButtonsUI() {
             document.querySelectorAll('.period-btn').forEach((btn) => {
                 const d = parseInt(btn.getAttribute('data-days'), 10);
@@ -1442,12 +1463,53 @@
             return restrictionMap[bc] || restrictionMap[bc.toUpperCase()] || null;
         }
 
+        /** 입고 제한 수량: 양수만(최소 2). 없거나 0이면 null = 제한 없음(입력 가능) */
+        const LIMIT_QTY_MIN = 2;
+        const LIMIT_QTY_DEFAULT_DAYS = 4;
+
+        function getRestrictionLimitQty(barcode) {
+            const r = getRestriction(barcode);
+            if (!r) return null;
+            const q = parseInt(r.limitQty, 10);
+            if (!Number.isFinite(q) || q <= 0) return null;
+            return Math.max(LIMIT_QTY_MIN, q);
+        }
+
+        /**
+         * 기본 제한 수량 = DB 배치값 defaultInboundLimitQty (매일 04:00 재계산)
+         * 실시간 출고 평균 계산 금지. 없/0이면 최소 2.
+         */
+        function suggestLimitQtyForBarcode(barcode) {
+            const stock = lookupInventory(barcode);
+            let q = 0;
+            if (stock) {
+                q = parseInt(
+                    stock.defaultInboundLimitQty != null
+                        ? stock.defaultInboundLimitQty
+                        : stock.default_inbound_limit_qty,
+                    10
+                );
+            }
+            if (!Number.isFinite(q) || q <= 0) q = LIMIT_QTY_MIN;
+            return Math.max(LIMIT_QTY_MIN, q);
+        }
+
+        function normalizeLimitQtyInput(raw) {
+            if (raw === null || raw === undefined || String(raw).trim() === '') return null;
+            const n = parseInt(raw, 10);
+            if (!Number.isFinite(n) || n <= 0) return null;
+            return Math.max(LIMIT_QTY_MIN, n);
+        }
+
         function ingestRestrictionItems(items) {
             if (!Array.isArray(items)) return;
             items.forEach((it) => {
                 if (!it) return;
                 const bc = normalizeRestrictionBarcode(it.barcode);
                 if (!bc) return;
+                let lq = it.limitQty != null ? it.limitQty : it.limit_qty;
+                lq = parseInt(lq, 10);
+                if (!Number.isFinite(lq) || lq <= 0) lq = null; else if (lq < LIMIT_QTY_MIN) lq = LIMIT_QTY_MIN;
                 restrictionMap[bc] = {
                     id: it.id || null,
                     barcode: bc,
@@ -1456,6 +1518,7 @@
                     enabled: it.enabled !== false,
                     note: it.note || '',
                     allowedFrom: it.allowedFrom || it.allowed_from || null,
+                    limitQty: lq,
                     blockedToday: typeof it.blockedToday === 'boolean' ? it.blockedToday : undefined,
                 };
             });
@@ -1540,26 +1603,33 @@
             if (!badge) return;
             const r = getRestriction(barcode);
             const blocking = isRestrictionBlocking(barcode);
-            // 제한 레코드가 있고(활성) 표시 — 차단 중이거나, 가능일 대기/활성 이력
-            if (!r || !r.enabled) {
+            const hasLimit = getRestrictionLimitQty(barcode) != null;
+            // 날짜 홀드(enabled) 또는 수량 제한이 있으면 배지 표시
+            if (!r || (!r.enabled && !hasLimit)) {
                 badge.style.display = 'none';
                 return;
             }
             badge.style.display = 'block';
             const from = r.allowedFrom ? String(r.allowedFrom).slice(0, 10) : '미지정(차단)';
             const note = r.note ? String(r.note) : '';
+            const lq = getRestrictionLimitQty(barcode);
+            const lqHtml = lq != null
+                ? `<br>입고 제한 수량: <b>${lq.toLocaleString()}</b>`
+                : '<br>입고 제한 수량: <b style="color:#86efac;">없음 (입력 가능)</b>';
             if (blocking) {
                 badge.style.background = '#3d1a1a';
                 badge.style.borderColor = '#ef4444';
                 detail.innerHTML =
                     `가능일: <b>${from}</b>` +
+                    lqHtml +
                     (note ? `<br>비고: ${escapeHtml(note)}` : '') +
-                    `<br><span style="color:#fca5a5;">오늘(${TODAY}) 입고 불가 — 목록에서 제외됩니다</span>`;
+                    `<br><span style="color:#fca5a5;">오늘(${TODAY}) 입고 불가 — 홀드 상태</span>`;
             } else {
                 badge.style.background = '#1a2e1a';
                 badge.style.borderColor = '#22c55e';
                 detail.innerHTML =
                     `가능일: <b>${from}</b> 이후 허용 중` +
+                    lqHtml +
                     (note ? `<br>비고: ${escapeHtml(note)}` : '');
             }
         }
@@ -1638,6 +1708,11 @@
                 }
             }
             const existing = getRestriction(bc);
+            let savedLimit = null;
+            if (existing && existing.limitQty != null) {
+                const n = parseInt(existing.limitQty, 10);
+                if (Number.isFinite(n) && n > 0) savedLimit = Math.max(LIMIT_QTY_MIN, n);
+            }
             return {
                 barcode: bc,
                 productName: productName || (existing && existing.productName) || '',
@@ -1647,6 +1722,7 @@
                 enabled: existing ? existing.enabled !== false : true,
                 note: existing ? existing.note || '' : '',
                 allowedFrom: existing && existing.allowedFrom ? String(existing.allowedFrom).slice(0, 10) : '',
+                limitQty: savedLimit,
                 isSaved: !!existing,
             };
         }
@@ -1734,7 +1810,15 @@
                         <input type="date" class="restr-date" value="${escapeHtml(info.allowedFrom || '')}"
                             style="padding:7px 8px; border-radius:6px; border:1px solid #444; background:#2a2a2a; color:#fff; font-size:13px;">
                     </label>
-                    <label style="display:flex; flex-direction:column; gap:4px; font-size:11px; color:#aaa; flex:1; min-width:160px;">
+                    <label style="display:flex; flex-direction:column; gap:4px; font-size:11px; color:#aaa; width:120px;">
+                        제한 수량
+                        <input type="number" min="2" class="restr-limit-qty" value="${(function(){ var s=(info.limitQty!=null&&info.limitQty>0)?Math.max(LIMIT_QTY_MIN,info.limitQty):suggestLimitQtyForBarcode(bc); return s; })()}"
+                            placeholder="2+"
+                            title="기본 입력: max(2, 4일 출고평균). 저장값 있으면 저장값 표시"
+                            style="padding:7px 8px; border-radius:6px; border:1px solid #444; background:#2a2a2a; color:#fff; font-size:13px; width:100%; box-sizing:border-box;">
+                        <span class="restr-limit-hint" style="font-size:10px; color:#9ca3af;">기본: 4일 평균</span>
+                    </label>
+                    <label style="display:flex; flex-direction:column; gap:4px; font-size:11px; color:#aaa; flex:1; min-width:140px;">
                         비고
                         <input type="text" class="restr-note" value="${escapeHtml(info.note || '')}"
                             placeholder="사유 입력"
@@ -1752,6 +1836,15 @@
                     card.remove();
                     setRestrictionModalStatus(`${bc} 삭제됨`);
                 });
+            }
+            const limInput = card.querySelector('.restr-limit-qty');
+            const limHint = card.querySelector('.restr-limit-hint');
+            const suggested = suggestLimitQtyForBarcode(bc);
+            if (limHint) {
+                limHint.textContent = `기본 ${suggested} (4일 평균·최소2)`;
+            }
+            if (limInput && (!limInput.value || String(limInput.value).trim() === '')) {
+                limInput.value = String(suggested);
             }
             return card;
         }
@@ -1793,6 +1886,15 @@
                 const srv = serverMap[bc] || serverMap[bc.toUpperCase()] || {};
                 const productName = srv.productName || local.productName || '';
                 const location = srv.location || local.location || '';
+                // 저장 수량 우선, 없으면 카드에서 4일 평균(최소2) 기본 입력
+                let limitQty = local.limitQty != null ? local.limitQty : null;
+                if (limitQty == null) {
+                    const r = getRestriction(bc);
+                    if (r && r.limitQty != null) {
+                        const n = parseInt(r.limitQty, 10);
+                        if (Number.isFinite(n) && n > 0) limitQty = Math.max(LIMIT_QTY_MIN, n);
+                    }
+                }
                 const info = {
                     barcode: bc,
                     productName,
@@ -1802,13 +1904,14 @@
                     enabled: local.enabled,
                     note: local.note,
                     allowedFrom: local.allowedFrom,
+                    limitQty: limitQty,
                     isSaved: local.isSaved,
                 };
                 if (info.found) foundN += 1;
                 list.appendChild(renderRestrictionCard(info));
             });
             setRestrictionModalStatus(
-                `${barcodes.length}건 조회 · 제품정보 ${foundN}건 확인. 가능일·비고 입력 후 저장하세요.`
+                `${barcodes.length}건 조회 · 제품정보 ${foundN}건 확인. 제한 수량(기본: min2·4일평균) 확인 후 저장하세요.`
             );
         }
 
@@ -1823,12 +1926,18 @@
                 const enabledEl = card.querySelector('.restr-enabled');
                 const dateEl = card.querySelector('.restr-date');
                 const noteEl = card.querySelector('.restr-note');
+                const limitEl = card.querySelector('.restr-limit-qty');
                 const nameEl = card.querySelector('.restr-product-name');
                 const locEl = card.querySelector('.restr-location');
+                let lq = null;
+                if (limitEl && String(limitEl.value || '').trim() !== '') {
+                    lq = normalizeLimitQtyInput(limitEl.value);
+                }
                 items.push({
                     barcode,
                     enabled: enabledEl ? !!enabledEl.checked : true,
                     allowedFrom: dateEl && dateEl.value ? dateEl.value : null,
+                    limitQty: lq,
                     note: noteEl ? noteEl.value.trim() : '',
                     productName: nameEl ? nameEl.value : '',
                     location: locEl ? locEl.value : '',
@@ -1865,6 +1974,7 @@
                     restrictionMap[bc].enabled = it.enabled;
                     restrictionMap[bc].note = it.note;
                     restrictionMap[bc].allowedFrom = it.allowedFrom;
+                    restrictionMap[bc].limitQty = normalizeLimitQtyInput(it.limitQty);
                     restrictionMap[bc].blockedToday = it.enabled && (!it.allowedFrom || String(TODAY) < String(it.allowedFrom));
                 });
                 setRestrictionModalStatus(`저장 완료 ${items.length}건` + (data.errors && data.errors.length ? ` · 오류 ${data.errors.length}` : ''));
@@ -1989,7 +2099,7 @@
 
         /**
          * 사이드바/목록용: 선택 기간에 맞는 표시 수량
-         * - 10/14/30: 입고가능 = min(max(0, hold−전산), 확정)  ← 확정 수량 상한
+         * - 4/10/14/30: 입고가능 = min(max(0, hold−전산), 확정, 제한수량?)  ← 확정·제한 상한
          * - 전체(raw): 확정/업로드 수량 그대로
          */
         function getSidebarDisplayQty(row) {
@@ -2018,10 +2128,12 @@
                 };
             }
             const days = parseInt(selectedPeriodMode, 10) || 10;
-            // 목록 큰 숫자 = 확정 상한 입고가능 (확정 초과 표시 금지)
-            const avail = Number(m.available) || 0;
+            // 목록 큰 숫자 = 확정·제한수량 상한 입고가능
+            let avail = Number(m.available) || 0;
             const hold = Number(m.hold) || 0;
             const orderIn = Number(m.orderIn) || 0;
+            const lim = getRestrictionLimitQty(getRowBarcode(row));
+            if (lim != null) avail = Math.min(avail, lim);
             const periodText = `${days}일 입고가능`;
             const orderSub =
                 orderIn > 0

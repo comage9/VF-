@@ -835,6 +835,11 @@ def inventory_unified(request):
             else "active"
         )
         bm_long_term_no_order = bool(getattr(master, "is_long_term_no_order", False)) if master else False
+        bm_default_inbound_limit = (
+            int(getattr(master, "default_inbound_limit_qty", 0) or 0) if master else 0
+        )
+        if bm_default_inbound_limit <= 0:
+            bm_default_inbound_limit = 2
         if is_disc:
             bm_lifecycle_status = "discontinued"
 
@@ -942,6 +947,7 @@ def inventory_unified(request):
                 "avgDailyOutbound60d": avg_daily_60,
                 "outbound90dTotal": out90,
                 "avgDailyOutbound90d": avg_daily_90,
+                "defaultInboundLimitQty": int(bm_default_inbound_limit),
             }
         )
 
@@ -3269,16 +3275,39 @@ def _master_spec_dict(s, location: str = "", *, has_outbound_3m: bool | None = N
             if getattr(s, "vf_registered_at", None)
             else None
         ),
-        "finish_type": (getattr(s, "finish_type", None) or "").strip(),
+        "finish_type": (getattr(s, "finish_type", None) or "").strip(),  # always emit for edit roundtrip
         "product_number": getattr(s, "product_number", None),
     }
-    # BarcodeMaster.is_long_term_no_order lookup
+    # BarcodeMaster + 입고 제한: 저장 제한수량 / 배치 기본값(4일 보유)
+    row["inbound_limit_qty"] = None
+    row["default_inbound_limit_qty"] = 2
     if bc:
+        bm = None
         try:
             bm = BarcodeMaster.objects.filter(barcode=bc).first()
             row["is_long_term_no_order"] = bool(bm.is_long_term_no_order) if bm else False
+            if bm is not None:
+                try:
+                    dflt = int(getattr(bm, "default_inbound_limit_qty", 0) or 0)
+                except (TypeError, ValueError):
+                    dflt = 0
+                row["default_inbound_limit_qty"] = dflt if dflt > 0 else 2
         except Exception:
             row["is_long_term_no_order"] = False
+        try:
+            restr = InboundProductRestriction.objects.filter(barcode__iexact=bc).first()
+            if restr is not None:
+                try:
+                    lq = int(restr.limit_qty) if restr.limit_qty is not None else None
+                except (TypeError, ValueError):
+                    lq = None
+                if lq is not None and lq > 0:
+                    row["inbound_limit_qty"] = max(2, lq)
+        except Exception:
+            pass
+        # 폼 기본 표시: 수동 저장값 없으면 배치 기본값
+        if row["inbound_limit_qty"] is None:
+            row["inbound_limit_qty"] = int(row["default_inbound_limit_qty"] or 2)
     else:
         row["is_long_term_no_order"] = False
     if has_outbound_3m is not None:
@@ -3322,8 +3351,7 @@ def _master_spec_compact_dict(
         "product_number": getattr(s, "product_number", None),
     }
     ft = (getattr(s, "finish_type", None) or "").strip()
-    if ft:
-        row["finish_type"] = ft
+    row["finish_type"] = ft  # always include for edit/save roundtrip (even if empty)
     if current_stock is not None:
         row["current_stock"] = int(current_stock)
     if is_vf_active is not None:
@@ -3911,6 +3939,41 @@ def master_specs_detail(request, id: int):
             bm_obj, _ = BarcodeMaster.objects.get_or_create(barcode=bc_save)
             bm_obj.is_long_term_no_order = bool(payload.get("is_long_term_no_order"))
             bm_obj.save(update_fields=["is_long_term_no_order", "updated_at"])
+
+    # 입고 제한 수량 -> InboundProductRestriction 공유 저장 (스캐너와 동일 SoT)
+    if "inbound_limit_qty" in payload or "inboundLimitQty" in payload:
+        bc_save = (spec.barcode or "").strip()
+        raw_lq = (
+            payload.get("inbound_limit_qty")
+            if "inbound_limit_qty" in payload
+            else payload.get("inboundLimitQty")
+        )
+        try:
+            lq = _parse_limit_qty(raw_lq)
+        except ValueError:
+            return Response(
+                {"message": "inbound_limit_qty 형식 오류 (정수)"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if bc_save:
+            restr_obj, created = InboundProductRestriction.objects.get_or_create(
+                barcode=bc_save,
+                defaults={
+                    "product_name": (spec.product_name or "")[:255],
+                    "location": (loc_out or "")[:100],
+                    "enabled": False,  # 수량만 설정 시 날짜 홀드 자동 ON 금지
+                    "note": "",
+                    "allowed_from": None,
+                    "limit_qty": lq,
+                },
+            )
+            if not created:
+                restr_obj.limit_qty = lq
+                if not (restr_obj.product_name or "").strip() and (spec.product_name or "").strip():
+                    restr_obj.product_name = (spec.product_name or "")[:255]
+                if loc_out and not (restr_obj.location or "").strip():
+                    restr_obj.location = loc_out[:100]
+                restr_obj.save()
 
     return Response(_master_spec_dict(spec, location=loc_out))
 @api_view(["POST"])
@@ -11835,6 +11898,14 @@ def inbound_policy(request):
 
 
 def _restriction_to_dict(row: InboundProductRestriction) -> dict:
+    try:
+        lq = int(row.limit_qty) if row.limit_qty is not None else None
+    except (TypeError, ValueError):
+        lq = None
+    if lq is not None and lq <= 0:
+        lq = None
+    elif lq is not None and lq < 2:
+        lq = 2
     return {
         "id": str(row.id),
         "barcode": row.barcode,
@@ -11843,10 +11914,24 @@ def _restriction_to_dict(row: InboundProductRestriction) -> dict:
         "enabled": bool(row.enabled),
         "note": row.note or "",
         "allowedFrom": row.allowed_from.isoformat() if row.allowed_from else None,
+        "limitQty": lq,
         "createdAt": row.created_at.isoformat() if row.created_at else None,
         "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
         "blockedToday": row.is_blocked_on(),
     }
+
+
+def _parse_limit_qty(raw):
+    """입고 제한 수량. 빈값/null/0 → None (제한 없음). 설정 시 최소 2."""
+    if raw is None or raw == "":
+        return None
+    try:
+        q = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError("limitQty must be int")
+    if q <= 0:
+        return None
+    return max(2, q)
 
 
 def _parse_allowed_from(raw):
@@ -12170,12 +12255,24 @@ def inbound_product_restrictions(request):
             enabled = True
         else:
             enabled = bool(enabled)
+        try:
+            if "limitQty" in item or "limit_qty" in item:
+                limit_qty = _parse_limit_qty(
+                    item.get("limitQty") if "limitQty" in item else item.get("limit_qty")
+                )
+            else:
+                limit_qty = "__omit__"
+        except ValueError:
+            errors.append({"index": i, "barcode": barcode, "message": "limitQty 형식 오류 (정수)"})
+            continue
 
         defaults = {
             "enabled": enabled,
             "note": note,
             "allowed_from": allowed_from,
         }
+        if limit_qty != "__omit__":
+            defaults["limit_qty"] = limit_qty
         if product_name:
             defaults["product_name"] = product_name
         if location or "location" in item:
@@ -12252,6 +12349,17 @@ def inbound_product_restriction_detail(request, barcode: str):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         update_fields.append("allowed_from")
+    if "limitQty" in payload or "limit_qty" in payload:
+        try:
+            obj.limit_qty = _parse_limit_qty(
+                payload.get("limitQty") if "limitQty" in payload else payload.get("limit_qty")
+            )
+        except ValueError:
+            return Response(
+                {"success": False, "message": "limitQty 형식 오류 (정수)"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        update_fields.append("limit_qty")
     obj.save(update_fields=list(dict.fromkeys(update_fields)))
     return Response({"success": True, "item": _restriction_to_dict(obj)})
 

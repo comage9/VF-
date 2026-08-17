@@ -233,7 +233,8 @@ function EnhancedInventoryPageContent({ className = "" }: EnhancedInventoryPageP
           is_discontinued: !!(item as any).is_discontinued,
           is_no_outbound_3m: !!(item as any).is_no_outbound_3m,
           price: Number((item as any).price || 0),
-        });
+          finish_type: String((item as any).finish_type || ''),
+        } as any);
       }
     } catch {
       setEditingSpec({

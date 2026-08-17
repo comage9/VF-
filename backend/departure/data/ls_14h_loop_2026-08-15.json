@@ -1,0 +1,54 @@
+{
+  "date": "2026-08-15",
+  "ok": true,
+  "message": "already registered 3 templates",
+  "vf_api": "down http0",
+  "vf_ls_data": "stale 2026-06-21 (no today file)",
+  "orders": [
+    {
+      "truckRequestId": 29443495,
+      "templateId": 90626,
+      "plateNumber": null,
+      "driverName": null,
+      "driverPhone": null,
+      "requestTimeEpoch": 1786791600000,
+      "orderDate": "2026-08-15",
+      "status": "SUBMITTED",
+      "truckType": "5T",
+      "requestTime": 1786791600000,
+      "hoche": 1
+    },
+    {
+      "truckRequestId": 29443496,
+      "templateId": 90628,
+      "plateNumber": null,
+      "driverName": null,
+      "driverPhone": null,
+      "requestTimeEpoch": 1786798860000,
+      "orderDate": "2026-08-15",
+      "status": "SUBMITTED",
+      "truckType": "5T",
+      "requestTime": 1786798860000,
+      "hoche": 2
+    },
+    {
+      "truckRequestId": 29443494,
+      "templateId": 90269,
+      "plateNumber": null,
+      "driverName": null,
+      "driverPhone": null,
+      "requestTimeEpoch": 1786805400000,
+      "orderDate": "2026-08-15",
+      "status": "SUBMITTED",
+      "truckType": "11T",
+      "requestTime": 1786805400000,
+      "hoche": 3
+    }
+  ],
+  "action": "skip_create_already_3",
+  "templates": [
+    90626,
+    90628,
+    90269
+  ]
+}

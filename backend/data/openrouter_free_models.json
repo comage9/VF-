@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-08-10T04:03:15.922963+00:00",
+  "updated_at": "2026-08-17T06:28:46.541993+00:00",
   "selected_model": "cohere/north-mini-code:free",
   "models": [
     {
@@ -11,6 +11,16 @@
         "completion": "0"
       },
       "description": "North Mini Code is Cohere's first agentic coding model and the debut of its North family. A sparse mixture-of-experts model with 30B total parameters and 3B active, it is optimized..."
+    },
+    {
+      "id": "dots-studio/dots-3-note-preview:free",
+      "name": "Dots Studio: Dots3-Note Preview (free)",
+      "context_length": 512000,
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      },
+      "description": "Dots3-Note Preview is an open-weight mixture-of-experts model from Dots Studio, with 16B active parameters out of 280B total. It is the lightest model in the Dots 3 family and is..."
     },
     {
       "id": "openrouter/free",
@@ -43,14 +53,14 @@
       "description": "Gemma 4 31B Instruct is Google DeepMind's 30.7B dense multimodal model supporting text and image input with text output. Features a 256K token context window, configurable thinking/reasoning mode, native function..."
     },
     {
-      "id": "inclusionai/ling-3.0-tiny:free",
-      "name": "inclusionAI: Ling 3.0 Tiny (free)",
-      "context_length": 262144,
+      "id": "liquid/lfm-2.5-2.6b:free",
+      "name": "LiquidAI: LFM2.5-2.6B (free)",
+      "context_length": 128000,
       "pricing": {
         "prompt": "0",
         "completion": "0"
       },
-      "description": "Ling 3.0 Tiny is a mixture-of-experts model from InclusionAI, with 1.3B active parameters out of 7.9B total. It is designed for responsive agents, instruction following, and multi-turn conversations, with switchable..."
+      "description": "LFM2.5-2.6B is a compact reasoning model from Liquid AI. It is suited for agent workflows, data extraction, RAG, and long-context processing. Liquid advises against using it for agentic coding or..."
     },
     {
       "id": "nvidia/nemotron-3-nano-30b-a3b:free",
@@ -91,6 +101,16 @@
         "completion": "0"
       },
       "description": "NVIDIA Nemotron 3 Ultra is an open frontier-reasoning and orchestration model from NVIDIA, with 55B active parameters out of 550B total (MoE). Built on a hybrid Transformer-Mamba mixture-of-experts architecture, it..."
+    },
+    {
+      "id": "nvidia/nemotron-3.5-lightning:free",
+      "name": "NVIDIA: Nemotron 3.5 Lightning (free)",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      },
+      "description": "NVIDIA Nemotron 3.5 Lightning is an open mixture-of-experts model from NVIDIA, with 3B active parameters out of 30B total. It is suited for high-throughput agentic workloads and specialized tasks that..."
     },
     {
       "id": "nvidia/nemotron-nano-12b-v2-vl:free",
@@ -141,9 +161,19 @@
         "completion": "0"
       },
       "description": "Laguna XS 2.1 is the latest coding agent model in the 33B-A3B category from [Poolside](https://poolside.ai/) and a step forward from their Laguna XS.2 model (released in April 2026). It combines..."
+    },
+    {
+      "id": "z-ai/glm-5.2:free",
+      "name": "Z.ai: GLM 5.2 (free)",
+      "context_length": 128000,
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      },
+      "description": "GLM 5.2 is a large-scale reasoning model from Z.ai. It supports text input and output with a 1M-token context window, and is suited for long-horizon agent workflows, project-level software engineering,..."
     }
   ],
   "source": "openrouter",
   "cache_hit": false,
-  "count": 14
+  "count": 17
 }

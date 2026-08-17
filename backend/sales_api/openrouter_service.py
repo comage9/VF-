@@ -116,20 +116,23 @@ def save_store(store: dict) -> None:
 
 def get_api_key() -> str:
     return (
-        (os.getenv("OPENROUTER_API_KEY") or "").strip()
+        (os.getenv("OMNIROUTE_API_KEY") or "").strip()
+        or (os.getenv("OPENROUTER_API_KEY") or "").strip()
         or (os.getenv("ANTHROPIC_AUTH_TOKEN") or "").strip()
+        or "omniroute-local"  # OmniRoute 로컬 더미 키
     )
 
 
 def get_base_url() -> str:
     """
-    Normalize to host root, e.g. https://openrouter.ai
-    (chat path is always /api/v1/chat/completions)
+    Normalize to host root.
+    OmniRoute 우선 → OpenRouter 폴백.
     """
     raw = (
-        (os.getenv("OPENROUTER_BASE_URL") or "").strip()
+        (os.getenv("OMNIROUTE_BASE_URL") or "").strip()
+        or (os.getenv("OPENROUTER_BASE_URL") or "").strip()
         or (os.getenv("ANTHROPIC_BASE_URL") or "").strip()
-        or "https://openrouter.ai"
+        or "http://localhost:20128"  # OmniRoute 기본 주소
     )
     base = raw.rstrip("/")
     # strip common suffixes so callers can append /api/v1/...

@@ -39,16 +39,21 @@ class AgentOrchestrator:
             'action': ActionAgent(),
         }
 
-        # Default router model - use free openrouter model
-        self.router_model = os.getenv('ROUTER_MODEL', 'openrouter/free')
+        # Default router model - use OmniRoute auto-routing or specific model
+        self.router_model = os.getenv('ROUTER_MODEL', 'auto')
 
     def get_config(self) -> Optional[Dict[str, Any]]:
-        """Get OpenRouter configuration"""
-        base_url = (os.getenv("ANTHROPIC_BASE_URL") or "https://openrouter.ai").strip().rstrip("/")
-        api_key = (os.getenv("ANTHROPIC_AUTH_TOKEN") or "").strip()
-
-        if not base_url or not api_key:
-            return None
+        """Get OmniRoute / OpenRouter configuration"""
+        base_url = (
+            (os.getenv("OMNIROUTE_BASE_URL") or "").strip().rstrip("/")
+            or (os.getenv("ANTHROPIC_BASE_URL") or "").strip().rstrip("/")
+            or "http://localhost:20128"
+        )
+        api_key = (
+            (os.getenv("OMNIROUTE_API_KEY") or "").strip()
+            or (os.getenv("ANTHROPIC_AUTH_TOKEN") or "").strip()
+            or "omniroute-local"
+        )
 
         return {
             "base_url": base_url,

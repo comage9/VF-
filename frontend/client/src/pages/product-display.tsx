@@ -11,6 +11,7 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  pointerWithin,
   useDraggable,
   useDroppable,
   useSensor,
@@ -707,6 +708,7 @@ export default function ProductDisplayPage() {
   const [saveMsg, setSaveMsg] = useState("");
   // 총괄 우측 패널: 배치/미배치 대분류별 목록 + 선택 상세
   const [panelTab, setPanelTab] = useState<"placed" | "unplaced" | "overflow">("placed");
+  const [openLg, setOpenLg] = useState<string | null>(null); // 분류 아코디언 (null=전부 접힘)
   const [selPnum, setSelPnum] = useState<string | null>(null);
   const [selZone, setSelZone] = useState<string | null>(null);
   const [searchQ, setSearchQ] = useState("");
@@ -744,6 +746,15 @@ export default function ProductDisplayPage() {
     }
     return DONG_LAYOUTS.map((d) => ({ ...d, zones: d.zones.map((z) => ({ ...z, style: { ...z.style } })) }));
   });
+  // 데이터 자동 저장 (소실 안전망) — 모든 변경 즉시 localStorage 반영
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: SAVED_VERSION, data }));
+    } catch {
+      /* 용량/오류 무시 */
+    }
+  }, [data]);
+
   // 레이아웃(칸 좌표) 자동 저장
   useEffect(() => {
     try {
@@ -1030,6 +1041,25 @@ export default function ProductDisplayPage() {
     }
     // 수정 모드 칸(슬롯) 이동: 드래그로 자유 좌표 배치 또는 다른 칸과 교환
     if (src.kind === "cell") {
+      // 드래그한 칸을 보관함 드롭존에 놓음 → 칸 비우기 + 제품 보관 (A동 1칸 1품목)
+      if (overId === "drop-staging") {
+        setData((prev) => {
+          const next = { ...prev };
+          const val = next[src.zoneId];
+          if (val) {
+            const pns = val.split(",").map((s) => s.trim()).filter(Boolean);
+            setStaging((s) => Array.from(new Set([...s, ...pns])));
+            delete next[src.zoneId];
+            persistLocal(next);
+            return next;
+          }
+          return prev;
+        });
+        setDragSource(null);
+        setSaveMsg("보관함에 넣음");
+        window.setTimeout(() => setSaveMsg(""), 1500);
+        return;
+      }
       if (overId.startsWith("drop-")) {
         // 다른 칸 위에 놓음 → 두 칸 좌표 교환 (swap)
         const dstZoneId = overId.slice(5);
@@ -1301,10 +1331,7 @@ export default function ProductDisplayPage() {
   };
 
   // 보관함 드롭존 (B/C/D 품목 드래그 → 보관함)
-  const { setNodeRef: stagingDropRef, isOver: stagingIsOver } = useDroppable({
-    id: "drop-staging",
-    data: { kind: "staging" },
-  });
+  // ── 보관함 드롭존은 StagingPanel 컴포넌트에서 정의 (DndContext 컨텍스트 수신) ──
 
   // 라인(열) 단위 좌표 교환: 선택 그룹 라인 ↔ 목적지 칸의 라인 (칸 수 동일할 때)
   const moveGroupTo = (groupIds: string[], dstId: string) => {
@@ -1678,7 +1705,7 @@ export default function ProductDisplayPage() {
 
         {dong === "ALL" ? (
           <div className="flex flex-wrap gap-3 items-start">
-            <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+            <DndContext sensors={sensors} autoScroll={false} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
             {(() => {
               const renderCard = (
                 k: DongKey,
@@ -1748,12 +1775,12 @@ export default function ProductDisplayPage() {
                     {renderCard("C", 0.558)}
                     {renderCard("E", 1, 634, 140)}
                   </div>
-                  {/* 제일 우측: 배치/미배치 대분류별 목록 + 상세 */}
-                  <div className="rounded-xl border bg-card p-3 shrink-0 w-[340px] flex flex-col gap-2">
+                  {/* 제일 우측: 배치/미배치 대분류별 목록 + 상세 + 임시 보관함 */}
+                  <div className="rounded-xl border bg-card p-3 shrink-0 w-[560px] flex flex-col gap-2">
                     <div className="flex gap-1">
                       <button
                         type="button"
-                        onClick={() => { setPanelTab("placed"); setSelPnum(null); setSelZone(null); }}
+                        onClick={() => { setPanelTab("placed"); setOpenLg(null); setSelPnum(null); setSelZone(null); }}
                         className={
                           "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
                           (panelTab === "placed" ? "bg-[#721FE5] text-white" : "bg-muted text-foreground hover:bg-muted/80")
@@ -1763,7 +1790,7 @@ export default function ProductDisplayPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => { setPanelTab("unplaced"); setSelPnum(null); setSelZone(null); }}
+                        onClick={() => { setPanelTab("unplaced"); setOpenLg(null); setSelPnum(null); setSelZone(null); }}
                         className={
                           "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
                           (panelTab === "unplaced"
@@ -1776,7 +1803,7 @@ export default function ProductDisplayPage() {
                       {overflow.length > 0 && (
                         <button
                           type="button"
-                          onClick={() => { setPanelTab("overflow"); setSelPnum(null); setSelZone(null); }}
+                          onClick={() => { setPanelTab("overflow"); setOpenLg(null); setSelPnum(null); setSelZone(null); }}
                           className={
                             "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
                             (panelTab === "overflow"
@@ -1808,11 +1835,18 @@ export default function ProductDisplayPage() {
                           const keys = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
                           return keys.map((lg) => (
                             <div key={lg} className="border rounded-md overflow-hidden">
-                              <div className="bg-muted px-2 py-1 text-[11px] font-bold flex justify-between">
+                              <button
+                                type="button"
+                                onClick={() => setOpenLg(openLg === lg ? null : lg)}
+                                className="w-full bg-muted px-2 py-1 text-[11px] font-bold flex justify-between items-center hover:bg-muted/80 cursor-pointer"
+                              >
                                 <span>{lg}</span>
-                                <span className="text-muted-foreground">{groups[lg].length}품목</span>
-                              </div>
-                              <div className="max-h-40 overflow-auto">
+                                <span className="text-muted-foreground">
+                                  {groups[lg].length}품목 {openLg === lg ? "▾" : "▸"}
+                                </span>
+                              </button>
+                              {openLg === lg && (
+                              <div className="max-h-60 overflow-auto">
                                 {groups[lg].map((g) => (
                                   <button
                                     key={`${g.zone}-${g.pnum}`}
@@ -1828,6 +1862,7 @@ export default function ProductDisplayPage() {
                                   </button>
                                 ))}
                               </div>
+                              )}
                             </div>
                           ));
                         })()}
@@ -1849,11 +1884,18 @@ export default function ProductDisplayPage() {
                             </div>
                           ) : keys.map((lg) => (
                             <div key={lg} className="border rounded-md overflow-hidden">
-                              <div className="bg-muted px-2 py-1 text-[11px] font-bold flex justify-between">
+                              <button
+                                type="button"
+                                onClick={() => setOpenLg(openLg === lg ? null : lg)}
+                                className="w-full bg-muted px-2 py-1 text-[11px] font-bold flex justify-between items-center hover:bg-muted/80 cursor-pointer"
+                              >
                                 <span>{lg}</span>
-                                <span className="text-muted-foreground">{groups[lg].length}품목</span>
-                              </div>
-                              <div className="max-h-40 overflow-auto">
+                                <span className="text-muted-foreground">
+                                  {groups[lg].length}품목 {openLg === lg ? "▾" : "▸"}
+                                </span>
+                              </button>
+                              {openLg === lg && (
+                              <div className="max-h-60 overflow-auto">
                                 {groups[lg].map((u) => (
                                   <button
                                     key={`${u.barcode}-${u.pnum}`}
@@ -1869,6 +1911,7 @@ export default function ProductDisplayPage() {
                                   </button>
                                 ))}
                               </div>
+                              )}
                             </div>
                           ));
                         })()}
@@ -1898,6 +1941,7 @@ export default function ProductDisplayPage() {
                                       pnum={o.pnum}
                                       text={o.pnum}
                                       kind="overflow"
+                                      disabled={!editMode}
                                     />
                                   </div>
                                   <div className="text-[10px] text-muted-foreground truncate">
@@ -1957,6 +2001,10 @@ export default function ProductDisplayPage() {
                         )}
                       </div>
                     ) : null}
+                    {/* 임시 보관함 — 총괄 우측 패널에서도 접근 (수정 모드) */}
+                    {editMode && (
+                      <StagingPanel staging={staging} onClear={clearStaging} onRemove={stagingToUnplaced} />
+                    )}
                   </div>
                 </>
               );
@@ -1965,7 +2013,7 @@ export default function ProductDisplayPage() {
           </div>
         ) : (
         <div className="w-full overflow-auto pb-2" style={{ maxHeight: "calc(100vh - 240px)" }}>
-          <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          <DndContext sensors={sensors} autoScroll={false} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div
             ref={gridRef}
             className="relative rounded-xl border bg-slate-50 shrink-0"
@@ -2040,36 +2088,7 @@ export default function ProductDisplayPage() {
             </DragOverlay>
           </div>
           {editMode && (
-            <div className="mt-2 rounded-md border border-amber-300 bg-amber-50/70 p-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-900">📦 임시 보관함 ({staging.length})</span>
-                {staging.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={clearStaging}
-                    className="text-[10px] text-amber-700 hover:text-red-600"
-                    title="보관함 비우기 (배치는 유지)"
-                  >
-                    비우기
-                  </button>
-                )}
-              </div>
-              <div
-                ref={stagingDropRef}
-                className={
-                  "mt-1 min-h-9 rounded border-2 border-dashed p-1 flex flex-wrap gap-1 items-center " +
-                  (stagingIsOver ? "border-amber-500 bg-amber-100" : "border-amber-300")
-                }
-              >
-                {staging.length === 0 ? (
-                  <span className="text-[10px] text-amber-500">
-                    빈 칸 — 품목을 여기에 놓거나, 칸 선택 후 "보관함에 넣기"
-                  </span>
-                ) : (
-                  staging.map((pn) => <StagingChip key={pn} pnum={pn} onRemove={stagingToUnplaced} />)
-                )}
-              </div>
-            </div>
+            <StagingPanel staging={staging} onClear={clearStaging} onRemove={stagingToUnplaced} />
           )}
           </DndContext>
         </div>
@@ -2251,7 +2270,7 @@ function MiniZoneCell({
   const items = value ? value.split(",").map((s) => s.trim()).filter(Boolean) : [];
   const drag = useDraggable({
     id: `ovdrag-${z.id}-0-${items[0] || "empty"}`,
-    disabled: !assigned || editMode,
+    disabled: !assigned || !editMode,
     data: { kind: "zone", zoneId: z.id, itemIdx: 0, pnum: items[0] || "" } as DragSource,
   });
   const nodeRef = (node: HTMLButtonElement | null) => {
@@ -2294,6 +2313,54 @@ function MiniZoneCell({
   );
 }
 
+/* 임시 보관함 패널 — DndContext 안에서 렌더되어 useDroppable('drop-staging')이 컨텍스트를 받도록 별도 컴포넌트 */
+function StagingPanel({
+  staging,
+  onClear,
+  onRemove,
+}: {
+  staging: string[];
+  onClear: () => void;
+  onRemove: (pn: string) => void;
+}) {
+  const { setNodeRef: dropRef, isOver } = useDroppable({
+    id: "drop-staging",
+    data: { kind: "staging" },
+  });
+  return (
+    <div className="mt-2 rounded-md border border-amber-300 bg-amber-50/70 p-2 sticky bottom-2 shadow-md">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold text-amber-900">📦 임시 보관함 ({staging.length})</span>
+        {staging.length > 0 && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="text-[10px] text-amber-700 hover:text-red-600"
+            title="보관함 비우기 (배치는 유지)"
+          >
+            비우기
+          </button>
+        )}
+      </div>
+      <div
+        ref={dropRef}
+        className={
+          "mt-1 min-h-9 rounded border-2 border-dashed p-1 flex flex-wrap gap-1 items-center " +
+          (isOver ? "border-amber-500 bg-amber-100" : "border-amber-300")
+        }
+      >
+        {staging.length === 0 ? (
+          <span className="text-[10px] text-amber-500">
+            빈 칸 — 품목을 여기에 놓거나, 칸 선택 후 "보관함에 넣기"
+          </span>
+        ) : (
+          staging.map((pn) => <StagingChip key={pn} pnum={pn} onRemove={onRemove} />)
+        )}
+      </div>
+    </div>
+  );
+}
+
 function StagingChip({ pnum, onRemove }: { pnum: string; onRemove: (pn: string) => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `stg-${pnum}`,
@@ -2332,15 +2399,18 @@ function DragChip({
   pnum,
   text,
   kind = "zone",
+  disabled = false,
 }: {
   zoneId: string;
   itemIdx: number;
   pnum: string;
   text: string;
   kind?: "zone" | "overflow";
+  disabled?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `drag-${kind === "overflow" ? "ov" : zoneId}-${itemIdx}-${pnum}`,
+    disabled,
     data: { kind, zoneId, itemIdx, pnum } as DragSource,
   });
   return (
@@ -2393,22 +2463,17 @@ function ZoneCell({
     id: `drop-${z.id}`,
     data: { zoneId: z.id } as { zoneId: string; itemIdx?: number },
   });
-  const aDrag = useDraggable({
-    id: `adrag-${z.id}`,
-    // 수정 모드에서는 제품 드래그 비활성 → 칸(슬롯) 드래그(cellDrag)가 담당
-    disabled: !assigned || !isA || editMode,
-    data: { kind: "zone", zoneId: z.id, itemIdx: 0, pnum: items[0] || "" } as DragSource,
-  });
-  // 수정 모드 칸(슬롯) 자유 이동 드래그
+  // 셀 드래그: 수정 모드에서만 활성 (비수정=변경 불가) — 수정=칸(cell), data 동적
   const cellDrag = useDraggable({
     id: `cell-${z.id}`,
     disabled: !editMode,
-    data: { kind: "cell", zoneId: z.id } as DragSource,
+    data: (editMode
+      ? { kind: "cell", zoneId: z.id }
+      : { kind: "zone", zoneId: z.id, itemIdx: 0, pnum: items[0] || "" }) as DragSource,
   });
   const nodeRef = (node: HTMLButtonElement | null) => {
     dropRef(node);
-    if (isA) aDrag.setNodeRef(node);
-    if (editMode) cellDrag.setNodeRef(node);
+    cellDrag.setNodeRef(node);
   };
   return (
     <button
@@ -2417,10 +2482,8 @@ function ZoneCell({
       data-zone-id={z.id}
       onClick={editMode ? onToggleSelect : onOpen}
       title={moveTarget ? `${tip} — 클릭하면 선택 칸이 이 위치로 이동` : tip}
-      {...(isA ? aDrag.listeners : {})}
-      {...(isA ? aDrag.attributes : {})}
-      {...(editMode ? cellDrag.listeners : {})}
-      {...(editMode ? cellDrag.attributes : {})}
+      {...cellDrag.listeners}
+      {...cellDrag.attributes}
       className={
         "absolute flex items-center justify-center rounded border text-center px-0.5 transition-colors " +
         (assigned
@@ -2448,11 +2511,11 @@ function ZoneCell({
         >
           {items.length > 1 && !isA
             ? items.map((it, i) => (
-                <DragChip key={`${z.id}-${i}`} zoneId={z.id} itemIdx={i} pnum={it} text={it} />
+                <DragChip key={`${z.id}-${i}`} zoneId={z.id} itemIdx={i} pnum={it} text={it} disabled={!editMode} />
               ))
             : isA && items[0]
               ? (
-                <DragChip zoneId={z.id} itemIdx={0} pnum={items[0]} text={items[0]} />
+                <DragChip zoneId={z.id} itemIdx={0} pnum={items[0]} text={items[0]} disabled={!editMode} />
               )
               : displayOnly(items[0])}
         </span>

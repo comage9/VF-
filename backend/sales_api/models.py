@@ -152,6 +152,18 @@ class BarcodeMaster(models.Model):
             "True면 위험 품목(critical) 집계에서 제외되고 '장기 미발주 요청 품목' 카드로 별도 관리."
         ),
     )
+    # 입고 제한 수량 기본값 (배치 계산 SoT). UI 실시간 계산 금지 — DB 조회만.
+    # 공식: 3개월(90d) 일평균 + 최근 1달 추이 가산 → ×4일 보유. 출고 없/0이면 2.
+    default_inbound_limit_qty = models.IntegerField(
+        default=2,
+        db_index=True,
+        help_text='4일 보유 기본 입고제한 수량(배치). 출고 없/저조 시 최소 2.',
+    )
+    default_inbound_limit_updated_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='default_inbound_limit_qty 마지막 배치 시각',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -662,6 +674,7 @@ class InboundProductRestriction(models.Model):
     enabled=True 이고 오늘 < allowed_from 이면 입고 불가.
     allowed_from 이 null 이고 enabled=True 이면 무기한 차단(가능일 설정 전).
     enabled=False 이면 제한 해제(이력 유지).
+    limit_qty: null/0 = 수량 한도 없음(입력 가능). >0 이면 스캐너 입고가능 상한.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     barcode = models.CharField(max_length=100, unique=True, db_index=True)
@@ -675,6 +688,13 @@ class InboundProductRestriction(models.Model):
         db_index=True,
         help_text='이 날짜부터 입고 허용 (포함). null + enabled=True → 무기한 차단',
     )
+    # 입고 제한 수량: null/0 = 수량 한도 없음(입력 가능). >0 이면 스캐너 입고가능 상한.
+    limit_qty = models.IntegerField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text='입고 제한 수량. null 또는 0이면 수량 제한 없음. 양수면 스캐너/마스터 공유 상한.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -684,7 +704,7 @@ class InboundProductRestriction(models.Model):
 
     def __str__(self):
         flag = 'ON' if self.enabled else 'OFF'
-        return f"{self.barcode} [{flag}] from={self.allowed_from}"
+        return f"{self.barcode} [{flag}] from={self.allowed_from} limit={self.limit_qty}"
 
     def is_blocked_on(self, on_date=None) -> bool:
         """on_date(date) 기준 입고 차단 여부."""
@@ -696,6 +716,15 @@ class InboundProductRestriction(models.Model):
         if self.allowed_from is None:
             return True
         return d < self.allowed_from
+
+    def effective_limit_qty(self):
+        """양수 제한 수량만 반환. 없으면 None."""
+        try:
+            q = int(self.limit_qty) if self.limit_qty is not None else 0
+        except (TypeError, ValueError):
+            q = 0
+        return q if q > 0 else None
+
 
 
 class FCInboundRecord(models.Model):

@@ -17,13 +17,13 @@ class BaseAgent(ABC):
 
     # Default free models from OpenRouter (verified working)
     DEFAULT_MODELS = {
-        'router': 'openrouter/free',
-        'outbound': 'deepseek/deepseek-v4-flash:free',
-        'inbound': 'deepseek/deepseek-v4-flash:free',
-        'inventory': 'meta-llama/llama-3.2-3b-instruct:free',
-        'production': 'deepseek/deepseek-v4-flash:free',
-        'delivery': 'deepseek/deepseek-v4-flash:free',
-        'action': 'deepseek/deepseek-v4-flash:free',
+        'router': 'auto',
+        'outbound': 'auto',
+        'inbound': 'auto',
+        'inventory': 'auto',
+        'production': 'auto',
+        'delivery': 'auto',
+        'action': 'auto',
     }
 
     def __init__(self, agent_type: str, model: Optional[str] = None):
@@ -31,12 +31,17 @@ class BaseAgent(ABC):
         self.model = model or self.DEFAULT_MODELS.get(agent_type, 'minimax/MiniMax-M2.7')
 
     def get_config(self) -> Optional[Dict[str, Any]]:
-        """Get OpenRouter configuration"""
-        base_url = (os.getenv("ANTHROPIC_BASE_URL") or "https://openrouter.ai").strip().rstrip("/")
-        api_key = (os.getenv("ANTHROPIC_AUTH_TOKEN") or "").strip()
-
-        if not base_url or not api_key:
-            return None
+        """Get OmniRoute / OpenRouter configuration"""
+        base_url = (
+            (os.getenv("OMNIROUTE_BASE_URL") or "").strip().rstrip("/")
+            or (os.getenv("ANTHROPIC_BASE_URL") or "").strip().rstrip("/")
+            or "http://localhost:20128"
+        )
+        api_key = (
+            (os.getenv("OMNIROUTE_API_KEY") or "").strip()
+            or (os.getenv("ANTHROPIC_AUTH_TOKEN") or "").strip()
+            or "omniroute-local"
+        )
 
         return {
             "base_url": base_url,
