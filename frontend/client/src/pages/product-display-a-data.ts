@@ -1,6 +1,6 @@
 /** A동: L7 슬롯 분리(7-N-1=아래, 7-N-2=위), 20번 라인(20-1,20-2) 추가, 마스터 연계 툴팁 */
 export const A_TOTAL_PRODUCTS = 875;
-export const A_PLACED_COUNT = 130;
+export const A_PLACED_COUNT = 120;
 export const A_RANK_PLACEMENT: Record<string, string> = {
   "A-L1-1": "1",
   "A-L1-2": "3",
@@ -116,16 +116,6 @@ export const A_RANK_PLACEMENT: Record<string, string> = {
   "A-L6-17": "980",
   "A-L6-18": "762",
   "A-L6-19": "2041",
-  "A-L7-1-1": "213",
-  "A-L7-1-2": "217",
-  "A-L7-2-1": "211",
-  "A-L7-2-2": "215",
-  "A-L7-3-1": "233",
-  "A-L7-3-2": "231",
-  "A-L7-4-1": "243",
-  "A-L7-4-2": "241",
-  "A-L7-5-1": "253",
-  "A-L7-5-2": "251",
   "A-L7-6-1": "210",
   "A-L7-6-2": "214",
   "A-L7-7-1": "203",
@@ -249,16 +239,6 @@ export const A_ZONE_CAT: Record<string, string> = {
   "A-L6-17": "칵투스",
   "A-L6-18": "와이드 서랍장",
   "A-L6-19": "오픈 스텝",
-  "A-L7-1-1": "슬림서랍장",
-  "A-L7-1-2": "슬림서랍장",
-  "A-L7-2-1": "슬림서랍장",
-  "A-L7-2-2": "슬림서랍장",
-  "A-L7-3-1": "슬림서랍장",
-  "A-L7-3-2": "슬림서랍장",
-  "A-L7-4-1": "슬림서랍장",
-  "A-L7-4-2": "슬림서랍장",
-  "A-L7-5-1": "슬림서랍장",
-  "A-L7-5-2": "슬림서랍장",
 };
 export const A_ZONE_MASTER_NAME: Record<string, string> = {
   "A-L1-1": "모던플러스 내츄럴오크 우드상판형 5단",
@@ -375,16 +355,6 @@ export const A_ZONE_MASTER_NAME: Record<string, string> = {
   "A-L6-17": "보노하우스 칵투스 세숫대야 대형 그레이",
   "A-L6-18": "보노하우스 심플리 와이드 서랍장 6단 화이트 1개",
   "A-L6-19": "013 오픈 스텝바스켓 3단 화이트",
-  "A-L7-1-1": "보노 슬림서랍장 5단 화이트(바퀴포함)",
-  "A-L7-1-2": "보노 슬림서랍장 5단 투명(바퀴포함)",
-  "A-L7-2-1": "보노 슬림서랍장 6단 화이트(바퀴포함)",
-  "A-L7-2-2": "보노 슬림서랍장 6단 투명(바퀴포함)",
-  "A-L7-3-1": "보노 슬림서랍장 4단 투명(바퀴포함)",
-  "A-L7-3-2": "보노 슬림서랍장 4단 화이트(바퀴포함)",
-  "A-L7-4-1": "보노 슬림서랍장 3단 투명(바퀴포함)",
-  "A-L7-4-2": "보노 슬림서랍장 3단 화이트(바퀴포함)",
-  "A-L7-5-1": "보노 슬림서랍장 2단 투명(바퀴포함)",
-  "A-L7-5-2": "보노 슬림서랍장 2단 화이트(바퀴포함)",
 };
 export const A_ZONE_CATEGORY_LG: Record<string, string> = {
   "A-L1-1": "모던 플러스",
@@ -501,16 +471,6 @@ export const A_ZONE_CATEGORY_LG: Record<string, string> = {
   "A-L6-17": "칵투스",
   "A-L6-18": "와이드 서랍장",
   "A-L6-19": "오픈 스텝",
-  "A-L7-1-1": "슬림서랍장",
-  "A-L7-1-2": "슬림서랍장",
-  "A-L7-2-1": "슬림서랍장",
-  "A-L7-2-2": "슬림서랍장",
-  "A-L7-3-1": "슬림서랍장",
-  "A-L7-3-2": "슬림서랍장",
-  "A-L7-4-1": "슬림서랍장",
-  "A-L7-4-2": "슬림서랍장",
-  "A-L7-5-1": "슬림서랍장",
-  "A-L7-5-2": "슬림서랍장",
 };
 export const A_ZONE_CATEGORY_MD: Record<string, string> = {
   "A-L1-1": "모던",
@@ -627,16 +587,6 @@ export const A_ZONE_CATEGORY_MD: Record<string, string> = {
   "A-L6-17": "세숫대야",
   "A-L6-18": "심플리",
   "A-L6-19": "미분류",
-  "A-L7-1-1": "미분류",
-  "A-L7-1-2": "미분류",
-  "A-L7-2-1": "미분류",
-  "A-L7-2-2": "미분류",
-  "A-L7-3-1": "미분류",
-  "A-L7-3-2": "미분류",
-  "A-L7-4-1": "미분류",
-  "A-L7-4-2": "미분류",
-  "A-L7-5-1": "미분류",
-  "A-L7-5-2": "미분류",
 };
 export const A_ZONE_STOCK: Record<string, number> = {
   "A-L1-1": 47,
@@ -753,16 +703,6 @@ export const A_ZONE_STOCK: Record<string, number> = {
   "A-L6-17": 0,
   "A-L6-18": 15,
   "A-L6-19": 16,
-  "A-L7-1-1": 4,
-  "A-L7-1-2": 2,
-  "A-L7-2-1": 6,
-  "A-L7-2-2": 4,
-  "A-L7-3-1": 3,
-  "A-L7-3-2": 6,
-  "A-L7-4-1": 0,
-  "A-L7-4-2": 3,
-  "A-L7-5-1": 5,
-  "A-L7-5-2": 2,
 };
 export const A_ZONE_BARCODE: Record<string, string> = {
   "A-L1-1": "R003750270003",
@@ -879,16 +819,6 @@ export const A_ZONE_BARCODE: Record<string, string> = {
   "A-L6-17": "R248463570002",
   "A-L6-18": "R011622510003",
   "A-L6-19": "R001022730013",
-  "A-L7-1-1": "R001475620022",
-  "A-L7-1-2": "R001475620024",
-  "A-L7-2-1": "R001475620028",
-  "A-L7-2-2": "R001475620030",
-  "A-L7-3-1": "R001475620018",
-  "A-L7-3-2": "R001475620016",
-  "A-L7-4-1": "R001475620012",
-  "A-L7-4-2": "R001475620010",
-  "A-L7-5-1": "R001475620006",
-  "A-L7-5-2": "R001475620004",
 };
 export type CatBand = { line: number; cellStart: number; cellEnd: number; cat: string; label: string };
 export const A_CAT_BANDS: CatBand[] = [];
@@ -1609,5 +1539,15 @@ export const A_UNPLACED: UnplacedItem[] = [
   { rank: 873, pnum: "883", boxes: 0, cat: "에센셜", name: "보노하우스 시에나 우드상판 서랍장 화이트 3단 1개 340X420X627mm", loc: "320-A1-1-883", barcode: "R227054770001", master_name: "보노하우스 시에나 우드상판 서랍장 화이트 3단 1개 340X420X627mm", category_lg: "에센셜", category_md: "라탄", stock: 4 },
   { rank: 874, pnum: "785", boxes: 0, cat: "에센셜", name: "보노하우스 에버 라탄 우드상판 서랍장 버터 5단 1개", loc: "320-A1-1-785", barcode: "R214219170010", master_name: "보노하우스 에버 라탄 우드상판 서랍장 버터 5단 1개", category_lg: "에센셜", category_md: "미분류", stock: 4 },
   { rank: 875, pnum: "817", boxes: 0, cat: "에센셜", name: "보노하우스 가든 라탄 서랍장버터 6단 1개", loc: "320-A1-1-817", barcode: "R207232140002", master_name: "보노하우스 가든 라탄 서랍장버터 6단 1개", category_lg: "에센셜", category_md: "라탄", stock: 3 },
+  { rank: 404, pnum: "213", boxes: 5, cat: "슬림서랍장", name: "보노 슬림서랍장 5단 화이트(바퀴포함)", loc: "320-A1-1-213", barcode: "R001475620022", master_name: "보노 슬림서랍장 5단 화이트(바퀴포함)", category_lg: "슬림서랍장", category_md: "미분류", stock: 4 },
+  { rank: 350, pnum: "217", boxes: 7, cat: "슬림서랍장", name: "보노 슬림서랍장 5단 투명(바퀴포함)", loc: "320-A1-1-217", barcode: "R001475620024", master_name: "보노 슬림서랍장 5단 투명(바퀴포함)", category_lg: "슬림서랍장", category_md: "미분류", stock: 2 },
+  { rank: 322, pnum: "211", boxes: 8, cat: "슬림서랍장", name: "보노 슬림서랍장 6단 화이트(바퀴포함)", loc: "320-A1-1-211", barcode: "R001475620028", master_name: "보노 슬림서랍장 6단 화이트(바퀴포함)", category_lg: "슬림서랍장", category_md: "미분류", stock: 6 },
+  { rank: 259, pnum: "215", boxes: 13, cat: "슬림서랍장", name: "보노 슬림서랍장 6단 투명(바퀴포함)", loc: "320-A1-1-215", barcode: "R001475620030", master_name: "보노 슬림서랍장 6단 투명(바퀴포함)", category_lg: "슬림서랍장", category_md: "미분류", stock: 4 },
+  { rank: 287, pnum: "233", boxes: 10, cat: "슬림서랍장", name: "보노 슬림서랍장 4단 투명(바퀴포함)", loc: "320-A1-1-233", barcode: "R001475620018", master_name: "보노 슬림서랍장 4단 투명(바퀴포함)", category_lg: "슬림서랍장", category_md: "미분류", stock: 3 },
+  { rank: 229, pnum: "231", boxes: 16, cat: "슬림서랍장", name: "보노 슬림서랍장 4단 화이트(바퀴포함)", loc: "320-A1-1-231", barcode: "R001475620016", master_name: "보노 슬림서랍장 4단 화이트(바퀴포함)", category_lg: "슬림서랍장", category_md: "미분류", stock: 6 },
+  { rank: 686, pnum: "243", boxes: 0, cat: "슬림서랍장", name: "보노 슬림서랍장 3단 투명(바퀴포함)", loc: "320-A1-1-243", barcode: "R001475620012", master_name: "보노 슬림서랍장 3단 투명(바퀴포함)", category_lg: "슬림서랍장", category_md: "미분류", stock: 0 },
+  { rank: 540, pnum: "241", boxes: 2, cat: "슬림서랍장", name: "보노 슬림서랍장 3단 화이트(바퀴포함)", loc: "320-A1-1-241", barcode: "R001475620010", master_name: "보노 슬림서랍장 3단 화이트(바퀴포함)", category_lg: "슬림서랍장", category_md: "미분류", stock: 3 },
+  { rank: 627, pnum: "253", boxes: 1, cat: "슬림서랍장", name: "보노 슬림서랍장 2단 투명(바퀴포함)", loc: "320-A1-1-253", barcode: "R001475620006", master_name: "보노 슬림서랍장 2단 투명(바퀴포함)", category_lg: "슬림서랍장", category_md: "미분류", stock: 5 },
+  { rank: 445, pnum: "251", boxes: 4, cat: "슬림서랍장", name: "보노 슬림서랍장 2단 화이트(바퀴포함)", loc: "320-A1-1-251", barcode: "R001475620004", master_name: "보노 슬림서랍장 2단 화이트(바퀴포함)", category_lg: "슬림서랍장", category_md: "미분류", stock: 2 },
 ];
 export const A_SLOT_CONFLICTS: { slot: number; zone: string; note: string }[] = [];
