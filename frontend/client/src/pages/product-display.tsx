@@ -1220,14 +1220,22 @@ export default function ProductDisplayPage() {
   };
 
   const resetData = () => {
-    if (!window.confirm("A동을 초기 배치로 되돌릴까요?")) return;
+    if (!window.confirm("A동을 초기 배치로 되돌릴까요? (B/C/D동 배치는 유지됩니다)")) return;
     const defaults = defaultAPlacement();
-    setData(defaults);
+    // A동만 기본값으로, B/C/D동은 현재 사용자 배치 유지
+    const next: Record<string, string> = {};
+    for (const [k, v] of Object.entries(defaults)) {
+      if (k.startsWith("A-")) next[k] = v;
+    }
+    for (const [k, v] of Object.entries(data)) {
+      if (!k.startsWith("A-")) next[k] = v;
+    }
+    setData(next);
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v15", data: defaults })
+      JSON.stringify({ __v: "rank-a-v15", data: next })
     );
-    setSaveMsg("초기화했습니다.");
+    setSaveMsg("A동만 초기화했습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
   };
 

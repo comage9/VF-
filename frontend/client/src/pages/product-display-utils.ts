@@ -48,19 +48,22 @@ export function aShiftInsert(
   // BUG-FIX(2026-08-17): {} 시작 → A동 키만 반환되어 B/C/D동 배치 소실. 전체 복사 후 변경.
   const next: Record<string, string> = { ...data };
   delete next[srcZone]; // 소스 칸을 빈칸으로
+  // 빈칸(undefined) 전파 방지: 값이 없으면 키를 제거해 빈칸 유지 (잔존+overflow 중복 방지)
+  const put = (id: string, v: string | undefined) => {
+    if (v === undefined) delete next[id];
+    else next[id] = v;
+  };
   for (let i = 0; i < shrunk.length; i++) {
     const id = shrunk[i];
     if (i < d2) {
       // 대상 앞: 원본 유지 (src 제거 후 위치 보정됨)
-      const v = data[id];
-      if (v !== undefined) next[id] = v;
+      put(id, data[id]);
     } else if (i === d2) {
       // 대상: 이동품목 삽입
       next[id] = item;
     } else {
       // 대상 이후: 한 칸씩 뒤로 (축약 시퀀스 기준 i-1의 원본)
-      const v = data[shrunk[i - 1]];
-      if (v !== undefined) next[id] = v;
+      put(id, data[shrunk[i - 1]]);
     }
   }
 
