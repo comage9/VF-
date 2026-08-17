@@ -709,7 +709,7 @@ export default function ProductDisplayPage() {
   const [movePnum, setMovePnum] = useState<string | null>(null); // 자리이탈 품목 이동 모드 (클릭한 칸으로 배치)
   const [saveMsg, setSaveMsg] = useState("");
   // 총괄 우측 패널: 배치/미배치 대분류별 목록 + 선택 상세
-  const [panelTab, setPanelTab] = useState<"placed" | "unplaced" | "overflow">("placed");
+  const [panelTab, setPanelTab] = useState<"placed" | "unplaced" | "overflow" | "staging">("placed");
   const [openLg, setOpenLg] = useState<string | null>(null); // 분류 아코디언 (null=전부 접힘)
   const [selPnum, setSelPnum] = useState<string | null>(null);
   const [selZone, setSelZone] = useState<string | null>(null);
@@ -1875,7 +1875,7 @@ export default function ProductDisplayPage() {
                       {overflow.length > 0 && (
                         <button
                           type="button"
-                          onClick={() => { setPanelTab("overflow"); setOpenLg(null); setSelPnum(null); setSelZone(null); }}
+                          onClick={() => { setPanelTab("overflow"); setOpenLg(null); setSelPnum(null); setSelZone(null); setMovePnum(null); }}
                           className={
                             "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
                             (panelTab === "overflow"
@@ -1886,8 +1886,22 @@ export default function ProductDisplayPage() {
                           자리이탈 ({overflow.length})
                         </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => { setPanelTab("staging"); setOpenLg(null); setSelPnum(null); setSelZone(null); setMovePnum(null); }}
+                        className={
+                          "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
+                          (panelTab === "staging"
+                            ? "bg-emerald-600 text-white"
+                            : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100")
+                        }
+                      >
+                        📦 임시보관함 ({staging.length})
+                      </button>
                     </div>
-                    {panelTab === "placed" ? (
+                    {panelTab === "staging" ? (
+                      <StagingPanel staging={staging} onClear={clearStaging} onRemove={stagingToUnplaced} editMode={editMode} />
+                    ) : panelTab === "placed" ? (
                       <div className="overflow-auto max-h-[560px] space-y-1 pr-1">
                         {(() => {
                           // 배치된 제품: data에서 zone → pnum 수집 → 대분류 그룹
@@ -2081,10 +2095,6 @@ export default function ProductDisplayPage() {
                         )}
                       </div>
                     ) : null}
-                    {/* 임시 보관함 — 총괄 우측 패널에서도 접근 (수정 모드) */}
-                    {editMode && (
-                      <StagingPanel staging={staging} onClear={clearStaging} onRemove={stagingToUnplaced} />
-                    )}
                   </div>
                 </>
               );
@@ -2168,7 +2178,7 @@ export default function ProductDisplayPage() {
             </DragOverlay>
           </div>
           {editMode && (
-            <StagingPanel staging={staging} onClear={clearStaging} onRemove={stagingToUnplaced} />
+            <StagingPanel staging={staging} onClear={clearStaging} onRemove={stagingToUnplaced} editMode={editMode} />
           )}
           </DndContext>
         </div>
@@ -2422,10 +2432,12 @@ function StagingPanel({
   staging,
   onClear,
   onRemove,
+  editMode,
 }: {
   staging: string[];
   onClear: () => void;
   onRemove: (pn: string) => void;
+  editMode: boolean;
 }) {
   const { setNodeRef: dropRef, isOver } = useDroppable({
     id: "drop-staging",
@@ -2458,16 +2470,17 @@ function StagingPanel({
             빈 칸 — 품목을 여기에 놓거나, 칸 선택 후 "보관함에 넣기"
           </span>
         ) : (
-          staging.map((pn) => <StagingChip key={pn} pnum={pn} onRemove={onRemove} />)
+          staging.map((pn) => <StagingChip key={pn} pnum={pn} onRemove={onRemove} disabled={!editMode} />)
         )}
       </div>
     </div>
   );
 }
 
-function StagingChip({ pnum, onRemove }: { pnum: string; onRemove: (pn: string) => void }) {
+function StagingChip({ pnum, onRemove, disabled = false }: { pnum: string; onRemove: (pn: string) => void; disabled?: boolean }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `stg-${pnum}`,
+    disabled,
     data: { kind: "staging", zoneId: "STAGING", itemIdx: 0, pnum } as DragSource,
   });
   return (
