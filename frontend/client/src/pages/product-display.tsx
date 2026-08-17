@@ -54,7 +54,7 @@ const LAYOUT_VERSION = "layout-v1";
 
 /** 드래그 소스: A동=칸(zoneId), B/C/D=칸 내 품목 인덱스 */
 type DragSource = {
-  kind: "zone" | "overflow";
+  kind: "zone" | "overflow" | "cell";
   zoneId: string;
   itemIdx: number; // 다품목 칸 내 인덱스 (A동은 0)
   pnum: string;
@@ -703,6 +703,9 @@ export default function ProductDisplayPage() {
   // 수정 모드: 그리드 편집 (개별/영역 선택 → 그룹 위/아래 이동)
   const [editMode, setEditMode] = useState(false);
   const [selectedZones, setSelectedZones] = useState<string[]>([]);
+  // 그리드 여유 공간 (확장 버튼으로 필요할 때만 증가, 기본 0 = 현재 그리드만 표시)
+  const [gridPad, setGridPad] = useState({ t: 0, r: 0, b: 0, l: 0 });
+  const gridRef = useRef<HTMLDivElement | null>(null);
   const [selRect, setSelRect] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const selStartRef = useRef<{ x: number; y: number; cx: number; cy: number } | null>(null);
   // 동적 레이아웃: 칸(슬롯) 좌표 이동 반영 (초기값 = localStorage 저장분 or DONG_LAYOUTS)
@@ -942,6 +945,35 @@ export default function ProductDisplayPage() {
 
   const handleDragEnd = (e: DragEndEvent) => {
     const src = e.active.data.current as DragSource | undefined;
+    if (!src) return;
+    // 수정 모드 칸(슬롯) 이동: 드래그로 자유 좌표 배치 또는 다른 칸과 교환
+    if (src.kind === "cell") {
+      const overId = (e.over?.id as string) || "";
+      if (overId.startsWith("drop-")) {
+        // 다른 칸 위에 놓음 → 두 칸 좌표 교환 (swap)
+        const dstZoneId = overId.slice(5);
+        if (dstZoneId !== src.zoneId) {
+          moveSlotTo(src.zoneId, dstZoneId);
+          setSaveMsg("칸 위치 교환");
+          window.setTimeout(() => setSaveMsg(""), 1500);
+        }
+      } else {
+        // 빈 공간에 놓음 → 드래그 최종 위치로 자유 배치
+        const translated = e.active.rect.current.translated;
+        const cont = gridRef.current?.getBoundingClientRect();
+        if (translated && cont) {
+          moveCellTo(
+            src.zoneId,
+            translated.left - cont.left,
+            translated.top - cont.top
+          );
+          setSaveMsg("칸 이동");
+          window.setTimeout(() => setSaveMsg(""), 1500);
+        }
+      }
+      setDragSource(null);
+      return;
+    }
     const dst = e.over?.data.current as { zoneId: string; itemIdx?: number } | undefined;
     if (!src || !dst || !dst.zoneId) {
       setDragSource(null);
@@ -1093,6 +1125,53 @@ export default function ProductDisplayPage() {
         return { ...d, zones };
       })
     );
+  };
+
+  // 칸(슬롯)을 빈 공간의 자유 좌표로 이동 (드래그 배치)
+  const moveCellTo = (zid: string, left: number, top: number) => {
+    setLayoutState((prev) =>
+      prev.map((d) => {
+        if (d.key !== dong) return d;
+        const zones = d.zones.map((z) =>
+          z.id === zid
+            ? { ...z, style: { ...z.style, left: Math.round(left), top: Math.round(top) } }
+            : z
+        );
+        return { ...d, zones };
+      })
+    );
+  };
+
+  // 새 빈 칸 추가: 그리드 오른쪽 끝에 생성 (이후 드래그로 원하는 위치에 배치)
+  const addCell = () => {
+    setLayoutState((prev) =>
+      prev.map((d) => {
+        if (d.key !== dong) return d;
+        const maxLeft = Math.max(...d.zones.map((z) => Number(z.style.left ?? 0)), 0);
+        const maxTop = Math.max(...d.zones.map((z) => Number(z.style.top ?? 0)), 0);
+        const id = `${d.key}-NEW-${Date.now().toString().slice(-5)}`;
+        const zone: ZoneDef = {
+          id,
+          num: "＋",
+          line: -1,
+          showNumAsProduct: false,
+          style: {
+            left: maxLeft + SLOT.w + SLOT.lineGap,
+            top: Math.round(maxTop / 2),
+            width: SLOT.w,
+            height: SLOT.h,
+          },
+        };
+        return { ...d, zones: [...d.zones, zone] };
+      })
+    );
+    setSaveMsg("빈 칸 추가됨 — 드래그로 위치 이동");
+    window.setTimeout(() => setSaveMsg(""), 2000);
+  };
+
+  // 그리드 여유 공간 확장 (상/하/좌/우 필요할 때만)
+  const expandGrid = (dir: "t" | "r" | "b" | "l") => {
+    setGridPad((p) => ({ ...p, [dir]: p[dir] + 40 }));
   };
 
   // 라인(열) 단위 좌표 교환: 선택 그룹 라인 ↔ 목적지 칸의 라인 (칸 수 동일할 때)
@@ -1773,12 +1852,13 @@ export default function ProductDisplayPage() {
         ) : (
         <div className="w-full overflow-auto pb-2" style={{ maxHeight: "calc(100vh - 240px)" }}>
           <div
+            ref={gridRef}
             className="relative rounded-xl border bg-slate-50 shrink-0"
             style={{
-              height: current.height,
-              width: current.width,
-              minWidth: current.width,
-              minHeight: current.height,
+              height: current.height + gridPad.t + gridPad.b,
+              width: current.width + gridPad.l + gridPad.r,
+              minWidth: current.width + gridPad.l + gridPad.r,
+              minHeight: current.height + gridPad.t + gridPad.b,
             }}
             onPointerDown={handleSelDown}
             onPointerMove={handleSelMove}
@@ -1880,6 +1960,20 @@ export default function ProductDisplayPage() {
             <Button type="button" variant="outline" onClick={addLine} title="현재 동 오른쪽에 새 빈 라인(슬롯 19칸) 추가">
               + 라인 추가
             </Button>
+          )}
+          {editMode && (
+            <Button type="button" variant="outline" onClick={addCell} title="그리드 오른쪽에 새 빈 칸 추가 — 드래그로 원하는 위치에 배치">
+              + 칸 추가
+            </Button>
+          )}
+          {editMode && (
+            <span className="flex items-center gap-1 text-[11px] text-slate-500">
+              여유:
+              <button type="button" className="px-1.5 py-0.5 rounded border hover:bg-slate-100" title="위쪽 여유 +40px" onClick={() => expandGrid("t")}>⬆</button>
+              <button type="button" className="px-1.5 py-0.5 rounded border hover:bg-slate-100" title="아래쪽 여유 +40px" onClick={() => expandGrid("b")}>⬇</button>
+              <button type="button" className="px-1.5 py-0.5 rounded border hover:bg-slate-100" title="왼쪽 여유 +40px" onClick={() => expandGrid("l")}>⬅</button>
+              <button type="button" className="px-1.5 py-0.5 rounded border hover:bg-slate-100" title="오른쪽 여유 +40px" onClick={() => expandGrid("r")}>➡</button>
+            </span>
           )}
           <Button type="button" className="bg-green-600 hover:bg-green-700" onClick={saveData}>
             <Save className="w-4 h-4 mr-1.5" />
@@ -2047,12 +2141,20 @@ function ZoneCell({
   });
   const aDrag = useDraggable({
     id: `adrag-${z.id}`,
-    disabled: !assigned || !isA,
+    // 수정 모드에서는 제품 드래그 비활성 → 칸(슬롯) 드래그(cellDrag)가 담당
+    disabled: !assigned || !isA || editMode,
     data: { kind: "zone", zoneId: z.id, itemIdx: 0, pnum: items[0] || "" } as DragSource,
+  });
+  // 수정 모드 칸(슬롯) 자유 이동 드래그
+  const cellDrag = useDraggable({
+    id: `cell-${z.id}`,
+    disabled: !editMode,
+    data: { kind: "cell", zoneId: z.id } as DragSource,
   });
   const nodeRef = (node: HTMLButtonElement | null) => {
     dropRef(node);
     if (isA) aDrag.setNodeRef(node);
+    if (editMode) cellDrag.setNodeRef(node);
   };
   return (
     <button
@@ -2063,6 +2165,8 @@ function ZoneCell({
       title={moveTarget ? `${tip} — 클릭하면 선택 칸이 이 위치로 이동` : tip}
       {...(isA ? aDrag.listeners : {})}
       {...(isA ? aDrag.attributes : {})}
+      {...(editMode ? cellDrag.listeners : {})}
+      {...(editMode ? cellDrag.attributes : {})}
       className={
         "absolute flex items-center justify-center rounded border text-center px-0.5 transition-colors " +
         (assigned
