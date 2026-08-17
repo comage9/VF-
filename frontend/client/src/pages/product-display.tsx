@@ -1726,6 +1726,7 @@ export default function ProductDisplayPage() {
                             value={data[z.id] || ""}
                             tip={makeTooltip(z)}
                             flash={flashZone === z.id}
+                            editMode={editMode}
                             onNavigate={() => setDong(k)}
                           />
                         ))}
@@ -2232,12 +2233,14 @@ function MiniZoneCell({
   value,
   tip,
   flash,
+  editMode,
   onNavigate,
 }: {
   z: ZoneDef;
   value: string;
   tip: string;
   flash: boolean;
+  editMode: boolean;
   onNavigate: () => void;
 }) {
   const { setNodeRef: dropRef, isOver } = useDroppable({
@@ -2248,7 +2251,7 @@ function MiniZoneCell({
   const items = value ? value.split(",").map((s) => s.trim()).filter(Boolean) : [];
   const drag = useDraggable({
     id: `ovdrag-${z.id}-0-${items[0] || "empty"}`,
-    disabled: !assigned,
+    disabled: !assigned || editMode,
     data: { kind: "zone", zoneId: z.id, itemIdx: 0, pnum: items[0] || "" } as DragSource,
   });
   const nodeRef = (node: HTMLButtonElement | null) => {
