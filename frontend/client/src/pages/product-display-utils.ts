@@ -42,7 +42,7 @@ export function aShiftInsert(
   if (!item) return { next: { ...data }, overflow: [] };
 
   // src를 제거한 축약 시퀀스에서 대상 위치를 다시 계산 (src가 dst보다 앞이면 당겨짐)
-  const shrunk = seq.filter((id, i) => i !== srcIdx);
+  const shrunk = seq.filter((_, i) => i !== srcIdx);
   const d2 = shrunk.indexOf(dstZone);
 
   const next: Record<string, string> = {};
