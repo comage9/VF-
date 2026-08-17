@@ -51,10 +51,13 @@ const SAVED_VERSION = "rank-a-v15";
 /** 동적 레이아웃(칸 좌표) 저장 키 */
 const LAYOUT_KEY = "vf_product_display_layout_v1";
 const LAYOUT_VERSION = "layout-v1";
+/** 임시 보관함(staging) 저장 키 — data와 완전 분리 (사용자 의도적 보관 버퍼) */
+const STAGING_KEY = "vf_product_display_staging_v1";
+const STAGING_VERSION = "staging-v1";
 
-/** 드래그 소스: A동=칸(zoneId), B/C/D=칸 내 품목 인덱스 */
+/** 드래그 소스: A동=칸(zoneId), B/C/D=칸 내 품목 인덱스, staging=임시 보관함 */
 type DragSource = {
-  kind: "zone" | "overflow" | "cell";
+  kind: "zone" | "overflow" | "cell" | "staging";
   zoneId: string;
   itemIdx: number; // 다품목 칸 내 인덱스 (A동은 0)
   pnum: string;
@@ -679,6 +682,22 @@ function loadPlacement(): PlacementMap {
   return defaultAPlacement();
 }
 
+/** 임시 보관함 로드 — 손상/버전 불일치 시 빈 배열 */
+function loadStaging(): string[] {
+  try {
+    const raw = localStorage.getItem(STAGING_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.__v === STAGING_VERSION && Array.isArray(parsed.items)) {
+        return parsed.items.filter((x: unknown) => typeof x === "string" && x.trim() !== "");
+      }
+    }
+  } catch {
+    /* 손상 시 빈 배열 */
+  }
+  return [];
+}
+
 export default function ProductDisplayPage() {
   const [dong, setDong] = useState<DongKey>("ALL");
   const [data, setData] = useState<PlacementMap>(() => loadPlacement());
@@ -698,6 +717,8 @@ export default function ProductDisplayPage() {
   // 드래그앤드롭: 현재 드래그 소스 / 밀려난 품목(자리이탈) / 분류·단수 필터
   const [dragSource, setDragSource] = useState<DragSource | null>(null);
   const [overflow, setOverflow] = useState<OverflowItem[]>([]);
+  // 임시 보관함: 사용자 의도적 보관 버퍼 (unique 배열, 동 무관 전역) — 별도 키로 영속
+  const [staging, setStaging] = useState<string[]>(() => loadStaging());
   const [filterCat, setFilterCat] = useState("");
   const [filterDansu, setFilterDansu] = useState("");
   // 수정 모드: 그리드 편집 (개별/영역 선택 → 그룹 위/아래 이동)
@@ -731,6 +752,14 @@ export default function ProductDisplayPage() {
       /* 용량/오류 무시 */
     }
   }, [layoutState]);
+  // 임시 보관함 자동 저장 (data와 분리 — persistLocal이 덮어쓰지 않음)
+  useEffect(() => {
+    try {
+      localStorage.setItem(STAGING_KEY, JSON.stringify({ __v: STAGING_VERSION, items: staging }));
+    } catch {
+      /* 용량/오류 무시 */
+    }
+  }, [staging]);
   // 이동 가능 위치 하이라이트: 선택 칸이 존재할 때 다른 칸들에 표시
   const canMoveTo = editMode && selectedZones.length > 0;
 
@@ -946,9 +975,61 @@ export default function ProductDisplayPage() {
   const handleDragEnd = (e: DragEndEvent) => {
     const src = e.active.data.current as DragSource | undefined;
     if (!src) return;
+    const overId = (e.over?.id as string) || "";
+    // ── 보관함 드롭존: zone/overflow 소스 → staging으로 이동 ──
+    if (overId === "drop-staging" && (src.kind === "zone" || src.kind === "overflow")) {
+      setData((prev) => {
+        const next = { ...prev };
+        const val = next[src.zoneId];
+        if (val) {
+          const items = val.split(",").map((s) => s.trim()).filter(Boolean);
+          if (items.length <= 1) delete next[src.zoneId];
+          else next[src.zoneId] = items.filter((x) => x !== src.pnum).join(",");
+        }
+        setStaging((s) => (s.includes(src.pnum) ? s : [...s, src.pnum]));
+        persistLocal(next);
+        return next;
+      });
+      setDragSource(null);
+      setSaveMsg("보관함에 넣음");
+      window.setTimeout(() => setSaveMsg(""), 1500);
+      return;
+    }
+    // ── staging 소스 → 칸 드롭: 빈 칸=배치, 점유 칸=스왑(칸 제품은 자동 보관) ──
+    if (src.kind === "staging") {
+      const dst = e.over?.data.current as { zoneId: string; itemIdx?: number } | undefined;
+      if (!dst || !dst.zoneId) {
+        setDragSource(null);
+        return;
+      }
+      setData((prev) => {
+        const next = { ...prev };
+        const cur = next[dst.zoneId];
+        if (cur) {
+          const curPns = cur.split(",").map((s) => s.trim()).filter(Boolean).filter((x) => x !== src.pnum);
+          // 칸 제품 → staging (스왑)
+          setStaging((s) => Array.from(new Set([...s.filter((x) => x !== src.pnum), ...curPns])));
+          const isA = dst.zoneId.startsWith("A-");
+          if (isA) {
+            // A동 1칸 1품목: 교체
+            next[dst.zoneId] = src.pnum;
+          } else {
+            next[dst.zoneId] = curPns.includes(src.pnum) ? curPns.join(",") : [...curPns, src.pnum].join(",");
+          }
+        } else {
+          next[dst.zoneId] = src.pnum;
+          setStaging((s) => s.filter((x) => x !== src.pnum));
+        }
+        persistLocal(next);
+        return next;
+      });
+      setDragSource(null);
+      setSaveMsg("보관함에서 배치");
+      window.setTimeout(() => setSaveMsg(""), 1500);
+      return;
+    }
     // 수정 모드 칸(슬롯) 이동: 드래그로 자유 좌표 배치 또는 다른 칸과 교환
     if (src.kind === "cell") {
-      const overId = (e.over?.id as string) || "";
       if (overId.startsWith("drop-")) {
         // 다른 칸 위에 놓음 → 두 칸 좌표 교환 (swap)
         const dstZoneId = overId.slice(5);
@@ -1173,6 +1254,51 @@ export default function ProductDisplayPage() {
   const expandGrid = (dir: "t" | "r" | "b" | "l") => {
     setGridPad((p) => ({ ...p, [dir]: p[dir] + 40 }));
   };
+
+  // ═══ 임시 보관함 (Staging) ═══
+  // 선택 칸의 제품을 보관함으로 이동 (data에서 제거, staging에 unique 추가)
+  const stageSelected = () => {
+    const zones = selectedZones;
+    if (!zones.length) return;
+    setData((prev) => {
+      const next = { ...prev };
+      const toStage: string[] = [];
+      for (const zid of zones) {
+        const val = next[zid];
+        if (!val) continue;
+        for (const pn of val.split(",").map((s) => s.trim()).filter(Boolean)) {
+          if (!toStage.includes(pn)) toStage.push(pn);
+        }
+        delete next[zid];
+      }
+      if (toStage.length) {
+        setStaging((s) => Array.from(new Set([...s, ...toStage])));
+      }
+      persistLocal(next);
+      return next;
+    });
+    setSelectedZones([]);
+    setSaveMsg("보관함에 넣음");
+    window.setTimeout(() => setSaveMsg(""), 1500);
+  };
+
+  // 보관함 비우기 (배치 data는 유지 — staging만 제거)
+  const clearStaging = () => {
+    setStaging([]);
+    setSaveMsg("보관함 비움");
+    window.setTimeout(() => setSaveMsg(""), 1500);
+  };
+
+  // 보관함 항목 제거 (미배치로 반환)
+  const stagingToUnplaced = (pn: string) => {
+    setStaging((s) => s.filter((x) => x !== pn));
+  };
+
+  // 보관함 드롭존 (B/C/D 품목 드래그 → 보관함)
+  const { setNodeRef: stagingDropRef, isOver: stagingIsOver } = useDroppable({
+    id: "drop-staging",
+    data: { kind: "staging" },
+  });
 
   // 라인(열) 단위 좌표 교환: 선택 그룹 라인 ↔ 목적지 칸의 라인 (칸 수 동일할 때)
   const moveGroupTo = (groupIds: string[], dstId: string) => {
@@ -1851,6 +1977,7 @@ export default function ProductDisplayPage() {
           </div>
         ) : (
         <div className="w-full overflow-auto pb-2" style={{ maxHeight: "calc(100vh - 240px)" }}>
+          <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div
             ref={gridRef}
             className="relative rounded-xl border bg-slate-50 shrink-0"
@@ -1885,7 +2012,6 @@ export default function ProductDisplayPage() {
               </div>
             ) : null}
 
-            <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
             {current.zones.map((z) => (
               <ZoneCell
                 key={z.id}
@@ -1924,8 +2050,40 @@ export default function ProductDisplayPage() {
                 </div>
               ) : null}
             </DragOverlay>
-            </DndContext>
           </div>
+          {editMode && (
+            <div className="mt-2 rounded-md border border-amber-300 bg-amber-50/70 p-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-900">📦 임시 보관함 ({staging.length})</span>
+                {staging.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearStaging}
+                    className="text-[10px] text-amber-700 hover:text-red-600"
+                    title="보관함 비우기 (배치는 유지)"
+                  >
+                    비우기
+                  </button>
+                )}
+              </div>
+              <div
+                ref={stagingDropRef}
+                className={
+                  "mt-1 min-h-9 rounded border-2 border-dashed p-1 flex flex-wrap gap-1 items-center " +
+                  (stagingIsOver ? "border-amber-500 bg-amber-100" : "border-amber-300")
+                }
+              >
+                {staging.length === 0 ? (
+                  <span className="text-[10px] text-amber-500">
+                    빈 칸 — 품목을 여기에 놓거나, 칸 선택 후 "보관함에 넣기"
+                  </span>
+                ) : (
+                  staging.map((pn) => <StagingChip key={pn} pnum={pn} onRemove={stagingToUnplaced} />)
+                )}
+              </div>
+            </div>
+          )}
+          </DndContext>
         </div>
         )}
 
@@ -1953,6 +2111,15 @@ export default function ProductDisplayPage() {
               </Button>
               <Button type="button" variant="outline" onClick={() => setSelectedZones([])}>
                 선택 해제
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={stageSelected}
+                title="선택 칸의 제품을 임시 보관함으로 이동"
+                className="border-amber-400 text-amber-800 hover:bg-amber-50"
+              >
+                📦 보관함에 넣기
               </Button>
             </>
           ) : null}
@@ -2072,6 +2239,38 @@ export default function ProductDisplayPage() {
   );
 }
 /* ===== 드래그앤드롭 셀 컴포넌트 (2026-08-17) — 편집 모드 확장 예정 ===== */
+function StagingChip({ pnum, onRemove }: { pnum: string; onRemove: (pn: string) => void }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `stg-${pnum}`,
+    data: { kind: "staging", zoneId: "STAGING", itemIdx: 0, pnum } as DragSource,
+  });
+  return (
+    <span
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className={
+        "inline-flex items-center gap-1 rounded bg-amber-200 text-amber-900 text-[11px] px-1.5 py-0.5 cursor-grab active:cursor-grabbing select-none " +
+        (isDragging ? "opacity-40" : "")
+      }
+      title="드래그하여 칸에 배치 (점유 칸이면 교환)"
+    >
+      {pnum}
+      <button
+        type="button"
+        className="text-[10px] text-amber-700 hover:text-red-600"
+        onClick={(ev) => {
+          ev.stopPropagation();
+          onRemove(pnum);
+        }}
+        title="보관함에서 제거"
+      >
+        ×
+      </button>
+    </span>
+  );
+}
+
 function DragChip({
   zoneId,
   itemIdx,
