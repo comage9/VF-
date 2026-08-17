@@ -46,6 +46,8 @@ import { D_PNUM_INFO, D_RANK_PLACEMENT } from "@/pages/product-display-d-data";
 import { aShiftInsert, extractDansu, groupShiftInsert, reorderInZone } from "@/pages/product-display-utils";
 
 const STORAGE_KEY = "vf_product_display_v1";
+/** 배치 데이터 스키마 버전 — v14(A동 전용)는 v15(전 동)로 대체됨: 옛 데이터 무시 */
+const SAVED_VERSION = "rank-a-v15";
 
 /** 드래그 소스: A동=칸(zoneId), B/C/D=칸 내 품목 인덱스 */
 type DragSource = {
@@ -663,7 +665,8 @@ function loadPlacement(): PlacementMap {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === "object" && parsed.data) {
+      // 스키마 버전이 현재와 다르면(옛 데이터) 무시 → 기본값(전 동) 사용
+      if (parsed && parsed.__v === SAVED_VERSION && parsed.data && typeof parsed.data === "object") {
         return parsed.data as PlacementMap;
       }
     }
@@ -1052,7 +1055,7 @@ export default function ProductDisplayPage() {
   };
 
   const persistLocal = (d: PlacementMap) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: "rank-a-v14", data: d }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: "rank-a-v15", data: d }));
   };
   const openAssign = useCallback(
     (zoneId: string) => {
@@ -1078,7 +1081,7 @@ export default function ProductDisplayPage() {
   const saveData = () => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v14", data })
+      JSON.stringify({ __v: "rank-a-v15", data })
     );
     setSaveMsg("저장되었습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
@@ -1090,7 +1093,7 @@ export default function ProductDisplayPage() {
     setData(defaults);
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v14", data: defaults })
+      JSON.stringify({ __v: "rank-a-v15", data: defaults })
     );
     setSaveMsg("초기화했습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
