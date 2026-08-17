@@ -6,7 +6,7 @@
  * - L7: 8칸, 바퀴 슬림 서랍장만 1칸에 2품목씩
  * - 호버 툴팁: 분류(대분류/중분류) + 상세 제품명 + 현재고
  */
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -43,7 +43,7 @@ import {
 import { B_PNUM_INFO, B_RANK_PLACEMENT } from "@/pages/product-display-b-data";
 import { C_PNUM_INFO, C_RANK_PLACEMENT } from "@/pages/product-display-c-data";
 import { D_PNUM_INFO, D_RANK_PLACEMENT } from "@/pages/product-display-d-data";
-import { aShiftInsert, extractDansu, reorderInZone } from "@/pages/product-display-utils";
+import { aShiftInsert, extractDansu, groupShiftInsert, reorderInZone } from "@/pages/product-display-utils";
 
 const STORAGE_KEY = "vf_product_display_v1";
 
@@ -694,6 +694,11 @@ export default function ProductDisplayPage() {
   const [overflow, setOverflow] = useState<OverflowItem[]>([]);
   const [filterCat, setFilterCat] = useState("");
   const [filterDansu, setFilterDansu] = useState("");
+  // 수정 모드: 그리드 편집 (개별/영역 선택 → 그룹 위/아래 이동)
+  const [editMode, setEditMode] = useState(false);
+  const [selectedZones, setSelectedZones] = useState<string[]>([]);
+  const [selRect, setSelRect] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const selStartRef = useRef<{ x: number; y: number; cx: number; cy: number } | null>(null);
 
   useEffect(() => {
     fetch("/api/outbound/barcode-daily?days=90")
@@ -980,6 +985,70 @@ export default function ProductDisplayPage() {
       return next;
     });
     setDragSource(null);
+  };
+
+  // ---- 수정 모드: 그룹 이동 + 영역 선택 ----
+  const curSeq = useMemo(() => current.zones.map((z) => z.id), [current]);
+
+  const groupMove = (dir: 1 | -1) => {
+    if (!selectedZones.length || !editMode) return;
+    const { next: n2, overflow: ov } = groupShiftInsert(curSeq, data, selectedZones, dir);
+    if (n2 !== data) {
+      setData(n2);
+      if (ov.length) {
+        setOverflow((o) => {
+          const names = ov.map((pn) => {
+            const m = A_ZONE_MASTER_NAME[selectedZones[0]] || "";
+            return { pnum: pn, name: m, dansu: extractDansu(m), fromZone: selectedZones[0] };
+          });
+          return [...o, ...names];
+        });
+      }
+      persistLocal(n2);
+    }
+  };
+
+  const handleSelDown = (e: React.PointerEvent) => {
+    if (!editMode) return;
+    // 셀(button)에서 시작하면 셀 클릭 처리로 위임
+    if ((e.target as HTMLElement).closest("button")) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    selStartRef.current = { x: e.clientX, y: e.clientY, cx: rect.left, cy: rect.top };
+    setSelRect({ x1: e.clientX, y1: e.clientY, x2: e.clientX, y2: e.clientY });
+  };
+
+  const handleSelMove = (e: React.PointerEvent) => {
+    if (!selStartRef.current) return;
+    setSelRect((r) => (r ? { ...r, x2: e.clientX, y2: e.clientY } : r));
+  };
+
+  const handleSelUp = () => {
+    const s = selStartRef.current;
+    if (!s || !selRect) {
+      selStartRef.current = null;
+      setSelRect(null);
+      return;
+    }
+    const x1 = Math.min(selRect.x1, selRect.x2);
+    const y1 = Math.min(selRect.y1, selRect.y2);
+    const x2 = Math.max(selRect.x1, selRect.x2);
+    const y2 = Math.max(selRect.y1, selRect.y2);
+    const hits: string[] = [];
+    document.querySelectorAll<HTMLElement>("[data-zone-id]").forEach((el) => {
+      const r = el.getBoundingClientRect();
+      if (r.left < x2 && r.right > x1 && r.top < y2 && r.bottom > y1) {
+        hits.push(el.dataset.zoneId as string);
+      }
+    });
+    setSelectedZones(hits);
+    selStartRef.current = null;
+    setSelRect(null);
+  };
+
+  const toggleZone = (zid: string) => {
+    setSelectedZones((prev) =>
+      prev.includes(zid) ? prev.filter((z) => z !== zid) : [...prev, zid]
+    );
   };
 
   const persistLocal = (d: PlacementMap) => {
@@ -1568,6 +1637,9 @@ export default function ProductDisplayPage() {
               minWidth: current.width,
               minHeight: current.height,
             }}
+            onPointerDown={handleSelDown}
+            onPointerMove={handleSelMove}
+            onPointerUp={handleSelUp}
           >
             {current.lineLabels.map((lb, i) => (
               <div
@@ -1600,10 +1672,26 @@ export default function ProductDisplayPage() {
                 matched={filterMatchedZones.has(z.id)}
                 flash={flashZone === z.id}
                 sel={selZone === z.id}
+                editMode={editMode}
+                selected={selectedZones.includes(z.id)}
                 onOpen={() => openAssign(z.id)}
+                onToggleSelect={() => toggleZone(z.id)}
                 tip={makeTooltip(z)}
               />
             ))}
+            {editMode && selRect && selStartRef.current ? (
+              <div
+                className="pointer-events-none absolute z-50"
+                style={{
+                  left: Math.min(selRect.x1, selRect.x2) - selStartRef.current.cx,
+                  top: Math.min(selRect.y1, selRect.y2) - selStartRef.current.cy,
+                  width: Math.abs(selRect.x2 - selRect.x1),
+                  height: Math.abs(selRect.y2 - selRect.y1),
+                  border: "1.5px dashed #721FE5",
+                  background: "rgba(114,31,229,0.12)",
+                }}
+              />
+            ) : null}
             <DragOverlay>
               {dragSource ? (
                 <div className="rounded border border-blue-600 bg-blue-50 px-2 py-1 text-[11px] font-bold text-blue-900 shadow-md">
@@ -1618,6 +1706,32 @@ export default function ProductDisplayPage() {
         )}
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant={editMode ? "default" : "secondary"}
+            onClick={() => {
+              setEditMode((v) => !v);
+              setSelectedZones([]);
+            }}
+          >
+            {editMode ? "✓ 수정 중" : "수정"}
+          </Button>
+          {editMode && selectedZones.length > 0 ? (
+            <>
+              <span className="text-xs font-bold text-purple-700">
+                {selectedZones.length}칸 선택
+              </span>
+              <Button type="button" className="bg-sky-600 hover:bg-sky-700" onClick={() => groupMove(1)}>
+                ↑ 위로 이동
+              </Button>
+              <Button type="button" className="bg-sky-600 hover:bg-sky-700" onClick={() => groupMove(-1)}>
+                ↓ 아래로 이동
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setSelectedZones([])}>
+                선택 해제
+              </Button>
+            </>
+          ) : null}
           <Button type="button" className="bg-green-600 hover:bg-green-700" onClick={saveData}>
             <Save className="w-4 h-4 mr-1.5" />
             저장
@@ -1714,7 +1828,7 @@ export default function ProductDisplayPage() {
     </div>
   );
 }
-/* ===== 드래그앤드롭 셀 컴포넌트 (2026-08-17) ===== */
+/* ===== 드래그앤드롭 셀 컴포넌트 (2026-08-17) — 편집 모드 확장 예정 ===== */
 function DragChip({
   zoneId,
   itemIdx,
@@ -1755,7 +1869,10 @@ function ZoneCell({
   matched,
   flash,
   sel,
+  editMode,
+  selected,
   onOpen,
+  onToggleSelect,
   tip,
 }: {
   z: ZoneDef;
@@ -1764,7 +1881,10 @@ function ZoneCell({
   matched: boolean;
   flash: boolean;
   sel: boolean;
+  editMode: boolean;
+  selected: boolean;
   onOpen: () => void;
+  onToggleSelect: () => void;
   tip: string;
 }) {
   const assigned = Boolean(value);
@@ -1787,7 +1907,8 @@ function ZoneCell({
     <button
       ref={nodeRef}
       type="button"
-      onClick={onOpen}
+      data-zone-id={z.id}
+      onClick={editMode ? onToggleSelect : onOpen}
       title={tip}
       {...(isA ? aDrag.listeners : {})}
       {...(isA ? aDrag.attributes : {})}
@@ -1801,7 +1922,9 @@ function ZoneCell({
         (sel ? " ring-2 ring-amber-400 ring-offset-1" : "") +
         (flash ? " vf-zone-flash" : "") +
         (matched ? " ring-2 ring-emerald-500 ring-offset-1" : "") +
-        (isOver ? " ring-2 ring-blue-500 ring-offset-1 scale-[1.03]" : "")
+        (isOver ? " ring-2 ring-blue-500 ring-offset-1 scale-[1.03]" : "") +
+        (selected ? " ring-2 ring-purple-600 ring-offset-2 bg-purple-50" : "") +
+        (editMode ? " cursor-pointer" : "")
       }
       style={z.style}
     >

@@ -95,3 +95,46 @@ export function reorderInZone(
 export function isAZone(id: string): boolean {
   return id.startsWith("A-");
 }
+
+/**
+ * 그룹 이동 (수정 모드): 선택된 zone들을 시퀀스에서 한 칸 위/아래로 이동.
+ * - 선택은 연속 범위(lo~hi)로 정규화 (사각형 선택 결과)
+ * - dir=1: 위로 — 그룹 [lo..hi] → [lo-1..hi-1], lo-1 값은 hi로 (순환)
+ * - dir=-1: 아래로 — 그룹 [lo..hi] → [lo+1..hi+1], hi+1 값은 lo로 (순환)
+ */
+export function groupShiftInsert(
+  seq: ZoneSeq,
+  data: Record<string, string>,
+  selectedZones: string[],
+  dir: 1 | -1
+): { next: Record<string, string>; overflow: string[] } {
+  const idxs = selectedZones
+    .map((z) => seq.indexOf(z))
+    .filter((i) => i >= 0)
+    .sort((a, b) => a - b);
+  if (idxs.length === 0) return { next: { ...data }, overflow: [] };
+  const lo = idxs[0];
+  const hi = idxs[idxs.length - 1];
+  const next: Record<string, string> = {};
+
+  if (dir === 1) {
+    if (lo - 1 < 0) return { next: { ...data }, overflow: [] };
+    for (let i = 0; i < seq.length; i++) {
+      const id = seq[i];
+      if (i === lo - 1) next[id] = data[seq[lo]]; // 그룹 첫 값 → 위 칸
+      else if (i > lo - 1 && i < hi) next[id] = data[seq[i + 1]]; // 그룹 값 1칸 위로
+      else if (i === hi) next[id] = data[seq[lo - 1]]; // 위 칸 값 → 그룹 끝
+      else next[id] = data[id];
+    }
+  } else {
+    if (hi + 1 >= seq.length) return { next: { ...data }, overflow: [] };
+    for (let i = 0; i < seq.length; i++) {
+      const id = seq[i];
+      if (i === lo) next[id] = data[seq[hi + 1]]; // 아래 칸 값 → 그룹 첫
+      else if (i > lo && i <= hi) next[id] = data[seq[i - 1]]; // 그룹 값 1칸 아래로
+      else if (i === hi + 1) next[id] = data[seq[hi]]; // 그룹 마지막 → 아래 칸
+      else next[id] = data[id];
+    }
+  }
+  return { next, overflow: [] };
+}
