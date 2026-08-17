@@ -201,7 +201,7 @@ function buildADongLayout(
       const l7SlotH = slot.h; // 각 슬롯 높이 (칸 = 2슬롯)
 
       lineLabels.push({
-        text: "7번 슬림바퀴(7-1-1,7-1-2...)",
+        text: "7번 라인 (슬림서랍장·칵투스, 7-1-1부터)",
         style: {
           left: bottomStartLeft,
           top: vertBottom + slot.bottomLineGap - 2,
@@ -420,6 +420,8 @@ const C_CELLS_RAW: [number, number][] = [
   [16, 4],
   [17, 4], [17, 5], [17, 6], [17, 7], [17, 8], [17, 9], [17, 10], [17, 11],
   [18, 4], [18, 5], [18, 6], [18, 7], [18, 8], [18, 9], [18, 10], [18, 11],
+  // R20 (신규 2026-08-17): R21 위 추가 라인 8칸 — 와이드 서랍장 출고 상위 배치
+  [20, 4], [20, 5], [20, 6], [20, 7], [20, 8], [20, 9], [20, 10], [20, 11],
   [21, 4], [21, 5], [21, 6], [21, 7], [21, 8], [21, 9], [21, 10], [21, 11],
   [23, 4], [23, 5], [23, 6], [23, 7], [23, 8], [23, 9], [23, 10], [23, 11],
   // M열 (13열): R13, R14 (2칸)
@@ -909,7 +911,7 @@ export default function ProductDisplayPage() {
       }
     }
     if (isL7) {
-      parts.push("슬림바퀴 슬롯");
+      parts.push("7번 라인 (슬림서랍장·칵투스)");
     }
     return parts.join("\n");
   };
@@ -919,7 +921,7 @@ export default function ProductDisplayPage() {
       <div className="rounded-xl border bg-card p-4 shadow-sm">
         <p className="text-sm text-muted-foreground mb-3">
           A동 · 지그재그 배치(1-1=1, 2-1=2) · 동일 분류 묶음 ·
-          7번=바퀴 슬림(1칸 2품목) · 호버 시 분류·제품명·재고 표시
+          7번=슬림서랍장 위주+칵투스(1칸 1품목) · A-X1/2=2품목 · 호버 시 분류·제품명·재고 표시
         </p>
         <p className="text-base font-bold text-slate-800 mb-3">
           배치 {placedPnums.size} / {A_TOTAL_PRODUCTS}
