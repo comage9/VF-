@@ -1095,6 +1095,80 @@ export default function ProductDisplayPage() {
     );
   };
 
+  // 라인(열) 단위 좌표 교환: 선택 그룹 라인 ↔ 목적지 칸의 라인 (칸 수 동일할 때)
+  const moveGroupTo = (groupIds: string[], dstId: string) => {
+    const lineOf = (id: string) => id.match(/L(\d+)/)?.[1] ?? "";
+    const gLines = new Set(groupIds.map(lineOf));
+    const dstLine = lineOf(dstId);
+    if (gLines.size !== 1 || !dstLine || gLines.has(dstLine)) return; // 같은 라인 or 비라인 그룹은 무시
+    const srcLine = [...gLines][0];
+    setLayoutState((prev) =>
+      prev.map((d) => {
+        if (d.key !== dong) return d;
+        const srcZones = d.zones.filter((z) => lineOf(z.id) === srcLine);
+        const dstZones = d.zones.filter((z) => lineOf(z.id) === dstLine);
+        if (srcZones.length === 0 || srcZones.length !== dstZones.length) return d; // 칸 수 불일치 → 이동 불가
+        const zones = d.zones.map((z) => ({ ...z, style: { ...z.style } }));
+        for (let i = 0; i < srcZones.length; i++) {
+          const sIdx = zones.findIndex((z) => z.id === srcZones[i].id);
+          const dIdx = zones.findIndex((z) => z.id === dstZones[i].id);
+          if (sIdx < 0 || dIdx < 0) continue;
+          const sStyle = zones[sIdx].style;
+          zones[sIdx] = { ...zones[sIdx], style: { ...zones[dIdx].style } };
+          zones[dIdx] = { ...zones[dIdx], style: { ...sStyle } };
+        }
+        return { ...d, zones };
+      })
+    );
+  };
+
+  // 새 라인 추가 (A동 등 라인 구조 동): 최대 라인 번호 +1, 오른쪽에 빈 슬롯 count개 생성
+  const addLine = () => {
+    setLayoutState((prev) =>
+      prev.map((d) => {
+        if (d.key !== dong) return d;
+        // id 기준 라인 번호 (X1/X2 등 특수 칸 제외 — 실제 슬롯 라인만)
+        const lineNos = [
+          ...new Set(
+            d.zones
+              .map((z) => z.id.match(/L(\d+)/)?.[1])
+              .filter((n): n is string => !!n)
+              .map(Number)
+              .filter((n) => n >= 1)
+          ),
+        ];
+        if (lineNos.length === 0) return d; // 라인 구조 없는 동은 미지원
+        const newLine = Math.max(...lineNos) + 1;
+        const refZones = d.zones.filter((z) => z.line === Math.max(...lineNos) && /L\d+/.test(z.id));
+        const count = refZones.length || 19;
+        const maxLeft = Math.max(...d.zones.map((z) => Number(z.style.left ?? 0)));
+        const colLeft = maxLeft + SLOT.w + SLOT.lineGap;
+        const newZones = Array.from({ length: count }, (_, i) => ({
+          id: `${d.key}-L${newLine}-${i + 1}`,
+          num: `${newLine}-${i + 1}`,
+          line: newLine,
+          showNumAsProduct: false,
+          style: {
+            left: colLeft,
+            top: SLOT.padT + (count - 1 - i) * (SLOT.h + SLOT.gapY),
+            width: SLOT.w,
+            height: SLOT.h,
+          } as CSSProperties,
+        }));
+        const newLabel: LineLabel = {
+          text: `${newLine}번`,
+          style: { left: colLeft - 4, top: 10, width: SLOT.w + 8, textAlign: "center" },
+        };
+        return {
+          ...d,
+          zones: [...d.zones, ...newZones],
+          lineLabels: [...d.lineLabels, newLabel],
+          width: colLeft + SLOT.w + SLOT.padR,
+        };
+      })
+    );
+  };
+
   // 수정 모드 셀 클릭: 선택 없음 → 선택 / 선택 칸 → 해제 / 다른 칸(1개 선택 시) → 슬롯 좌표 이동
   const handleCellClick = (zid: string) => {
     if (!editMode) return;
@@ -1106,7 +1180,8 @@ export default function ProductDisplayPage() {
       moveSlotTo(selectedZones[0], zid);
       setSelectedZones([]);
     } else {
-      // 다중 선택: 다른 칸 클릭 → 그룹 값 이동 (위/아래 버튼 권장) → 선택 해제
+      // 다중 선택(라인 그룹): 목적지 라인과 좌표 교환
+      moveGroupTo(selectedZones, zid);
       setSelectedZones([]);
     }
   };
@@ -1793,6 +1868,11 @@ export default function ProductDisplayPage() {
               </Button>
             </>
           ) : null}
+          {editMode && (
+            <Button type="button" variant="outline" onClick={addLine} title="현재 동 오른쪽에 새 빈 라인(슬롯 19칸) 추가">
+              + 라인 추가
+            </Button>
+          )}
           <Button type="button" className="bg-green-600 hover:bg-green-700" onClick={saveData}>
             <Save className="w-4 h-4 mr-1.5" />
             저장
