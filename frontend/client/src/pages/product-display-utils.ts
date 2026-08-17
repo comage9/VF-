@@ -45,7 +45,9 @@ export function aShiftInsert(
   const shrunk = seq.filter((_, i) => i !== srcIdx);
   const d2 = shrunk.indexOf(dstZone);
 
-  const next: Record<string, string> = {};
+  // BUG-FIX(2026-08-17): {} 시작 → A동 키만 반환되어 B/C/D동 배치 소실. 전체 복사 후 변경.
+  const next: Record<string, string> = { ...data };
+  delete next[srcZone]; // 소스 칸을 빈칸으로
   for (let i = 0; i < shrunk.length; i++) {
     const id = shrunk[i];
     if (i < d2) {
@@ -115,25 +117,31 @@ export function groupShiftInsert(
   if (idxs.length === 0) return { next: { ...data }, overflow: [] };
   const lo = idxs[0];
   const hi = idxs[idxs.length - 1];
-  const next: Record<string, string> = {};
+  // BUG-FIX(2026-08-17): {} 시작 → A동 키만 반환되어 B/C/D동 배치 소실. 전체 복사 후 변경.
+  const next: Record<string, string> = { ...data };
+  // 빈칸(undefined) 전파 방지: 값이 없으면 키를 제거해 빈칸 유지
+  const put = (id: string, v: string | undefined) => {
+    if (v === undefined) delete next[id];
+    else next[id] = v;
+  };
 
   if (dir === 1) {
     if (lo - 1 < 0) return { next: { ...data }, overflow: [] };
     for (let i = 0; i < seq.length; i++) {
       const id = seq[i];
-      if (i === lo - 1) next[id] = data[seq[lo]]; // 그룹 첫 값 → 위 칸
-      else if (i > lo - 1 && i < hi) next[id] = data[seq[i + 1]]; // 그룹 값 1칸 위로
-      else if (i === hi) next[id] = data[seq[lo - 1]]; // 위 칸 값 → 그룹 끝
-      else next[id] = data[id];
+      if (i === lo - 1) put(id, data[seq[lo]]); // 그룹 첫 값 → 위 칸
+      else if (i > lo - 1 && i < hi) put(id, data[seq[i + 1]]); // 그룹 값 1칸 위로
+      else if (i === hi) put(id, data[seq[lo - 1]]); // 위 칸 값 → 그룹 끝
+      else put(id, data[id]);
     }
   } else {
     if (hi + 1 >= seq.length) return { next: { ...data }, overflow: [] };
     for (let i = 0; i < seq.length; i++) {
       const id = seq[i];
-      if (i === lo) next[id] = data[seq[hi + 1]]; // 아래 칸 값 → 그룹 첫
-      else if (i > lo && i <= hi) next[id] = data[seq[i - 1]]; // 그룹 값 1칸 아래로
-      else if (i === hi + 1) next[id] = data[seq[hi]]; // 그룹 마지막 → 아래 칸
-      else next[id] = data[id];
+      if (i === lo) put(id, data[seq[hi + 1]]); // 아래 칸 값 → 그룹 첫
+      else if (i > lo && i <= hi) put(id, data[seq[i - 1]]); // 그룹 값 1칸 아래로
+      else if (i === hi + 1) put(id, data[seq[hi]]); // 그룹 마지막 → 아래 칸
+      else put(id, data[id]);
     }
   }
   return { next, overflow: [] };

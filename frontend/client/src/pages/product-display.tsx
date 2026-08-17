@@ -788,7 +788,7 @@ export default function ProductDisplayPage() {
   const placedPnums = useMemo(() => {
     const s = new Set<string>();
     for (const [, val] of Object.entries(data)) {
-      for (const pn of val.split(",").map((x) => x.trim()).filter(Boolean)) {
+      for (const pn of (val || "").split(",").map((x) => x.trim()).filter(Boolean)) {
         s.add(pn);
       }
     }
@@ -826,7 +826,7 @@ export default function ProductDisplayPage() {
 
     // 1) 배치된 제품 (data)
     for (const [zid, val] of Object.entries(data)) {
-      for (const pn of val.split(",").map((s) => s.trim()).filter(Boolean)) {
+      for (const pn of (val || "").split(",").map((s) => s.trim()).filter(Boolean)) {
         const binfo = B_PNUM_INFO[pn] || C_PNUM_INFO[pn] || D_PNUM_INFO[pn];
         const name = binfo?.name || A_ZONE_MASTER_NAME[zid] || "";
         const barcode = binfo?.barcode || A_ZONE_BARCODE[zid] || "";
