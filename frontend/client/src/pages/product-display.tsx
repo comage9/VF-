@@ -1115,6 +1115,12 @@ export default function ProductDisplayPage() {
             changed = true;
           }
         } else {
+          // 크로스동 가드: A동 점유 칸에 append 금지 (1칸 1품목 규칙)
+          if (dst.zoneId.startsWith("A-") && next[dst.zoneId]) {
+            setSaveMsg("A동 점유 칸 — 빈 칸 또는 임시 보관함을 이용하세요");
+            window.setTimeout(() => setSaveMsg(""), 2000);
+            return prev;
+          }
           // 다른 칸으로: 소스에서 제거 + 대상에 추가
           const filtered = srcItems.filter((_, i) => i !== src.itemIdx);
           const dstVal = next[dst.zoneId] || "";
@@ -1672,6 +1678,7 @@ export default function ProductDisplayPage() {
 
         {dong === "ALL" ? (
           <div className="flex flex-wrap gap-3 items-start">
+            <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
             {(() => {
               const renderCard = (
                 k: DongKey,
@@ -1712,37 +1719,16 @@ export default function ProductDisplayPage() {
                             {lb.text}
                           </div>
                         ))}
-                        {dl.zones.map((z) => {
-                          const assigned = Boolean(data[z.id]);
-                          const display = assigned ? data[z.id] : "";
-                          const items = display ? display.split(",").map((s) => s.trim()).filter(Boolean) : [];
-                          return (
-                            <button
-                              key={z.id}
-                              type="button"
-                              title={makeTooltip(z)}
-                              className={
-                                "absolute flex items-center justify-center rounded border text-center px-0.5 " +
-                                (assigned ? "border-blue-700 bg-blue-50" : "border-slate-500 bg-white") +
-                                (flashZone === z.id ? " vf-zone-flash" : "")
-                              }
-                              style={z.style}
-                            >
-                              {assigned ? (
-                                <span
-                                  className={
-                                    "font-semibold text-[10px] leading-tight tabular-nums text-blue-900" +
-                                    (items.length > 1 ? " flex flex-col items-center text-[8px] leading-[1.15]" : "")
-                                  }
-                                >
-                                  {items.length > 1
-                                    ? items.map((it, i) => <span key={i}>{it}</span>)
-                                    : display}
-                                </span>
-                              ) : null}
-                            </button>
-                          );
-                        })}
+                        {dl.zones.map((z) => (
+                          <MiniZoneCell
+                            key={z.id}
+                            z={z}
+                            value={data[z.id] || ""}
+                            tip={makeTooltip(z)}
+                            flash={flashZone === z.id}
+                            onNavigate={() => setDong(k)}
+                          />
+                        ))}
                       </div>
                     </div>
                   </div>
@@ -1974,6 +1960,7 @@ export default function ProductDisplayPage() {
                 </>
               );
             })()}
+            </DndContext>
           </div>
         ) : (
         <div className="w-full overflow-auto pb-2" style={{ maxHeight: "calc(100vh - 240px)" }}>
@@ -2239,6 +2226,71 @@ export default function ProductDisplayPage() {
   );
 }
 /* ===== 드래그앤드롭 셀 컴포넌트 (2026-08-17) — 편집 모드 확장 예정 ===== */
+/** 총괄(ALL) 미니맵 셀: 드롭 대상(drop-ov-) + 점유 시 드래그 소스 (크로스동 이동) */
+function MiniZoneCell({
+  z,
+  value,
+  tip,
+  flash,
+  onNavigate,
+}: {
+  z: ZoneDef;
+  value: string;
+  tip: string;
+  flash: boolean;
+  onNavigate: () => void;
+}) {
+  const { setNodeRef: dropRef, isOver } = useDroppable({
+    id: `drop-ov-${z.id}`,
+    data: { zoneId: z.id, fromOverview: true },
+  });
+  const assigned = Boolean(value);
+  const items = value ? value.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  const drag = useDraggable({
+    id: `ovdrag-${z.id}-0-${items[0] || "empty"}`,
+    disabled: !assigned,
+    data: { kind: "zone", zoneId: z.id, itemIdx: 0, pnum: items[0] || "" } as DragSource,
+  });
+  const nodeRef = (node: HTMLButtonElement | null) => {
+    dropRef(node);
+    if (assigned) drag.setNodeRef(node);
+  };
+  return (
+    <button
+      ref={nodeRef}
+      type="button"
+      data-zone-id={z.id}
+      title={tip}
+      onClick={(e) => {
+        e.stopPropagation();
+        onNavigate();
+      }}
+      {...(assigned ? drag.listeners : {})}
+      {...(assigned ? drag.attributes : {})}
+      className={
+        "absolute flex items-center justify-center rounded border text-center px-0.5 " +
+        (assigned
+          ? "border-blue-700 bg-blue-50 cursor-grab active:cursor-grabbing"
+          : "border-slate-500 bg-white") +
+        (isOver ? " ring-2 ring-purple-400" : "") +
+        (flash ? " vf-zone-flash" : "")
+      }
+      style={z.style}
+    >
+      {assigned ? (
+        <span
+          className={
+            "font-semibold text-[10px] leading-tight tabular-nums text-blue-900" +
+            (items.length > 1 ? " flex flex-col items-center text-[8px] leading-[1.15]" : "")
+          }
+        >
+          {items.length > 1 ? items.map((it, i) => <span key={i}>{it}</span>) : value}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
 function StagingChip({ pnum, onRemove }: { pnum: string; onRemove: (pn: string) => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `stg-${pnum}`,
