@@ -48,6 +48,9 @@ import { aShiftInsert, extractDansu, groupShiftInsert, reorderInZone } from "@/p
 const STORAGE_KEY = "vf_product_display_v1";
 /** 배치 데이터 스키마 버전 — v14(A동 전용)는 v15(전 동)로 대체됨: 옛 데이터 무시 */
 const SAVED_VERSION = "rank-a-v15";
+/** 동적 레이아웃(칸 좌표) 저장 키 */
+const LAYOUT_KEY = "vf_product_display_layout_v1";
+const LAYOUT_VERSION = "layout-v1";
 
 /** 드래그 소스: A동=칸(zoneId), B/C/D=칸 내 품목 인덱스 */
 type DragSource = {
@@ -702,6 +705,31 @@ export default function ProductDisplayPage() {
   const [selectedZones, setSelectedZones] = useState<string[]>([]);
   const [selRect, setSelRect] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const selStartRef = useRef<{ x: number; y: number; cx: number; cy: number } | null>(null);
+  // 동적 레이아웃: 칸(슬롯) 좌표 이동 반영 (초기값 = localStorage 저장분 or DONG_LAYOUTS)
+  const [layoutState, setLayoutState] = useState(() => {
+    try {
+      const raw = localStorage.getItem(LAYOUT_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.__v === LAYOUT_VERSION && Array.isArray(parsed.layout) && parsed.layout.length === DONG_LAYOUTS.length) {
+          return parsed.layout as typeof DONG_LAYOUTS;
+        }
+      }
+    } catch {
+      /* 손상 시 기본값 */
+    }
+    return DONG_LAYOUTS.map((d) => ({ ...d, zones: d.zones.map((z) => ({ ...z, style: { ...z.style } })) }));
+  });
+  // 레이아웃(칸 좌표) 자동 저장
+  useEffect(() => {
+    try {
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify({ __v: LAYOUT_VERSION, layout: layoutState }));
+    } catch {
+      /* 용량/오류 무시 */
+    }
+  }, [layoutState]);
+  // 이동 가능 위치 하이라이트: 선택 칸이 존재할 때 다른 칸들에 표시
+  const canMoveTo = editMode && selectedZones.length > 0;
 
   useEffect(() => {
     fetch("/api/outbound/barcode-daily?days=90")
@@ -839,8 +867,8 @@ export default function ProductDisplayPage() {
   };
 
   const current = useMemo(
-    () => DONG_LAYOUTS.find((r) => r.key === dong) ?? DONG_LAYOUTS[0],
-    [dong]
+    () => layoutState.find((r) => r.key === dong) ?? layoutState[0],
+    [dong, layoutState]
   );
 
   // A동 zone 시퀀스 (물리 순서) — shift 기준
@@ -1048,10 +1076,39 @@ export default function ProductDisplayPage() {
     setSelRect(null);
   };
 
-  const toggleZone = (zid: string) => {
-    setSelectedZones((prev) =>
-      prev.includes(zid) ? prev.filter((z) => z !== zid) : [...prev, zid]
+  // 슬롯(칸) 좌표 이동: 선택 칸과 목적지 칸의 좌표를 교환 (그리드에서 칸 자체가 이동)
+  const moveSlotTo = (srcId: string, dstId: string) => {
+    if (srcId === dstId) return;
+    setLayoutState((prev) =>
+      prev.map((d) => {
+        if (d.key !== dong) return d;
+        const srcIdx = d.zones.findIndex((z) => z.id === srcId);
+        const dstIdx = d.zones.findIndex((z) => z.id === dstId);
+        if (srcIdx < 0 || dstIdx < 0) return d;
+        const zones = d.zones.map((z) => ({ ...z, style: { ...z.style } }));
+        const sStyle = zones[srcIdx].style;
+        const dStyle = zones[dstIdx].style;
+        zones[srcIdx] = { ...zones[srcIdx], style: { ...dStyle } };
+        zones[dstIdx] = { ...zones[dstIdx], style: { ...sStyle } };
+        return { ...d, zones };
+      })
     );
+  };
+
+  // 수정 모드 셀 클릭: 선택 없음 → 선택 / 선택 칸 → 해제 / 다른 칸(1개 선택 시) → 슬롯 좌표 이동
+  const handleCellClick = (zid: string) => {
+    if (!editMode) return;
+    if (selectedZones.length === 0) {
+      setSelectedZones([zid]);
+    } else if (selectedZones.includes(zid)) {
+      setSelectedZones([]);
+    } else if (selectedZones.length === 1) {
+      moveSlotTo(selectedZones[0], zid);
+      setSelectedZones([]);
+    } else {
+      // 다중 선택: 다른 칸 클릭 → 그룹 값 이동 (위/아래 버튼 권장) → 선택 해제
+      setSelectedZones([]);
+    }
   };
 
   const persistLocal = (d: PlacementMap) => {
@@ -1677,8 +1734,9 @@ export default function ProductDisplayPage() {
                 sel={selZone === z.id}
                 editMode={editMode}
                 selected={selectedZones.includes(z.id)}
+                moveTarget={canMoveTo && !selectedZones.includes(z.id)}
                 onOpen={() => openAssign(z.id)}
-                onToggleSelect={() => toggleZone(z.id)}
+                onToggleSelect={() => handleCellClick(z.id)}
                 tip={makeTooltip(z)}
               />
             ))}
@@ -1874,6 +1932,7 @@ function ZoneCell({
   sel,
   editMode,
   selected,
+  moveTarget,
   onOpen,
   onToggleSelect,
   tip,
@@ -1886,6 +1945,7 @@ function ZoneCell({
   sel: boolean;
   editMode: boolean;
   selected: boolean;
+  moveTarget: boolean;
   onOpen: () => void;
   onToggleSelect: () => void;
   tip: string;
@@ -1912,7 +1972,7 @@ function ZoneCell({
       type="button"
       data-zone-id={z.id}
       onClick={editMode ? onToggleSelect : onOpen}
-      title={tip}
+      title={moveTarget ? `${tip} — 클릭하면 선택 칸이 이 위치로 이동` : tip}
       {...(isA ? aDrag.listeners : {})}
       {...(isA ? aDrag.attributes : {})}
       className={
@@ -1927,6 +1987,7 @@ function ZoneCell({
         (matched ? " ring-2 ring-emerald-500 ring-offset-1" : "") +
         (isOver ? " ring-2 ring-blue-500 ring-offset-1 scale-[1.03]" : "") +
         (selected ? " ring-2 ring-purple-600 ring-offset-2 bg-purple-50" : "") +
+        (moveTarget ? " border-dashed border-2 border-emerald-400 hover:bg-emerald-50" : "") +
         (editMode ? " cursor-pointer" : "")
       }
       style={z.style}
