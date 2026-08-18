@@ -874,6 +874,22 @@ export default function ProductDisplayPage() {
     return fourDay >= 0 ? String(fourDay) : null;
   };
 
+  // 최근 30일 출고 박스 합계 (barcode 기준 — 상세/목록 표시용)
+  const calcMonthQty = (barcode: string): number => {
+    const daily = outboundMap[barcode];
+    if (!daily || daily.length === 0) return 0;
+    const now = new Date();
+    const dayMs = 24 * 60 * 60 * 1000;
+    let total = 0;
+    for (const d of daily) {
+      const t = new Date(d.date + "T00:00:00").getTime();
+      const diff = Math.floor((now.getTime() - t) / dayMs);
+      if (diff < 0 || diff > 30) continue;
+      total += d.quantity;
+    }
+    return total;
+  };
+
   // 제품번호 → 로케이션 문자열 (A동 규칙: 320-A1-1-N / 2XXX → 320-A1-2-XX)
   const pnumToLoc = (pn: string): string => {
     const n = parseInt(pn, 10);
@@ -919,7 +935,7 @@ export default function ProductDisplayPage() {
 
   // 배치된 품목 행 (제품 마스터 기준 정보 — fallback 하드코딩)
   const placedRows = useMemo(() => {
-    const rows: { pnum: string; name: string; lg: string; md: string; stock: number | null; zone: string }[] = [];
+    const rows: { pnum: string; name: string; lg: string; md: string; stock: number | null; zone: string; qty: number }[] = [];
     const seen = new Set<string>();
     for (const [zid, val] of Object.entries(data)) {
       for (const pn of (val || "").split(",").map((s) => s.trim()).filter(Boolean)) {
@@ -928,6 +944,7 @@ export default function ProductDisplayPage() {
         seen.add(key);
         const m = masterMap[pn];
         const info = B_PNUM_INFO[pn] || C_PNUM_INFO[pn] || D_PNUM_INFO[pn];
+        const barcode = m?.barcode || info?.barcode || "";
         rows.push({
           pnum: pn,
           name: m?.name || info?.name || A_ZONE_MASTER_NAME[zid] || "",
@@ -935,11 +952,12 @@ export default function ProductDisplayPage() {
           md: m?.md || info?.md || A_ZONE_CATEGORY_MD[zid] || "",
           stock: m ? m.stock : (info?.stock ?? A_ZONE_STOCK[zid] ?? null),
           zone: zid,
+          qty: barcode ? calcMonthQty(barcode) : 0,
         });
       }
     }
     return rows;
-  }, [data, masterMap]);
+  }, [data, masterMap, outboundMap]);
 
   // 3개월 미출고 행: 마스터 기준 (is_no_outbound_3m) — 미로드 시 A_NO_OUTBOUND_3M fallback
   const noOut3mRows = useMemo(() => {
@@ -2049,6 +2067,7 @@ export default function ProductDisplayPage() {
                           md: u.category_md,
                           stock: u.stock ?? null,
                           zone: u.loc,
+                          qty: u.barcode ? calcMonthQty(u.barcode) : 0,
                         }))}
                         openLg={openLg}
                         onToggle={(lg) => setOpenLg(openLg === lg ? null : lg)}
@@ -2150,7 +2169,7 @@ export default function ProductDisplayPage() {
                                 <div className="font-bold text-sm text-blue-900">{u.pnum}번</div>
                                 <div>{u.master_name || u.name}</div>
                                 <div>분류: {u.category_lg || u.cat}{u.category_md ? " / " + u.category_md : ""}</div>
-                                <div>1개월 출고: {u.boxes}박스</div>
+                                <div>1개월 출고: {u.barcode ? calcMonthQty(u.barcode) : u.boxes}박스</div>
                                 <div>현재고: {u.stock ?? "-"}</div>
                                 <div className="text-muted-foreground">로케이션: {u.loc}</div>
                               </>
@@ -2493,7 +2512,7 @@ function MiniZoneCell({
 
 /* 통합 분류 목록 패널 — 배치/미배치/임시보관함/3개월 미출고 공통 형식
  * 분류(대분류) 그룹 → 클릭 시 세부 품목 펼침 → 각 행: 번호 + 제품명 + 현재고 */
-type CatListRow = { pnum: string; name: string; lg: string; md?: string; stock: number | null; zone?: string };
+type CatListRow = { pnum: string; name: string; lg: string; md?: string; stock: number | null; zone?: string; qty?: number | null };
 
 function CategoryList({
   rows,
@@ -2549,6 +2568,9 @@ function CategoryList({
                   >
                     <span className="font-semibold tabular-nums shrink-0">{r.pnum}</span>
                     <span className="truncate text-muted-foreground flex-1">{r.name || "-"}</span>
+                    {r.qty != null && (
+                      <span className="shrink-0 text-[10px] font-medium tabular-nums text-slate-400">출고 {r.qty}박스</span>
+                    )}
                     <span className="shrink-0 text-[10px] font-medium tabular-nums text-slate-500">
                       현재고 {r.stock ?? "-"}
                     </span>
