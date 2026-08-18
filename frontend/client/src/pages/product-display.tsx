@@ -732,7 +732,7 @@ export default function ProductDisplayPage() {
   // 검색 결과로 이동한 슬롯 (깜박임 표시)
   const [flashZone, setFlashZone] = useState<string | null>(null);
   // 출고 이력: barcode → dailyData (최근 90일)
-  const [outboundMap, setOutboundMap] = useState<Record<string, { date: string; quantity: number }[]>>({});
+  const [outboundMap, setOutboundMap] = useState<Record<string, { date: string; quantity: number; salesAmount?: number }[]>>({});
   // 제품 마스터: pnum → 정보 (제품목록 기준 — /api/master/specs의 is_vf_item)
   const [masterMap, setMasterMap] = useState<Record<string, MasterInfo>>({});
   // 3개월 미출고 pnum 집합 (masterMap 중복 덮어쓰기 방지용 별도 Set)
@@ -888,6 +888,23 @@ export default function ProductDisplayPage() {
       total += d.quantity;
     }
     return total;
+  };
+
+  // 최근 30일 출고 수량 + 금액 (배치 기준 명시용)
+  const calcMonthStat = (barcode: string): { qty: number; amount: number } | null => {
+    const daily = outboundMap[barcode];
+    if (!daily || daily.length === 0) return null;
+    const now = new Date();
+    const dayMs = 24 * 60 * 60 * 1000;
+    let qty = 0, amount = 0;
+    for (const d of daily) {
+      const t = new Date(d.date + "T00:00:00").getTime();
+      const diff = Math.floor((now.getTime() - t) / dayMs);
+      if (diff < 0 || diff > 30) continue;
+      qty += d.quantity || 0;
+      amount += d.salesAmount || 0;
+    }
+    return { qty, amount };
   };
 
   // 제품번호 → 로케이션 문자열 (A동 규칙: 320-A1-1-N / 2XXX → 320-A1-2-XX)
@@ -1760,6 +1777,10 @@ export default function ProductDisplayPage() {
     }
     const bc = A_ZONE_BARCODE[zid] || "";
     if (bc) {
+      const ms = calcMonthStat(bc);
+      if (ms) {
+        parts.push(`최근 1개월 출고: ${ms.qty}박스 / ${Math.round(ms.amount).toLocaleString()}원`);
+      }
       const ob4d = calcOutbound4d(bc);
       if (ob4d !== null) {
         parts.push(`최근 3개월 4일치 예상 출고: ${ob4d}박스 (1개월 +30% 가중)`);
@@ -1770,6 +1791,208 @@ export default function ProductDisplayPage() {
     }
     return parts.join("\n");
   };
+
+  // 동별 화면용 배치 행 (해당 동만 필터)
+  const dongRows = useMemo(() => {
+    if (dong === "ALL") return placedRows;
+    return placedRows.filter((r) => r.zone.startsWith(dong + "-"));
+  }, [dong, placedRows]);
+
+  // 우측 패널 (배치/미배치/임시보관함/3개월 미출고 탭) — 총괄·동별 공통
+  const renderRightPanel = (rows: typeof placedRows) => (
+    <div className="rounded-xl border bg-card p-3 shrink-0 w-[560px] flex flex-col gap-2">
+      <div className="flex gap-1">
+        <button
+          type="button"
+          onClick={() => { setPanelTab("placed"); setOpenLg(null); setSelPnum(null); setSelZone(null); }}
+          className={
+            "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
+            (panelTab === "placed" ? "bg-[#721FE5] text-white" : "bg-muted text-foreground hover:bg-muted/80")
+          }
+        >
+          배치 내역 ({rows.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => { setPanelTab("unplaced"); setOpenLg(null); setSelPnum(null); setSelZone(null); }}
+          className={
+            "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
+            (panelTab === "unplaced"
+              ? "bg-red-600 text-white"
+              : "bg-red-50 text-red-700 hover:bg-red-100")
+          }
+        >
+          미배치 내역 ({unplaced.length})
+        </button>
+        {overflow.length > 0 && (
+          <button
+            type="button"
+            onClick={() => { setPanelTab("overflow"); setOpenLg(null); setSelPnum(null); setSelZone(null); setMovePnum(null); }}
+            className={
+              "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
+              (panelTab === "overflow"
+                ? "bg-amber-500 text-white"
+                : "bg-amber-50 text-amber-700 hover:bg-amber-100")
+            }
+          >
+            자리이탈 ({overflow.length})
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => { setPanelTab("staging"); setOpenLg(null); setSelPnum(null); setSelZone(null); setMovePnum(null); }}
+          className={
+            "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
+            (panelTab === "staging"
+              ? "bg-emerald-600 text-white"
+              : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100")
+          }
+        >
+          📦 임시보관함 ({staging.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => { setPanelTab("noout3m"); setOpenLg(null); setSelPnum(null); setSelZone(null); setMovePnum(null); }}
+          className={
+            "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
+            (panelTab === "noout3m"
+              ? "bg-slate-700 text-white"
+              : "bg-slate-100 text-slate-700 hover:bg-slate-200")
+          }
+        >
+          🚫 3개월 미출고 ({noOut3mRows.length})
+        </button>
+      </div>
+      {panelTab === "staging" ? (
+        <StagingPanel staging={staging} onClear={clearStaging} onRemove={stagingToUnplaced} editMode={editMode} masterMap={masterMap} openLg={openLg} onToggle={(lg) => setOpenLg(openLg === lg ? null : lg)} />
+      ) : panelTab === "placed" ? (
+        <CategoryList
+          rows={rows}
+          openLg={openLg}
+          onToggle={(lg) => setOpenLg(openLg === lg ? null : lg)}
+          onSelect={(r) => { setSelPnum(r.pnum); setSelZone(r.zone ?? null); }}
+        />
+      ) : panelTab === "unplaced" ? (
+        <CategoryList
+          rows={unplaced.map((u) => ({
+            pnum: u.pnum,
+            name: u.master_name || u.name,
+            lg: u.category_lg || u.cat || "기타",
+            md: u.category_md,
+            stock: u.stock ?? null,
+            zone: u.loc,
+            qty: u.barcode ? calcMonthQty(u.barcode) : 0,
+          }))}
+          openLg={openLg}
+          onToggle={(lg) => setOpenLg(openLg === lg ? null : lg)}
+          onSelect={(r) => { setSelPnum(r.pnum); setSelZone(r.zone ?? null); }}
+        />
+      ) : panelTab === "noout3m" ? (
+        <CategoryList
+          rows={noOut3mRows}
+          openLg={openLg}
+          onToggle={(lg) => setOpenLg(openLg === lg ? null : lg)}
+          note={
+            <p className="text-[10px] text-slate-700 bg-slate-100 rounded px-2 py-1 leading-snug">
+              최근 3개월 출고 이력이 없는 품목 — <b>진열 대상에서 제외</b>되었습니다.
+              <br />배치/미배치 목록에서 제외되며, 아래 목록으로만 확인할 수 있습니다. (기준: 제품 마스터)
+            </p>
+          }
+        />
+      ) : (
+        <div className="overflow-auto max-h-[560px] space-y-1 pr-1">
+          {overflow.length === 0 ? (
+            <div className="text-xs text-muted-foreground px-2 py-3 text-center">
+              자리이탈 품목 없음
+            </div>
+          ) : (
+            <>
+              <p className="text-[10px] text-amber-800 bg-amber-50 rounded px-2 py-1 leading-snug">
+                드래그 이동으로 밀려나 배치를 못 하는 품목입니다.
+                <br />① 품목을 <b>클릭</b> 후 이동할 칸을 선택하거나 ② <b>미배치로</b> 보내세요.
+              </p>
+              {movePnum && (
+                <p className="text-[11px] text-blue-800 bg-blue-50 border border-blue-200 rounded px-2 py-1 leading-snug">
+                  ▶ {movePnum}번 이동 중 — <b>미니맵(지도)에서 이동할 칸을 클릭</b>하세요. 기존 제품은 자리이탈로 이동합니다.
+                </p>
+              )}
+              {overflow.map((o, oi) => (
+                <div
+                  key={`${o.pnum}-${o.fromZone}-${oi}`}
+                  onClick={() => { setMovePnum(o.pnum); setSelPnum(o.pnum); setSelZone(null); }}
+                  className={
+                    "border rounded-md px-2 py-1.5 flex items-center justify-between gap-2 cursor-pointer " +
+                    (movePnum === o.pnum ? "border-amber-500 bg-amber-100" : "hover:border-amber-300")
+                  }
+                  title="클릭 후 이동할 칸을 선택하세요 (기존 제품은 자리이탈로 이동)"
+                >
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-bold tabular-nums text-amber-900">
+                      <DragChip
+                        zoneId={o.fromZone || "overflow"}
+                        itemIdx={0}
+                        pnum={o.pnum}
+                        text={o.pnum}
+                        kind="overflow"
+                        disabled={!editMode}
+                      />
+                    </div>
+                    <div className="text-[10px] text-muted-foreground truncate">
+                      {o.name} {o.dansu}
+                    </div>
+                    <div className="text-[9px] text-muted-foreground">
+                      이전 위치: {o.fromZone}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="shrink-0 text-[10px] text-amber-700 hover:text-red-600"
+                    onClick={(ev) => { ev.stopPropagation(); setOverflow((ov) => ov.filter((x) => x !== o)); }}
+                  >
+                    미배치로
+                  </button>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+      {selPnum ? (
+        <div className="border rounded-md bg-slate-50 p-2 text-[11px] space-y-1">
+          {panelTab === "placed" && selZone && data[selZone] ? (
+            (() => {
+              const info = B_PNUM_INFO[selPnum] || C_PNUM_INFO[selPnum] || D_PNUM_INFO[selPnum];
+              return (
+                <>
+                  <div className="font-bold text-sm text-blue-900">{selPnum}번</div>
+                  <div>{info ? info.name : (A_ZONE_MASTER_NAME[selZone] || "-")}</div>
+                  <div>분류: {info ? `${info.lg}${info.md ? " / " + info.md : ""}` : (A_ZONE_CATEGORY_LG[selZone] || "-")}</div>
+                  <div>재고: {info ? (info.stock ?? "-") : (A_ZONE_STOCK[selZone] ?? "-")}</div>
+                  {info?.barcode ? (() => { const ob = calcOutbound4d(info.barcode); return ob !== null ? <div>출고 4일치: {ob}박스</div> : null; })() : null}
+                  <div className="text-muted-foreground">위치: {selZone}</div>
+                </>
+              );
+            })()
+          ) : (
+            (() => {
+              const u = unplaced.find((x) => x.pnum === selPnum && x.loc === selZone);
+              if (!u) return null;
+              return (
+                <>
+                  <div className="font-bold text-sm text-blue-900">{u.pnum}번</div>
+                  <div>{u.master_name || u.name}</div>
+                  <div>분류: {u.category_lg || u.cat}{u.category_md ? " / " + u.category_md : ""}</div>
+                  <div>1개월 출고: {u.barcode ? calcMonthQty(u.barcode) : u.boxes}박스</div>
+                  <div>현재고: {u.stock ?? "-"}</div>
+                  <div className="text-muted-foreground">로케이션: {u.loc}</div>
+                </>
+              );
+            })()
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
 
   return (
     <div className="space-y-4 w-full max-w-none">
@@ -1985,200 +2208,7 @@ export default function ProductDisplayPage() {
                     {renderCard("C", 0.558)}
                     {renderCard("E", 1, 634, 140)}
                   </div>
-                  {/* 제일 우측: 배치/미배치 대분류별 목록 + 상세 + 임시 보관함 */}
-                  <div className="rounded-xl border bg-card p-3 shrink-0 w-[560px] flex flex-col gap-2">
-                    <div className="flex gap-1">
-                      <button
-                        type="button"
-                        onClick={() => { setPanelTab("placed"); setOpenLg(null); setSelPnum(null); setSelZone(null); }}
-                        className={
-                          "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
-                          (panelTab === "placed" ? "bg-[#721FE5] text-white" : "bg-muted text-foreground hover:bg-muted/80")
-                        }
-                      >
-                        배치 내역
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setPanelTab("unplaced"); setOpenLg(null); setSelPnum(null); setSelZone(null); }}
-                        className={
-                          "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
-                          (panelTab === "unplaced"
-                            ? "bg-red-600 text-white"
-                            : "bg-red-50 text-red-700 hover:bg-red-100")
-                        }
-                      >
-                        미배치 내역 ({unplaced.length})
-                      </button>
-                      {overflow.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => { setPanelTab("overflow"); setOpenLg(null); setSelPnum(null); setSelZone(null); setMovePnum(null); }}
-                          className={
-                            "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
-                            (panelTab === "overflow"
-                              ? "bg-amber-500 text-white"
-                              : "bg-amber-50 text-amber-700 hover:bg-amber-100")
-                          }
-                        >
-                          자리이탈 ({overflow.length})
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => { setPanelTab("staging"); setOpenLg(null); setSelPnum(null); setSelZone(null); setMovePnum(null); }}
-                        className={
-                          "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
-                          (panelTab === "staging"
-                            ? "bg-emerald-600 text-white"
-                            : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100")
-                        }
-                      >
-                        📦 임시보관함 ({staging.length})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setPanelTab("noout3m"); setOpenLg(null); setSelPnum(null); setSelZone(null); setMovePnum(null); }}
-                        className={
-                          "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
-                          (panelTab === "noout3m"
-                            ? "bg-slate-700 text-white"
-                            : "bg-slate-100 text-slate-700 hover:bg-slate-200")
-                        }
-                      >
-                        🚫 3개월 미출고 ({noOut3mRows.length})
-                      </button>
-                    </div>
-                    {panelTab === "staging" ? (
-                      <StagingPanel staging={staging} onClear={clearStaging} onRemove={stagingToUnplaced} editMode={editMode} masterMap={masterMap} openLg={openLg} onToggle={(lg) => setOpenLg(openLg === lg ? null : lg)} />
-                    ) : panelTab === "placed" ? (
-                      <CategoryList
-                        rows={placedRows}
-                        openLg={openLg}
-                        onToggle={(lg) => setOpenLg(openLg === lg ? null : lg)}
-                        onSelect={(r) => { setSelPnum(r.pnum); setSelZone(r.zone ?? null); }}
-                      />
-                    ) : panelTab === "unplaced" ? (
-                      <CategoryList
-                        rows={unplaced.map((u) => ({
-                          pnum: u.pnum,
-                          name: u.master_name || u.name,
-                          lg: u.category_lg || u.cat || "기타",
-                          md: u.category_md,
-                          stock: u.stock ?? null,
-                          zone: u.loc,
-                          qty: u.barcode ? calcMonthQty(u.barcode) : 0,
-                        }))}
-                        openLg={openLg}
-                        onToggle={(lg) => setOpenLg(openLg === lg ? null : lg)}
-                        onSelect={(r) => { setSelPnum(r.pnum); setSelZone(r.zone ?? null); }}
-                      />
-                    ) : panelTab === "noout3m" ? (
-                      <CategoryList
-                        rows={noOut3mRows}
-                        openLg={openLg}
-                        onToggle={(lg) => setOpenLg(openLg === lg ? null : lg)}
-                        note={
-                          <p className="text-[10px] text-slate-700 bg-slate-100 rounded px-2 py-1 leading-snug">
-                            최근 3개월 출고 이력이 없는 품목 — <b>진열 대상에서 제외</b>되었습니다.
-                            <br />배치/미배치 목록에서 제외되며, 아래 목록으로만 확인할 수 있습니다. (기준: 제품 마스터)
-                          </p>
-                        }
-                      />
-                    ) : (
-                      <div className="overflow-auto max-h-[560px] space-y-1 pr-1">
-                        {overflow.length === 0 ? (
-                          <div className="text-xs text-muted-foreground px-2 py-3 text-center">
-                            자리이탈 품목 없음
-                          </div>
-                        ) : (
-                          <>
-                            <p className="text-[10px] text-amber-800 bg-amber-50 rounded px-2 py-1 leading-snug">
-                              드래그 이동으로 밀려나 배치를 못 하는 품목입니다.
-                              <br />① 품목을 <b>클릭</b> 후 이동할 칸을 선택하거나 ② <b>미배치로</b> 보내세요.
-                            </p>
-                            {movePnum && (
-                              <p className="text-[11px] text-blue-800 bg-blue-50 border border-blue-200 rounded px-2 py-1 leading-snug">
-                                ▶ {movePnum}번 이동 중 — <b>미니맵(지도)에서 이동할 칸을 클릭</b>하세요. 기존 제품은 자리이탈로 이동합니다.
-                              </p>
-                            )}
-                            {overflow.map((o, oi) => (
-                              <div
-                                key={`${o.pnum}-${o.fromZone}-${oi}`}
-                                onClick={() => { setMovePnum(o.pnum); setSelPnum(o.pnum); setSelZone(null); }}
-                                className={
-                                  "border rounded-md px-2 py-1.5 flex items-center justify-between gap-2 cursor-pointer " +
-                                  (movePnum === o.pnum ? "border-amber-500 bg-amber-100" : "hover:border-amber-300")
-                                }
-                                title="클릭 후 이동할 칸을 선택하세요 (기존 제품은 자리이탈로 이동)"
-                              >
-                                <div className="min-w-0">
-                                  <div className="text-[11px] font-bold tabular-nums text-amber-900">
-                                    <DragChip
-                                      zoneId={o.fromZone || "overflow"}
-                                      itemIdx={0}
-                                      pnum={o.pnum}
-                                      text={o.pnum}
-                                      kind="overflow"
-                                      disabled={!editMode}
-                                    />
-                                  </div>
-                                  <div className="text-[10px] text-muted-foreground truncate">
-                                    {o.name} {o.dansu}
-                                  </div>
-                                  <div className="text-[9px] text-muted-foreground">
-                                    이전 위치: {o.fromZone}
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={(ev) => { ev.stopPropagation(); setOverflow((ov) => ov.filter((x) => x !== o)); }}
-                                  className="shrink-0 text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded hover:bg-amber-200"
-                                  title="미배치 상태로 보내기 (이 탭에서 제거)"
-                                >
-                                  미배치로
-                                </button>
-                              </div>
-                            ))}
-                          </>
-                        )}
-                      </div>
-                    )}
-                    {selPnum ? (
-                      <div className="border rounded-md bg-slate-50 p-2 text-[11px] space-y-1">
-                        {panelTab === "placed" && selZone && data[selZone] ? (
-                          (() => {
-                            const info = B_PNUM_INFO[selPnum] || C_PNUM_INFO[selPnum] || D_PNUM_INFO[selPnum];
-                            return (
-                              <>
-                                <div className="font-bold text-sm text-blue-900">{selPnum}번</div>
-                                <div>{info ? info.name : (A_ZONE_MASTER_NAME[selZone] || "-")}</div>
-                                <div>분류: {info ? `${info.lg}${info.md ? " / " + info.md : ""}` : (A_ZONE_CATEGORY_LG[selZone] || "-")}</div>
-                                <div>재고: {info ? (info.stock ?? "-") : (A_ZONE_STOCK[selZone] ?? "-")}</div>
-                                {info?.barcode ? (() => { const ob = calcOutbound4d(info.barcode); return ob !== null ? <div>출고 4일치: {ob}박스</div> : null; })() : null}
-                                <div className="text-muted-foreground">위치: {selZone}</div>
-                              </>
-                            );
-                          })()
-                        ) : (
-                          (() => {
-                            const u = unplaced.find((x) => x.pnum === selPnum && x.loc === selZone);
-                            if (!u) return null;
-                            return (
-                              <>
-                                <div className="font-bold text-sm text-blue-900">{u.pnum}번</div>
-                                <div>{u.master_name || u.name}</div>
-                                <div>분류: {u.category_lg || u.cat}{u.category_md ? " / " + u.category_md : ""}</div>
-                                <div>1개월 출고: {u.barcode ? calcMonthQty(u.barcode) : u.boxes}박스</div>
-                                <div>현재고: {u.stock ?? "-"}</div>
-                                <div className="text-muted-foreground">로케이션: {u.loc}</div>
-                              </>
-                            );
-                          })()
-                        )}
-                      </div>
-                    ) : null}
-                  </div>
+                  {renderRightPanel(placedRows)}
                 </>
               );
             })()}
@@ -2187,6 +2217,8 @@ export default function ProductDisplayPage() {
         ) : (
         <div className="w-full overflow-auto pb-2" style={{ maxHeight: "calc(100vh - 240px)" }}>
           <DndContext sensors={sensors} autoScroll={false} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          <div className="flex gap-3 items-start">
+          <div className="flex flex-col gap-2">
           <div
             ref={gridRef}
             className="relative rounded-xl border bg-slate-50 shrink-0"
@@ -2263,6 +2295,9 @@ export default function ProductDisplayPage() {
           {editMode && (
             <StagingPanel staging={staging} onClear={clearStaging} onRemove={stagingToUnplaced} editMode={editMode} masterMap={masterMap} openLg={openLg} onToggle={(lg) => setOpenLg(openLg === lg ? null : lg)} />
           )}
+          </div>
+          {renderRightPanel(dongRows)}
+          </div>
           </DndContext>
         </div>
         )}
