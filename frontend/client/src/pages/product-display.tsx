@@ -49,15 +49,15 @@ import { aShiftInsert, extractDansu, groupShiftInsert, reorderInZone } from "@/p
 
 const STORAGE_KEY = "vf_product_display_v1";
 /** 배치 데이터 스키마 버전 — v14(A동 전용)는 v15(전 동)로 대체됨: 옛 데이터 무시 */
-const SAVED_VERSION = "rank-a-v16";
+const SAVED_VERSION = "rank-a-v17";
 /** 동적 레이아웃(칸 좌표) 저장 키 */
 const LAYOUT_KEY = "vf_product_display_layout_v1";
 const LAYOUT_VERSION = "layout-v1";
 /** 임시 보관함(staging) 저장 키 — data와 완전 분리 (사용자 의도적 보관 버퍼) */
 const STAGING_KEY = "vf_product_display_staging_v1";
-const STAGING_VERSION = "staging-v2";
-/** 칵투스/데크 타일 — A동 재배치 시 임시 보관함 기본값 (2026-08-18) */
-const A_STAGING_DEFAULT: string[] = ["2070", "2074", "2071", "981", "982", "985", "2073", "2072", "983", "980", "988"];
+const STAGING_VERSION = "staging-v3";
+/** 칵투스 11 + 데크 타일 5 — A동 132칸 재배치 시 진열 제외 (2026-08-18) */
+const A_STAGING_DEFAULT: string[] = ["988", "987", "982", "990", "980", "979", "985", "983", "986", "984", "981", "2070", "2074", "2071", "2073", "2072"];
 
 /** 드래그 소스: A동=칸(zoneId), B/C/D=칸 내 품목 인덱스, staging=임시 보관함 */
 type DragSource = {
@@ -1565,7 +1565,7 @@ export default function ProductDisplayPage() {
   };
 
   const persistLocal = (d: PlacementMap) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: "rank-a-v16", data: d }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: "rank-a-v17", data: d }));
   };
   const openAssign = useCallback(
     (zoneId: string) => {
@@ -1660,7 +1660,7 @@ export default function ProductDisplayPage() {
   const saveData = () => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v16", data })
+      JSON.stringify({ __v: "rank-a-v17", data })
     );
     setSaveMsg("저장되었습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
@@ -1680,7 +1680,7 @@ export default function ProductDisplayPage() {
     setData(next);
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v16", data: next })
+      JSON.stringify({ __v: "rank-a-v17", data: next })
     );
     setSaveMsg("A동만 초기화했습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
