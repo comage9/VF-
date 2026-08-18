@@ -35,6 +35,7 @@ import {
   A_SLOT_CONFLICTS,
   A_TOTAL_PRODUCTS,
   A_UNPLACED,
+  A_NO_OUTBOUND_3M,
   A_ZONE_BARCODE,
   A_ZONE_MASTER_NAME,
   A_ZONE_CATEGORY_LG,
@@ -48,13 +49,15 @@ import { aShiftInsert, extractDansu, groupShiftInsert, reorderInZone } from "@/p
 
 const STORAGE_KEY = "vf_product_display_v1";
 /** 배치 데이터 스키마 버전 — v14(A동 전용)는 v15(전 동)로 대체됨: 옛 데이터 무시 */
-const SAVED_VERSION = "rank-a-v15";
+const SAVED_VERSION = "rank-a-v16";
 /** 동적 레이아웃(칸 좌표) 저장 키 */
 const LAYOUT_KEY = "vf_product_display_layout_v1";
 const LAYOUT_VERSION = "layout-v1";
 /** 임시 보관함(staging) 저장 키 — data와 완전 분리 (사용자 의도적 보관 버퍼) */
 const STAGING_KEY = "vf_product_display_staging_v1";
-const STAGING_VERSION = "staging-v1";
+const STAGING_VERSION = "staging-v2";
+/** 칵투스/데크 타일 — A동 재배치 시 임시 보관함 기본값 (2026-08-18) */
+const A_STAGING_DEFAULT: string[] = ["2070", "2074", "2071", "981", "982", "985", "2073", "2072", "983", "980", "988"];
 
 /** 드래그 소스: A동=칸(zoneId), B/C/D=칸 내 품목 인덱스, staging=임시 보관함 */
 type DragSource = {
@@ -683,7 +686,7 @@ function loadPlacement(): PlacementMap {
   return defaultAPlacement();
 }
 
-/** 임시 보관함 로드 — 손상/버전 불일치 시 빈 배열 */
+/** 임시 보관함 로드 — 손상/버전 불일치 시 칵투스/데크 기본값 */
 function loadStaging(): string[] {
   try {
     const raw = localStorage.getItem(STAGING_KEY);
@@ -694,9 +697,9 @@ function loadStaging(): string[] {
       }
     }
   } catch {
-    /* 손상 시 빈 배열 */
+    /* 손상 시 기본값 */
   }
-  return [];
+  return [...A_STAGING_DEFAULT];
 }
 
 export default function ProductDisplayPage() {
@@ -709,7 +712,7 @@ export default function ProductDisplayPage() {
   const [movePnum, setMovePnum] = useState<string | null>(null); // 자리이탈 품목 이동 모드 (클릭한 칸으로 배치)
   const [saveMsg, setSaveMsg] = useState("");
   // 총괄 우측 패널: 배치/미배치 대분류별 목록 + 선택 상세
-  const [panelTab, setPanelTab] = useState<"placed" | "unplaced" | "overflow" | "staging">("placed");
+  const [panelTab, setPanelTab] = useState<"placed" | "unplaced" | "overflow" | "staging" | "noout3m">("placed");
   const [openLg, setOpenLg] = useState<string | null>(null); // 분류 아코디언 (null=전부 접힘)
   const [selPnum, setSelPnum] = useState<string | null>(null);
   const [selZone, setSelZone] = useState<string | null>(null);
@@ -1427,7 +1430,7 @@ export default function ProductDisplayPage() {
   };
 
   const persistLocal = (d: PlacementMap) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: "rank-a-v15", data: d }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: "rank-a-v16", data: d }));
   };
   const openAssign = useCallback(
     (zoneId: string) => {
@@ -1522,7 +1525,7 @@ export default function ProductDisplayPage() {
   const saveData = () => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v15", data })
+      JSON.stringify({ __v: "rank-a-v16", data })
     );
     setSaveMsg("저장되었습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
@@ -1542,7 +1545,7 @@ export default function ProductDisplayPage() {
     setData(next);
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v15", data: next })
+      JSON.stringify({ __v: "rank-a-v16", data: next })
     );
     setSaveMsg("A동만 초기화했습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
@@ -1898,6 +1901,18 @@ export default function ProductDisplayPage() {
                       >
                         📦 임시보관함 ({staging.length})
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => { setPanelTab("noout3m"); setOpenLg(null); setSelPnum(null); setSelZone(null); setMovePnum(null); }}
+                        className={
+                          "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
+                          (panelTab === "noout3m"
+                            ? "bg-slate-700 text-white"
+                            : "bg-slate-100 text-slate-700 hover:bg-slate-200")
+                        }
+                      >
+                        🚫 3개월 미출고 ({A_NO_OUTBOUND_3M.length})
+                      </button>
                     </div>
                     {panelTab === "staging" ? (
                       <StagingPanel staging={staging} onClear={clearStaging} onRemove={stagingToUnplaced} editMode={editMode} />
@@ -2000,6 +2015,59 @@ export default function ProductDisplayPage() {
                               )}
                             </div>
                           ));
+                        })()}
+                      </div>
+                    ) : panelTab === "noout3m" ? (
+                      <div className="overflow-auto max-h-[560px] space-y-1 pr-1">
+                        {(() => {
+                          // 3개월 미출고: 진열 대상 제외 품목 목록 (대분류 그룹)
+                          const groups: Record<string, typeof A_NO_OUTBOUND_3M> = {};
+                          for (const u of A_NO_OUTBOUND_3M) {
+                            const lg = u.category_lg || u.cat || "기타";
+                            if (!groups[lg]) groups[lg] = [];
+                            groups[lg].push(u);
+                          }
+                          const keys = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
+                          return keys.length === 0 ? (
+                            <div className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-3 text-center">
+                              3개월 미출고 품목이 없습니다 🎉
+                            </div>
+                          ) : (
+                            <>
+                              <p className="text-[10px] text-slate-700 bg-slate-100 rounded px-2 py-1 leading-snug">
+                                최근 3개월 출고 이력이 없는 품목 — <b>진열 대상에서 제외</b>되었습니다.
+                                <br />배치/미배치 목록에서 제외되며, 아래 목록으로만 확인할 수 있습니다.
+                              </p>
+                              {keys.map((lg) => (
+                                <div key={lg} className="border rounded-md overflow-hidden">
+                                  <button
+                                    type="button"
+                                    onClick={() => setOpenLg(openLg === lg ? null : lg)}
+                                    className="w-full bg-muted px-2 py-1 text-[11px] font-bold flex justify-between items-center hover:bg-muted/80 cursor-pointer"
+                                  >
+                                    <span>{lg}</span>
+                                    <span className="text-muted-foreground">
+                                      {groups[lg].length}품목 {openLg === lg ? "▾" : "▸"}
+                                    </span>
+                                  </button>
+                                  {openLg === lg && (
+                                  <div className="max-h-60 overflow-auto">
+                                    {groups[lg].map((u) => (
+                                      <div
+                                        key={`${u.barcode}-${u.pnum}`}
+                                        className="w-full text-left px-2 py-1 text-[11px] border-t first:border-t-0 flex items-center gap-2"
+                                      >
+                                        <span className="font-semibold tabular-nums shrink-0">{u.pnum}</span>
+                                        <span className="truncate text-muted-foreground">{u.master_name || u.name}</span>
+                                        <span className="shrink-0 text-[10px] text-slate-400">{u.stock ?? "-"}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  )}
+                                </div>
+                              ))}
+                            </>
+                          );
                         })()}
                       </div>
                     ) : (
