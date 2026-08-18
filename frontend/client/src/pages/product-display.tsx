@@ -6,7 +6,7 @@
  * - L7: 8칸, 바퀴 슬림 서랍장만 1칸에 2품목씩
  * - 호버 툴팁: 분류(대분류/중분류) + 상세 제품명 + 현재고
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -702,6 +702,18 @@ function loadStaging(): string[] {
   return [...A_STAGING_DEFAULT];
 }
 
+/** 제품 마스터 항목 (pnum → 정보) — 제품목록 기준 */
+type MasterInfo = { name: string; lg: string; md: string; stock: number | null; barcode: string; loc: string; no3m: boolean };
+
+/** 로케이션 → 제품번호 (A동 규칙: 320-A1-1-N → N, 320-A1-2-N → 2N) */
+function locToPnum(loc: string): string | null {
+  const m1 = /^320-A1-1-(\d+)$/.exec(loc.trim());
+  if (m1) return String(parseInt(m1[1], 10));
+  const m2 = /^320-A1-2-(\d+)$/.exec(loc.trim());
+  if (m2) return "2" + m2[1];
+  return null;
+}
+
 export default function ProductDisplayPage() {
   const [dong, setDong] = useState<DongKey>("ALL");
   const [data, setData] = useState<PlacementMap>(() => loadPlacement());
@@ -721,6 +733,10 @@ export default function ProductDisplayPage() {
   const [flashZone, setFlashZone] = useState<string | null>(null);
   // 출고 이력: barcode → dailyData (최근 90일)
   const [outboundMap, setOutboundMap] = useState<Record<string, { date: string; quantity: number }[]>>({});
+  // 제품 마스터: pnum → 정보 (제품목록 기준 — /api/master/specs의 is_vf_item)
+  const [masterMap, setMasterMap] = useState<Record<string, MasterInfo>>({});
+  // 3개월 미출고 pnum 집합 (masterMap 중복 덮어쓰기 방지용 별도 Set)
+  const [no3mPnums, setNo3mPnums] = useState<Set<string>>(new Set());
   // 드래그앤드롭: 현재 드래그 소스 / 밀려난 품목(자리이탈) / 분류·단수 필터
   const [dragSource, setDragSource] = useState<DragSource | null>(null);
   const [overflow, setOverflow] = useState<OverflowItem[]>([]);
@@ -794,6 +810,40 @@ export default function ProductDisplayPage() {
       });
   }, []);
 
+  // 제품 마스터 로드 (제품목록 기준 — is_vf_item만)
+  useEffect(() => {
+    fetch("/api/master/specs")
+      .then((r) => r.json())
+      .then((j) => {
+        const arr = Array.isArray(j) ? j : (j?.data ?? j?.results ?? []);
+        const m: Record<string, MasterInfo> = {};
+        const no3m = new Set<string>();
+        for (const it of arr) {
+          if (!it?.is_vf_item) continue;
+          const entry: MasterInfo = {
+            name: it.product_name || "",
+            lg: it.category_lg || "",
+            md: it.category_md || "",
+            stock: it.current_stock ?? null,
+            barcode: it.barcode || "",
+            loc: it.location || "",
+            no3m: Boolean(it.is_no_outbound_3m),
+          };
+          const pn = it.product_number != null ? String(it.product_number) : null;
+          const ln = locToPnum(it.location || "");
+          for (const k of [pn, ln]) {
+            if (k && (!m[k] || entry.no3m || (entry.loc && !m[k].loc))) m[k] = entry;
+            if (k && entry.no3m) no3m.add(k);
+          }
+        }
+        setMasterMap(m);
+        setNo3mPnums(no3m);
+      })
+      .catch(() => {
+        /* 마스터 로드 실패 시 하드코딩 데이터 fallback */
+      });
+  }, []);
+
   // 최근 3개월 일평균 4일치 + 최근 1개월 30% 가중 계산
   const calcOutbound4d = (barcode: string): string | null => {
     const daily = outboundMap[barcode];
@@ -843,11 +893,78 @@ export default function ProductDisplayPage() {
     return s;
   }, [data]);
 
-  // 통합 미배치: A_UNPLACED에서 어떤 동에든 배치된 제품 제외
-  const unplaced = useMemo(
-    () => A_UNPLACED.filter((u) => !placedPnums.has(u.pnum)),
-    [placedPnums]
-  );
+  // 통합 미배치: 제품 마스터 기준 — VF 품목 중 배치 안 된 것 (3개월 미출고 제외)
+  // 마스터 미로드 시 기존 A_UNPLACED 하드코딩 fallback
+  const unplaced = useMemo(() => {
+    const masterKeys = Object.keys(masterMap);
+    if (masterKeys.length > 0) {
+      return masterKeys
+        .filter((k) => !placedPnums.has(k) && !no3mPnums.has(k) && masterMap[k].name)
+        .map((k) => ({
+          rank: 0,
+          pnum: k,
+          boxes: 0,
+          cat: masterMap[k].lg,
+          name: masterMap[k].name,
+          loc: masterMap[k].loc,
+          barcode: masterMap[k].barcode,
+          master_name: masterMap[k].name,
+          category_lg: masterMap[k].lg,
+          category_md: masterMap[k].md,
+          stock: masterMap[k].stock,
+        }));
+    }
+    return A_UNPLACED.filter((u) => !placedPnums.has(u.pnum));
+  }, [masterMap, placedPnums, no3mPnums]);
+
+  // 배치된 품목 행 (제품 마스터 기준 정보 — fallback 하드코딩)
+  const placedRows = useMemo(() => {
+    const rows: { pnum: string; name: string; lg: string; md: string; stock: number | null; zone: string }[] = [];
+    const seen = new Set<string>();
+    for (const [zid, val] of Object.entries(data)) {
+      for (const pn of (val || "").split(",").map((s) => s.trim()).filter(Boolean)) {
+        const key = `${zid}-${pn}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const m = masterMap[pn];
+        const info = B_PNUM_INFO[pn] || C_PNUM_INFO[pn] || D_PNUM_INFO[pn];
+        rows.push({
+          pnum: pn,
+          name: m?.name || info?.name || A_ZONE_MASTER_NAME[zid] || "",
+          lg: m?.lg || info?.lg || A_ZONE_CATEGORY_LG[zid] || "기타",
+          md: m?.md || info?.md || A_ZONE_CATEGORY_MD[zid] || "",
+          stock: m ? m.stock : (info?.stock ?? A_ZONE_STOCK[zid] ?? null),
+          zone: zid,
+        });
+      }
+    }
+    return rows;
+  }, [data, masterMap]);
+
+  // 3개월 미출고 행: 마스터 기준 (is_no_outbound_3m) — 미로드 시 A_NO_OUTBOUND_3M fallback
+  const noOut3mRows = useMemo(() => {
+    const masterKeys = Object.keys(masterMap);
+    if (masterKeys.length > 0 && no3mPnums.size > 0) {
+      return masterKeys
+        .filter((k) => no3mPnums.has(k) && masterMap[k].name)
+        .map((k) => ({
+          pnum: k,
+          name: masterMap[k].name,
+          lg: masterMap[k].lg || "기타",
+          md: masterMap[k].md,
+          stock: masterMap[k].stock,
+          zone: masterMap[k].loc || undefined,
+        }));
+    }
+    return A_NO_OUTBOUND_3M.map((u) => ({
+      pnum: u.pnum,
+      name: u.master_name || u.name,
+      lg: u.category_lg || u.cat || "기타",
+      md: u.category_md,
+      stock: u.stock,
+      zone: u.loc || undefined,
+    }));
+  }, [masterMap, no3mPnums]);
 
   // 검색: 제품명 / 로케이션 / 제품번호 / 바코드
   const searchResults = useMemo(() => {
@@ -1911,165 +2028,44 @@ export default function ProductDisplayPage() {
                             : "bg-slate-100 text-slate-700 hover:bg-slate-200")
                         }
                       >
-                        🚫 3개월 미출고 ({A_NO_OUTBOUND_3M.length})
+                        🚫 3개월 미출고 ({noOut3mRows.length})
                       </button>
                     </div>
                     {panelTab === "staging" ? (
-                      <StagingPanel staging={staging} onClear={clearStaging} onRemove={stagingToUnplaced} editMode={editMode} />
+                      <StagingPanel staging={staging} onClear={clearStaging} onRemove={stagingToUnplaced} editMode={editMode} masterMap={masterMap} openLg={openLg} onToggle={(lg) => setOpenLg(openLg === lg ? null : lg)} />
                     ) : panelTab === "placed" ? (
-                      <div className="overflow-auto max-h-[560px] space-y-1 pr-1">
-                        {(() => {
-                          // 배치된 제품: data에서 zone → pnum 수집 → 대분류 그룹
-                          const groups: Record<string, { pnum: string; name: string; stock: number | null; lg: string; md: string; zone: string }[]> = {};
-                          for (const [zid, val] of Object.entries(data)) {
-                            const pnums = val.split(",").map((s) => s.trim()).filter(Boolean);
-                            for (const pn of pnums) {
-                              const info = B_PNUM_INFO[pn] || C_PNUM_INFO[pn] || D_PNUM_INFO[pn];
-                              const lg = info ? info.lg : (A_ZONE_CATEGORY_LG[zid] || "기타");
-                              const md = info ? info.md : (A_ZONE_CATEGORY_MD[zid] || "");
-                              const name = info ? info.name : (A_ZONE_MASTER_NAME[zid] || "");
-                              const stock = info ? info.stock : (A_ZONE_STOCK[zid] ?? null);
-                              if (!groups[lg]) groups[lg] = [];
-                              groups[lg].push({ pnum: pn, name, stock, lg, md, zone: zid });
-                            }
-                          }
-                          const keys = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
-                          return keys.map((lg) => (
-                            <div key={lg} className="border rounded-md overflow-hidden">
-                              <button
-                                type="button"
-                                onClick={() => setOpenLg(openLg === lg ? null : lg)}
-                                className="w-full bg-muted px-2 py-1 text-[11px] font-bold flex justify-between items-center hover:bg-muted/80 cursor-pointer"
-                              >
-                                <span>{lg}</span>
-                                <span className="text-muted-foreground">
-                                  {groups[lg].length}품목 {openLg === lg ? "▾" : "▸"}
-                                </span>
-                              </button>
-                              {openLg === lg && (
-                              <div className="max-h-60 overflow-auto">
-                                {groups[lg].map((g) => (
-                                  <button
-                                    key={`${g.zone}-${g.pnum}`}
-                                    type="button"
-                                    onClick={() => { setSelPnum(g.pnum); setSelZone(g.zone); }}
-                                    className={
-                                      "w-full text-left px-2 py-1 text-[11px] border-t first:border-t-0 hover:bg-sky-50 flex items-center gap-2 " +
-                                      (selPnum === g.pnum && selZone === g.zone ? "bg-sky-100" : "")
-                                    }
-                                  >
-                                    <span className="font-semibold tabular-nums shrink-0">{g.pnum}</span>
-                                    <span className="truncate text-muted-foreground">{g.name || "-"}</span>
-                                  </button>
-                                ))}
-                              </div>
-                              )}
-                            </div>
-                          ));
-                        })()}
-                      </div>
+                      <CategoryList
+                        rows={placedRows}
+                        openLg={openLg}
+                        onToggle={(lg) => setOpenLg(openLg === lg ? null : lg)}
+                        onSelect={(r) => { setSelPnum(r.pnum); setSelZone(r.zone ?? null); }}
+                      />
                     ) : panelTab === "unplaced" ? (
-                      <div className="overflow-auto max-h-[560px] space-y-1 pr-1">
-                        {(() => {
-                          // 미배치: 통합 기준 — A_UNPLACED에서 A/B동+사용자 배정 제외 후 대분류 그룹
-                          const groups: Record<string, typeof unplaced> = {};
-                          for (const u of unplaced) {
-                            const lg = u.category_lg || u.cat || "기타";
-                            if (!groups[lg]) groups[lg] = [];
-                            groups[lg].push(u);
-                          }
-                          const keys = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
-                          return keys.length === 0 ? (
-                            <div className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-3 text-center">
-                              미배치 제품이 없습니다 🎉
-                            </div>
-                          ) : keys.map((lg) => (
-                            <div key={lg} className="border rounded-md overflow-hidden">
-                              <button
-                                type="button"
-                                onClick={() => setOpenLg(openLg === lg ? null : lg)}
-                                className="w-full bg-muted px-2 py-1 text-[11px] font-bold flex justify-between items-center hover:bg-muted/80 cursor-pointer"
-                              >
-                                <span>{lg}</span>
-                                <span className="text-muted-foreground">
-                                  {groups[lg].length}품목 {openLg === lg ? "▾" : "▸"}
-                                </span>
-                              </button>
-                              {openLg === lg && (
-                              <div className="max-h-60 overflow-auto">
-                                {groups[lg].map((u) => (
-                                  <button
-                                    key={`${u.barcode}-${u.pnum}`}
-                                    type="button"
-                                    onClick={() => { setSelPnum(u.pnum); setSelZone(u.loc); }}
-                                    className={
-                                      "w-full text-left px-2 py-1 text-[11px] border-t first:border-t-0 hover:bg-sky-50 flex items-center gap-2 " +
-                                      (selPnum === u.pnum && selZone === u.loc ? "bg-sky-100" : "")
-                                    }
-                                  >
-                                    <span className="font-semibold tabular-nums shrink-0">{u.pnum}</span>
-                                    <span className="truncate text-muted-foreground">{u.master_name || u.name}</span>
-                                  </button>
-                                ))}
-                              </div>
-                              )}
-                            </div>
-                          ));
-                        })()}
-                      </div>
+                      <CategoryList
+                        rows={unplaced.map((u) => ({
+                          pnum: u.pnum,
+                          name: u.master_name || u.name,
+                          lg: u.category_lg || u.cat || "기타",
+                          md: u.category_md,
+                          stock: u.stock ?? null,
+                          zone: u.loc,
+                        }))}
+                        openLg={openLg}
+                        onToggle={(lg) => setOpenLg(openLg === lg ? null : lg)}
+                        onSelect={(r) => { setSelPnum(r.pnum); setSelZone(r.zone ?? null); }}
+                      />
                     ) : panelTab === "noout3m" ? (
-                      <div className="overflow-auto max-h-[560px] space-y-1 pr-1">
-                        {(() => {
-                          // 3개월 미출고: 진열 대상 제외 품목 목록 (대분류 그룹)
-                          const groups: Record<string, typeof A_NO_OUTBOUND_3M> = {};
-                          for (const u of A_NO_OUTBOUND_3M) {
-                            const lg = u.category_lg || u.cat || "기타";
-                            if (!groups[lg]) groups[lg] = [];
-                            groups[lg].push(u);
-                          }
-                          const keys = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
-                          return keys.length === 0 ? (
-                            <div className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-3 text-center">
-                              3개월 미출고 품목이 없습니다 🎉
-                            </div>
-                          ) : (
-                            <>
-                              <p className="text-[10px] text-slate-700 bg-slate-100 rounded px-2 py-1 leading-snug">
-                                최근 3개월 출고 이력이 없는 품목 — <b>진열 대상에서 제외</b>되었습니다.
-                                <br />배치/미배치 목록에서 제외되며, 아래 목록으로만 확인할 수 있습니다.
-                              </p>
-                              {keys.map((lg) => (
-                                <div key={lg} className="border rounded-md overflow-hidden">
-                                  <button
-                                    type="button"
-                                    onClick={() => setOpenLg(openLg === lg ? null : lg)}
-                                    className="w-full bg-muted px-2 py-1 text-[11px] font-bold flex justify-between items-center hover:bg-muted/80 cursor-pointer"
-                                  >
-                                    <span>{lg}</span>
-                                    <span className="text-muted-foreground">
-                                      {groups[lg].length}품목 {openLg === lg ? "▾" : "▸"}
-                                    </span>
-                                  </button>
-                                  {openLg === lg && (
-                                  <div className="max-h-60 overflow-auto">
-                                    {groups[lg].map((u) => (
-                                      <div
-                                        key={`${u.barcode}-${u.pnum}`}
-                                        className="w-full text-left px-2 py-1 text-[11px] border-t first:border-t-0 flex items-center gap-2"
-                                      >
-                                        <span className="font-semibold tabular-nums shrink-0">{u.pnum}</span>
-                                        <span className="truncate text-muted-foreground">{u.master_name || u.name}</span>
-                                        <span className="shrink-0 text-[10px] text-slate-400">{u.stock ?? "-"}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                  )}
-                                </div>
-                              ))}
-                            </>
-                          );
-                        })()}
-                      </div>
+                      <CategoryList
+                        rows={noOut3mRows}
+                        openLg={openLg}
+                        onToggle={(lg) => setOpenLg(openLg === lg ? null : lg)}
+                        note={
+                          <p className="text-[10px] text-slate-700 bg-slate-100 rounded px-2 py-1 leading-snug">
+                            최근 3개월 출고 이력이 없는 품목 — <b>진열 대상에서 제외</b>되었습니다.
+                            <br />배치/미배치 목록에서 제외되며, 아래 목록으로만 확인할 수 있습니다. (기준: 제품 마스터)
+                          </p>
+                        }
+                      />
                     ) : (
                       <div className="overflow-auto max-h-[560px] space-y-1 pr-1">
                         {overflow.length === 0 ? (
@@ -2246,7 +2242,7 @@ export default function ProductDisplayPage() {
             </DragOverlay>
           </div>
           {editMode && (
-            <StagingPanel staging={staging} onClear={clearStaging} onRemove={stagingToUnplaced} editMode={editMode} />
+            <StagingPanel staging={staging} onClear={clearStaging} onRemove={stagingToUnplaced} editMode={editMode} masterMap={masterMap} openLg={openLg} onToggle={(lg) => setOpenLg(openLg === lg ? null : lg)} />
           )}
           </DndContext>
         </div>
@@ -2495,22 +2491,109 @@ function MiniZoneCell({
   );
 }
 
-/* 임시 보관함 패널 — DndContext 안에서 렌더되어 useDroppable('drop-staging')이 컨텍스트를 받도록 별도 컴포넌트 */
+/* 통합 분류 목록 패널 — 배치/미배치/임시보관함/3개월 미출고 공통 형식
+ * 분류(대분류) 그룹 → 클릭 시 세부 품목 펼침 → 각 행: 번호 + 제품명 + 현재고 */
+type CatListRow = { pnum: string; name: string; lg: string; md?: string; stock: number | null; zone?: string };
+
+function CategoryList({
+  rows,
+  openLg,
+  onToggle,
+  onSelect,
+  note,
+  emptyMsg = "품목이 없습니다 🎉",
+}: {
+  rows: CatListRow[];
+  openLg: string | null;
+  onToggle: (lg: string) => void;
+  onSelect?: (row: CatListRow) => void;
+  note?: ReactNode;
+  emptyMsg?: string;
+}) {
+  const groups: Record<string, CatListRow[]> = {};
+  for (const r of rows) {
+    const lg = r.lg || "기타";
+    (groups[lg] ??= []).push(r);
+  }
+  const keys = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
+  return (
+    <div className="overflow-auto max-h-[560px] space-y-1 pr-1">
+      {note}
+      {keys.length === 0 ? (
+        <div className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-3 text-center">
+          {emptyMsg}
+        </div>
+      ) : (
+        keys.map((lg) => (
+          <div key={lg} className="border rounded-md overflow-hidden">
+            <button
+              type="button"
+              onClick={() => onToggle(lg)}
+              className="w-full bg-muted px-2 py-1 text-[11px] font-bold flex justify-between items-center hover:bg-muted/80 cursor-pointer"
+            >
+              <span>{lg}</span>
+              <span className="text-muted-foreground">
+                {groups[lg].length}품목 {openLg === lg ? "▾" : "▸"}
+              </span>
+            </button>
+            {openLg === lg && (
+              <div className="max-h-60 overflow-auto">
+                {groups[lg].map((r, i) => (
+                  <div
+                    key={`${r.zone ?? ""}-${r.pnum}-${i}`}
+                    onClick={onSelect ? () => onSelect(r) : undefined}
+                    className={
+                      "w-full text-left px-2 py-1 text-[11px] border-t first:border-t-0 flex items-center gap-2 " +
+                      (onSelect ? "hover:bg-sky-50 cursor-pointer" : "")
+                    }
+                  >
+                    <span className="font-semibold tabular-nums shrink-0">{r.pnum}</span>
+                    <span className="truncate text-muted-foreground flex-1">{r.name || "-"}</span>
+                    <span className="shrink-0 text-[10px] font-medium tabular-nums text-slate-500">
+                      현재고 {r.stock ?? "-"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+/* 임시 보관함 패널 — DndContext 안에서 렌더되어 useDroppable('drop-staging')이 컨텍스트를 받도록 별도 컴포넌트
+ * 배치/미배치/미출고와 동일 형식: 분류 그룹 → 클릭 시 세부 품목 + 현재고 */
 function StagingPanel({
   staging,
   onClear,
   onRemove,
   editMode,
+  masterMap,
+  openLg,
+  onToggle,
 }: {
   staging: string[];
   onClear: () => void;
   onRemove: (pn: string) => void;
   editMode: boolean;
+  masterMap: Record<string, MasterInfo>;
+  openLg: string | null;
+  onToggle: (lg: string) => void;
 }) {
   const { setNodeRef: dropRef, isOver } = useDroppable({
     id: "drop-staging",
     data: { kind: "staging" },
   });
+  // 분류 그룹 (제품 마스터 기준)
+  const groups: Record<string, { pnum: string; name: string; stock: number | null }[]> = {};
+  for (const pn of staging) {
+    const m = masterMap[pn];
+    const lg = m?.lg || "기타";
+    (groups[lg] ??= []).push({ pnum: pn, name: m?.name || "", stock: m?.stock ?? null });
+  }
+  const keys = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
   return (
     <div className="mt-2 rounded-md border border-amber-300 bg-amber-50/70 p-2 sticky bottom-2 shadow-md">
       <div className="flex items-center justify-between">
@@ -2541,6 +2624,48 @@ function StagingPanel({
           staging.map((pn) => <StagingChip key={pn} pnum={pn} onRemove={onRemove} disabled={!editMode} />)
         )}
       </div>
+      {staging.length > 0 && (
+        <div className="mt-2 overflow-auto max-h-64 space-y-1 pr-1">
+          {keys.map((lg) => (
+            <div key={lg} className="border rounded-md overflow-hidden bg-white">
+              <button
+                type="button"
+                onClick={() => onToggle(lg)}
+                className="w-full bg-amber-100 px-2 py-1 text-[11px] font-bold flex justify-between items-center hover:bg-amber-200/70 cursor-pointer"
+              >
+                <span>{lg}</span>
+                <span className="text-amber-800">
+                  {groups[lg].length}품목 {openLg === lg ? "▾" : "▸"}
+                </span>
+              </button>
+              {openLg === lg && (
+                <div className="max-h-48 overflow-auto">
+                  {groups[lg].map((g) => (
+                    <div
+                      key={g.pnum}
+                      className="w-full text-left px-2 py-1 text-[11px] border-t first:border-t-0 flex items-center gap-2"
+                    >
+                      <span className="font-semibold tabular-nums shrink-0">{g.pnum}</span>
+                      <span className="truncate text-muted-foreground flex-1">{g.name || "-"}</span>
+                      <span className="shrink-0 text-[10px] font-medium tabular-nums text-slate-500">
+                        현재고 {g.stock ?? "-"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onRemove(g.pnum)}
+                        className="shrink-0 text-[10px] text-amber-700 hover:text-red-600"
+                        title="보관함에서 제거"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
