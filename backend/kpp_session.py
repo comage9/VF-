@@ -1330,6 +1330,7 @@ def print_edi(
     date_str: str | None = None,
     page: CdpPage | None = None,
     skip_search: bool = False,
+    plate_digits: str = "",
 ) -> dict:
     """EDI 전표 출력: PDF 저장 후 GDI(90°) — Chrome 인쇄 버튼 미사용.
 
@@ -1357,8 +1358,9 @@ def print_edi(
                 print(f"[KPP] 공지 닫기: {closed}")
             if not skip_search:
                 _search_today(page, date_str, wait=2.0)
-            # 오늘 날짜(col8) 행에서만 호차 매칭 — 이전 날짜 전표 인쇄 금지
-            ex = find_existing_registration(page, int(hoche), "", date_str)
+            # 오늘 날짜(col8) 행에서 호차+차량번호 매칭 — col0 행번호를
+            # 호차로 오인한 타센터 첫 행(예: 천안) 선택 방지
+            ex = find_existing_registration(page, int(hoche), plate_digits, date_str)
             row = ex.get("target_row")
             if row is None:
                 # ⛔ 행0 폴백 금지: 오늘 등록분이 없으면 인쇄하지 않는다
@@ -1839,9 +1841,13 @@ def register_and_print_from_departure(
             print(f"[KPP] extras 저장 스킵: {e}")
 
         if do_print:
-            # 등록 직후 같은 페이지에서 조회·인쇄
+            # 등록 직후 같은 페이지에서 조회·인쇄 (차량번호까지 일치하는 행 선택)
             out["print"] = print_edi(
-                int(hoche), date_str, page=page, skip_search=False
+                int(hoche),
+                date_str,
+                page=page,
+                skip_search=False,
+                plate_digits=_plate_digits(veh.get("plate") or ""),
             )
             out["ok"] = bool(out["print"].get("ok"))
         else:
