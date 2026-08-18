@@ -1890,6 +1890,32 @@ export default function ProductDisplayPage() {
     return { sums, total, pcts };
   }, [placedRows]);
 
+  // 동별 TOP 3 품목 (최근 1개월 출고 박스 기준) — 우측 패널 비율 카드 하단 표시
+  const dongTopProducts = useMemo(() => {
+    const groups: Record<string, { pnum: string; name: string; qty: number; zone: string }[]> = {};
+    for (const r of placedRows) {
+      const d = r.zone.charAt(0);
+      if (!/^[A-E]$/.test(d)) continue;
+      if (!groups[d]) groups[d] = [];
+      groups[d].push({ pnum: r.pnum, name: r.name, qty: r.qty || 0, zone: r.zone });
+    }
+    const result: Record<string, { pnum: string; name: string; qty: number; pct: number }[]> = {};
+    for (const d of Object.keys(groups)) {
+      const rows = groups[d];
+      const sum = rows.reduce((acc, r) => acc + r.qty, 0);
+      result[d] = [...rows]
+        .sort((a, b) => b.qty - a.qty)
+        .slice(0, 3)
+        .map((r) => ({
+          pnum: r.pnum,
+          name: r.name,
+          qty: r.qty,
+          pct: sum > 0 ? Math.round((r.qty / sum) * 1000) / 10 : 0,
+        }));
+    }
+    return result;
+  }, [placedRows]);
+
   // 우측 패널 (배치/미배치/임시보관함/3개월 미출고 탭) — 총괄·동별 공통
   const renderRightPanel = (rows: typeof placedRows) => {
     const placedUnique = new Set(rows.map((r) => r.pnum)).size;
@@ -1912,6 +1938,16 @@ export default function ProductDisplayPage() {
                 <div className="mt-0.5 h-1.5 rounded-full bg-slate-200 overflow-hidden">
                   <div className="h-full rounded-full bg-[#721FE5]" style={{ width: `${Math.max(pct, 2)}%` }} />
                 </div>
+                {(dongTopProducts[d]?.length || 0) > 0 && (
+                  <div className="mt-1">
+                    <div className="text-[9px] font-bold text-slate-500 mb-0.5">TOP</div>
+                    {dongTopProducts[d].map((t) => (
+                      <div key={t.pnum} className="text-[9px] text-slate-600 leading-tight truncate">
+                        {t.pnum}번 {t.name.length > 20 ? t.name.slice(0, 20) : t.name} {t.qty}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
