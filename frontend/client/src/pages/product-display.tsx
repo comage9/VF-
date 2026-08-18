@@ -747,6 +747,9 @@ export default function ProductDisplayPage() {
   // 수정 모드: 그리드 편집 (개별/영역 선택 → 그룹 위/아래 이동)
   const [editMode, setEditMode] = useState(false);
   const [selectedZones, setSelectedZones] = useState<string[]>([]);
+  // 칸 직접 입력 (수기 편집): 클릭 → 인라인 input → "19,28" 콤마 구분 저장
+  const [editingZone, setEditingZone] = useState<string | null>(null);
+  const [editVal, setEditVal] = useState("");
   // 그리드 여유 공간 (확장 버튼으로 필요할 때만 증가, 기본 0 = 현재 그리드만 표시)
   const [gridPad, setGridPad] = useState({ t: 0, r: 0, b: 0, l: 0 });
   const gridRef = useRef<HTMLDivElement | null>(null);
@@ -1491,32 +1494,6 @@ export default function ProductDisplayPage() {
   // ── 보관함 드롭존은 StagingPanel 컴포넌트에서 정의 (DndContext 컨텍스트 수신) ──
 
   // 라인(열) 단위 좌표 교환: 선택 그룹 라인 ↔ 목적지 칸의 라인 (칸 수 동일할 때)
-  const moveGroupTo = (groupIds: string[], dstId: string) => {
-    const lineOf = (id: string) => id.match(/L(\d+)/)?.[1] ?? "";
-    const gLines = new Set(groupIds.map(lineOf));
-    const dstLine = lineOf(dstId);
-    if (gLines.size !== 1 || !dstLine || gLines.has(dstLine)) return; // 같은 라인 or 비라인 그룹은 무시
-    const srcLine = [...gLines][0];
-    setLayoutState((prev) =>
-      prev.map((d) => {
-        if (d.key !== dong) return d;
-        const srcZones = d.zones.filter((z) => lineOf(z.id) === srcLine);
-        const dstZones = d.zones.filter((z) => lineOf(z.id) === dstLine);
-        if (srcZones.length === 0 || srcZones.length !== dstZones.length) return d; // 칸 수 불일치 → 이동 불가
-        const zones = d.zones.map((z) => ({ ...z, style: { ...z.style } }));
-        for (let i = 0; i < srcZones.length; i++) {
-          const sIdx = zones.findIndex((z) => z.id === srcZones[i].id);
-          const dIdx = zones.findIndex((z) => z.id === dstZones[i].id);
-          if (sIdx < 0 || dIdx < 0) continue;
-          const sStyle = zones[sIdx].style;
-          zones[sIdx] = { ...zones[sIdx], style: { ...zones[dIdx].style } };
-          zones[dIdx] = { ...zones[dIdx], style: { ...sStyle } };
-        }
-        return { ...d, zones };
-      })
-    );
-  };
-
   // 새 라인 추가 (A동 등 라인 구조 동): 최대 라인 번호 +1, 오른쪽에 빈 슬롯 count개 생성
   const addLine = () => {
     setLayoutState((prev) =>
@@ -1567,18 +1544,38 @@ export default function ProductDisplayPage() {
   // 수정 모드 셀 클릭: 선택 없음 → 선택 / 선택 칸 → 해제 / 다른 칸(1개 선택 시) → 슬롯 좌표 이동
   const handleCellClick = (zid: string) => {
     if (!editMode) return;
-    if (selectedZones.length === 0) {
-      setSelectedZones([zid]);
-    } else if (selectedZones.includes(zid)) {
-      setSelectedZones([]);
-    } else if (selectedZones.length === 1) {
-      moveSlotTo(selectedZones[0], zid);
-      setSelectedZones([]);
-    } else {
-      // 다중 선택(라인 그룹): 목적지 라인과 좌표 교환
-      moveGroupTo(selectedZones, zid);
-      setSelectedZones([]);
+    // 수기 편집: 칸 클릭 → 인라인 입력 (기존 값 표시, 콤마 구분 다품목)
+    setEditingZone(zid);
+    setEditVal(data[zid] || "");
+  };
+
+  // 인라인 편집 저장 — 빠진 제품은 📦임시보관함으로, 배치된 임시보관함 제품은 제거
+  const commitInlineEdit = (zid: string) => {
+    const raw = editVal.replace(/[^0-9,\s]/g, ""); // 숫자/콤마/공백만 허용
+    const newPns = Array.from(
+      new Set(raw.split(",").map((s) => s.trim()).filter(Boolean))
+    );
+    const newVal = newPns.join(",");
+    const oldPns = (data[zid] || "")
+      .split(",").map((s) => s.trim()).filter(Boolean);
+    // ① 칸에서 빠진 제품 → 임시보관함으로 이동
+    const removed = oldPns.filter((pn) => !newPns.includes(pn));
+    if (removed.length) {
+      setStaging((s) => Array.from(new Set([...s, ...removed])));
     }
+    // ② 임시보관함에 있던 제품 중 새로 배치된 것 → 임시보관함에서 제거
+    const stagedAdded = newPns.filter((pn) => staging.includes(pn));
+    if (stagedAdded.length) {
+      setStaging((s) => s.filter((pn) => !stagedAdded.includes(pn)));
+    }
+    setData((prev) => {
+      const next = { ...prev };
+      if (newVal) next[zid] = newVal;
+      else delete next[zid];
+      return next;
+    });
+    setEditingZone(null);
+    setEditVal("");
   };
 
   const persistLocal = (d: PlacementMap) => {
@@ -2270,6 +2267,11 @@ export default function ProductDisplayPage() {
                 moveTarget={canMoveTo && !selectedZones.includes(z.id)}
                 onOpen={() => openAssign(z.id)}
                 onToggleSelect={() => handleCellClick(z.id)}
+                editing={editingZone === z.id}
+                editValue={editVal}
+                onEditChange={setEditVal}
+                onEditCommit={() => commitInlineEdit(z.id)}
+                onEditCancel={() => { setEditingZone(null); setEditVal(""); }}
                 tip={makeTooltip(z)}
               />
             ))}
@@ -2812,6 +2814,11 @@ function ZoneCell({
   onOpen,
   onToggleSelect,
   tip,
+  editing,
+  editValue,
+  onEditChange,
+  onEditCommit,
+  onEditCancel,
 }: {
   z: ZoneDef;
   value: string;
@@ -2825,6 +2832,11 @@ function ZoneCell({
   onOpen: () => void;
   onToggleSelect: () => void;
   tip: string;
+  editing: boolean;
+  editValue: string;
+  onEditChange: (v: string) => void;
+  onEditCommit: () => void;
+  onEditCancel: () => void;
 }) {
   const assigned = Boolean(value);
   const items = value ? value.split(",").map((s) => s.trim()).filter(Boolean) : [];
@@ -2845,6 +2857,42 @@ function ZoneCell({
     dropRef(node);
     cellDrag.setNodeRef(node);
   };
+  // 수기 편집 중: 인라인 input (콤마 구분 다품목) — 클릭 시 바로 입력
+  if (editing) {
+    return (
+      <div
+        ref={dropRef}
+        data-zone-id={z.id}
+        className={
+          "absolute flex items-center justify-center rounded border text-center " +
+          (assigned
+            ? "border-blue-700 bg-blue-50 ring-2 ring-amber-400 ring-offset-1"
+            : "border-slate-500 bg-white ring-2 ring-amber-400 ring-offset-1")
+        }
+        style={z.style}
+      >
+        <input
+          autoFocus
+          value={editValue}
+          onChange={(e) => onEditChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.stopPropagation();
+              onEditCommit();
+            } else if (e.key === "Escape") {
+              e.stopPropagation();
+              onEditCancel();
+            }
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="w-[92%] h-[72%] min-w-0 text-[10px] text-center border rounded border-blue-400 outline-none focus:ring-2 focus:ring-blue-500 tabular-nums"
+          placeholder="19,28"
+          title="제품번호 콤마 구분 입력 (예: 19,28) — Enter 저장 / Esc 취소. 빠진 제품은 📦임시보관함으로 이동"
+        />
+      </div>
+    );
+  }
   return (
     <button
       ref={nodeRef}
@@ -2879,7 +2927,7 @@ function ZoneCell({
             (items.length > 1 ? " flex flex-col items-center text-[8px] leading-[1.15]" : "")
           }
         >
-          {items.length > 1 && !isA
+          {items.length > 1
             ? items.map((it, i) => (
                 <DragChip key={`${z.id}-${i}`} zoneId={z.id} itemIdx={i} pnum={it} text={it} disabled={!editMode} />
               ))
