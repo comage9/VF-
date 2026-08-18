@@ -1632,12 +1632,14 @@ export default function ProductDisplayPage() {
   };
   const openAssign = useCallback(
     (zoneId: string) => {
+      if (!editMode) return; // ⛔ 수정 모드에서만 배정 다이얼로그 허용
       setCurrentZone(zoneId);
       setInputVal(data[zoneId] || "");
       setModalOpen(true);
     },
-    [data]
+    [data, editMode]
   );
+  void openAssign; // 수정 모드 전용 다이얼로그 진입점 (예약)
 
   // 제품 배정 다이얼로그 검색 후보: B/C/D_PNUM_INFO + 미배치 통합 (제품번호/이름/분류/바코드)
   const assignCandidates = useMemo(() => {
@@ -2307,7 +2309,6 @@ export default function ProductDisplayPage() {
                 editMode={editMode}
                 selected={selectedZones.includes(z.id)}
                 moveTarget={canMoveTo && !selectedZones.includes(z.id)}
-                onOpen={() => openAssign(z.id)}
                 onToggleSelect={() => handleCellClick(z.id)}
                 editing={editingZone === z.id}
                 editValue={editVal}
@@ -2866,7 +2867,6 @@ function ZoneCell({
   editMode,
   selected,
   moveTarget,
-  onOpen,
   onToggleSelect,
   tip,
   editing,
@@ -2884,7 +2884,6 @@ function ZoneCell({
   editMode: boolean;
   selected: boolean;
   moveTarget: boolean;
-  onOpen: () => void;
   onToggleSelect: () => void;
   tip: string;
   editing: boolean;
@@ -2957,8 +2956,8 @@ function ZoneCell({
       ref={nodeRef}
       type="button"
       data-zone-id={z.id}
-      onClick={editMode ? onToggleSelect : onOpen}
-      title={moveTarget ? `${tip} — 클릭하면 선택 칸이 이 위치로 이동` : tip}
+      onClick={editMode ? onToggleSelect : undefined}
+      title={tip}
       {...cellDrag.listeners}
       {...cellDrag.attributes}
       className={
