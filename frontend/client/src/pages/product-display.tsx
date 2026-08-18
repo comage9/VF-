@@ -1799,7 +1799,9 @@ export default function ProductDisplayPage() {
   }, [dong, placedRows]);
 
   // 우측 패널 (배치/미배치/임시보관함/3개월 미출고 탭) — 총괄·동별 공통
-  const renderRightPanel = (rows: typeof placedRows) => (
+  const renderRightPanel = (rows: typeof placedRows) => {
+    const placedUnique = new Set(rows.map((r) => r.pnum)).size;
+    return (
     <div className="rounded-xl border bg-card p-3 shrink-0 w-[560px] flex flex-col gap-2">
       <div className="flex gap-1">
         <button
@@ -1810,7 +1812,7 @@ export default function ProductDisplayPage() {
             (panelTab === "placed" ? "bg-[#721FE5] text-white" : "bg-muted text-foreground hover:bg-muted/80")
           }
         >
-          배치 내역 ({rows.length})
+          배치 내역 ({placedUnique})
         </button>
         <button
           type="button"
@@ -1993,6 +1995,7 @@ export default function ProductDisplayPage() {
       ) : null}
     </div>
   );
+  };
 
   return (
     <div className="space-y-4 w-full max-w-none">
