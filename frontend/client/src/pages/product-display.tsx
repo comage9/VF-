@@ -750,6 +750,7 @@ export default function ProductDisplayPage() {
   // 칸 직접 입력 (수기 편집): 클릭 → 인라인 input → "19,28" 콤마 구분 저장
   const [editingZone, setEditingZone] = useState<string | null>(null);
   const [editVal, setEditVal] = useState("");
+  const editingZoneRef = useRef<string | null>(null); // Enter→blur race-safe 가드 (M1)
   // 그리드 여유 공간 (확장 버튼으로 필요할 때만 증가, 기본 0 = 현재 그리드만 표시)
   const [gridPad, setGridPad] = useState({ t: 0, r: 0, b: 0, l: 0 });
   const gridRef = useRef<HTMLDivElement | null>(null);
@@ -1545,11 +1546,12 @@ export default function ProductDisplayPage() {
   const handleCellClick = (zid: string) => {
     if (!editMode) return;
     // 수기 편집: 칸 클릭 → 인라인 입력 (기존 값 표시, 콤마 구분 다품목)
+    editingZoneRef.current = zid;
     setEditingZone(zid);
     setEditVal(data[zid] || "");
   };
 
-  // A동 칸 순서 (L1-1 → L1-19 → L2-1 → … → L7-16 → X1 → X2)
+  // A동 칸 정렬 (L1-1 → L1-19 → L2-1 → … → L7-16 → X1 → X2, 사용자 추가 칸은 뒤)
   const zoneOrderA = (a: string, b: string) => {
     const parse = (id: string): [number, number, number] => {
       const m = id.match(/^A-L(\d+)-(\d+)$/);
@@ -1563,6 +1565,15 @@ export default function ProductDisplayPage() {
     return t1 - t2 || l1 - l2 || n1 - n2;
   };
 
+  // A동 물리 고정 순서(빈 칸 포함) + 사용자 추가 칸(A-NEW-* 등) — zoneOrderA로 뒤에 합침
+  const aZonesOf = (m: PlacementMap): string[] => {
+    const base = aSeq.filter((z) => z.startsWith("A-"));
+    const extra = Object.keys(m)
+      .filter((z) => z.startsWith("A-") && !base.includes(z))
+      .sort(zoneOrderA);
+    return [...base, ...extra];
+  };
+
   // 배치 편집 공통: 칸 값 설정 + 중복 제거(같은 제품 다른 칸) + A동 한 칸씩 당김
   const applyPlacementEdit = (
     prev: PlacementMap,
@@ -1573,36 +1584,51 @@ export default function ProductDisplayPage() {
     const next = { ...prev };
     if (newVal) next[zid] = newVal;
     else delete next[zid];
-    // ③ 새로 배치된 제품이 다른 A동 칸에 이미 있으면 → 그 칸에서 제거 + 이후 시프트
+
+    const aZones = aZonesOf(next);
+
+    // ① 중복 칸 전부 수집 (편집 칸 zid 제외, 다중 중복 모두)
+    //    남은 품목이 있는 다품목 칸은 restKept — 시프트 대상에서 제외 (H2 소실 방지)
+    const dupZones = new Set<string>();
+    const restKept = new Set<string>();
     for (const pn of newPns) {
-      const dupZone = Object.keys(next).find(
-        (z) => z !== zid && z.startsWith("A-") && (next[z] || "").split(",").includes(pn)
-      );
-      if (!dupZone) continue;
-      // 시프트 대상 목록은 dupZone 삭제 전에 생성 (indexOf 정확성)
-      const aZones = Object.keys(next)
-        .filter((z) => z.startsWith("A-"))
-        .sort(zoneOrderA);
-      const idx = aZones.indexOf(dupZone);
-      if (idx < 0) continue;
-      const dzPns = (next[dupZone] || "").split(",").filter((x) => x !== pn);
-      if (dzPns.length) next[dupZone] = dzPns.join(",");
-      else delete next[dupZone];
-      // dupZone 자리부터 한 칸씩 앞으로 당기고 맨 끝 칸 비우기
-      for (let i = idx; i < aZones.length - 1; i++) {
-        const cur = aZones[i];
-        const nxtZ = aZones[i + 1];
-        if (next[nxtZ]) next[cur] = next[nxtZ];
-        else delete next[cur];
+      for (const z of aZones) {
+        if (z === zid) continue;
+        const items = (next[z] || "")
+          .split(",").map((s) => s.trim()).filter(Boolean);
+        if (!items.includes(pn)) continue;
+        const rest = items.filter((x) => x !== pn);
+        if (rest.length) {
+          next[z] = rest.join(",");
+          restKept.add(z);
+        } else {
+          delete next[z];
+        }
+        dupZones.add(z);
       }
-      delete next[aZones[aZones.length - 1]];
+    }
+    if (dupZones.size === 0) return next;
+
+    // ② 가장 앞쪽(다품목 보존 칸 제외) 중복부터 단일 패스 당김
+    //    편집 칸 zid는 값 보존 (zid 앞까지만 당김, H1)
+    const shiftZones = aZones.filter((z) => !restKept.has(z));
+    const start = shiftZones.findIndex((z) => dupZones.has(z));
+    if (start >= 0) {
+      const zidIdx = shiftZones.indexOf(zid);
+      const end = zidIdx > start ? zidIdx : shiftZones.length; // zid가 구간 안이면 zid 직전까지
+      for (let i = start; i < end - 1; i++) {
+        const v = next[shiftZones[i + 1]];
+        if (v) next[shiftZones[i]] = v;
+        else delete next[shiftZones[i]];
+      }
+      delete next[shiftZones[end - 1]]; // 당김 끝 지점 비우기
     }
     return next;
   };
 
   // 인라인 편집 저장 — 빠진 제품은 📦임시보관함으로, 배치된 임시보관함 제품은 제거
   const commitInlineEdit = (zid: string) => {
-    if (editingZone !== zid) return; // Enter→blur 이중 호출 방지
+    if (editingZoneRef.current !== zid) return; // ref 가드 — Enter→blur/더블 Enter 경쟁 안전
     const raw = editVal.replace(/[^0-9,\s]/g, ""); // 숫자/콤마/공백만 허용
     const newPns = Array.from(
       new Set(raw.split(",").map((s) => s.trim()).filter(Boolean))
@@ -1611,16 +1637,20 @@ export default function ProductDisplayPage() {
     const oldPns = (data[zid] || "")
       .split(",").map((s) => s.trim()).filter(Boolean);
     // ① 칸에서 빠진 제품 → 임시보관함으로 이동
-    const removed = oldPns.filter((pn) => !newPns.includes(pn));
-    if (removed.length) {
-      setStaging((s) => Array.from(new Set([...s, ...removed])));
-    }
+    const removedFromZone = oldPns.filter((pn) => !newPns.includes(pn));
     // ② 임시보관함에 있던 제품 중 새로 배치된 것 → 임시보관함에서 제거
     const stagedAdded = newPns.filter((pn) => staging.includes(pn));
-    if (stagedAdded.length) {
-      setStaging((s) => s.filter((pn) => !stagedAdded.includes(pn)));
-    }
-    setData((prev) => applyPlacementEdit(prev, zid, newPns, newVal));
+
+    setData((prev) => {
+      const next = applyPlacementEdit(prev, zid, newPns, newVal);
+      // staging 동기화를 함수형 업데이터로 통합 (stale 없음 — M2)
+      setStaging((s) => {
+        const merged = Array.from(new Set([...s, ...removedFromZone]));
+        return stagedAdded.length ? merged.filter((pn) => !stagedAdded.includes(pn)) : merged;
+      });
+      return next;
+    });
+    editingZoneRef.current = null;
     setEditingZone(null);
     setEditVal("");
     setSaveMsg(`✅ ${zid} 저장: ${newVal || "(비움)"}`);
@@ -1699,16 +1729,18 @@ export default function ProductDisplayPage() {
     // 현재 칸의 기존 제품 중 빠진 것 → 📦임시보관함으로 이동
     const oldPns = (data[currentZone] || "")
       .split(",").map((s) => s.trim()).filter(Boolean);
-    const removed = oldPns.filter((pn) => !newPns.includes(pn));
-    if (removed.length) {
-      setStaging((s) => Array.from(new Set([...s, ...removed])));
-    }
+    const removedFromZone = oldPns.filter((pn) => !newPns.includes(pn));
     // 임시보관함에 있던 제품 중 새로 배치된 것 → 임시보관함에서 제거
     const stagedAdded = newPns.filter((pn) => staging.includes(pn));
-    if (stagedAdded.length) {
-      setStaging((s) => s.filter((pn) => !stagedAdded.includes(pn)));
-    }
-    setData((prev) => applyPlacementEdit(prev, currentZone, newPns, newVal));
+
+    setData((prev) => {
+      const next = applyPlacementEdit(prev, currentZone, newPns, newVal);
+      setStaging((s) => {
+        const merged = Array.from(new Set([...s, ...removedFromZone]));
+        return stagedAdded.length ? merged.filter((pn) => !stagedAdded.includes(pn)) : merged;
+      });
+      return next;
+    });
     setModalOpen(false);
     setAssignSearch("");
     setSaveMsg(`✅ ${currentZone} 저장: ${newVal || "(비움)"}`);
@@ -2357,6 +2389,10 @@ export default function ProductDisplayPage() {
             onClick={() => {
               setEditMode((v) => !v);
               setSelectedZones([]);
+              // ⛔ 수정 모드 OFF 시 인라인 input 잔류 방지 (H3)
+              editingZoneRef.current = null;
+              setEditingZone(null);
+              setEditVal("");
             }}
           >
             {editMode ? "✓ 수정 중" : "수정"}
@@ -2911,8 +2947,8 @@ function ZoneCell({
     dropRef(node);
     cellDrag.setNodeRef(node);
   };
-  // 수기 편집 중: 인라인 input (콤마 구분 다품목) — 클릭 시 바로 입력
-  if (editing) {
+  // 수기 편집 중: 인라인 input (콤마 구분 다품목) — 클릭 시 바로 입력 (수정 모드에서만)
+  if (editing && editMode) {
     return (
       <div
         ref={dropRef}
