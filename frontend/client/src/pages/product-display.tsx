@@ -1873,11 +1873,50 @@ export default function ProductDisplayPage() {
     return placedRows.filter((r) => r.zone.startsWith(dong + "-"));
   }, [dong, placedRows]);
 
+  // 동별 출고 비율 (최근 1개월, 배치 제품 기준) — 총괄 우측 상단 표시
+  const dongOutboundRatio = useMemo(() => {
+    const sums: Record<string, number> = {};
+    let total = 0;
+    for (const r of placedRows) {
+      const d = r.zone.charAt(0);
+      if (!/^[A-E]$/.test(d)) continue;
+      sums[d] = (sums[d] || 0) + (r.qty || 0);
+      total += r.qty || 0;
+    }
+    const pcts: Record<string, number> = {};
+    for (const d of Object.keys(sums)) {
+      pcts[d] = total > 0 ? Math.round((sums[d] / total) * 1000) / 10 : 0;
+    }
+    return { sums, total, pcts };
+  }, [placedRows]);
+
   // 우측 패널 (배치/미배치/임시보관함/3개월 미출고 탭) — 총괄·동별 공통
   const renderRightPanel = (rows: typeof placedRows) => {
     const placedUnique = new Set(rows.map((r) => r.pnum)).size;
     return (
     <div className="rounded-xl border bg-card p-3 shrink-0 w-[560px] flex flex-col gap-2">
+      {/* 동별 출고 비율 (최근 1개월) */}
+      {dongOutboundRatio.total > 0 && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-bold text-slate-700">📦 동별 출고 비율 (최근 1개월)</span>
+            <span className="text-[10px] text-slate-500 tabular-nums">합계 {dongOutboundRatio.total.toLocaleString()}박스</span>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            {Object.entries(dongOutboundRatio.pcts).map(([d, pct]) => (
+              <div key={d}>
+                <div className="flex justify-between text-[10px]">
+                  <span className="font-semibold text-slate-600">{d}동</span>
+                  <span className="font-bold text-slate-800 tabular-nums">{pct}%</span>
+                </div>
+                <div className="mt-0.5 h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                  <div className="h-full rounded-full bg-[#721FE5]" style={{ width: `${Math.max(pct, 2)}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="flex gap-1">
         <button
           type="button"
