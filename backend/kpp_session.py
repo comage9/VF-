@@ -631,6 +631,7 @@ def _list_grid_rows(page: CdpPage) -> list[dict]:
       const qty = s.getValue(i, 18);
       const mod = s.getValue(i, 2);
       const edi = String(s.getValue(i, 26) || '').trim();
+      const dlv = String(s.getValue(i, 8) || '').trim();  // 출하일자 YYYYMMDD
       // 차량/비고 비어도 수량·EDI 있으면 행으로 인식 (출력 대상)
       if (!car && !hRaw && !edi && (qty === null || qty === undefined || qty === '')) continue;
       out.push({
@@ -641,7 +642,8 @@ def _list_grid_rows(page: CdpPage) -> list[dict]:
         driver: driver,
         qty: qty,
         mod: mod,
-        edi: edi
+        edi: edi,
+        dlv: dlv
       });
     }
     return out;
@@ -673,6 +675,7 @@ def find_existing_registration(
     page: CdpPage,
     hoche: int,
     plate_digits: str,
+    date_str: str | None = None,
 ) -> dict:
     """
     그리드에서 기존 등록 여부 판별 (중복 등록 방지용).
@@ -681,8 +684,18 @@ def find_existing_registration(
       1) 동일 호차 행
       2) 동일 차량번호 행
     둘 다 있으면 호차 행을 갱신 대상으로 사용.
+
+    date_str 지정 시 그리드 행 중 **출하일자(col8)가 date_str과 일치하는 행만**
+    매칭 대상으로 사용 (이전 날짜 전표를 덮어쓰기/인쇄하는 사고 방지).
     """
+    from datetime import date as _dt_date
+
+    want_d = None
+    if date_str:
+        want_d = (date_str or _dt_date.today().strftime("%Y-%m-%d")).replace("-", "")
     rows = _list_grid_rows(page)
+    if want_d:
+        rows = [r for r in rows if str(r.get("dlv") or "").replace("-", "") == want_d]
     want_h = str(int(hoche))
     want_p = (plate_digits or "").strip()
 
@@ -1034,7 +1047,7 @@ def register_vehicle(
         print(f"[KPP] 조회 행수={rc} ({time.time()-t0:.1f}s)")
 
         # ── 기존 등록 여부 확인 (중복 방지 핵심) ──
-        existing = find_existing_registration(page, int(hoche), car)
+        existing = find_existing_registration(page, int(hoche), car, date_str)
         print(
             f"[KPP] 등록확인 registered={existing['registered']} "
             f"action={existing['action']} match={existing['match_by']} "
@@ -1059,7 +1072,7 @@ def register_vehicle(
                     "elapsed_s": round(time.time() - t0, 2),
                 }
             # 추가 직후 재확인: 경합으로 이미 생겼으면 그 행 사용
-            recheck = find_existing_registration(page, int(hoche), car)
+            recheck = find_existing_registration(page, int(hoche), car, date_str)
             if recheck["registered"] and recheck.get("target_row") is not None:
                 # 신규 행이 비어 있고 기존 매칭이 다른 행이면 기존 행 사용
                 if recheck["target_row"] != row:
@@ -1120,7 +1133,7 @@ def register_vehicle(
             # 저장 유실 시 1회 재시도 — 재시도 전에도 기존 여부 재확인
             if verify is None or not verify.get("car"):
                 print("[KPP] 저장 미반영 → 1회 재시도 (기존 확인 후)")
-                again = find_existing_registration(page, int(hoche), car)
+                again = find_existing_registration(page, int(hoche), car, date_str)
                 if again["registered"] and again.get("target_row") is not None:
                     row = again["target_row"]
                     is_new = False
@@ -1344,15 +1357,16 @@ def print_edi(
                 print(f"[KPP] 공지 닫기: {closed}")
             if not skip_search:
                 _search_today(page, date_str, wait=2.0)
-            # plate digits optional — 호차 col0/col36
-            row = _find_row(page, hoche, "")
+            # 오늘 날짜(col8) 행에서만 호차 매칭 — 이전 날짜 전표 인쇄 금지
+            ex = find_existing_registration(page, int(hoche), "", date_str)
+            row = ex.get("target_row")
             if row is None:
-                rc = _grid_row_count(page)
-                if rc and rc > 0:
-                    row = 0
-                    print(f"[KPP] 호차 매칭 실패 → 행0 폴백 (rc={rc})")
-                else:
-                    return "no-row", _pop_alerts(page)
+                # ⛔ 행0 폴백 금지: 오늘 등록분이 없으면 인쇄하지 않는다
+                print(
+                    f"[KPP] {date_str} 출하일 행에서 {hoche}호차 미매칭 "
+                    f"(전체행 {_grid_row_count(page)}) → no-row"
+                )
+                return "no-row", _pop_alerts(page)
             # 체크박스 선택 (setValue + cell.value 둘 다)
             page.js(
                 f"""
@@ -1457,6 +1471,17 @@ def print_edi(
             found.sort(key=lambda x: -x[0])
             return found
 
+        def _url_date_matches(u: str) -> bool:
+            """EDI PDF URL의 dlv_dat 파라미터가 date_str(출하일)과 일치하는지."""
+            from urllib.parse import parse_qs, urlparse
+
+            try:
+                q = parse_qs(urlparse(u.replace("&amp;", "&")).query)
+                dv = (q.get("dlv_dat") or [""])[0]
+                return bool(dv) and dv == date_str.replace("-", "")
+            except Exception:
+                return False
+
         def _wait_pdf_url(click_r: str, seconds: float = 12.0) -> tuple[str | None, dict | None]:
             pdf_url = None
             pdf_tab = None
@@ -1472,14 +1497,25 @@ def print_edi(
                             user_gesture=True,
                         )
                     continue
-                best_sc, best_u, best_t = cands[0]
+                # ⛔ 출하일(dlv_dat)이 date_str과 일치하는 후보만 사용 —
+                #    이전 날짜 전표 PDF를 인쇄하는 사고 방지
+                dated = [c for c in cands if _url_date_matches(c[1])]
+                pool = dated if dated else []
+                if not pool:
+                    if i in (3, 10) and click_r == "fn_print":
+                        page.js(
+                            "typeof fn_print==='function' && fn_print()",
+                            user_gesture=True,
+                        )
+                    continue
+                best_sc, best_u, best_t = pool[0]
                 if best_sc >= 35:
                     print(
                         f"[KPP] EDI URL 감지 t={0.3*(i+1):.1f}s score={best_sc} "
                         f"{best_u[:100]}"
                     )
                     return best_u, best_t
-                if preview_fallback is None and best_sc > 0:
+                if preview_fallback is None:
                     preview_fallback = (best_u, best_t)
             if preview_fallback:
                 return preview_fallback[0], preview_fallback[1]
@@ -1506,7 +1542,10 @@ def print_edi(
         if click_r == "no-row":
             return {
                 "ok": False,
-                "error": f"{hoche}호차 행 없음 — 먼저 등록 필요",
+                "error": (
+                    f"{hoche}호차 {date_str} 출하일 등록분 없음 — "
+                    "등록 후 재시도 (이전 날짜 전표는 인쇄하지 않음)"
+                ),
                 "alerts": alerts,
                 "elapsed_s": round(time.time() - t0, 2),
             }
