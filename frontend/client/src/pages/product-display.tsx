@@ -49,7 +49,7 @@ import { aShiftInsert, extractDansu, groupShiftInsert, reorderInZone } from "@/p
 
 const STORAGE_KEY = "vf_product_display_v1";
 /** 배치 데이터 스키마 버전 — v14(A동 전용)는 v15(전 동)로 대체됨: 옛 데이터 무시 */
-const SAVED_VERSION = "rank-a-v19";
+const SAVED_VERSION = "rank-a-v20";
 /** 동적 레이아웃(칸 좌표) 저장 키 */
 const LAYOUT_KEY = "vf_product_display_layout_v1";
 const LAYOUT_VERSION = "layout-v1";
@@ -1551,11 +1551,13 @@ export default function ProductDisplayPage() {
     setEditVal(data[zid] || "");
   };
 
-  // A동 칸 정렬 (L1-1 → L1-19 → L2-1 → … → L7-16 → X1 → X2, 사용자 추가 칸은 뒤)
+  // A동 칸 정렬 (L1-1 → L1-19 → L2-1 → … → L7-8-2 → X1 → X2, 사용자 추가 칸은 뒤)
   const zoneOrderA = (a: string, b: string) => {
     const parse = (id: string): [number, number, number] => {
-      const m = id.match(/^A-L(\d+)-(\d+)$/);
-      if (m) return [0, +m[1], +m[2]];
+      const m = id.match(/^A-L(\d+)-(\d+)-(\d+)$/); // L7: A-L7-1-1 형식
+      if (m) return [0, +m[1], +m[2] * 2 + (+m[3] - 1)];
+      const m2 = id.match(/^A-L(\d+)-(\d+)$/); // L1~L6: A-L1-1 형식
+      if (m2) return [0, +m2[1], +m2[2]];
       if (id === "A-X1") return [1, 0, 0];
       if (id === "A-X2") return [1, 1, 0];
       return [2, 0, 0];
@@ -1658,7 +1660,7 @@ export default function ProductDisplayPage() {
   };
 
   const persistLocal = (d: PlacementMap) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: "rank-a-v19", data: d }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: "rank-a-v20", data: d }));
   };
   const openAssign = useCallback(
     (zoneId: string) => {
@@ -1750,7 +1752,7 @@ export default function ProductDisplayPage() {
   const saveData = () => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v19", data })
+      JSON.stringify({ __v: "rank-a-v20", data })
     );
     setSaveMsg("저장되었습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
@@ -1770,7 +1772,7 @@ export default function ProductDisplayPage() {
     setData(next);
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v19", data: next })
+      JSON.stringify({ __v: "rank-a-v20", data: next })
     );
     setSaveMsg("A동만 초기화했습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
