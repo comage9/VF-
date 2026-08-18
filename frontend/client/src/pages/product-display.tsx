@@ -1549,6 +1549,57 @@ export default function ProductDisplayPage() {
     setEditVal(data[zid] || "");
   };
 
+  // A동 칸 순서 (L1-1 → L1-19 → L2-1 → … → L7-16 → X1 → X2)
+  const zoneOrderA = (a: string, b: string) => {
+    const parse = (id: string): [number, number, number] => {
+      const m = id.match(/^A-L(\d+)-(\d+)$/);
+      if (m) return [0, +m[1], +m[2]];
+      if (id === "A-X1") return [1, 0, 0];
+      if (id === "A-X2") return [1, 1, 0];
+      return [2, 0, 0];
+    };
+    const [t1, l1, n1] = parse(a);
+    const [t2, l2, n2] = parse(b);
+    return t1 - t2 || l1 - l2 || n1 - n2;
+  };
+
+  // 배치 편집 공통: 칸 값 설정 + 중복 제거(같은 제품 다른 칸) + A동 한 칸씩 당김
+  const applyPlacementEdit = (
+    prev: PlacementMap,
+    zid: string,
+    newPns: string[],
+    newVal: string
+  ): PlacementMap => {
+    const next = { ...prev };
+    if (newVal) next[zid] = newVal;
+    else delete next[zid];
+    // ③ 새로 배치된 제품이 다른 A동 칸에 이미 있으면 → 그 칸에서 제거 + 이후 시프트
+    for (const pn of newPns) {
+      const dupZone = Object.keys(next).find(
+        (z) => z !== zid && z.startsWith("A-") && (next[z] || "").split(",").includes(pn)
+      );
+      if (!dupZone) continue;
+      // 시프트 대상 목록은 dupZone 삭제 전에 생성 (indexOf 정확성)
+      const aZones = Object.keys(next)
+        .filter((z) => z.startsWith("A-"))
+        .sort(zoneOrderA);
+      const idx = aZones.indexOf(dupZone);
+      if (idx < 0) continue;
+      const dzPns = (next[dupZone] || "").split(",").filter((x) => x !== pn);
+      if (dzPns.length) next[dupZone] = dzPns.join(",");
+      else delete next[dupZone];
+      // dupZone 자리부터 한 칸씩 앞으로 당기고 맨 끝 칸 비우기
+      for (let i = idx; i < aZones.length - 1; i++) {
+        const cur = aZones[i];
+        const nxtZ = aZones[i + 1];
+        if (next[nxtZ]) next[cur] = next[nxtZ];
+        else delete next[cur];
+      }
+      delete next[aZones[aZones.length - 1]];
+    }
+    return next;
+  };
+
   // 인라인 편집 저장 — 빠진 제품은 📦임시보관함으로, 배치된 임시보관함 제품은 제거
   const commitInlineEdit = (zid: string) => {
     if (editingZone !== zid) return; // Enter→blur 이중 호출 방지
@@ -1569,12 +1620,7 @@ export default function ProductDisplayPage() {
     if (stagedAdded.length) {
       setStaging((s) => s.filter((pn) => !stagedAdded.includes(pn)));
     }
-    setData((prev) => {
-      const next = { ...prev };
-      if (newVal) next[zid] = newVal;
-      else delete next[zid];
-      return next;
-    });
+    setData((prev) => applyPlacementEdit(prev, zid, newPns, newVal));
     setEditingZone(null);
     setEditVal("");
     setSaveMsg(`✅ ${zid} 저장: ${newVal || "(비움)"}`);
@@ -1660,12 +1706,7 @@ export default function ProductDisplayPage() {
     if (stagedAdded.length) {
       setStaging((s) => s.filter((pn) => !stagedAdded.includes(pn)));
     }
-    setData((prev) => {
-      const next = { ...prev };
-      if (newVal) next[currentZone] = newVal;
-      else delete next[currentZone];
-      return next;
-    });
+    setData((prev) => applyPlacementEdit(prev, currentZone, newPns, newVal));
     setModalOpen(false);
     setAssignSearch("");
     setSaveMsg(`✅ ${currentZone} 저장: ${newVal || "(비움)"}`);
