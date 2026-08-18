@@ -1551,6 +1551,7 @@ export default function ProductDisplayPage() {
 
   // 인라인 편집 저장 — 빠진 제품은 📦임시보관함으로, 배치된 임시보관함 제품은 제거
   const commitInlineEdit = (zid: string) => {
+    if (editingZone !== zid) return; // Enter→blur 이중 호출 방지
     const raw = editVal.replace(/[^0-9,\s]/g, ""); // 숫자/콤마/공백만 허용
     const newPns = Array.from(
       new Set(raw.split(",").map((s) => s.trim()).filter(Boolean))
@@ -1576,6 +1577,8 @@ export default function ProductDisplayPage() {
     });
     setEditingZone(null);
     setEditVal("");
+    setSaveMsg(`✅ ${zid} 저장: ${newVal || "(비움)"}`);
+    window.setTimeout(() => setSaveMsg(""), 2000);
   };
 
   const persistLocal = (d: PlacementMap) => {
@@ -1665,6 +1668,8 @@ export default function ProductDisplayPage() {
     });
     setModalOpen(false);
     setAssignSearch("");
+    setSaveMsg(`✅ ${currentZone} 저장: ${newVal || "(비움)"}`);
+    window.setTimeout(() => setSaveMsg(""), 2000);
   };
 
   const saveData = () => {
@@ -2893,6 +2898,10 @@ function ZoneCell({
               e.stopPropagation();
               onEditCancel();
             }
+          }}
+          onBlur={() => {
+            // 포커스 잃어도 저장 (확인 버튼 대신 — 클릭 밖 = 저장)
+            onEditCommit();
           }}
           onPointerDown={(e) => e.stopPropagation()}
           className="w-[92%] h-[72%] min-w-0 text-[10px] text-center border rounded border-blue-400 outline-none focus:ring-2 focus:ring-blue-500 tabular-nums"
