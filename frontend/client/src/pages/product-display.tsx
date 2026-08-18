@@ -1640,30 +1640,26 @@ export default function ProductDisplayPage() {
 
   const confirmAssign = (forceVal?: string) => {
     if (!currentZone) return;
-    const val = (forceVal ?? inputVal).trim();
-    // 현재 칸의 기존 제품 → 자리이탈(overflow)로 자동 이동 (setData 밖에서 처리)
-    const oldVal = data[currentZone];
-    if (oldVal && oldVal !== val) {
-      const oldPnums = oldVal.split(",").map((s) => s.trim()).filter(Boolean);
-      setOverflow((ov) => {
-        const existing = new Set(ov.map((o) => o.pnum));
-        const add = oldPnums
-          .filter((pn) => !existing.has(pn))
-          .map((pn) => {
-            const info = B_PNUM_INFO[pn] || C_PNUM_INFO[pn] || D_PNUM_INFO[pn];
-            return {
-              pnum: pn,
-              name: info ? info.name : "",
-              dansu: info ? info.dansu : "",
-              fromZone: currentZone,
-            } as OverflowItem;
-          });
-        return add.length ? [...ov, ...add] : ov;
-      });
+    const val = (forceVal ?? inputVal).trim().replace(/[^0-9,\s]/g, "");
+    const newPns = Array.from(
+      new Set(val.split(",").map((s) => s.trim()).filter(Boolean))
+    );
+    const newVal = newPns.join(",");
+    // 현재 칸의 기존 제품 중 빠진 것 → 📦임시보관함으로 이동
+    const oldPns = (data[currentZone] || "")
+      .split(",").map((s) => s.trim()).filter(Boolean);
+    const removed = oldPns.filter((pn) => !newPns.includes(pn));
+    if (removed.length) {
+      setStaging((s) => Array.from(new Set([...s, ...removed])));
+    }
+    // 임시보관함에 있던 제품 중 새로 배치된 것 → 임시보관함에서 제거
+    const stagedAdded = newPns.filter((pn) => staging.includes(pn));
+    if (stagedAdded.length) {
+      setStaging((s) => s.filter((pn) => !stagedAdded.includes(pn)));
     }
     setData((prev) => {
       const next = { ...prev };
-      if (val) next[currentZone] = val;
+      if (newVal) next[currentZone] = newVal;
       else delete next[currentZone];
       return next;
     });
@@ -2463,6 +2459,19 @@ export default function ProductDisplayPage() {
                 ))}
               </div>
             )}
+            <div className="pt-1 border-t border-slate-100">
+              <Label htmlFor="prod-direct" className="text-[11px] text-slate-600">
+                직접 입력 (콤마 구분 다품목 — 빠진 제품은 📦임시보관함으로 이동)
+              </Label>
+              <Input
+                id="prod-direct"
+                value={inputVal}
+                onChange={(e) => setInputVal(e.target.value.replace(/[^0-9,\s]/g, ""))}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); confirmAssign(); } }}
+                placeholder="예: 19,28"
+                className="mt-1 tabular-nums"
+              />
+            </div>
             {inputVal ? (
               <p className="text-xs text-green-700">선택됨: {inputVal}번 — 확인 시 {currentZone}에 배정됩니다.</p>
             ) : (
