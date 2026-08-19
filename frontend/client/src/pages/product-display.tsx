@@ -139,6 +139,33 @@ function isTightPair(a: number, b: number): boolean {
   );
 }
 
+/**
+ * A동 zone 물리 순서 정렬 키.
+ * 순서: L1-1 → L1-19 → L2-1 → … → L6-19 → L7-1-1 → L7-1-2 → … → L7-8-2 → X1 → X2,
+ * 사용자 추가 칸(A-NEW-* 등)은 맨 뒤.
+ * - A-L(\d)-(\d)-(\d) (L7): [0, line, col*2 + (row-1)]  — A-L7-1-1=[0,7,0], A-L7-1-2=[0,7,1], A-L7-2-1=[0,7,2]…
+ * - A-L(\d)-(\d) (L1~L6)  : [0, line, cell]
+ * - A-X1=[1,0,0], A-X2=[1,1,0] / 그 외 = [2,0,0]
+ * buildADongLayout은 라인 내림차순(L6→L1)으로 zones를 생성하므로, shift에는 이 키로 정렬한
+ * 물리 순서를 사용해야 "앞으로 당김" 방향이 L1→L2→…→L6→L7→X 가 된다.
+ */
+function aZoneSortKey(id: string): [number, number, number] {
+  const m = id.match(/^A-L(\d+)-(\d+)-(\d+)$/); // L7: A-L7-1-1 형식
+  if (m) return [0, +m[1], +m[2] * 2 + (+m[3] - 1)];
+  const m2 = id.match(/^A-L(\d+)-(\d+)$/); // L1~L6: A-L1-1 형식
+  if (m2) return [0, +m2[1], +m2[2]];
+  if (id === "A-X1") return [1, 0, 0];
+  if (id === "A-X2") return [1, 1, 0];
+  return [2, 0, 0];
+}
+
+/** A동 zone 물리 순서 comparator (aSeq 정렬 · zoneOrderA와 동일 로직 — 중복 정의 단일화). */
+function cmpZoneOrderA(a: string, b: string): number {
+  const [t1, l1, n1] = aZoneSortKey(a);
+  const [t2, l2, n2] = aZoneSortKey(b);
+  return t1 - t2 || l1 - l2 || n1 - n2;
+}
+
 function buildADongLayout(
   dong: DongKey = "A",
   vertLines: LineSpec[] = A_LINES,
@@ -1048,6 +1075,32 @@ export default function ProductDisplayPage() {
         hitOf({ pnum: u.pnum, name, loc: u.loc, zone: null, dong: null, placed: false });
       }
     }
+
+    // 정렬: 정확 일치(0) → 번호 접두 일치(1) → 그 외(2).
+    // 동순위 내: 배치(placed) 우선 → pnum 숫자 오름차순(같으면 문자열 비교).
+    const rankOf = (h: Hit) => {
+      const pn = h.pnum.toLowerCase();
+      if (pn === q) return 0;
+      if (pn.startsWith(q)) return 1;
+      return 2;
+    };
+    const numCmp = (a: string, b: string) => {
+      const na = parseInt(a, 10);
+      const nb = parseInt(b, 10);
+      if (Number.isNaN(na) && Number.isNaN(nb)) return a < b ? -1 : a > b ? 1 : 0;
+      if (Number.isNaN(na)) return 1;
+      if (Number.isNaN(nb)) return -1;
+      if (na !== nb) return na - nb;
+      return a < b ? -1 : a > b ? 1 : 0;
+    };
+    hits.sort((a, b) => {
+      const ra = rankOf(a);
+      const rb = rankOf(b);
+      if (ra !== rb) return ra - rb;
+      if (a.placed !== b.placed) return a.placed ? -1 : 1;
+      return numCmp(a.pnum, b.pnum);
+    });
+
     return hits.slice(0, 40);
   }, [searchQ, data, unplaced]);
 
@@ -1075,9 +1128,13 @@ export default function ProductDisplayPage() {
     [dong, layoutState]
   );
 
-  // A동 zone 시퀀스 (물리 순서) — shift 기준
+  // A동 zone 시퀀스 (물리 순서) — shift 기준.
+  // buildADongLayout은 라인 내림차순으로 zones를 생성하므로 cmpZoneOrderA로 물리 순서 정렬.
   const aSeq = useMemo(
-    () => DONG_LAYOUTS.find((r) => r.key === "A")?.zones.map((z) => z.id) ?? [],
+    () =>
+      (DONG_LAYOUTS.find((r) => r.key === "A")?.zones.map((z) => z.id) ?? []).sort(
+        cmpZoneOrderA
+      ),
     []
   );
 
@@ -1552,20 +1609,8 @@ export default function ProductDisplayPage() {
   };
 
   // A동 칸 정렬 (L1-1 → L1-19 → L2-1 → … → L7-8-2 → X1 → X2, 사용자 추가 칸은 뒤)
-  const zoneOrderA = (a: string, b: string) => {
-    const parse = (id: string): [number, number, number] => {
-      const m = id.match(/^A-L(\d+)-(\d+)-(\d+)$/); // L7: A-L7-1-1 형식
-      if (m) return [0, +m[1], +m[2] * 2 + (+m[3] - 1)];
-      const m2 = id.match(/^A-L(\d+)-(\d+)$/); // L1~L6: A-L1-1 형식
-      if (m2) return [0, +m2[1], +m2[2]];
-      if (id === "A-X1") return [1, 0, 0];
-      if (id === "A-X2") return [1, 1, 0];
-      return [2, 0, 0];
-    };
-    const [t1, l1, n1] = parse(a);
-    const [t2, l2, n2] = parse(b);
-    return t1 - t2 || l1 - l2 || n1 - n2;
-  };
+  // — 모듈 상단 aZoneSortKey/cmpZoneOrderA로 단일화 (aSeq 정렬과 동일 로직, aZonesOf extra 정렬 불변)
+  const zoneOrderA = cmpZoneOrderA;
 
   // A동 물리 고정 순서(빈 칸 포함) + 사용자 추가 칸(A-NEW-* 등) — zoneOrderA로 뒤에 합침
   const aZonesOf = (m: PlacementMap): string[] => {
@@ -1576,7 +1621,7 @@ export default function ProductDisplayPage() {
     return [...base, ...extra];
   };
 
-  // 배치 편집 공통: 칸 값 설정 + 중복 제거(같은 제품 다른 칸) + A동 한 칸씩 당김
+  // 배치 편집 공통: 칸 값 설정 + 중복 제거(같은 제품 다른 칸) + A동 빈칸 메우기(한 칸씩 당김)
   const applyPlacementEdit = (
     prev: PlacementMap,
     zid: string,
@@ -1589,10 +1634,11 @@ export default function ProductDisplayPage() {
 
     const aZones = aZonesOf(next);
 
-    // ① 중복 칸 전부 수집 (편집 칸 zid 제외, 다중 중복 모두)
+    // ① 중복 칸 처리 (편집 칸 zid 제외, 다중 중복 모두)
     //    남은 품목이 있는 다품목 칸은 restKept — 시프트 대상에서 제외 (H2 소실 방지)
-    const dupZones = new Set<string>();
+    //    값이 완전히 비워진 칸(중복 제거)은 emptied — 빈칸 메우기 시작점 후보
     const restKept = new Set<string>();
+    const emptied = new Set<string>();
     for (const pn of newPns) {
       for (const z of aZones) {
         if (z === zid) continue;
@@ -1605,16 +1651,18 @@ export default function ProductDisplayPage() {
           restKept.add(z);
         } else {
           delete next[z];
+          emptied.add(z);
         }
-        dupZones.add(z);
       }
     }
-    if (dupZones.size === 0) return next;
+    // 편집 칸을 비운 경우(A동) — zid 자체가 빈칸 메우기 시작점 (칸 비움 → 뒤 칸들이 앞으로 당겨짐)
+    if (!newVal && zid.startsWith("A-")) emptied.add(zid);
 
-    // ② 가장 앞쪽(다품목 보존 칸 제외) 중복부터 단일 패스 당김
-    //    편집 칸 zid는 값 보존 (zid 앞까지만 당김, H1)
+    // ② 가장 앞쪽(다품목 보존 칸 제외) 빈칸/중복제거 칸부터 단일 패스 당김
+    //    zid에 값이 있으면 zid 직전까지만 당겨 zid 보존(H1); zid가 비워진 시작점이면 끝까지.
+    //    shiftZones는 A- 접두사만(=A동)이므로 B/C/D동은 절대 건드리지 않음.
     const shiftZones = aZones.filter((z) => !restKept.has(z));
-    const start = shiftZones.findIndex((z) => dupZones.has(z));
+    const start = shiftZones.findIndex((z) => emptied.has(z));
     if (start >= 0) {
       const zidIdx = shiftZones.indexOf(zid);
       const end = zidIdx > start ? zidIdx : shiftZones.length; // zid가 구간 안이면 zid 직전까지
