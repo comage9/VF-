@@ -1109,7 +1109,8 @@ export default function ProductDisplayPage() {
 
   const gotoSearchHit = (h: (typeof searchResults)[number]) => {
     if (h.placed && h.zone && h.dong) {
-      setDong(h.dong);
+      // 총괄(ALL) 화면에서 표시 — 동 이동 대신 축소 카드 flash + selZone
+      setDong("ALL");
       setSelPnum(h.pnum);
       setSelZone(h.zone);
       // 깜박임: 먼저 제거 후 재트리거
@@ -1640,6 +1641,8 @@ export default function ProductDisplayPage() {
     // ① 중복 칸 처리 (편집 칸 zid 제외, 다중 중복 모두)
     //    남은 품목이 있는 다품목 칸은 restKept — 시프트 대상에서 제외 (H2 소실 방지)
     //    값이 완전히 비워진 칸(중복 제거)은 emptied — 빈칸 메우기 시작점 후보
+    //    A동은 aZones 루프(시프트 포함), B·C·D동은 단순 pnum 제거만(시프트 없음) —
+    //    어떤 제품이든 전역 1칸에만 배치(동 무관 유일).
     const restKept = new Set<string>();
     const emptied = new Set<string>();
     for (const pn of newPns) {
@@ -1657,6 +1660,16 @@ export default function ProductDisplayPage() {
           emptied.add(z);
         }
       }
+      // B·C·D동 중복 제거 — 단순 pnum 제거만(시프트 없음). A동은 위 aZones 루프가 처리.
+      for (const z of Object.keys(next)) {
+        if (z === zid || z.startsWith("A-")) continue;
+        const items = (next[z] || "")
+          .split(",").map((s) => s.trim()).filter(Boolean);
+        if (!items.includes(pn)) continue;
+        const rest = items.filter((x) => x !== pn);
+        if (rest.length) next[z] = rest.join(",");
+        else delete next[z];
+      }
     }
     // 편집 칸을 비운 경우(A동) — zid 자체가 빈칸 메우기 시작점 (칸 비움 → 뒤 칸들이 앞으로 당겨짐)
     if (!newVal && zid.startsWith("A-")) emptied.add(zid);
@@ -1664,17 +1677,22 @@ export default function ProductDisplayPage() {
     // ② 가장 앞쪽(다품목 보존 칸 제외) 빈칸/중복제거 칸부터 단일 패스 당김
     //    zid에 값이 있으면 zid 직전까지만 당겨 zid 보존(H1); zid가 비워진 시작점이면 끝까지.
     //    shiftZones는 A- 접두사만(=A동)이므로 B/C/D동은 절대 건드리지 않음.
+    //    ⚠️ 당김 시작점(start)이 zid보다 앞(zidIdx > start)이면 당김하지 않음 —
+    //    빈칸은 그대로 유지(중간 빈칸 + 뒤 제품 이동 방지).
+    //    (zidIdx===start: 칸 비움 → 끝까지 당김 / zidIdx<start: 중복 배치 → start~끝 당김)
     const shiftZones = aZones.filter((z) => !restKept.has(z));
     const start = shiftZones.findIndex((z) => emptied.has(z));
     if (start >= 0) {
       const zidIdx = shiftZones.indexOf(zid);
-      const end = zidIdx > start ? zidIdx : shiftZones.length; // zid가 구간 안이면 zid 직전까지
-      for (let i = start; i < end - 1; i++) {
-        const v = next[shiftZones[i + 1]];
-        if (v) next[shiftZones[i]] = v;
-        else delete next[shiftZones[i]];
+      if (zidIdx <= start) {
+        const end = shiftZones.length;
+        for (let i = start; i < end - 1; i++) {
+          const v = next[shiftZones[i + 1]];
+          if (v) next[shiftZones[i]] = v;
+          else delete next[shiftZones[i]];
+        }
+        delete next[shiftZones[end - 1]]; // 당김 끝 지점 비우기
       }
-      delete next[shiftZones[end - 1]]; // 당김 끝 지점 비우기
     }
     return next;
   };
