@@ -16,7 +16,7 @@ MCP args=YAML list. crash→skill:hermes-local-mcp-ops.
 §
 KPP PBM140 다중센터 공용 — VF외 타센터 전표 존재 가능. 1호차=호차순 강제 아님, 기존행 보존+맨끝 신규행. 등록 시 호차만 보지 말고 차량번호도 같이 확인(by_both 로직, kpp_session.py 2026-08-11).
 §
-Verify: console+API+snapshot. HMR≠dist. 가능여부만=노실행. 하지마=중단.
+Verify: console+API+snapshot. 하지마=중단.
 §
 Wiki vault=E:\hermes-backup\obsidian\06-Wiki-시스템\Wiki-okf (vault_gate.py). Wiki/≠Wiki-okf.
 §
@@ -27,3 +27,5 @@ VF-new: Django+React 5174/5176. 메뉴SoT=dashboard NAV_ITEMS. 맨아래=트럭�
 pywin32(win32print/printto): python(3.13)에만 있음, python3(3.14)엔 없음 → 권역지·KPP·LS 인쇄는 python으로. print_region.py는 scripts폴더로 cd 후 실행.
 §
 VF입고제한: 기본=default_inbound_limit_qty(04:00;90d+추이×4). min2=출고없을때만. 수동=limit_qty. 실시간평균금지. Master안내/채우기X.
+§
+웹검색=brave-free(.env BRAVE_SEARCH_API_KEY). ddgs차단(Yahoo500). search_backend=brave-free

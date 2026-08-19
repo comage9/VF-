@@ -45,7 +45,7 @@ import {
 import { B_PNUM_INFO, B_RANK_PLACEMENT } from "@/pages/product-display-b-data";
 import { C_PNUM_INFO, C_RANK_PLACEMENT } from "@/pages/product-display-c-data";
 import { D_PNUM_INFO, D_RANK_PLACEMENT } from "@/pages/product-display-d-data";
-import { aShiftInsert, extractDansu, reorderInZone } from "@/pages/product-display-utils";
+import { aChainInsert, extractDansu, reorderInZone } from "@/pages/product-display-utils";
 
 const STORAGE_KEY = "vf_product_display_v1";
 /** 배치 데이터 스키마 버전 — v14(A동 전용)는 v15(전 동)로 대체됨: 옛 데이터 무시 */
@@ -1371,24 +1371,29 @@ export default function ProductDisplayPage() {
       const srcItem = srcItems[src.itemIdx];
       if (!srcItem || srcItem !== src.pnum) return prev;
 
+      // 체인 시프트 밀려남 품목 → 임시보관함(우측 패널) 기록 (공통 헬퍼, 2026-08-19 체인 시프트)
+      const pushOverflow = (ov: string[]) => {
+        if (!ov.length) return;
+        setOverflow((o) => {
+          const names = ov.map((pn) => {
+            const m = masterMap[pn]?.name || "";
+            return { pnum: pn, name: m, dansu: extractDansu(m), fromZone: dst.zoneId };
+          });
+          return [...o, ...names];
+        });
+      };
+
       const isA = src.zoneId.startsWith("A-") && dst.zoneId.startsWith("A-");
       if (isA) {
-        // A동: 단순 이동 (위치 고정 — 다른 칸 시프트 없음, 2026-08-19)
-        // src → dst, dst 기존 제품은 밀려남 → 자리이탈(우측 패널)로 기록.
-        // 크로스동 중복 제거 먼저: src.pnum이 B/C/D동에도 있으면 제거(A동은 aShiftInsert가 처리).
+        // A동: 체인 시프트 (2026-08-19 체인 시프트) — dst 기존 제품은 aSeq 순서상
+        // 다음 칸으로 연쇄 밀려남 (빈 칸에서 종료, 끝까지 점유면 마지막만 임시보관함).
+        // 크로스동 중복 제거 먼저 → src 칸 제거(빈 칸 유지) → 체인 삽입.
         const next0 = { ...prev };
         removeCrossDongDupes(next0, [src.pnum]);
-        const { next: n2, overflow: ov } = aShiftInsert(aSeq, next0, src.zoneId, dst.zoneId);
-        if (n2 !== prev) {
-          if (ov.length) {
-            setOverflow((o) => {
-              const names = ov.map((pn) => {
-                const m = masterMap[pn]?.name || "";
-                return { pnum: pn, name: m, dansu: extractDansu(m), fromZone: dst.zoneId };
-              });
-              return [...o, ...names];
-            });
-          }
+        delete next0[src.zoneId]; // src는 빈 칸 유지 — 당김 없음
+        const { next: n2, overflow: ov } = aChainInsert(aSeq, next0, dst.zoneId, src.pnum);
+        if (ov.length || n2[dst.zoneId] !== src.pnum) {
+          pushOverflow(ov);
           persistLocal(n2);
           return n2;
         }
@@ -1403,13 +1408,20 @@ export default function ProductDisplayPage() {
             next[src.zoneId] = reordered;
             changed = true;
           }
+        } else if (dst.zoneId.startsWith("A-") && next[dst.zoneId]) {
+          // B/C/D → A동 점유 칸: 체인 시프트 (2026-08-19 체인 시프트)
+          // dst 기존 제품은 aSeq 순서상 다음 칸으로 연쇄 밀려남 (끝까지 점유면 마지막만 임시보관함).
+          // 빈 칸 드롭은 기존 append 동작 유지 (아래 else).
+          const filtered = srcItems.filter((_, i) => i !== src.itemIdx);
+          if (filtered.length) next[src.zoneId] = filtered.join(",");
+          else delete next[src.zoneId];
+          const { next: n2, overflow: ov } = aChainInsert(aSeq, next, dst.zoneId, srcItem);
+          Object.keys(next).forEach((k) => delete next[k]);
+          Object.assign(next, n2);
+          removeCrossDongDupes(next, [srcItem], dst.zoneId);
+          pushOverflow(ov);
+          changed = true;
         } else {
-          // 크로스동 가드: A동 점유 칸에 append 금지 (1칸 1품목 규칙)
-          if (dst.zoneId.startsWith("A-") && next[dst.zoneId]) {
-            setSaveMsg("A동 점유 칸 — 빈 칸 또는 임시 보관함을 이용하세요");
-            window.setTimeout(() => setSaveMsg(""), 2000);
-            return prev;
-          }
           // 다른 칸으로: 소스에서 제거 + 대상에 추가
           const filtered = srcItems.filter((_, i) => i !== src.itemIdx);
           const dstVal = next[dst.zoneId] || "";
