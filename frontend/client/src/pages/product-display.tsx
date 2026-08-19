@@ -962,6 +962,7 @@ export default function ProductDisplayPage() {
 
   // 통합 미배치: 제품 마스터 기준 — VF 품목 중 배치 안 된 것 (3개월 미출고 제외)
   // 마스터 미로드 시 기존 A_UNPLACED 하드코딩 fallback
+  // boxes = 최근 1개월 출고 박스 수 (outboundMap 기반) → 미배치 탭 출고 상위순 정렬에 사용
   const unplaced = useMemo(() => {
     const masterKeys = Object.keys(masterMap);
     if (masterKeys.length > 0) {
@@ -970,7 +971,7 @@ export default function ProductDisplayPage() {
         .map((k) => ({
           rank: 0,
           pnum: k,
-          boxes: 0,
+          boxes: masterMap[k].barcode ? calcMonthQty(masterMap[k].barcode) : 0,
           cat: masterMap[k].lg,
           name: masterMap[k].name,
           loc: masterMap[k].loc,
@@ -982,7 +983,7 @@ export default function ProductDisplayPage() {
         }));
     }
     return A_UNPLACED.filter((u) => !placedPnums.has(u.pnum));
-  }, [masterMap, placedPnums, no3mPnums]);
+  }, [masterMap, placedPnums, no3mPnums, outboundMap]);
 
   // 배치된 품목 행 (제품 마스터 기준 정보 — fallback 하드코딩)
   const placedRows = useMemo(() => {
@@ -2105,6 +2106,7 @@ export default function ProductDisplayPage() {
         />
       ) : panelTab === "unplaced" ? (
         <CategoryList
+          sortBy="qty"
           rows={unplaced.map((u) => ({
             pnum: u.pnum,
             name: u.master_name || u.name,
@@ -2112,7 +2114,7 @@ export default function ProductDisplayPage() {
             md: u.category_md,
             stock: u.stock ?? null,
             zone: u.loc,
-            qty: u.barcode ? calcMonthQty(u.barcode) : 0,
+            qty: u.boxes ?? (u.barcode ? calcMonthQty(u.barcode) : 0),
           }))}
           openLg={openLg}
           onToggle={(lg) => setOpenLg(openLg === lg ? null : lg)}
@@ -2809,6 +2811,7 @@ function CategoryList({
   onSelect,
   note,
   emptyMsg = "품목이 없습니다 🎉",
+  sortBy = "lg",
 }: {
   rows: CatListRow[];
   openLg: string | null;
@@ -2816,7 +2819,47 @@ function CategoryList({
   onSelect?: (row: CatListRow) => void;
   note?: ReactNode;
   emptyMsg?: string;
+  sortBy?: "lg" | "qty";
 }) {
+  // 출고 상위순: 분류 그룹핑 없이 전체 rows를 qty 내림차순(높은 출고 먼저) 플랫 리스트로 표시.
+  // qty가 null/undefined면 0 취급 → 자연스럽게 뒤로 밀림. (안정 정렬로 동일 qty는 입력 순서 유지)
+  if (sortBy === "qty") {
+    const sorted = [...rows].sort((a, b) => (b.qty ?? 0) - (a.qty ?? 0));
+    return (
+      <div className="overflow-auto max-h-[560px] space-y-1 pr-1">
+        {note}
+        <div className="text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-200 rounded-md px-2 py-1 sticky top-0 z-10">
+          ⬇️ 출고 상위순 ({sorted.length}품목)
+        </div>
+        {sorted.length === 0 ? (
+          <div className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-3 text-center">
+            {emptyMsg}
+          </div>
+        ) : (
+          <div className="border rounded-md overflow-hidden">
+            {sorted.map((r, i) => (
+              <div
+                key={`${r.zone ?? ""}-${r.pnum}-${i}`}
+                onClick={onSelect ? () => onSelect(r) : undefined}
+                className={
+                  "w-full text-left px-2 py-1 text-[11px] border-t first:border-t-0 flex items-center gap-2 " +
+                  (onSelect ? "hover:bg-sky-50 cursor-pointer" : "")
+                }
+              >
+                <span className="font-semibold tabular-nums shrink-0">{r.pnum}</span>
+                <span className="truncate text-muted-foreground flex-1">{r.name || "-"}</span>
+                <span className="shrink-0 text-[10px] font-semibold tabular-nums text-slate-700">출고 {r.qty ?? 0}박스</span>
+                <span className="shrink-0 text-[10px] font-medium tabular-nums text-slate-500">
+                  현재고 {r.stock ?? "-"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const groups: Record<string, CatListRow[]> = {};
   for (const r of rows) {
     const lg = r.lg || "기타";
