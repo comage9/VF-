@@ -1,7 +1,7 @@
 /**
  * 제품배치도 드래그앤드롭 유틸 (2026-08-17)
  * - extractDansu: 제품명에서 단수(N단) 파싱
- * - aShiftInsert: A동 1칸 1품목 insert(밀림) + overflow 반환
+ * - aShiftInsert: A동 1칸 1품목 insert(수기 pull 모델과 동일 방향) + overflow 반환
  * - reorderInZone: 다품목 칸(B/C/D) 내부 품목 순서 재정렬
  */
 
@@ -19,13 +19,17 @@ export function extractDansu(name: string | undefined | null): string {
 export type ZoneSeq = string[];
 
 /**
- * A동 insert 이동 (1칸 1품목 — 칸 단위 shift)
+ * A동 insert 이동 (1칸 1품목 — pull 모델, 수기 applyPlacementEdit와 동일 방향)
  *
- * 사용자 규칙: 이동품목이 대상 칸에 들어가고, 대상 칸부터 끝까지 한 칸씩 뒤로.
- * 끝에서 밀려난 품목은 overflow로 반환 (우측 패널에서 미배치/재배치 결정).
+ * 2026-08-19 변경: 기존 push 모델(대상~끝 한 칸씩 뒤로 밀고 끝값 overflow)이
+ * 수기 입력의 pull 모델(빈칸을 뒤에서 당겨 맨 끝만 빈칸)과 결과가 달라 혼선을 줌.
+ * → 드래그도 pull로 통일: src 구멍을 뒤에서 채워 앞으로 당기고,
+ *   당김 구간 맨 앞(이동 방향 첫 칸)에 이동품목 삽입. 구멍·끝 overflow 없음.
  *
  * 예: seq=[z1,z2,z3,z4], data={z1:210,z2:214,z3:203,z4:225}, 210(z1)→z3
- *  → data'={z1:undefined(빈), z2:214, z3:210, z4:203}, overflow=[225]
+ *  → data'={z1:214, z2:203, z3:210, z4:225}, overflow=[] (빈칸 없음)
+ *
+ * overflow는 pull 모델에서 발생하지 않지만 반환 시그니처는 유지 (안전망 — 호출부 호환).
  */
 export function aShiftInsert(
   seq: ZoneSeq,
@@ -41,40 +45,27 @@ export function aShiftInsert(
   const item = data[srcZone];
   if (!item) return { next: { ...data }, overflow: [] };
 
-  // src를 제거한 축약 시퀀스에서 대상 위치를 다시 계산 (src가 dst보다 앞이면 당겨짐)
-  const shrunk = seq.filter((_, i) => i !== srcIdx);
-  const d2 = shrunk.indexOf(dstZone);
-
   // BUG-FIX(2026-08-17): {} 시작 → A동 키만 반환되어 B/C/D동 배치 소실. 전체 복사 후 변경.
   const next: Record<string, string> = { ...data };
-  delete next[srcZone]; // 소스 칸을 빈칸으로
   // 빈칸(undefined) 전파 방지: 값이 없으면 키를 제거해 빈칸 유지 (잔존+overflow 중복 방지)
   const put = (id: string, v: string | undefined) => {
     if (v === undefined) delete next[id];
     else next[id] = v;
   };
-  for (let i = 0; i < shrunk.length; i++) {
-    const id = shrunk[i];
-    if (i < d2) {
-      // 대상 앞: 원본 유지 (src 제거 후 위치 보정됨)
-      put(id, data[id]);
-    } else if (i === d2) {
-      // 대상: 이동품목 삽입
-      next[id] = item;
-    } else {
-      // 대상 이후: 한 칸씩 뒤로 (축약 시퀀스 기준 i-1의 원본)
-      put(id, data[shrunk[i - 1]]);
-    }
-  }
 
-  // 시퀀스 끝에서 밀려난 품목 (src가 끝이 아니면 원본 끝값이 overflow)
-  const overflow: string[] = [];
-  const seqLast = seq[seq.length - 1];
-  if (seqLast !== srcZone) {
-    const lv = data[seqLast];
-    if (lv) overflow.push(...lv.split(",").map((s) => s.trim()).filter(Boolean));
+  // pull 당김: src 구멍을 [src..dst] 구간 이동으로 메우고, 이동품목은 dst에 삽입.
+  // 수기(applyPlacementEdit)의 '빈칸을 뒤에서 당김'과 같은 방향의 pull 모델로 통일.
+  // - 앞으로 이동(src<dst): src~dst-1 칸이 뒤(src+1~dst)에서 한 칸씩 앞으로 당겨짐, dst=item
+  // - 뒤로 이동(src>dst): dst+1~src 칸이 앞(dst~src-1)에서 한 칸씩 뒤로 당겨짐, dst=item
+  // 어느 방향이든 src 구멍·중간 구멍·끝 overflow 없음.
+  if (srcIdx < dstIdx) {
+    for (let i = srcIdx; i < dstIdx; i++) put(seq[i], data[seq[i + 1]]);
+  } else {
+    for (let i = srcIdx; i > dstIdx; i--) put(seq[i], data[seq[i - 1]]);
   }
-  return { next, overflow };
+  next[seq[dstIdx]] = item;
+
+  return { next, overflow: [] };
 }
 
 /**

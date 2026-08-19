@@ -1254,6 +1254,8 @@ export default function ProductDisplayPage() {
           next[dst.zoneId] = src.pnum;
           setStaging((s) => s.filter((x) => x !== src.pnum));
         }
+        // 크로스동 중복 제거: 새 pnum이 B/C/D동에도 있으면 제거(전역 1칸 유일)
+        removeCrossDongDupes(next, [src.pnum], dst.zoneId);
         persistLocal(next);
         return next;
       });
@@ -1328,6 +1330,8 @@ export default function ProductDisplayPage() {
         }
         if (changed) {
           setOverflow((ov) => ov.filter((o) => o.pnum !== src.pnum));
+          // 크로스동 중복 제거: 새 pnum이 B/C/D동에도 있으면 제거(전역 1칸 유일)
+          removeCrossDongDupes(next, [src.pnum], dst.zoneId);
           persistLocal(next);
         }
         return next;
@@ -1342,13 +1346,18 @@ export default function ProductDisplayPage() {
       const isA = src.zoneId.startsWith("A-") && dst.zoneId.startsWith("A-");
       if (isA) {
         // A동: 칸 단위 insert (1칸 1품목, A-X는 다품목이지만 칸 단위)
-        const { next: n2, overflow: ov } = aShiftInsert(aSeq, prev, src.zoneId, dst.zoneId);
+        // 크로스동 중복 제거 먼저: src.pnum이 B/C/D동에도 있으면 제거(A동은 aShiftInsert가 처리).
+        const next0 = { ...prev };
+        removeCrossDongDupes(next0, [src.pnum]);
+        const { next: n2, overflow: ov } = aShiftInsert(aSeq, next0, src.zoneId, dst.zoneId);
         if (n2 !== prev) {
           if (ov.length) {
             setOverflow((o) => {
               const names = ov.map((pn) => {
-                const m = A_ZONE_MASTER_NAME[src.zoneId] || "";
-                return { pnum: pn, name: m, dansu: extractDansu(m), fromZone: dst.zoneId };
+                // FIX(2026-08-19): 밀려난 품목의 이름은 제품 기준(masterMap)으로,
+                // fromZone은 실제 이탈 칸(aSeq 끝칸)으로 기록 — src 칸 기준 오기록 방지.
+                const m = masterMap[pn]?.name || "";
+                return { pnum: pn, name: m, dansu: extractDansu(m), fromZone: aSeq[aSeq.length - 1] || dst.zoneId };
               });
               return [...o, ...names];
             });
@@ -1382,6 +1391,8 @@ export default function ProductDisplayPage() {
           if (filtered.length) next[src.zoneId] = filtered.join(",");
           else delete next[src.zoneId];
           next[dst.zoneId] = dstItems.join(",");
+          // 크로스동 중복 제거: 새 pnum이 B/C/D동 다른 칸에도 있으면 제거(전역 1칸 유일)
+          removeCrossDongDupes(next, [srcItem], dst.zoneId);
           changed = true;
         }
       if (changed) persistLocal(next);
@@ -1395,7 +1406,9 @@ export default function ProductDisplayPage() {
 
   const groupMove = (dir: 1 | -1) => {
     if (!selectedZones.length || !editMode) return;
-    const { next: n2, overflow: ov } = groupShiftInsert(curSeq, data, selectedZones, dir);
+    // A동만 선택 → 물리 순서(aSeq) 기준(빌드 순서 역순 방지) / B·C·D 포함 → 빌드 순서(curSeq) 유지
+    const seq = selectedZones.every((z) => z.startsWith("A-")) ? aSeq : curSeq;
+    const { next: n2, overflow: ov } = groupShiftInsert(seq, data, selectedZones, dir);
     if (n2 !== data) {
       setData(n2);
       if (ov.length) {
@@ -1626,6 +1639,26 @@ export default function ProductDisplayPage() {
     return [...base, ...extra];
   };
 
+  // 크로스동 중복 제거 (공통 헬퍼): newPns를 B/C/D동에서만 제거(A동은 시프트가 처리),
+  // excludeZid(배치 대상 칸)는 보존. 어떤 제품이든 전역 1칸 유일(R1) 규칙을 모든 경로에 통일.
+  const removeCrossDongDupes = (
+    next: PlacementMap,
+    newPns: string[],
+    excludeZid?: string
+  ): PlacementMap => {
+    for (const pn of newPns) {
+      for (const z of Object.keys(next)) {
+        if (z === excludeZid || z.startsWith("A-")) continue;
+        const items = (next[z] || "").split(",").map((s) => s.trim()).filter(Boolean);
+        if (!items.includes(pn)) continue;
+        const rest = items.filter((x) => x !== pn);
+        if (rest.length) next[z] = rest.join(",");
+        else delete next[z];
+      }
+    }
+    return next;
+  };
+
   // 배치 편집 공통: 칸 값 설정 + 중복 제거(같은 제품 다른 칸) + A동 빈칸 메우기(한 칸씩 당김)
   const applyPlacementEdit = (
     prev: PlacementMap,
@@ -1661,17 +1694,9 @@ export default function ProductDisplayPage() {
           emptied.add(z);
         }
       }
-      // B·C·D동 중복 제거 — 단순 pnum 제거만(시프트 없음). A동은 위 aZones 루프가 처리.
-      for (const z of Object.keys(next)) {
-        if (z === zid || z.startsWith("A-")) continue;
-        const items = (next[z] || "")
-          .split(",").map((s) => s.trim()).filter(Boolean);
-        if (!items.includes(pn)) continue;
-        const rest = items.filter((x) => x !== pn);
-        if (rest.length) next[z] = rest.join(",");
-        else delete next[z];
-      }
     }
+    // B·C·D동 중복 제거 — 단순 pnum 제거만(시프트 없음). A동은 위 aZones 루프가 처리.
+    removeCrossDongDupes(next, newPns, zid);
     // 편집 칸을 비운 경우(A동) — zid 자체가 빈칸 메우기 시작점 (칸 비움 → 뒤 칸들이 앞으로 당겨짐)
     if (!newVal && zid.startsWith("A-")) emptied.add(zid);
 
@@ -1708,13 +1733,18 @@ export default function ProductDisplayPage() {
     const newVal = newPns.join(",");
     const oldPns = (data[zid] || "")
       .split(",").map((s) => s.trim()).filter(Boolean);
-    // ① 칸에서 빠진 제품 → 임시보관함으로 이동
+    // ① 칸에서 빠진 제품 → 임시보관함으로 이동 (B/C/D동 중복도 함께 제거 — FIX 2026-08-19)
     const removedFromZone = oldPns.filter((pn) => !newPns.includes(pn));
     // ② 임시보관함에 있던 제품 중 새로 배치된 것 → 임시보관함에서 제거
     const stagedAdded = newPns.filter((pn) => staging.includes(pn));
 
     setData((prev) => {
       const next = applyPlacementEdit(prev, zid, newPns, newVal);
+      // FIX(2026-08-19): 빠진 제품이 있으면(newPns가 비어도) B/C/D동 동일 pnum도 제거.
+      // applyPlacementEdit의 dedup은 newPns 기준이라 빈 칸(newPns=[])이면 루프 자체가 안 돌아
+      // C동 등에 같은 제품이 잔존 → 임시보관함 이동과 동시에 크로스동 중복을 정리한다.
+      // A동은 시프트 규칙에 맡김(applyPlacementEdit가 처리) — removeCrossDongDupes와 동일 역할.
+      if (removedFromZone.length) removeCrossDongDupes(next, removedFromZone);
       // staging 동기화를 함수형 업데이터로 통합 (stale 없음 — M2)
       setStaging((s) => {
         const merged = Array.from(new Set([...s, ...removedFromZone]));
@@ -1781,11 +1811,7 @@ export default function ProductDisplayPage() {
         return add.length ? [...ov, ...add] : ov;
       });
     }
-    setData((prev) => {
-      const next = { ...prev };
-      next[zid] = movePnum;
-      return next;
-    });
+    setData((prev) => applyPlacementEdit(prev, zid, [movePnum], movePnum));
     setOverflow((ov) => ov.filter((o) => o.pnum !== movePnum));
     setMovePnum(null);
     return true;
