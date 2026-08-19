@@ -1854,7 +1854,7 @@ export default function ProductDisplayPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modalOpen, inputVal, currentZone, assignFiltered]);
 
-  // 툴팁 생성: A동=zone 기반(분류+제품명+현재고+출고), B동=pnum 기반(3품목 모두 표시)
+  // 툴팁 생성: A동=배치 제품번호 기준(masterMap, 미로드 시 칸 하드코딩 fallback), B/C/D동=pnum 기반(다품목 나열)
   const makeTooltip = (z: ZoneDef): string => {
     const zid = z.id;
     const isL7 = z.line === 7;
@@ -1887,35 +1887,45 @@ export default function ProductDisplayPage() {
       return parts.join("\n\n");
     }
 
-    // A동: 기존 zone 기반
-    const masterName = A_ZONE_MASTER_NAME[zid] || "";
-    const catLg = A_ZONE_CATEGORY_LG[zid] || "";
-    const catMd = A_ZONE_CATEGORY_MD[zid] || "";
-    const stock = A_ZONE_STOCK[zid];
-    if (catLg || catMd) {
-      parts.push(`분류: ${catLg}${catMd ? " / " + catMd : ""}`);
+    // A동: 배치된 제품번호 기준 (masterMap) — 마스터 미로드 시 칸 하드코딩 fallback
+    if (pnums.length === 0) {
+      if (isL7) parts.push("7번 라인 (슬림서랍장·칵투스)");
+      return parts.join("\n");
     }
-    if (masterName) {
-      parts.push(`제품명: ${masterName}`);
-    }
-    if (stock !== undefined && stock !== null) {
-      parts.push(`현재고: ${stock}`);
-    }
-    const bc = A_ZONE_BARCODE[zid] || "";
-    if (bc) {
-      const ms = calcMonthStat(bc);
-      if (ms) {
-        parts.push(`최근 1개월 출고: ${ms.qty}박스 / ${Math.round(ms.amount).toLocaleString()}원`);
+    for (const pn of pnums) {
+      const m = masterMap[pn];
+      if (m && m.name) {
+        const sub = [`${pn}: ${m.name}`];
+        if (m.lg || m.md) sub.push(`분류: ${m.lg}${m.md ? " / " + m.md : ""}`);
+        if (m.stock !== null && m.stock !== undefined) sub.push(`재고: ${m.stock}`);
+        if (m.barcode) {
+          const ms = calcMonthStat(m.barcode);
+          if (ms) sub.push(`최근 1개월 출고: ${ms.qty}박스 / ${Math.round(ms.amount).toLocaleString()}원`);
+          const ob4d = calcOutbound4d(m.barcode);
+          if (ob4d !== null) sub.push(`최근 3개월 4일치 예상 출고: ${ob4d}박스 (1개월 +30% 가중)`);
+        }
+        parts.push(sub.join("\n"));
+      } else {
+        // fallback: 칸 하드코딩 (마스터 로드 전 첫 렌더 대비)
+        const masterName = A_ZONE_MASTER_NAME[zid] || "";
+        const catLg = A_ZONE_CATEGORY_LG[zid] || "";
+        const catMd = A_ZONE_CATEGORY_MD[zid] || "";
+        const stock = A_ZONE_STOCK[zid];
+        const bc = A_ZONE_BARCODE[zid] || "";
+        const sub: string[] = [`${pn}: ${masterName || "(정보 없음)"}`];
+        if (catLg || catMd) sub.push(`분류: ${catLg}${catMd ? " / " + catMd : ""}`);
+        if (stock !== undefined && stock !== null) sub.push(`재고: ${stock}`);
+        if (bc) {
+          const ms = calcMonthStat(bc);
+          if (ms) sub.push(`최근 1개월 출고: ${ms.qty}박스 / ${Math.round(ms.amount).toLocaleString()}원`);
+          const ob4d = calcOutbound4d(bc);
+          if (ob4d !== null) sub.push(`최근 3개월 4일치 예상 출고: ${ob4d}박스 (1개월 +30% 가중)`);
+        }
+        parts.push(sub.join("\n"));
       }
-      const ob4d = calcOutbound4d(bc);
-      if (ob4d !== null) {
-        parts.push(`최근 3개월 4일치 예상 출고: ${ob4d}박스 (1개월 +30% 가중)`);
-      }
     }
-    if (isL7) {
-      parts.push("7번 라인 (슬림서랍장·칵투스)");
-    }
-    return parts.join("\n");
+    if (isL7) parts.push("7번 라인 (슬림서랍장·칵투스)");
+    return parts.join("\n\n");
   };
 
   // 동별 화면용 배치 행 (해당 동만 필터)
