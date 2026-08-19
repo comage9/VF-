@@ -3048,19 +3048,29 @@ def inventory_unified_patch(request, _id: str):
 def _product_number_from_location(location: str | None) -> int | None:
     """로케이션 → 제품 번호 파생.
 
-    - 320-A1-1-XXX → XXX (예: 320-A1-1-115 → 115)
-    - 320-A1-2-XXX → 2XXX (예: 320-A1-2-115 → 2115)
+    - 320-A1-1-XXX → XXX (예: 320-A1-1-28 → 28)
+    - 320-A1-2-XX  (suffix 1~2자리, n < 100) → 2000 + n
+      (예: 320-A1-2-8 → 2008, 320-A1-2-34 → 2034, 320-A1-2-85 → 2085)
+    - 320-A1-2-XXX (suffix 3자리, n >= 100) → 2XXX
+      (예: 320-A1-2-115 → 2115, 320-A1-2-145 → 2145)
     - 그 외/형식 안 맞음 → None
     """
     loc = (location or "").strip()
     if not loc:
         return None
-    for prefix, lead in (("320-A1-1-", ""), ("320-A1-2-", "2")):
-        if loc.startswith(prefix):
-            suffix = loc[len(prefix):]
-            if suffix and re.fullmatch(r"\d+", suffix):
-                return int(lead + suffix)
-            return None
+    if loc.startswith("320-A1-1-"):
+        suffix = loc[len("320-A1-1-"):]
+        if suffix and re.fullmatch(r"\d+", suffix):
+            return int(suffix)
+        return None
+    if loc.startswith("320-A1-2-"):
+        suffix = loc[len("320-A1-2-"):]
+        if suffix and re.fullmatch(r"\d+", suffix):
+            n = int(suffix)
+            if n < 100:
+                return 2000 + n
+            return int("2" + str(n))
+        return None
     return None
 
 

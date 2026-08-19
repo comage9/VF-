@@ -732,12 +732,15 @@ function loadStaging(): string[] {
 /** 제품 마스터 항목 (pnum → 정보) — 제품목록 기준 */
 type MasterInfo = { name: string; lg: string; md: string; stock: number | null; barcode: string; loc: string; no3m: boolean };
 
-/** 로케이션 → 제품번호 (A동 규칙: 320-A1-1-N → N, 320-A1-2-N → 2N) */
+/** 로케이션 → 제품번호 (A동 규칙: 320-A1-1-N → N, 320-A1-2-N → n<100이면 2000+n, n>=100이면 2N) */
 function locToPnum(loc: string): string | null {
   const m1 = /^320-A1-1-(\d+)$/.exec(loc.trim());
   if (m1) return String(parseInt(m1[1], 10));
   const m2 = /^320-A1-2-(\d+)$/.exec(loc.trim());
-  if (m2) return "2" + m2[1];
+  if (m2) {
+    const n = parseInt(m2[1], 10);
+    return n < 100 ? String(2000 + n) : "2" + m2[1];
+  }
   return null;
 }
 
@@ -1059,8 +1062,8 @@ export default function ProductDisplayPage() {
     for (const [zid, val] of Object.entries(data)) {
       for (const pn of (val || "").split(",").map((s) => s.trim()).filter(Boolean)) {
         const binfo = B_PNUM_INFO[pn] || C_PNUM_INFO[pn] || D_PNUM_INFO[pn];
-        const name = binfo?.name || A_ZONE_MASTER_NAME[zid] || "";
-        const barcode = binfo?.barcode || A_ZONE_BARCODE[zid] || "";
+        const name = binfo?.name || masterMap[pn]?.name || A_ZONE_MASTER_NAME[zid] || "";
+        const barcode = binfo?.barcode || masterMap[pn]?.barcode || A_ZONE_BARCODE[zid] || "";
         const loc = pnumToLoc(pn);
         const dong: DongKey = zid.startsWith("B-") ? "B" : zid.startsWith("C-") ? "C" : "A";
         if (match(pn) || match(name) || match(loc) || match(zid) || match(barcode)) {
@@ -1102,7 +1105,7 @@ export default function ProductDisplayPage() {
     });
 
     return hits.slice(0, 40);
-  }, [searchQ, data, unplaced]);
+  }, [searchQ, data, unplaced, masterMap]);
 
   const gotoSearchHit = (h: (typeof searchResults)[number]) => {
     if (h.placed && h.zone && h.dong) {
