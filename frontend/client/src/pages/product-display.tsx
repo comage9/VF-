@@ -49,7 +49,7 @@ import { aChainInsert, extractDansu, reorderInZone } from "@/pages/product-displ
 
 const STORAGE_KEY = "vf_product_display_v1";
 /** 배치 데이터 스키마 버전 — v14(A동 전용)는 v15(전 동)로 대체됨: 옛 데이터 무시 */
-const SAVED_VERSION = "rank-a-v20";
+const SAVED_VERSION = "rank-a-v23";
 /** 동적 레이아웃(칸 좌표) 저장 키 */
 const LAYOUT_KEY = "vf_product_display_layout_v1";
 const LAYOUT_VERSION = "layout-v1";
@@ -83,6 +83,7 @@ type ZoneDef = {
   line: number;
   showNumAsProduct: boolean;
   style: CSSProperties;
+  locNo?: number | null;
 };
 
 type LineLabel = {
@@ -202,8 +203,8 @@ function buildADongLayout(
     const colLeft = lineLeftOf(lineSpec.line);
     const bottomIsStart = lineSpec.bottomIsStart !== false;
     const header = lineSpec.badge
-      ? `${lineSpec.line}번\n${lineSpec.badge}`
-      : `${lineSpec.line}번`;
+      ? `L${lineSpec.line}\n${lineSpec.badge}`
+      : `L${lineSpec.line}`;
 
     lineLabels.push({
       text: header,
@@ -221,11 +222,20 @@ function buildADongLayout(
     for (let i = 0; i < lineSpec.count; i++) {
       const numVal = i + 1;
       const placeFromTop = bottomIsStart ? lineSpec.count - 1 - i : i;
+      // 통로 중심 뱀 모양 로케이션 번호 (getZigzagLocNo와 동일 공식)
+      const pair = Math.floor((lineSpec.line - 1) / 2); // (1|2)=0, (3|4)=1, (5|6)=2
+      const offset = 19 - numVal;
+      const isOddLine = lineSpec.line % 2 === 1;
+      const oddFirst = offset % 2 === 0;
+      const locNo = ((isOddLine && oddFirst) || (!isOddLine && !oddFirst))
+        ? pair * 38 + offset * 2 + 1
+        : pair * 38 + offset * 2 + 2;
       zones.push({
         id: `${dong}-L${lineSpec.line}-${numVal}`,
         num: "",
         line: lineSpec.line,
         showNumAsProduct: false,
+        locNo,
         style: {
           left: colLeft,
           top: slot.padT + placeFromTop * (slot.h + slot.gapY),
@@ -697,20 +707,92 @@ const DONG_LAYOUTS: DongLayout[] = [
   },
 ];
 
+/** 자동 교정 대상 zone — 모던플러스 25 + 로코스 21 (파일 SoT 강제) */
+const SOFT_ZONES = [
+  // 모던플러스 25 (loc 1~25)
+  "A-L1-19", "A-L2-19", "A-L2-18", "A-L1-18", "A-L1-17",
+  "A-L2-17", "A-L2-16", "A-L1-16", "A-L1-15", "A-L2-15",
+  "A-L2-14", "A-L1-14", "A-L1-13", "A-L2-13", "A-L2-12",
+  "A-L1-12", "A-L1-11", "A-L2-11", "A-L2-10", "A-L1-10",
+  "A-L1-9", "A-L2-9", "A-L2-8", "A-L1-8", "A-L1-7",
+  // 로코스 21 (loc 26~46)
+  "A-L2-7", "A-L2-6", "A-L1-6", "A-L1-5", "A-L2-5",
+  "A-L2-4", "A-L1-4", "A-L1-3", "A-L2-3", "A-L2-2",
+  "A-L1-2", "A-L1-1", "A-L2-1", "A-L3-19", "A-L4-19",
+  "A-L4-18", "A-L3-18", "A-L3-17", "A-L4-17", "A-L4-16", "A-L3-16",
+];
+
 function loadPlacement(): PlacementMap {
+  let data: PlacementMap | null = null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       // 스키마 버전이 현재와 다르면(옛 데이터) 무시 → 기본값(전 동) 사용
       if (parsed && parsed.__v === SAVED_VERSION && parsed.data && typeof parsed.data === "object") {
-        return parsed.data as PlacementMap;
+        data = parsed.data as PlacementMap;
       }
     }
   } catch {
     /* 손상 시 기본값 */
   }
-  return defaultAPlacement();
+  if (!data) return defaultAPlacement();
+  // 모던플러스 25칸 + 로코스 21칸 = 파일 SoT 강제 (바코드 기준 제품번호 — 옛 값 교정)
+  let fixed = false;
+  for (const zid of SOFT_ZONES) {
+    if (data[zid] !== A_RANK_PLACEMENT[zid]) {
+      data[zid] = A_RANK_PLACEMENT[zid];
+      fixed = true;
+    }
+  }
+  // 로코스 이동: 옛 자리 14곳은 빈 칸 (파일에서 삭제됨 — 잔존값 제거)
+  const ROCOS_OLD_ZONES = [
+    "A-L3-14", "A-L3-15", "A-L4-4", "A-L4-5", "A-L4-6", "A-L5-7",
+    "A-L4-10", "A-L4-13", "A-L4-8", "A-L4-9", "A-L4-11",
+    "A-L4-1", "A-L4-2", "A-L4-7",
+  ];
+  for (const zid of ROCOS_OLD_ZONES) {
+    if (data[zid]) {
+      delete data[zid];
+      fixed = true;
+    }
+  }
+  // 로코스 이동으로 밀려난 기존 제품 4개 → 임시보관함으로 이관
+  const bumped = ["695", "692", "690", "2146"];
+  for (const pn of bumped) {
+    for (const [zid, v] of Object.entries(data)) {
+      if (!v) continue;
+      const parts = v.split(",").map((s) => s.trim()).filter(Boolean);
+      if (parts.includes(pn) && !SOFT_ZONES.includes(zid)) {
+        const next = parts.filter((p) => p !== pn).join(",");
+        if (next) data[zid] = next;
+        else delete data[zid];
+        fixed = true;
+      }
+    }
+    try {
+      const raw = localStorage.getItem(STAGING_KEY);
+      let items: string[] = [];
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p && Array.isArray(p.items)) items = p.items;
+      }
+      if (!items.includes(pn)) {
+        items.push(pn);
+        localStorage.setItem(STAGING_KEY, JSON.stringify({ __v: STAGING_VERSION, items }));
+      }
+    } catch {
+      /* staging 저장 실패 무시 */
+    }
+  }
+  if (fixed) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: SAVED_VERSION, data }));
+    } catch {
+      /* 저장 실패 시 무시 */
+    }
+  }
+  return data;
 }
 
 /** 임시 보관함 로드 — 손상/버전 불일치 시 칵투스/데크 기본값 */
@@ -777,6 +859,27 @@ export default function ProductDisplayPage() {
   // 수정 모드: 그리드 편집 (개별/영역 선택 → 그룹 위/아래 이동)
   const [editMode, setEditMode] = useState(false);
   const [selectedZones, setSelectedZones] = useState<string[]>([]);
+  // 재배치 설정 다이얼로그
+  const [placementDialogOpen, setPlacementDialogOpen] = useState(false);
+  const [placementMode, setPlacementMode] = useState<"outbound" | "category">("outbound");
+  const [placementTopN, setPlacementTopN] = useState(40);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [targetDong, setTargetDong] = useState<string>("A");
+  const [onlySelectedCategories, setOnlySelectedCategories] = useState(false);
+  const [restItemsPerSlot, setRestItemsPerSlot] = useState<1 | 2 | 3>(2);
+
+  // 실제 존재하는 대분류 목록 (품목 수 포함)
+  const availableCategories = useMemo(() => {
+    const cats = new Map<string, number>();
+    for (const m of Object.values(masterMap)) {
+      if (m.lg && !m.no3m) {
+        cats.set(m.lg, (cats.get(m.lg) || 0) + 1);
+      }
+    }
+    return Array.from(cats.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([cat, count]) => ({ cat, count }));
+  }, [masterMap]);
   // 칸 직접 입력 (수기 편집): 클릭 → 인라인 input → "19,28" 콤마 구분 저장
   const [editingZone, setEditingZone] = useState<string | null>(null);
   const [editVal, setEditVal] = useState("");
@@ -1820,7 +1923,7 @@ export default function ProductDisplayPage() {
   };
 
   const persistLocal = (d: PlacementMap) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: "rank-a-v20", data: d }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: "rank-a-v23", data: d }));
   };
   const openAssign = useCallback(
     (zoneId: string) => {
@@ -1908,7 +2011,7 @@ export default function ProductDisplayPage() {
   const saveData = () => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v20", data })
+      JSON.stringify({ __v: "rank-a-v23", data })
     );
     setSaveMsg("저장되었습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
@@ -1928,10 +2031,281 @@ export default function ProductDisplayPage() {
     setData(next);
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v20", data: next })
+      JSON.stringify({ __v: "rank-a-v23", data: next })
     );
     setSaveMsg("A동만 초기화했습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
+  };
+
+  /** A동 자동 재배치: 출고량 순위 기준 (분류 무관) */
+  const applyARankPlacement = () => {
+    setPlacementDialogOpen(true);
+  };
+
+  /** 재배치 실행 (다이얼로그 확인 버튼) */
+  const executePlacement = () => {
+    setPlacementDialogOpen(false);
+    const mode = placementMode;
+    const topRank = placementTopN;
+    const cats = selectedCategories;
+    const sizeThreshold = 4;
+    const dong = targetDong;
+
+    // 1. masterMap에서 품목 목록 구성 (출고량 내림차순)
+    let allItems = Object.entries(masterMap)
+      .filter(([pnum, m]) => m.name && !m.no3m && !A_STAGING_DEFAULT.includes(pnum))
+      .map(([pnum, m]) => ({
+        pnum,
+        name: m.name,
+        lg: m.lg,
+        barcode: m.barcode,
+        boxes: m.barcode ? calcMonthQty(m.barcode) : 0,
+      }))
+      .sort((a, b) => b.boxes - a.boxes);
+
+    // "선택한 분류만" 옵션: 선택되지 않은 분류 제외
+    if (mode === "category" && onlySelectedCategories && cats.length > 0) {
+      allItems = allItems.filter(item => cats.includes(item.lg));
+    }
+
+    // 2. 모드에 따라 상위/나머지 분리
+    let topN: typeof allItems = [];
+    let rest: typeof allItems = [];
+
+    if (mode === "outbound") {
+      // 출고량 순위 모드: 단순 순위대로
+      topN = allItems.slice(0, topRank);
+      rest = allItems.slice(topRank);
+    } else {
+      // 분류 우선 모드: 상위 N개 안에서 분류별로 그룹화
+      const topItems = allItems.slice(0, topRank);
+      const restItems = allItems.slice(topRank);
+
+      // 상위 N개를 분류별로 그룹화
+      const topByCat: Record<string, typeof allItems> = {};
+      for (const item of topItems) {
+        if (!topByCat[item.lg]) topByCat[item.lg] = [];
+        topByCat[item.lg].push(item);
+      }
+
+      // 나머지도 분류별로 그룹화
+      const restByCat: Record<string, typeof allItems> = {};
+      for (const item of restItems) {
+        if (!restByCat[item.lg]) restByCat[item.lg] = [];
+        restByCat[item.lg].push(item);
+      }
+
+      // 선택된 분류 순서대로 topN 구성
+      topN = [];
+      for (const cat of cats) {
+        if (topByCat[cat]) topN.push(...topByCat[cat]);
+      }
+      // 선택되지 않은 분류: 출고량 많은 순서대로 분류별로 묶어서 추가
+      const unselectedCats = Object.entries(topByCat)
+        .filter(([cat]) => !cats.includes(cat))
+        .sort((a, b) => {
+          // 각 분류의 최고 출고량 비교
+          const aMax = Math.max(...a[1].map(i => i.boxes), 0);
+          const bMax = Math.max(...b[1].map(i => i.boxes), 0);
+          return bMax - aMax;
+        });
+      for (const [cat, items] of unselectedCats) {
+        topN.push(...items);
+      }
+
+      // 나머지도 같은 방식: 선택된 분류 먼저, 나머지는 출고량 순으로 분류별 묶음
+      rest = [];
+      for (const cat of cats) {
+        if (restByCat[cat]) rest.push(...restByCat[cat]);
+      }
+      const unselectedRestCats = Object.entries(restByCat)
+        .filter(([cat]) => !cats.includes(cat))
+        .sort((a, b) => {
+          const aMax = Math.max(...a[1].map(i => i.boxes), 0);
+          const bMax = Math.max(...b[1].map(i => i.boxes), 0);
+          return bMax - aMax;
+        });
+      for (const [cat, items] of unselectedRestCats) {
+        rest.push(...items);
+      }
+    }
+
+    // 대상 동의 zone 목록 가져오기
+    const dongLayout = layoutState.find((r) => r.key === dong);
+    if (!dongLayout) {
+      alert(`${dong}동 레이아웃을 찾을 수 없습니다.`);
+      return;
+    }
+    const dongZones = dongLayout.zones.map((z) => z.id);
+
+    // 새 배치 생성
+    const newDongPlacement: PlacementMap = {};
+    let topIdx = 0;
+    let restIdx = 0;
+
+    if (dong === "A") {
+      // A동: 로케이션 번호(locNo) 순서로 정렬 후 배치
+      // 상위 N개 → L1-L2 (locNo 1~38), 나머지 → L3-L6 (locNo 39~114)
+      // L1-L2 zone을 locNo 순으로 정렬
+      const l1l2Zones = dongLayout.zones
+        .filter((z) => z.line === 1 || z.line === 2)
+        .sort((a, b) => (a.locNo ?? 999) - (b.locNo ?? 999));
+
+      for (const zone of l1l2Zones) {
+        if (topIdx < topN.length) {
+          newDongPlacement[zone.id] = topN[topIdx++].pnum;
+        }
+      }
+
+      // L1-L2에 들어가지 못한 topN 나머지 → rest 맨 앞에 추가
+      if (topIdx < topN.length) {
+        const leftover = topN.slice(topIdx);
+        rest = [...leftover, ...rest];
+      }
+
+      // L3~L6: 나머지 (restItemsPerSlot 설정에 따라) — locNo 순으로 배치
+      // 크기가 작은 제품(로코스 등)은 같은 분류끼리 묶어서 배치
+      const restByCategory: Record<string, typeof rest> = {};
+      for (const item of rest) {
+        if (!restByCategory[item.lg]) restByCategory[item.lg] = [];
+        restByCategory[item.lg].push(item);
+      }
+
+      // 분류별로 정렬된 rest 생성 (출고량 많은 분류 우선)
+      const sortedRest: typeof rest = [];
+      const sortedCategories = Object.entries(restByCategory)
+        .sort((a, b) => {
+          const aMax = Math.max(...a[1].map(i => i.boxes), 0);
+          const bMax = Math.max(...b[1].map(i => i.boxes), 0);
+          return bMax - aMax;
+        });
+
+      for (const [, items] of sortedCategories) {
+        sortedRest.push(...items);
+      }
+
+      // L3~L6 zone을 locNo 순으로 정렬
+      const l3l6Zones = dongLayout.zones
+        .filter((z) => z.line >= 3 && z.line <= 6)
+        .sort((a, b) => (a.locNo ?? 999) - (b.locNo ?? 999));
+
+      // 정렬된 rest로 배치
+      let sortedRestIdx = 0;
+      for (const zone of l3l6Zones) {
+          if (sortedRestIdx >= sortedRest.length) break;
+
+          if (restItemsPerSlot === 1) {
+            // 1칸 1품목
+            newDongPlacement[zone.id] = sortedRest[sortedRestIdx++].pnum;
+          } else if (restItemsPerSlot === 2) {
+            // 1칸 2품목
+            const item1 = sortedRest[sortedRestIdx++];
+            if (sortedRestIdx < sortedRest.length) {
+              const item2 = sortedRest[sortedRestIdx++];
+              newDongPlacement[zone.id] = `${item1.pnum},${item2.pnum}`;
+            } else {
+              newDongPlacement[zone.id] = item1.pnum;
+            }
+          } else if (restItemsPerSlot === 3) {
+            // 1칸 3품목
+            const item1 = sortedRest[sortedRestIdx++];
+            if (sortedRestIdx < sortedRest.length) {
+              const item2 = sortedRest[sortedRestIdx++];
+              if (sortedRestIdx < sortedRest.length) {
+                const item3 = sortedRest[sortedRestIdx++];
+                newDongPlacement[zone.id] = `${item1.pnum},${item2.pnum},${item3.pnum}`;
+              } else {
+                newDongPlacement[zone.id] = `${item1.pnum},${item2.pnum}`;
+              }
+            } else {
+              newDongPlacement[zone.id] = item1.pnum;
+            }
+          }
+      }
+
+      // L7, X1, X2: 기존 값 유지
+      for (const [zid, val] of Object.entries(data)) {
+        if (zid.startsWith("A-L7-") || zid === "A-X1" || zid === "A-X2") {
+          newDongPlacement[zid] = val;
+        }
+      }
+    } else {
+      // B/C/D/E동: A동에 배치되지 않은 제품만 배치
+      const aDongPnums = new Set<string>();
+      for (const [zid, val] of Object.entries(data)) {
+        if (zid.startsWith("A-")) {
+          val.split(",").map(s => s.trim()).filter(Boolean).forEach(p => aDongPnums.add(p));
+        }
+      }
+
+      const allItems = [...topN, ...rest].filter(item => !aDongPnums.has(item.pnum));
+      let itemIdx = 0;
+
+      for (const zoneId of dongZones) {
+        if (itemIdx < allItems.length) {
+          newDongPlacement[zoneId] = allItems[itemIdx++].pnum;
+        }
+      }
+    }
+
+    // 다른 동 유지
+    const next: PlacementMap = { ...newDongPlacement };
+    for (const [k, v] of Object.entries(data)) {
+      if (!k.startsWith(`${dong}-`)) next[k] = v;
+    }
+
+    // 크로스동 중복 제거 (대상 동 우선)
+    const allDongPnums = new Set<string>();
+    for (const val of Object.values(newDongPlacement)) {
+      val.split(",").map((s) => s.trim()).filter(Boolean).forEach((p) => allDongPnums.add(p));
+    }
+    removeCrossDongDupes(next, Array.from(allDongPnums));
+
+    // 빠진 품목 → 임시보관함
+    const oldDongPnums = new Set<string>();
+    for (const [zid, val] of Object.entries(data)) {
+      if (zid.startsWith(`${dong}-`)) {
+        val.split(",").map((s) => s.trim()).filter(Boolean).forEach((p) => oldDongPnums.add(p));
+      }
+    }
+    const removedPnums = Array.from(oldDongPnums).filter((p) => !allDongPnums.has(p));
+
+    setData(next);
+    setStaging((s) => Array.from(new Set([...s, ...removedPnums])));
+
+    // 모든 동 배치 현황 통계
+    const allDongStats: Record<string, Record<string, number>> = {};
+    const allDongTotal: Record<string, number> = {};
+
+    for (const [zoneId, pnumStr] of Object.entries(next)) {
+      const d = zoneId.split("-")[0];
+      if (!allDongStats[d]) allDongStats[d] = {};
+      if (!allDongTotal[d]) allDongTotal[d] = 0;
+
+      const pnums = pnumStr.split(",").map((s) => s.trim()).filter(Boolean);
+      for (const pnum of pnums) {
+        const master = masterMap[pnum];
+        const cat = master?.lg || "미분류";
+        allDongStats[d][cat] = (allDongStats[d][cat] || 0) + 1;
+        allDongTotal[d]++;
+      }
+    }
+
+    // 콘솔에 상세 출력
+    console.log(`📊 ${dong}동 재배치 완료 후 전체 현황:`);
+    for (const d of ["A", "B", "C", "D", "E"]) {
+      if (allDongTotal[d]) {
+        console.log(`\n${d}동 (총 ${allDongTotal[d]}개):`);
+        const sorted = Object.entries(allDongStats[d] || {})
+          .sort((a, b) => b[1] - a[1]);
+        for (const [cat, count] of sorted) {
+          console.log(`  - ${cat}: ${count}개`);
+        }
+      }
+    }
+
+    setSaveMsg(`${dong}동 재배치 완료: ${Object.keys(newDongPlacement).length}칸 (전체 현황은 콘솔 확인)`);
+    window.setTimeout(() => setSaveMsg(""), 3000);
   };
 
   const exportJSON = () => {
@@ -2703,6 +3077,9 @@ export default function ProductDisplayPage() {
             <RotateCcw className="w-4 h-4 mr-1.5" />
             초기화
           </Button>
+          <Button type="button" className="bg-blue-600 hover:bg-blue-700" onClick={applyARankPlacement} title="출고량 순위 기준 A동 자동 재배치">
+            🔄 규칙 재배치
+          </Button>
           <Button type="button" variant="secondary" onClick={exportJSON}>
             <Download className="w-4 h-4 mr-1.5" />
             JSON 내보내기
@@ -2759,6 +3136,50 @@ export default function ProductDisplayPage() {
           ) : null}
         </div>
       ) : null}
+
+      {/* B/C/D동 배치 현황 통계 */}
+      {(() => {
+        const stats: Record<string, Record<string, number>> = { B: {}, C: {}, D: {} };
+        const totals: Record<string, number> = { B: 0, C: 0, D: 0 };
+
+        for (const [zoneId, pnumStr] of Object.entries(data)) {
+          const d = zoneId.split("-")[0];
+          if (d !== "B" && d !== "C" && d !== "D") continue;
+          const pnums = pnumStr.split(",").map((s: string) => s.trim()).filter(Boolean);
+          for (const pnum of pnums) {
+            const master = masterMap[pnum];
+            const cat = master?.lg || "미분류";
+            stats[d][cat] = (stats[d][cat] || 0) + 1;
+            totals[d]++;
+          }
+        }
+
+        const hasAny = totals.B > 0 || totals.C > 0 || totals.D > 0;
+        if (!hasAny) return null;
+
+        return (
+          <div className="rounded-xl border bg-card p-4 shadow-sm space-y-3">
+            <h3 className="text-sm font-semibold">B/C/D동 배치 현황</h3>
+            <div className="grid grid-cols-3 gap-4">
+              {(["B", "C", "D"] as const).map((d) => (
+                <div key={d} className="border rounded-md p-2">
+                  <h4 className="text-xs font-bold text-slate-600 mb-2">{d}동 ({totals[d]}개)</h4>
+                  <div className="max-h-32 overflow-auto space-y-1">
+                    {Object.entries(stats[d])
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([cat, count]) => (
+                        <div key={cat} className="text-[11px] flex justify-between">
+                          <span className="truncate max-w-[100px]" title={cat}>{cat}</span>
+                          <span className="text-muted-foreground tabular-nums">{count}</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="sm:max-w-md">
@@ -2825,9 +3246,446 @@ export default function ProductDisplayPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* A동 재배치 설정 다이얼로그 */}
+      <Dialog open={placementDialogOpen} onOpenChange={setPlacementDialogOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>재배치 설정</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {/* 대상 동 선택 */}
+            <div>
+              <Label className="text-sm font-medium">대상 동</Label>
+              <div className="flex gap-2 mt-2">
+                {["A", "B", "C", "D", "E"].map((d) => (
+                  <Button
+                    key={d}
+                    type="button"
+                    variant={targetDong === d ? "default" : "outline"}
+                    onClick={() => setTargetDong(d)}
+                    className={targetDong === d ? "bg-blue-600" : ""}
+                  >
+                    {d}동
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            {/* 모드 선택 */}
+            <div>
+              <Label className="text-sm font-medium">배치 모드</Label>
+              <div className="flex gap-2 mt-2">
+                <Button
+                  type="button"
+                  variant={placementMode === "outbound" ? "default" : "outline"}
+                  onClick={() => setPlacementMode("outbound")}
+                  className={placementMode === "outbound" ? "bg-blue-600" : ""}
+                >
+                  📊 출고량 순위
+                </Button>
+                <Button
+                  type="button"
+                  variant={placementMode === "category" ? "default" : "outline"}
+                  onClick={() => setPlacementMode("category")}
+                  className={placementMode === "category" ? "bg-blue-600" : ""}
+                >
+                  📂 분류 우선
+                </Button>
+              </div>
+            </div>
+
+            {placementMode === "outbound" ? (
+              <>
+                <div>
+                  <Label htmlFor="top-n">상위 N개 (1~2번 라인 배치)</Label>
+                  <Input
+                    id="top-n"
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={placementTopN}
+                    onChange={(e) => setPlacementTopN(Number(e.target.value))}
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    출고량 기준 상위 {placementTopN}개 제품을 1~2번 라인에 배치합니다.
+                  </p>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium">나머지 라인 칸당 제품 수 (L3~L6)</Label>
+                  <div className="flex gap-2 mt-2">
+                    {[1, 2, 3].map((n) => (
+                      <Button
+                        key={n}
+                        type="button"
+                        variant={restItemsPerSlot === n ? "default" : "outline"}
+                        onClick={() => setRestItemsPerSlot(n as 1 | 2 | 3)}
+                        className={restItemsPerSlot === n ? "bg-green-600" : ""}
+                      >
+                        {n}개
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    상위 {placementTopN}개 이후 제품을 3~6번 라인에 칸당 {restItemsPerSlot}개씩 배치합니다.
+                  </p>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium">상위 {placementTopN}개 미리보기</Label>
+                  <div className="mt-2 max-h-48 overflow-auto border rounded-md">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted sticky top-0">
+                        <tr className="text-left">
+                          <th className="p-2">순위</th>
+                          <th className="p-2">제품번호</th>
+                          <th className="p-2">1개월출고</th>
+                          <th className="p-2">분류</th>
+                          <th className="p-2">제품명</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          const items = Object.entries(masterMap)
+                            .filter(([pnum, m]) => m.name && !m.no3m && !A_STAGING_DEFAULT.includes(pnum))
+                            .map(([pnum, m]) => ({
+                              pnum,
+                              name: m.name,
+                              lg: m.lg,
+                              boxes: m.barcode ? calcMonthQty(m.barcode) : 0,
+                            }))
+                            .sort((a, b) => b.boxes - a.boxes)
+                            .slice(0, placementTopN);
+                          return items.map((item, idx) => (
+                            <tr key={item.pnum} className="border-t">
+                              <td className="p-2 tabular-nums">{idx + 1}</td>
+                              <td className="p-2 font-semibold tabular-nums">{item.pnum}</td>
+                              <td className="p-2 tabular-nums">{item.boxes}</td>
+                              <td className="p-2">{item.lg}</td>
+                              <td className="p-2 max-w-[200px] truncate" title={item.name}>
+                                {item.name}
+                              </td>
+                            </tr>
+                          ));
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  {/* 좌측 컬럼: 상위 N개 입력 + 배치 미리보기 */}
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="top-n-cat">상위 N개 (1~2번 라인 배치)</Label>
+                      <Input
+                        id="top-n-cat"
+                        type="number"
+                        min={1}
+                        max={200}
+                        value={placementTopN}
+                        onChange={(e) => setPlacementTopN(Number(e.target.value))}
+                        className="mt-1"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        상위 {placementTopN}개 안에서 선택한 분류끼리 먼저 묶여 배치됩니다.
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label className="text-sm font-medium">나머지 라인 칸당 제품 수 (L3~L6)</Label>
+                      <div className="flex gap-2 mt-2">
+                        {[1, 2, 3].map((n) => (
+                          <Button
+                            key={n}
+                            type="button"
+                            variant={restItemsPerSlot === n ? "default" : "outline"}
+                            onClick={() => setRestItemsPerSlot(n as 1 | 2 | 3)}
+                            className={restItemsPerSlot === n ? "bg-green-600" : ""}
+                          >
+                            {n}개
+                          </Button>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        상위 {placementTopN}개 이후 제품을 3~6번 라인에 칸당 {restItemsPerSlot}개씩 배치합니다.
+                      </p>
+                    </div>
+
+                    {/* 배치 미리보기 */}
+                    <div>
+                      <Label className="text-sm font-medium">배치 미리보기 (상위 {placementTopN}개)</Label>
+                      <div className="mt-2 max-h-[400px] overflow-auto border rounded-md">
+                        <table className="w-full text-xs">
+                          <thead className="bg-muted sticky top-0">
+                            <tr className="text-left">
+                              <th className="p-2">순위</th>
+                              <th className="p-2">제품번호</th>
+                              <th className="p-2">1개월출고</th>
+                              <th className="p-2">분류</th>
+                              <th className="p-2">제품명</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(() => {
+                              const allItems = Object.entries(masterMap)
+                                .filter(([pnum, m]) => m.name && !m.no3m && !A_STAGING_DEFAULT.includes(pnum))
+                                .map(([pnum, m]) => ({
+                                  pnum,
+                                  name: m.name,
+                                  lg: m.lg,
+                                  boxes: m.barcode ? calcMonthQty(m.barcode) : 0,
+                                }))
+                                .sort((a, b) => b.boxes - a.boxes);
+
+                              const topItems = allItems.slice(0, placementTopN);
+
+                              // 선택된 분류별로 그룹화 (선택한 순서대로)
+                              const selectedGrouped: typeof allItems = [];
+                              for (const cat of selectedCategories) {
+                                const items = topItems.filter(i => i.lg === cat);
+                                selectedGrouped.push(...items);
+                              }
+
+                              // 선택되지 않은 분류: 출고량 많은 순으로 분류별 묶음
+                              const unselectedItems = topItems.filter(i => !selectedCategories.includes(i.lg));
+                              const unselectedByCat: Record<string, typeof allItems> = {};
+                              for (const item of unselectedItems) {
+                                if (!unselectedByCat[item.lg]) unselectedByCat[item.lg] = [];
+                                unselectedByCat[item.lg].push(item);
+                              }
+                              const unsortedCats = Object.entries(unselectedByCat)
+                                .sort((a, b) => Math.max(...b[1].map(i => i.boxes), 0) - Math.max(...a[1].map(i => i.boxes), 0));
+                              const unselectedGrouped: typeof allItems = [];
+                              for (const [, items] of unsortedCats) {
+                                unselectedGrouped.push(...items);
+                              }
+
+                              const finalOrder = [...selectedGrouped, ...unselectedGrouped];
+
+                              return finalOrder.map((item, idx) => (
+                                <tr key={item.pnum} className={selectedCategories.includes(item.lg) ? "border-t bg-blue-50" : "border-t"}>
+                                  <td className="p-2 tabular-nums">{idx + 1}</td>
+                                  <td className="p-2 font-semibold tabular-nums">{item.pnum}</td>
+                                  <td className="p-2 tabular-nums">{item.boxes}</td>
+                                  <td className="p-2">{item.lg}</td>
+                                  <td className="p-2 max-w-[200px] truncate" title={item.name}>
+                                    {item.name}
+                                  </td>
+                                </tr>
+                              ));
+                            })()}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        파란색 배경 = 선택된 분류 (먼저 배치됨)
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* 우측 컬럼: 분류 선택 */}
+                  <div>
+                    <Label className="text-sm font-medium">우선 배치할 분류 선택 (선택한 순서대로 배치)</Label>
+                  <div className="mt-2 max-h-[500px] overflow-auto border rounded-md divide-y">
+                    {(() => {
+                      // 선택된 분류: 순번순으로 정렬
+                      const selected = selectedCategories.map(cat => {
+                        const found = availableCategories.find(ac => ac.cat === cat);
+                        return found || { cat, count: 0 };
+                      });
+                      // 미선택 분류: 가나다순 정렬
+                      const unselected = availableCategories.filter(({ cat }) => !selectedCategories.includes(cat));
+                      const sortedCategories = [...selected, ...unselected];
+                      return sortedCategories;
+                    })().map(({ cat, count }) => {
+                      const orderIdx = selectedCategories.indexOf(cat);
+                      const isSelected = orderIdx >= 0;
+                      return (
+                        <div
+                          key={cat}
+                          className={`flex items-center gap-2 p-2 ${isSelected ? "bg-blue-50" : "hover:bg-slate-50"}`}
+                        >
+                          <label className="flex items-center gap-2 flex-1 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedCategories([...selectedCategories, cat]);
+                                } else {
+                                  setSelectedCategories(selectedCategories.filter(c => c !== cat));
+                                }
+                              }}
+                              className="w-4 h-4"
+                            />
+                            <span className={`font-medium ${isSelected ? "text-blue-900" : ""}`}>{cat}</span>
+                            <span className="text-xs text-muted-foreground">({count}개)</span>
+                          </label>
+                          {isSelected && (
+                            <div className="flex items-center gap-1 ml-auto">
+                              <input
+                                type="number"
+                                min={1}
+                                max={selectedCategories.length}
+                                value={orderIdx + 1}
+                                onChange={(e) => {
+                                  const newPos = Math.max(1, Math.min(selectedCategories.length, Number(e.target.value)));
+                                  if (newPos !== orderIdx + 1) {
+                                    const newCats = [...selectedCategories];
+                                    const [moved] = newCats.splice(orderIdx, 1);
+                                    newCats.splice(newPos - 1, 0, moved);
+                                    setSelectedCategories(newCats);
+                                  }
+                                }}
+                                className="w-12 h-6 px-1 text-center text-xs border border-gray-300 rounded"
+                                title="순서 직접 입력"
+                              />
+                              <button
+                                type="button"
+                                disabled={orderIdx === 0}
+                                onClick={() => {
+                                  const newCats = [...selectedCategories];
+                                  [newCats[orderIdx - 1], newCats[orderIdx]] = [newCats[orderIdx], newCats[orderIdx - 1]];
+                                  setSelectedCategories(newCats);
+                                }}
+                                className="w-6 h-6 rounded border border-gray-300 bg-white hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed text-xs flex items-center justify-center"
+                                title="위로 이동"
+                              >↑</button>
+                              <button
+                                type="button"
+                                disabled={orderIdx === selectedCategories.length - 1}
+                                onClick={() => {
+                                  const newCats = [...selectedCategories];
+                                  [newCats[orderIdx], newCats[orderIdx + 1]] = [newCats[orderIdx + 1], newCats[orderIdx]];
+                                  setSelectedCategories(newCats);
+                                }}
+                                className="w-6 h-6 rounded border border-gray-300 bg-white hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed text-xs flex items-center justify-center"
+                                title="아래로 이동"
+                              >↓</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    선택된 분류 {selectedCategories.length}개 — ↑↓ 버튼으로 순서 조정 가능
+                  </p>
+                  {selectedCategories.length > 0 && (
+                    <label className="flex items-center gap-2 mt-2 p-2 bg-amber-50 border border-amber-200 rounded-md cursor-pointer hover:bg-amber-100">
+                      <input
+                        type="checkbox"
+                        checked={onlySelectedCategories}
+                        onChange={(e) => setOnlySelectedCategories(e.target.checked)}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm font-medium text-amber-900">
+                        선택한 분류만 배치 (미선택 분류는 제외)
+                      </span>
+                    </label>
+                  )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div className="text-xs text-slate-700 bg-slate-50 border rounded-md p-3 space-y-2">
+              <p className="font-semibold text-sm">📌 배치 방법</p>
+              {placementMode === "outbound" ? (
+                <>
+                  <p>• <strong>상위 {placementTopN}개</strong>를 출고량 순서대로 1~2번 라인에 배치</p>
+                  <p>• 나머지는 3~6번 라인에 자동 배치</p>
+                </>
+              ) : (
+                <>
+                  <p>• <strong>상위 {placementTopN}개</strong> 안에서 선택한 분류가 먼저 배치</p>
+                  <p>• 예: 모던 플러스 체크 → 모던 플러스 제품들이 순위 안에서 앞에 모입니다</p>
+                  <p>• 선택 안 한 분류는 뒤에 자동 배치</p>
+                </>
+              )}
+              <p className="text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-200">
+                💡 재배치 후에도 드래그앤드롭으로 언제든 수동 조정 가능합니다.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={() => setPlacementDialogOpen(false)}>
+              취소
+            </Button>
+            <Button type="button" onClick={executePlacement}>
+              재배치 실행
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+/* ===== 로케이션 번호 (통로 중심 뱀 모양) ===== */
+/** A동 L1~L6 지그재그 번호 — 통로 중심 뱀 모양
+ *  3개 통로 쌍: (1|2)=1~38, (3|4)=39~76, (5|6)=77~114
+ *  각 쌍: slot 19(상단)에서 시작, 홀수라인→짝수라인 교차, 아래로 진행
+ *  예: L1-19=1, L2-19=2, L2-18=3, L1-18=4, L1-17=5, L2-17=6, ...
+ *  L3-19=39, L4-19=40, L5-19=77, L6-19=78 */
+function getZigzagLocNo(zoneId: string): number | null {
+  const m = zoneId.match(/^A-L(\d)-(\d+)$/);
+  if (!m) return null;
+  const line = parseInt(m[1], 10);
+  const slot = parseInt(m[2], 10);
+  if (line < 1 || line > 6 || slot < 1 || slot > 19) return null;
+
+  const pair = Math.floor((line - 1) / 2); // (1|2)=0, (3|4)=1, (5|6)=2
+  const offset = 19 - slot; // 0(상단, slot19) ~ 18(하단, slot1)
+  const isOddLine = line % 2 === 1;
+  const oddFirst = offset % 2 === 0; // 홀수라인이 작은 번호?
+
+  if ((isOddLine && oddFirst) || (!isOddLine && !oddFirst)) {
+    return pair * 38 + offset * 2 + 1;
+  } else {
+    return pair * 38 + offset * 2 + 2;
+  }
+}
+
+/** 한 칸에 여러 제품이 있을 때 각 제품의 로케이션 번호 반환
+ *  예: zoneId="A-L1-1"에 제품 2개 → [1, 2] */
+function getProductLocNos(zoneId: string, itemCount: number): number[] {
+  const baseLocNo = getZigzagLocNo(zoneId);
+  if (baseLocNo === null) return [];
+  return Array.from({ length: itemCount }, (_, i) => baseLocNo + i);
+}
+
+/** B/C/D동 로케이션 번호 — 각 동별 zone 순서대로 1번부터 */
+const dongLocMap: Record<string, number> = {};
+function getDongLocNo(zoneId: string): number | null {
+  if (dongLocMap[zoneId]) return dongLocMap[zoneId];
+
+  const dong = zoneId.split("-")[0];
+  if (!["B", "C", "D"].includes(dong)) return null;
+
+  // 레이아웃에서 해당 동의 zones 순서 찾기
+  const layout = DONG_LAYOUTS.find((r) => r.key === dong);
+  if (!layout) return null;
+
+  const idx = layout.zones.findIndex((z) => z.id === zoneId);
+  if (idx < 0) return null;
+
+  const locNo = idx + 1;
+  dongLocMap[zoneId] = locNo;
+  return locNo;
+}
+
+/** B/C/D동 한 칸에 여러 제품이 있을 때 각 제품의 로케이션 번호 반환 */
+function getDongProductLocNos(zoneId: string, itemCount: number): number[] {
+  const baseLocNo = getDongLocNo(zoneId);
+  if (baseLocNo === null) return [];
+  return Array.from({ length: itemCount }, (_, i) => baseLocNo + i);
+}
+
 /* ===== 드래그앤드롭 셀 컴포넌트 (2026-08-17) — 편집 모드 확장 예정 ===== */
 /** 총괄(ALL) 미니맵 셀: 드롭 대상(drop-ov-) + 점유 시 드래그 소스 (크로스동 이동) */
 function MiniZoneCell({
@@ -2882,6 +3740,18 @@ function MiniZoneCell({
       }
       style={z.style}
     >
+      {/* 통로쪽 로케이션 번호 (ZoneCell과 동일) */}
+      {z.locNo != null && (
+        <span
+          className="absolute text-[9px] leading-none font-mono font-bold text-amber-600 pointer-events-none"
+          style={{
+            top: 1,
+            ...(z.line % 2 === 1 ? { left: -18 } : { right: -18 }),
+          }}
+        >
+          {z.locNo}
+        </span>
+      )}
       {assigned ? (
         <span
           className={
@@ -2889,7 +3759,9 @@ function MiniZoneCell({
             (items.length > 1 ? " flex flex-col items-center text-[8px] leading-[1.15]" : "")
           }
         >
-          {items.length > 1 ? items.map((it, i) => <span key={i}>{it}</span>) : value}
+          {items.length > 1
+            ? items.map((it, i) => <span key={i}>{it}</span>)
+            : value}
         </span>
       ) : null}
     </button>
@@ -3402,6 +4274,23 @@ function ZoneCell({
         </span>
       ) : (
         <span className="text-[9px] text-slate-300 leading-none">·</span>
+      )}
+      {/* 통로쪽 로케이션 번호 — 제품번호와 분리, 겹침 방지 */}
+      {isA && z.locNo != null && (
+        <span
+          className="absolute text-[9px] leading-none font-mono font-bold text-amber-600 pointer-events-none"
+          style={{
+            top: 1,
+            ...(z.line % 2 === 1 ? { left: -18 } : { right: -18 }),
+          }}
+        >
+          {z.locNo}
+        </span>
+      )}
+      {!isA && getDongLocNo(z.id) !== null && (
+        <span className="absolute top-0.5 right-0.5 text-[7px] leading-none font-mono font-bold text-amber-600 pointer-events-none">
+          {getDongLocNo(z.id)}
+        </span>
       )}
     </button>
   );
