@@ -58,6 +58,9 @@ const LAYOUT_VERSION = "layout-v1";
 /** 임시 보관함(staging) 저장 키 — data와 완전 분리 (사용자 의도적 보관 버퍼) */
 const STAGING_KEY = "vf_product_display_staging_v1";
 const STAGING_VERSION = "staging-v3";
+/** 라인 구성(라인별 칸 수·숨김 슬롯·라벨) 저장 키 — 기본 LineSpec 상수를 오버라이드 (편집 UI 없음: 값 직접 주입) */
+const LINE_CONFIG_KEY = "vf_pd_line_config_v1";
+const LINE_CONFIG_VERSION = "line-config-v1";
 /** 칵투스 11 + 데크 타일 5 — A동 132칸 재배치 시 진열 제외 (2026-08-18) */
 const A_STAGING_DEFAULT: string[] = ["988", "987", "982", "990", "980", "979", "985", "983", "986", "984", "981", "2070", "2074", "2071", "2073", "2072"];
 
@@ -134,12 +137,70 @@ type LineSpec = {
   count: number;
   badge?: string;
   bottomIsStart?: boolean;
+  /** 화면에서 숨길 슬롯 번호 (배치 데이터는 유지 — 다시 표시하면 복원) */
+  hiddenSlots?: number[];
 };
 
 function isTightPair(a: number, b: number): boolean {
   return TIGHT_PAIRS.some(
     ([x, y]) => (x === a && y === b) || (x === b && y === a)
   );
+}
+
+/** 라인별 칸 구성 오버라이드 — 기본 LineSpec 상수 위에 병합해 실효 구성 생성.
+ *  count: 칸 수 변경 (증가=빈 칸 추가, 감소=화면에서만 제거 — 배치 데이터는 보존 → 다시 늘리면 복원)
+ *  hiddenSlots: 화면에서 숨길 슬롯 번호 (입구 자리 등 — 배치 데이터는 유지)
+ *  badge: 라인 라벨 텍스트 교체 */
+type LineOverride = {
+  count?: number;
+  hiddenSlots?: number[];
+  badge?: string;
+};
+
+/** 동별 라인 오버라이드 모음. 키: 동은 "A"~"D", 라인은 문자열 숫자 ("1"~"7", JSON 키 규칙). */
+type LineConfigMap = Partial<Record<"A" | "B" | "C" | "D", Record<string, LineOverride>>>;
+
+/** 기본 라인 구성 + 오버라이드 병합 → 실효 구성. 오버라이드 없으면 입력과 동일한 값 (레그레션 없음). */
+function applyLineOverrides(lines: LineSpec[], overrides: Record<string, LineOverride> | undefined): LineSpec[] {
+  if (!overrides) return lines;
+  return lines.map((spec) => {
+    const ov = overrides[String(spec.line)];
+    if (!ov) return spec;
+    const merged: LineSpec = { ...spec };
+    if (typeof ov.count === "number" && Number.isFinite(ov.count)) {
+      merged.count = Math.max(1, Math.floor(ov.count));
+    }
+    if (ov.badge !== undefined) merged.badge = ov.badge;
+    if (Array.isArray(ov.hiddenSlots) && ov.hiddenSlots.length > 0) {
+      merged.hiddenSlots = [...ov.hiddenSlots];
+    }
+    return merged;
+  });
+}
+
+/** 통로 중심 뱀 모양 로케이션 번호 공식 — A동 L1~L6 지그재그 (빌더·툴팁 단일 구현).
+ *  3개 통로 쌍: (1|2)=1~38, (3|4)=39~76, (5|6)=77~114.
+ *  pair 0은 slot 19(상단)에서 시작, pair 1·2는 slot 1에서 시작.
+ *  slot > 19 확장 칸: pair 0은 114 뒤로 뱀 패턴 교대 연속 (충돌 없음),
+ *  pair 1·2는 증가 방향이 곧 전진이라 공식 그대로 확장됨. */
+function calcZigzagLocNo(line: number, slot: number): number | null {
+  if (!Number.isFinite(line) || !Number.isFinite(slot) || line < 1 || line > 6 || slot < 1) return null;
+  const numVal = Math.floor(slot);
+  const pair = Math.floor((line - 1) / 2); // (1|2)=0, (3|4)=1, (5|6)=2
+  const isOddLine = line % 2 === 1;
+  // pair 0 확장 슬롯(20~): 114 뒤로 교대 뱀 패턴 계속 — k=1→115,116 / k=2→117,118 …
+  if (pair === 0 && numVal > 19) {
+    const k = numVal - 19;
+    const base = 114 + 2 * (k - 1);
+    const oddFirst = k % 2 === 1; // slot 19 패턴(L1 먼저) 미러 후 교대
+    return ((isOddLine && oddFirst) || (!isOddLine && !oddFirst)) ? base + 1 : base + 2;
+  }
+  // L1|L2: slot 19에서 시작. L3|L4·L5|L6: slot 1에서 낮은 번호 시작
+  const offset = pair === 0 ? 19 - numVal : numVal - 1;
+  const oddFirst = offset % 2 === 0;
+  return ((isOddLine && oddFirst) || (!isOddLine && !oddFirst))
+    ? pair * 38 + offset * 2 + 1
+    : pair * 38 + offset * 2 + 2;
 }
 
 /**
@@ -223,16 +284,11 @@ function buildADongLayout(
 
     for (let i = 0; i < lineSpec.count; i++) {
       const numVal = i + 1;
+      // 숨김 슬롯(입구 자리 등)은 화면에서만 제외 — 배치 데이터는 보존
+      if (lineSpec.hiddenSlots?.includes(numVal)) continue;
       const placeFromTop = bottomIsStart ? lineSpec.count - 1 - i : i;
-      // 통로 중심 뱀 모양 로케이션 번호 (getZigzagLocNo와 동일 공식)
-      const pair = Math.floor((lineSpec.line - 1) / 2); // (1|2)=0, (3|4)=1, (5|6)=2
-      // L1|L2: slot 19에서 시작. L3|L4·L5|L6: slot 1에서 낮은 번호 시작
-      const offset = pair === 0 ? 19 - numVal : numVal - 1;
-      const isOddLine = lineSpec.line % 2 === 1;
-      const oddFirst = offset % 2 === 0;
-      const locNo = ((isOddLine && oddFirst) || (!isOddLine && !oddFirst))
-        ? pair * 38 + offset * 2 + 1
-        : pair * 38 + offset * 2 + 2;
+      // 통로 중심 뱀 모양 로케이션 번호 (getZigzagLocNo와 단일 공식 — calcZigzagLocNo)
+      const locNo = calcZigzagLocNo(lineSpec.line, numVal) ?? undefined;
       zones.push({
         id: `${dong}-L${lineSpec.line}-${numVal}`,
         num: "",
@@ -385,6 +441,8 @@ type BlockSpec = {
   rows: number; // 세로 칸 수
   horizontal: boolean; // true=가로 나열, false=세로 나열
   startIdx?: number; // 시작 번호 (기본 1)
+  /** 화면에서 숨길 칸 번호 (zone 번호 기준 — 배치 데이터는 유지) */
+  hiddenSlots?: number[];
 };
 
 /**
@@ -422,6 +480,8 @@ function buildBlockLayout(
 
     for (let i = 0; i < total; i++) {
       const idx = startIdx + i;
+      // 숨김 칸은 화면에서만 제외 — 배치 데이터는 보존
+      if (b.hiddenSlots?.includes(idx)) continue;
       let left: number;
       let top: number;
       if (b.horizontal) {
@@ -469,8 +529,6 @@ const A_LINES: LineSpec[] = [
   { line: 6, count: A_SLOTS_PER_LINE, badge: "확장" },
 ];
 
-const A_BUILT = buildADongLayout("A", A_LINES);
-
 /** B동: 엑셀 b동.xlsx 도면 그대로 (2026-08-16) */
 // 도면: B좌측=왼쪽 세로(B상단 옆~B하단 위), B중앙1-9=B우측 옆 통로, B통로 없음
 const B_BLOCKS: BlockSpec[] = [
@@ -485,7 +543,104 @@ const B_BLOCKS: BlockSpec[] = [
   { name: "B하단1", x: 4, y: 340, cols: 4, rows: 1, horizontal: true },
   { name: "B하단2", x: 260, y: 340, cols: 7, rows: 1, horizontal: true },
 ];
-const B_BUILT = buildBlockLayout("B", B_BLOCKS);
+
+/** localStorage의 라인 구성 오버라이드 읽기 — 손상/타버전 시 기본 구성(오버라이드 없음) */
+function loadLineConfigMap(): LineConfigMap {
+  try {
+    const raw = localStorage.getItem(LINE_CONFIG_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.__v === LINE_CONFIG_VERSION && parsed.data && typeof parsed.data === "object") {
+      return parsed.data as LineConfigMap;
+    }
+  } catch {
+    /* 손상 시 기본값 */
+  }
+  return {};
+}
+
+const INITIAL_LINE_CONFIG: LineConfigMap = loadLineConfigMap();
+
+/** C/D동 빌더의 셀 → 라인 번호 (오버라이드 키 = 같은 라인 셀 묶음): 1열은 행, 3열은 열 */
+function cDongLineOf(row: number, col: number): number {
+  return col === 3 ? col : row;
+}
+/** C/D동 빌더의 셀 → 슬롯 번호: 1열은 위에서 아래, 3열은 왼쪽에서 오른쪽 증가 */
+function cDongSlotOf(idx: number, col: number): number {
+  return col === 3 ? idx + 1 : 16 - idx;
+}
+
+/** D동 셀 + 오버라이드 → 존 생성 (기존 좌표 규칙 유지, 칸 수 증감만 적용) */
+function buildCDongZones(dong: DongKey, overrides: Record<string, LineOverride> | undefined, slot = SLOT) {
+  const zones: ZoneDef[] = [];
+  const gap = 4;
+  const xOf = (col: number) => slot.padL + (col - 1) * (slot.w + gap);
+  const yOf = (row: number) => slot.padT + (row - 3) * (slot.h + slot.gapY);
+  C_CELLS_RAW.forEach(([row, col], idx) => {
+    const ov = overrides?.[String(cDongLineOf(row, col))];
+    if (ov) {
+      const slotNo = cDongSlotOf(idx, col);
+      if (Array.isArray(ov.hiddenSlots) && ov.hiddenSlots.includes(slotNo)) return;
+      if (typeof ov.count === "number" && Number.isFinite(ov.count) && slotNo > Math.max(1, Math.floor(ov.count))) return;
+    }
+    zones.push({
+      id: `${dong}-R${row}-C${col}`,
+      num: "",
+      line: 0,
+      showNumAsProduct: false,
+      style: { left: xOf(col), top: yOf(row), width: slot.w, height: slot.h },
+    });
+  });
+  return zones;
+}
+
+/** D동 셀 + 오버라이드 → 존 생성 (기존 좌표 규칙 유지, 칸 수 증감만 적용) */
+function buildDDongZones(dong: DongKey, overrides: Record<string, LineOverride> | undefined, slot = SLOT) {
+  const zones: ZoneDef[] = [];
+  const gap = 4;
+  const xOf = (col: number) => slot.padL + (col - 1) * (slot.w + gap);
+  const yOf = (row: number) => slot.padT + (row - 3) * (slot.h + slot.gapY);
+  D_CELLS_RAW.forEach(([row, col], idx) => {
+    const ov = overrides?.[String(row)];
+    if (ov) {
+      if (Array.isArray(ov.hiddenSlots) && ov.hiddenSlots.includes(idx + 1)) return;
+      if (typeof ov.count === "number" && Number.isFinite(ov.count) && idx + 1 > Math.max(1, Math.floor(ov.count))) return;
+    }
+    zones.push({
+      id: `${dong}-R${row}-C${col}`,
+      num: "",
+      line: 0,
+      showNumAsProduct: false,
+      style: { left: xOf(col), top: yOf(row), width: slot.w, height: slot.h },
+    });
+  });
+  return zones;
+}
+
+/** 전 동 빌트 레이아웃 생성 — 기본 상수 + 라인 오버라이드 병합 (오버라이드 없으면 기존과 동일) */
+function buildAllDongLayouts(config: LineConfigMap) {
+  const aBuilt = buildADongLayout("A", applyLineOverrides(A_LINES, config.A));
+  const bBlocks = applyLineOverrides(
+    B_BLOCKS.map((b, i) => ({ line: i + 1, count: b.cols * b.rows })),
+    config.B
+  );
+  const bBuilt = buildBlockLayout(
+    "B",
+    B_BLOCKS.map((b, i) => ({
+      ...b,
+      cols: b.horizontal ? bBlocks[i].count : b.cols,
+      rows: b.horizontal ? b.rows : bBlocks[i].count,
+      hiddenSlots: bBlocks[i].hiddenSlots,
+    }))
+  );
+  const cBuilt = buildCDongLayout("C");
+  cBuilt.zones = buildCDongZones("C", config.C);
+  const dBuilt = buildDDongLayout("D");
+  dBuilt.zones = buildDDongZones("D", config.D);
+  return { A: aBuilt, B: bBuilt, C: cBuilt, D: dBuilt };
+}
+
+// ※ BUILT_LAYOUTS 상수는 아래에서 초기화 — C/D_CELLS_RAW보다 먼저 평가되면 TDZ 오류
 
 /** C동: 엑셀 "통합 문서2.xlsx" 셀 위치 그대로 재현 — (row, col) 좌표 */
 // 셀 위치: [행, 열] (엑셀 R3~R23, A~U열)
@@ -646,9 +801,8 @@ function buildDDongLayout(
   return { zones, lineLabels, width, height };
 }
 
-const D_BUILT = buildDDongLayout("D");
-
-const C_BUILT = buildCDongLayout("C");
+/** 기본 상수 + 저장된 라인 오버라이드 병합 결과 — 오버라이드 없으면 기존 빌트 레이아웃과 동일한 그래프 */
+const BUILT_LAYOUTS = buildAllDongLayouts(INITIAL_LINE_CONFIG);
 
 function defaultAPlacement(): PlacementMap {
   const base: PlacementMap = { ...A_RANK_PLACEMENT };
@@ -671,34 +825,34 @@ const DONG_LAYOUTS: DongLayout[] = [
   {
     key: "A",
     label: "A동",
-    width: A_BUILT.width,
-    height: A_BUILT.height,
-    zones: A_BUILT.zones,
-    lineLabels: A_BUILT.lineLabels,
+    width: BUILT_LAYOUTS.A.width,
+    height: BUILT_LAYOUTS.A.height,
+    zones: BUILT_LAYOUTS.A.zones,
+    lineLabels: BUILT_LAYOUTS.A.lineLabels,
   },
   {
     key: "B",
     label: "B동",
-    width: B_BUILT.width,
-    height: B_BUILT.height,
-    zones: B_BUILT.zones,
-    lineLabels: B_BUILT.lineLabels,
+    width: BUILT_LAYOUTS.B.width,
+    height: BUILT_LAYOUTS.B.height,
+    zones: BUILT_LAYOUTS.B.zones,
+    lineLabels: BUILT_LAYOUTS.B.lineLabels,
   },
   {
     key: "C",
     label: "C동",
-    width: C_BUILT.width,
-    height: C_BUILT.height,
-    zones: C_BUILT.zones,
-    lineLabels: C_BUILT.lineLabels,
+    width: BUILT_LAYOUTS.C.width,
+    height: BUILT_LAYOUTS.C.height,
+    zones: BUILT_LAYOUTS.C.zones,
+    lineLabels: BUILT_LAYOUTS.C.lineLabels,
   },
   {
     key: "D",
     label: "D동",
-    width: D_BUILT.width,
-    height: D_BUILT.height,
-    zones: D_BUILT.zones,
-    lineLabels: D_BUILT.lineLabels,
+    width: BUILT_LAYOUTS.D.width,
+    height: BUILT_LAYOUTS.D.height,
+    zones: BUILT_LAYOUTS.D.zones,
+    lineLabels: BUILT_LAYOUTS.D.lineLabels,
   },
   {
     key: "E",
@@ -919,6 +1073,16 @@ export default function ProductDisplayPage() {
       /* 용량/오류 무시 */
     }
   }, [staging]);
+  // 라인 구성 오버라이드 (초기값 = localStorage 저장분 — 반영은 레이아웃 재빌드 시)
+  // ※ 편집 UI 없음: 개발자 도구나 별도 지시로 값을 넣을 때 세터 경유
+  const [lineConfig, setLineConfig] = useState<LineConfigMap>(INITIAL_LINE_CONFIG);
+  useEffect(() => {
+    try {
+      localStorage.setItem(LINE_CONFIG_KEY, JSON.stringify({ __v: LINE_CONFIG_VERSION, data: lineConfig }));
+    } catch {
+      /* 용량/오류 무시 */
+    }
+  }, [lineConfig]);
   // 이동 가능 위치 하이라이트: 선택 칸이 존재할 때 다른 칸들에 표시
   const canMoveTo = editMode && selectedZones.length > 0;
 
@@ -3806,29 +3970,17 @@ export default function ProductDisplayPage() {
   );
 }
 /* ===== 로케이션 번호 (통로 중심 뱀 모양) ===== */
-/** A동 L1~L6 지그재그 번호 — 통로 중심 뱀 모양
+/** A동 L1~L6 지그재그 번호 — 통로 중심 뱀 모양 (단일 공식: calcZigzagLocNo)
  *  3개 통로 쌍: (1|2)=1~38, (3|4)=39~76, (5|6)=77~114
- *  각 쌍: slot 19(상단)에서 시작, 홀수라인→짝수라인 교차, 아래로 진행
+ *  (1|2): slot 19(상단)에서 시작, 홀수라인→짝수라인 교차, 아래로 진행
  *  예: L1-19=1, L2-19=2, L2-18=3, L1-18=4, L1-17=5, L2-17=6, ...
- *  L3-19=39, L4-19=40, L5-19=77, L6-19=78 */
+ *  (3|4)·(5|6): slot 1에서 낮은 번호 시작 (2026-08-22 사용자 교정)
+ *  예: L3-1=39, L4-1=40, …, L3-19=75, L4-19=76 / L5-1=77, L6-1=78, …, L5-19=113, L6-19=114
+ *  slot > 19 (오버라이드 확장 칸)도 NaN/음수 없이 연속 번호로 확장 */
 function getZigzagLocNo(zoneId: string): number | null {
   const m = zoneId.match(/^A-L(\d)-(\d+)$/);
   if (!m) return null;
-  const line = parseInt(m[1], 10);
-  const slot = parseInt(m[2], 10);
-  if (line < 1 || line > 6 || slot < 1 || slot > 19) return null;
-
-  const pair = Math.floor((line - 1) / 2); // (1|2)=0, (3|4)=1, (5|6)=2
-  // L1|L2: slot 19(상단)에서 시작. L3|L4·L5|L6: slot 1(하단)에서 낮은 번호 시작 (2026-08-22 사용자 교정)
-  const offset = pair === 0 ? 19 - slot : slot - 1;
-  const isOddLine = line % 2 === 1;
-  const oddFirst = offset % 2 === 0; // 홀수라인이 작은 번호?
-
-  if ((isOddLine && oddFirst) || (!isOddLine && !oddFirst)) {
-    return pair * 38 + offset * 2 + 1;
-  } else {
-    return pair * 38 + offset * 2 + 2;
-  }
+  return calcZigzagLocNo(parseInt(m[1], 10), parseInt(m[2], 10));
 }
 
 /** 한 칸에 여러 제품이 있을 때 각 제품의 로케이션 번호 반환
