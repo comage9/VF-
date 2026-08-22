@@ -21,7 +21,6 @@ export const A_RANK_PLACEMENT: Record<string, string> = {
   "A-L1-4": "284",
   "A-L1-3": "170",
   "A-L1-2": "292",
-  "A-L1-1": "34",
   "A-L2-19": "2",
   "A-L2-18": "601",
   "A-L2-17": "6",
@@ -271,7 +270,7 @@ export const A_ZONE_CAT: Record<string, string> = {
   "A-X2-1": "슬림웨건",
 };
 export const A_ZONE_MASTER_NAME: Record<string, string> = {
-  "A-L1-1": "보노하우스 국내제조 템바보드 서랍장 네이비 1개 2단 562mm",
+  "A-L1-1": "모던플러스 내츄럴오크 우드상판형 5단",
   "A-L1-2": "보노하우스 템바보드 서랍장 5단 화이트",
   "A-L1-3": "보노하우스 템바보드 서랍장 5단 모던핑크",
   "A-L1-4": "뉴모던플러스 5단 화이트",
@@ -807,7 +806,7 @@ export const A_ZONE_STOCK: Record<string, number> = {
   "A-X2": 8,
 };
 export const A_ZONE_BARCODE: Record<string, string> = {
-  "A-L1-1": "R243348780002",
+  "A-L1-1": "R003750270003",
   "A-L2-1": "R000150580042",
   "A-L1-2": "R013022860004",
   "A-L2-2": "R205947030002",
