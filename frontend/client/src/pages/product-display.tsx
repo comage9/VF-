@@ -6,7 +6,7 @@
  * - L7: 8칸, 바퀴 슬림 서랍장만 1칸에 2품목씩
  * - 호버 툴팁: 분류(대분류/중분류) + 상세 제품명 + 현재고
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type ReactNode } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -19,7 +19,8 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { Download, RotateCcw, Save, Search } from "lucide-react";
+import { Download, RotateCcw, Save, Search, Upload } from "lucide-react";
+import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -32,6 +33,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   A_RANK_PLACEMENT,
+  A_ZONE_CAT,
   A_SLOT_CONFLICTS,
   A_TOTAL_PRODUCTS,
   A_UNPLACED,
@@ -49,7 +51,7 @@ import { aChainInsert, extractDansu, reorderInZone } from "@/pages/product-displ
 
 const STORAGE_KEY = "vf_product_display_v1";
 /** 배치 데이터 스키마 버전 — v14(A동 전용)는 v15(전 동)로 대체됨: 옛 데이터 무시 */
-const SAVED_VERSION = "rank-a-v25";
+const SAVED_VERSION = "rank-a-v26";
 /** 동적 레이아웃(칸 좌표) 저장 키 */
 const LAYOUT_KEY = "vf_product_display_layout_v1";
 const LAYOUT_VERSION = "layout-v1";
@@ -727,15 +729,10 @@ function loadPlacement(): PlacementMap {
     /* 손상 시 기본값 */
   }
   if (!data) return defaultAPlacement();
-  // 확정 배치표 42칸 = 파일 SoT 강제 (사용자 확정 2026-08-22 재배치)
-  let fixed = false;
-  for (const zid of SOFT_ZONES) {
-    if (data[zid] !== A_RANK_PLACEMENT[zid]) {
-      data[zid] = A_RANK_PLACEMENT[zid];
-      fixed = true;
-    }
-  }
+  // 참고: v25까지만 파일 SoT 강제 — v26부터는 엑셀 업로드가 localStorage를 갱신하므로
+  // SOFT_ZONES 강제 적용을 하지 않음 (2026-08-22 엑셀 왕복 도입).
   // 확정 빈칸(로케이션 38, 43) + 이전 배치 잔존 자리 정리
+  let fixed = false;
   const cleared = [...EMPTY_ZONES,
     "A-L2-1", "A-L3-17", "A-L4-16", "A-L3-16",
     "A-L3-14", "A-L3-15", "A-L4-4", "A-L4-5", "A-L4-6", "A-L5-7",
@@ -1913,7 +1910,7 @@ export default function ProductDisplayPage() {
   };
 
   const persistLocal = (d: PlacementMap) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: "rank-a-v25", data: d }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: "rank-a-v26", data: d }));
   };
   const openAssign = useCallback(
     (zoneId: string) => {
@@ -2001,7 +1998,7 @@ export default function ProductDisplayPage() {
   const saveData = () => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v25", data })
+      JSON.stringify({ __v: "rank-a-v26", data })
     );
     setSaveMsg("저장되었습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
@@ -2021,7 +2018,7 @@ export default function ProductDisplayPage() {
     setData(next);
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v25", data: next })
+      JSON.stringify({ __v: "rank-a-v26", data: next })
     );
     setSaveMsg("A동만 초기화했습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
@@ -2308,6 +2305,160 @@ export default function ProductDisplayPage() {
     a.download = `product_display_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  /* ═══ A동 엑셀 왕복 (2026-08-22) — 다운로드/업로드 ═══ */
+
+  /** 엑셀 다운로드: 현재 localStorage(=state) A동 배치 → "vf 품목 제베치도" 형식
+   *  순위 = 뱀모양 로케이션 번호(1~114) 오름차순, 다품목 칸은 품목당 1행(같은 번호) */
+  const exportExcelA = () => {
+    // A동 정렬된 칸 목록 (물리 순서 — 출력은 번호 정렬이지만 안전용)
+    const aZones = aZonesOf(data);
+    type Row = { no: number; rank: number; cat: string; loc: string; name: string; barcode: string; boxes: number; pn: string };
+    const rows: Row[] = [];
+    for (const zid of aZones) {
+      if (!zid.startsWith("A-")) continue;
+      const val = data[zid];
+      if (!val) continue;
+      const pns = val.split(",").map((s) => s.trim()).filter(Boolean);
+      if (!pns.length) continue;
+      const no = getZigzagLocNo(zid); // L7/X 등 뱀모양 밖 칸은 null → 번호 0
+      const cat = A_ZONE_CAT[zid] || masterMap[pns[0]]?.lg || "";
+      pns.forEach((pn) => {
+        const m = masterMap[pn];
+        rows.push({
+          no: no ?? 0,
+          rank: no ?? 0,
+          cat,
+          loc: pnumToLoc(pn),
+          name: m?.name || "",
+          barcode: m?.barcode || "",
+          boxes: m?.barcode ? calcMonthQty(m.barcode) : 0,
+          pn,
+        });
+      });
+    }
+    rows.sort((a, b) => a.no - b.no || a.loc.localeCompare(b.loc));
+    const aoa: (string | number)[][] = [
+      ["순위_1개월박스", "분류", "로케이션", "제품명", "바코드", "1개월_출고박스", "단수", "로케이션(숫자)", "비고"],
+      ...rows.map((r) => [r.rank, r.cat, r.loc, r.name, r.barcode, r.boxes, extractDansu(r.name), r.no, ""]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "vf 품목 제베치도");
+    const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    XLSX.writeFile(wb, `A동_배치표_${ymd}.xlsx`);
+  };
+
+  /** 엑셀 업로드: 행 순서(로케이션 번호)대로 뱀모양 칸 1,2,3,…에 순차 배치 (A동만)
+   *  - 같은 번호 여러 행 = 한 칸 다품목 → 콤마 병합 (품목 수 제한 없음)
+   *  - 기존에 있었으나 새 파일에 없는 제품 → 📦임시보관함
+   *  - 헤더 불일치 시 아무것도 변경하지 않음 */
+  const applyExcelUploadA = (rows: string[][]) => {
+    // 헤더 검증: 순위_1개월박스 + 로케이션 열 필수
+    const header = rows[0] || [];
+    const idxRank = header.findIndex((h) => String(h ?? "").trim() === "순위_1개월박스");
+    const idxLoc = header.findIndex((h) => String(h ?? "").trim() === "로케이션");
+    if (idxRank < 0 || idxLoc < 0) {
+      window.alert("엑셀 형식이 맞지 않습니다. 첫 줄 헤더에 '순위_1개월박스', '로케이션' 열이 필요합니다. (기준: 시트 'vf 품목 제베치도')");
+      return;
+    }
+    // 데이터 행 파싱 (순위 오름차순 정렬 — 행 순서 보존 정렬)
+    const parsed: { rank: number; pn: string }[] = [];
+    for (const r of rows.slice(1)) {
+      const locStr = String(r[idxLoc] ?? "").trim();
+      const pn = locToPnum(locStr);
+      if (!pn) continue;
+      const rank = parseFloat(String(r[idxRank] ?? ""));
+      parsed.push({ rank: Number.isFinite(rank) ? rank : Number.MAX_SAFE_INTEGER, pn });
+    }
+    if (!parsed.length) {
+      window.alert("적용할 데이터 행이 없습니다. 로케이션(320-…) 값을 확인해주세요.");
+      return;
+    }
+    parsed.sort((a, b) => a.rank - b.rank);
+    // A동 L1~L6 물리 순서 칸 목록 (뱀모양 번호 1,2,3,… = 이 순서)
+    const snake = aSeq.filter((z) => /^A-L[1-6]-\d+$/.test(z));
+    const next: PlacementMap = { ...data };
+    // A동 초기화: L7·X칸 제품은 임시보관함 (엑셀 왕복 범위 = 뱀모양 칸 1~114), 그 외 A칸만 재배치
+    const toStagingX: string[] = [];
+    for (const z of Object.keys(next)) {
+      if (!z.startsWith("A-")) continue;
+      if (z.startsWith("A-L7") || z === "A-X1" || z === "A-X2") {
+        for (const pn of next[z].split(",").map((s) => s.trim()).filter(Boolean)) {
+          if (!toStagingX.includes(pn)) toStagingX.push(pn);
+        }
+      }
+      delete next[z];
+    }
+    let i = 0;
+    for (const n of snake) {
+      if (i >= parsed.length) break;
+      const group: string[] = [parsed[i].pn];
+      const r0 = parsed[i].rank;
+      i++;
+      // 같은 로케이션 번호 행은 한 칸 다품목으로 병합 (제한 없음)
+      while (i < parsed.length && parsed[i].rank === r0) {
+        if (!group.includes(parsed[i].pn)) group.push(parsed[i].pn);
+        i++;
+      }
+      next[n] = group.join(",");
+    }
+    if (i < parsed.length) {
+      window.alert(`A동 칸(114개)을 넘어선 ${parsed.length - i}행은 적용되지 않았습니다.`);
+    }
+    const newPns = new Set(parsed.map((p) => p.pn));
+    // 기존 배치(A동) 중 새 파일에 없는 제품 → 임시보관함 (스테이징 제품은 그대로 유지)
+    const oldPnums = new Set<string>();
+    for (const [zid, val] of Object.entries(data)) {
+      if (!zid.startsWith("A-")) continue;
+      for (const pn of val.split(",").map((s) => s.trim()).filter(Boolean)) oldPnums.add(pn);
+    }
+    // 보관함 이동 대상: 기존 배치(A동) 또는 L7·X에 있었으나 새 파일에 없는 제품
+    const movedToStaging = Array.from(new Set([...oldPnums, ...toStagingX])).filter((pn) => !newPns.has(pn));
+    // 새 파일에 배정된 제품은 임시보관함에서 제거
+    setStaging((s) => {
+      const merged = Array.from(new Set([...s, ...movedToStaging]));
+      return merged.filter((pn) => !newPns.has(pn));
+    });
+    removeCrossDongDupes(next, Array.from(newPns));
+    setData(next);
+    persistLocal(next);
+    setSaveMsg(`✅ 엑셀 업로드 적용: ${newPns.size}개 제품 배치, 보관함 이동 ${movedToStaging.length}개 (v26)`);
+    window.setTimeout(() => setSaveMsg(""), 4000);
+  };
+
+  /** 엑셀 업로드 버튼 핸들러 — 파일 읽기 후 applyExcelUploadA 호출 */
+  const excelInputRef = useRef<HTMLInputElement | null>(null);
+  const onExcelUploadA = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // 같은 파일 재선택 가능하도록 리셋
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target?.result, { type: "array" });
+        const sheetName = wb.SheetNames.includes("vf 품목 제베치도") ? "vf 품목 제베치도" : wb.SheetNames[0];
+        const ws = sheetName ? wb.Sheets[sheetName] : null;
+        if (!ws) {
+          window.alert("시트를 읽을 수 없습니다.");
+          return;
+        }
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as unknown[][];
+        const cleaned = rows.map((r) => (Array.isArray(r) ? r : []).map((c) => String(c ?? "")));
+        // 빈 행 제거 (모든 셀이 빈 문자열)
+        const body = cleaned.filter((r) => r.some((c) => c.trim() !== ""));
+        if (body.length < 2) {
+          window.alert("데이터 행이 없습니다.");
+          return;
+        }
+        applyExcelUploadA(body);
+      } catch {
+        window.alert("엑셀 파일을 읽는 중 오류가 발생했습니다. 파일 형식을 확인해주세요.");
+      }
+    };
+    reader.onerror = () => window.alert("파일을 읽을 수 없습니다.");
+    reader.readAsArrayBuffer(file);
   };
 
   useEffect(() => {
@@ -3072,8 +3223,17 @@ export default function ProductDisplayPage() {
           </Button>
           <Button type="button" variant="secondary" onClick={exportJSON}>
             <Download className="w-4 h-4 mr-1.5" />
-            JSON 내보내기
-          </Button>
+                        JSON 내보내기
+                      </Button>
+                      <Button type="button" className="bg-emerald-600 hover:bg-emerald-700" onClick={exportExcelA} title="현재 A동 배치를 엑셀로 다운로드">
+                        <Download className="w-4 h-4 mr-1.5" />
+                        엑셀 다운로드
+                      </Button>
+                      <Button type="button" className="bg-orange-600 hover:bg-orange-700" onClick={() => excelInputRef.current?.click()} title="엑셀 업로드로 A동 배치 반영">
+                        <Upload className="w-4 h-4 mr-1.5" />
+                        엑셀 업로드
+                      </Button>
+                      <input ref={excelInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={onExcelUploadA} />
           {saveMsg ? (
             <span className="text-sm text-green-700 font-medium">{saveMsg}</span>
           ) : null}
