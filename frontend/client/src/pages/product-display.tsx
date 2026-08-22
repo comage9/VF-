@@ -58,9 +58,11 @@ const LAYOUT_VERSION = "layout-v1";
 /** 임시 보관함(staging) 저장 키 — data와 완전 분리 (사용자 의도적 보관 버퍼) */
 const STAGING_KEY = "vf_product_display_staging_v1";
 const STAGING_VERSION = "staging-v3";
-/** 라인 구성(라인별 칸 수·숨김 슬롯·라벨) 저장 키 — 기본 LineSpec 상수를 오버라이드 (편집 UI 없음: 값 직접 주입) */
+/** 라인 구성(라인별 칸 수·숨김 슬롯·라벨) 저장 키 — 기본 LineSpec 상수를 오버라이드 (편집 패널: 수정 모드 "라인 설정") */
 const LINE_CONFIG_KEY = "vf_pd_line_config_v1";
 const LINE_CONFIG_VERSION = "line-config-v1";
+/** 로컬 마지막 저장 시각 키 — 서버 로드 시 서버판 vs 로컬판 비교 기준 (서버 영속화, 2026-08-23) */
+const SAVEDAT_KEY = "vf_pd_savedat_v1";
 /** 칵투스 11 + 데크 타일 5 — A동 132칸 재배치 시 진열 제외 (2026-08-18) */
 const A_STAGING_DEFAULT: string[] = ["988", "987", "982", "990", "980", "979", "985", "983", "986", "984", "981", "2070", "2074", "2071", "2073", "2072"];
 
@@ -176,6 +178,81 @@ function applyLineOverrides(lines: LineSpec[], overrides: Record<string, LineOve
     }
     return merged;
   });
+}
+
+/** 서버 스냅샷 payload 구조 (고정) — 파싱 실패 시 서버판 무시·로컬 유지 (2026-08-23 서버 영속화) */
+type PdSnapshotPayload = {
+  data: PlacementMap;
+  layout: DongLayout[];
+  lineConfig: LineConfigMap;
+  staging: string[];
+  savedAt: string;
+};
+type PdHistoryItem = { version: number; saved_by: string; created_at: string; size?: number };
+
+/** 서버 스냅샷 payload 파싱 — 유효하지 않으면 null (로컬 유지) */
+function parsePdPayload(payloadStr: string | null | undefined): PdSnapshotPayload | null {
+  if (!payloadStr || typeof payloadStr !== "string") return null;
+  try {
+    const p = JSON.parse(payloadStr);
+    if (!p || typeof p !== "object") return null;
+    if (!p.data || typeof p.data !== "object") return null;
+    if (!Array.isArray(p.layout)) return null;
+    if (!Array.isArray(p.staging)) return null;
+    const lc = (p.lineConfig && typeof p.lineConfig === "object" ? p.lineConfig : {}) as LineConfigMap;
+    return {
+      data: p.data as PlacementMap,
+      layout: p.layout as DongLayout[],
+      lineConfig: lc,
+      staging: (p.staging as unknown[]).filter((x): x is string => typeof x === "string"),
+      savedAt: typeof p.savedAt === "string" ? p.savedAt : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 저장 시각 → "마지막 서버 저장" 헤더 표시용 (오늘=시:분, 다른 날=월/일 시:분) */
+function fmtPdSaved(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return `${hh}:${mm}`;
+  return `${d.getMonth() + 1}/${d.getDate()} ${hh}:${mm}`;
+}
+
+/** A동 zone → (line, slot) — L1~L6는 "A-L{line}-{slot}", L7은 "A-L7-{칸}-{1|2}" (2슬롯=1칸) */
+function aZoneLineSlot(zid: string): { line: number; slot: number } | null {
+  const m7 = /^A-L7-(\d+)-([12])$/.exec(zid);
+  if (m7) return { line: 7, slot: +m7[1] };
+  const m = /^A-L(\d+)-(\d+)$/.exec(zid);
+  if (m) return { line: +m[1], slot: +m[2] };
+  return null;
+}
+
+/** 라인 라벨 텍스트 → 라인 번호 추출 (배지 줄바꿈·"7번 라인 (...)"·"5번" 모두 대응) */
+function parseLineNoFromLabel(text: string): number | null {
+  const t = (text || "").split("\n")[0];
+  let m = /^L(\d+)\b/.exec(t);
+  if (m) return +m[1];
+  m = /^(\d+)번/.exec(t);
+  if (m) return +m[1];
+  return null;
+}
+
+/** 서버 스냅샷 적용 → 4개 로컬 키 동기화 (실패 무시) */
+function writeLocalFromPayload(p: PdSnapshotPayload) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: SAVED_VERSION, data: p.data }));
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify({ __v: LAYOUT_VERSION, layout: p.layout }));
+    localStorage.setItem(STAGING_KEY, JSON.stringify({ __v: STAGING_VERSION, items: p.staging }));
+    localStorage.setItem(LINE_CONFIG_KEY, JSON.stringify({ __v: LINE_CONFIG_VERSION, data: p.lineConfig }));
+    if (p.savedAt) localStorage.setItem(SAVEDAT_KEY, p.savedAt);
+  } catch {
+    /* 저장 실패 무시 */
+  }
 }
 
 /** 통로 중심 뱀 모양 로케이션 번호 공식 — A동 L1~L6 지그재그 (빌더·툴팁 단일 구현).
@@ -978,7 +1055,7 @@ export default function ProductDisplayPage() {
   const [movePnum, setMovePnum] = useState<string | null>(null); // 자리이탈 품목 이동 모드 (클릭한 칸으로 배치)
   const [saveMsg, setSaveMsg] = useState("");
   // 총괄 우측 패널: 배치/미배치 대분류별 목록 + 선택 상세
-  const [panelTab, setPanelTab] = useState<"placed" | "unplaced" | "overflow" | "staging" | "noout3m">("placed");
+  const [panelTab, setPanelTab] = useState<"placed" | "unplaced" | "overflow" | "staging" | "noout3m" | "server">("placed");
   const [openLg, setOpenLg] = useState<string | null>(null); // 분류 아코디언 (null=전부 접힘)
   const [selPnum, setSelPnum] = useState<string | null>(null);
   const [selZone, setSelZone] = useState<string | null>(null);
@@ -1074,7 +1151,7 @@ export default function ProductDisplayPage() {
     }
   }, [staging]);
   // 라인 구성 오버라이드 (초기값 = localStorage 저장분 — 반영은 레이아웃 재빌드 시)
-  // ※ 편집 UI 없음: 개발자 도구나 별도 지시로 값을 넣을 때 세터 경유
+  // ※ 편집 패널: 수정 모드 우측 "라인 설정" (2026-08-23)
   const [lineConfig, setLineConfig] = useState<LineConfigMap>(INITIAL_LINE_CONFIG);
   useEffect(() => {
     try {
@@ -1083,6 +1160,337 @@ export default function ProductDisplayPage() {
       /* 용량/오류 무시 */
     }
   }, [lineConfig]);
+
+  // ═══ 서버 영속화 (2026-08-23) — 4개 상태 통합 스냅샷, 2초 디바운스 POST ═══
+  const [serverVersion, setServerVersion] = useState<number | null>(null);
+  const [serverSyncError, setServerSyncError] = useState(false); // 3회 재시도 실패 → 헤더 경고
+  const [serverRetrying, setServerRetrying] = useState(false);
+  const [conflictInfo, setConflictInfo] = useState<{ serverVersion: number; serverPayload: PdSnapshotPayload | null } | null>(null);
+  const [lastServerSave, setLastServerSave] = useState<{ at: string; by: string } | null>(null);
+  const [historyList, setHistoryList] = useState<PdHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [lineConfigPanelOpen, setLineConfigPanelOpen] = useState(false);
+  // 라인 설정 편집 입력값 (적용 버튼으로 lineConfig에 반영)
+  const [lcSelDong, setLcSelDong] = useState<"A" | "B" | "C" | "D">("A");
+  const [lcSelLine, setLcSelLine] = useState("1");
+  const [lcCount, setLcCount] = useState("");
+  const [lcBadge, setLcBadge] = useState("");
+  const [lcHidden, setLcHidden] = useState<Set<number>>(new Set());
+  const [lcHiddenInput, setLcHiddenInput] = useState("");
+  const serverVerRef = useRef<number | null>(null); // forceSave 등 비동기 경로에서 최신 버전 조회용
+  const pdSyncTimer = useRef<number | null>(null);
+  const serverRestoreRef = useRef(false); // 서버판 적용 시 4개 useEffect → echo 저장 1회 스킵
+  const pdEchoGuardRef = useRef(false); // 서버판 적용 직후 디바운스 저장 1회 스킵 (불필요 버전 증가 방지)
+  const snapshotRef = useRef<PdSnapshotPayload | null>(null); // 즉시 저장(복원·충돌)용 최신 스냅샷 캐시
+
+  /** 최신 4개 상태 → 통합 스냅샷 (저장 직전 시각 갱신) */
+  const buildSnapshot = useCallback((): PdSnapshotPayload => {
+    const snap: PdSnapshotPayload = {
+      data,
+      layout: layoutState,
+      lineConfig,
+      staging,
+      savedAt: new Date().toISOString(),
+    };
+    snapshotRef.current = snap;
+    try {
+      localStorage.setItem(SAVEDAT_KEY, snap.savedAt);
+    } catch {
+      /* 무시 */
+    }
+    return snap;
+  }, [data, layoutState, lineConfig, staging]);
+
+  /** 서버 저장 (낙관적 락) — 409: 충돌 배너 / 네트워크 실패: 재시도·경고 */
+  const pdSaveToServer = useCallback(
+    async (snap: PdSnapshotPayload, baseVersion: number | null, force: boolean) => {
+      const body: { payload: string; saved_by: string; base_version?: number } = {
+        payload: JSON.stringify(snap),
+        saved_by: "browser",
+      };
+      if (baseVersion != null) body.base_version = baseVersion;
+      try {
+        const resp = await fetch("/api/product-display", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (resp.status === 409) {
+          let latest: { version?: number; payload?: string } | null = null;
+          try {
+            const j = await resp.json();
+            latest = j?.latest ?? null;
+          } catch {
+            /* 본문 파싱 실패 무시 */
+          }
+          setConflictInfo({
+            serverVersion: typeof latest?.version === "number" ? latest.version : -1,
+            serverPayload: parsePdPayload(latest?.payload),
+          });
+          setServerSyncError(false);
+          return;
+        }
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const j = await resp.json();
+        if (typeof j?.version === "number") {
+          serverVerRef.current = j.version;
+          setServerVersion(j.version);
+        }
+        setServerSyncError(false);
+        setConflictInfo(null);
+        setLastServerSave({ at: snap.savedAt, by: "browser" });
+      } catch {
+        if (!force) {
+          // 네트워크 실패 → 3회 재시도 (0.5초 간격)
+          for (let i = 0; i < 3; i++) {
+            await new Promise((r) => window.setTimeout(r, 500));
+            try {
+              const resp = await fetch("/api/product-display", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+              });
+              if (resp.status === 409) {
+                let latest: { version?: number; payload?: string } | null = null;
+                try {
+                  const jj = await resp.json();
+                  latest = jj?.latest ?? null;
+                } catch {
+                  /* 무시 */
+                }
+                setConflictInfo({
+                  serverVersion: typeof latest?.version === "number" ? latest.version : -1,
+                  serverPayload: parsePdPayload(latest?.payload),
+                });
+                setServerSyncError(false);
+                return;
+              }
+              if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+              const jj = await resp.json();
+              if (typeof jj?.version === "number") {
+                serverVerRef.current = jj.version;
+                setServerVersion(jj.version);
+              }
+              setServerSyncError(false);
+              setLastServerSave({ at: snap.savedAt, by: "browser" });
+              return;
+            } catch {
+              /* 다음 재시도로 */
+            }
+          }
+        }
+        setServerSyncError(true); // ⚠ 서버 미동기(로컬 전용)
+      }
+    },
+    []
+  );
+
+  /** 변경 감지 → 2초 디바운스 후 서버 저장 (localStorage 자동 저장은 별도 유지) */
+  const scheduleServerSave = useCallback(() => {
+    if (serverRestoreRef.current) return; // 서버판 적용 중 echo 저장 스킵
+    if (pdEchoGuardRef.current) {
+      // 서버판 적용 직후 첫 변경은 복원 자체의 반영 — 저장 스킵 (불필요 버전 증가 방지)
+      pdEchoGuardRef.current = false;
+      return;
+    }
+    if (pdSyncTimer.current != null) window.clearTimeout(pdSyncTimer.current);
+    pdSyncTimer.current = window.setTimeout(() => {
+      pdSyncTimer.current = null;
+      void pdSaveToServer(buildSnapshot(), serverVerRef.current, false);
+    }, 2000);
+  }, [buildSnapshot, pdSaveToServer]);
+
+  /** 대기 중인 저장을 즉시 실행 (복원 전 자동 저장·수동 재시도·충돌 덮어쓰기) */
+  const pdFlushNow = useCallback(
+    async (force = false) => {
+      if (pdSyncTimer.current != null) {
+        window.clearTimeout(pdSyncTimer.current);
+        pdSyncTimer.current = null;
+      }
+      await pdSaveToServer(buildSnapshot(), serverVerRef.current, force);
+    },
+    [buildSnapshot, pdSaveToServer]
+  );
+
+  /** 서버판(스냅샷) → 4개 상태 + 로컬 키 동기화 (에코 저장 스킵 + 버전/시각 반영) */
+  const applyServerPayload = useCallback((p: PdSnapshotPayload, version?: number, meta?: { at?: string; by?: string }) => {
+    serverRestoreRef.current = true;
+    pdEchoGuardRef.current = true;
+    setData(p.data);
+    setLayoutState(p.layout);
+    setLineConfig(p.lineConfig);
+    setStaging(p.staging);
+    writeLocalFromPayload(p);
+    if (typeof version === "number") {
+      serverVerRef.current = version;
+      setServerVersion(version);
+    }
+    if (meta?.at) setLastServerSave({ at: meta.at, by: meta.by || "server" });
+  }, []);
+
+  // 4개 상태 변경 → 서버 동기 저장 스케줄 (스킵 플래그는 서버판 적용 직후 1회)
+  useEffect(() => {
+    if (serverRestoreRef.current) {
+      serverRestoreRef.current = false;
+      return;
+    }
+    scheduleServerSave();
+  }, [data, layoutState, lineConfig, staging, scheduleServerSave]);
+
+  /** 초기 로드·시드 — 서버판이 더 최신이면 복원, 없으면 로컬 상태 시드 업로드 */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let latest: { found?: boolean; version?: number; payload?: string; saved_by?: string; created_at?: string } | null = null;
+      try {
+        const resp = await fetch("/api/product-display/latest");
+        if (resp.ok) latest = await resp.json();
+      } catch {
+        if (!cancelled) setServerSyncError(true);
+        return;
+      }
+      if (cancelled) return;
+      if (!latest) return;
+      if (latest.found) {
+        if (typeof latest.version === "number") {
+          serverVerRef.current = latest.version;
+          setServerVersion(latest.version);
+        }
+        if (latest.created_at) setLastServerSave({ at: latest.created_at, by: latest.saved_by || "server" });
+        const localSavedAt = localStorage.getItem(SAVEDAT_KEY) || "";
+        const serverT = Date.parse(latest.created_at || "");
+        const localT = Date.parse(localSavedAt);
+        const serverNewer = Number.isNaN(localT) || (!Number.isNaN(serverT) && serverT > localT);
+        if (serverNewer) {
+          const p = parsePdPayload(latest.payload);
+          if (p) {
+            applyServerPayload(p, typeof latest.version === "number" ? latest.version : undefined, {
+              at: latest.created_at,
+              by: latest.saved_by,
+            });
+            setSaveMsg("✅ 서버 버전 불러옴");
+            window.setTimeout(() => setSaveMsg(""), 2000);
+          } else {
+            // 파싱 실패 → 서버판 무시·로컬 유지 (경고만)
+            setSaveMsg("⚠ 서버 데이터 파싱 실패 — 로컬 유지");
+            window.setTimeout(() => setSaveMsg(""), 3000);
+          }
+        }
+        return;
+      }
+      // found=false → 현재 로컬 상태를 최초 업로드(시드) — 실패 시 재시도/경고 로직 재사용
+      void pdSaveToServer(buildSnapshot(), null, false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** 충돌 처리: 서버판 적용 (4개 상태 복원 + 로컬 키 동기화) */
+  const pdApplyServer = () => {
+    const c = conflictInfo;
+    setConflictInfo(null);
+    if (!c || !c.serverPayload) {
+      // 서버판 재조회 시도
+      void (async () => {
+        try {
+          const resp = await fetch("/api/product-display/latest");
+          if (!resp.ok) return;
+          const j = await resp.json();
+          if (!j?.found) return;
+          const p = parsePdPayload(j.payload);
+          if (!p) return;
+          applyServerPayload(p, typeof j.version === "number" ? j.version : undefined, {
+            at: j.created_at ?? p.savedAt,
+            by: j.saved_by || "server",
+          });
+          setSaveMsg("✅ 서버판 적용됨");
+          window.setTimeout(() => setSaveMsg(""), 2000);
+        } catch {
+          /* 재조회 실패 무시 */
+        }
+      })();
+      return;
+    }
+    applyServerPayload(c.serverPayload, c.serverVersion >= 0 ? c.serverVersion : undefined);
+    setSaveMsg("✅ 서버판 적용됨");
+    window.setTimeout(() => setSaveMsg(""), 2000);
+  };
+
+  /** 충돌 처리: 내 것으로 덮어쓰기 (base_version 생략 강제 저장) */
+  const pdOverwrite = () => {
+    setConflictInfo(null);
+    void pdSaveToServer(buildSnapshot(), null, true);
+  };
+
+  /** 히스토리 목록 조회 (서버 버전 탭) */
+  const pdLoadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const resp = await fetch("/api/product-display/history");
+      if (resp.ok) {
+        const j = await resp.json();
+        setHistoryList(Array.isArray(j?.history) ? j.history : []);
+      }
+    } catch {
+      /* 조회 실패 시 목록 유지 */
+    }
+    setHistoryLoading(false);
+  }, []);
+
+  /** 서버 버전 복원 — 적용 전 현재 상태를 즉시 저장(되돌리기 가능), 404 → 토스트 */
+  const pdRestoreVersion = async (version: number) => {
+    if (!window.confirm(`버전 ${version}을(를) 복원할까요? (현재 상태는 먼저 저장됩니다)`)) return;
+    await pdFlushNow(true); // 적용 전 현재 상태 즉시 서버 저장
+    try {
+      const resp = await fetch("/api/product-display/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ version, saved_by: "restore" }),
+      });
+      if (resp.status === 404) {
+        setSaveMsg("⚠ 삭제된 버전입니다");
+        window.setTimeout(() => setSaveMsg(""), 3000);
+        void pdLoadHistory();
+        return;
+      }
+      if (!resp.ok) {
+        setSaveMsg("⚠ 복원 실패 — 잠시 후 다시 시도하세요");
+        window.setTimeout(() => setSaveMsg(""), 3000);
+        return;
+      }
+      const j = await resp.json();
+      if (typeof j?.version === "number") {
+        serverVerRef.current = j.version;
+        setServerVersion(j.version);
+      }
+      // 복원된 내용 로드
+      const resp2 = await fetch("/api/product-display/latest");
+      if (!resp2.ok) return;
+      const j2 = await resp2.json();
+      const p = parsePdPayload(j2?.payload);
+      if (!p) {
+        setSaveMsg("⚠ 복원 데이터 파싱 실패 — 로컬 유지");
+        window.setTimeout(() => setSaveMsg(""), 3000);
+        return;
+      }
+      applyServerPayload(p, typeof j2?.version === "number" ? j2.version : undefined, {
+        at: j2?.created_at ?? p.savedAt,
+        by: j2?.saved_by || "restore",
+      });
+      setSaveMsg(`✅ 버전 ${version} 복원 완료 (새 버전 ${j?.version})`);
+      window.setTimeout(() => setSaveMsg(""), 3000);
+      void pdLoadHistory();
+    } catch {
+      setSaveMsg("⚠ 복원 실패 — 네트워크 확인");
+      window.setTimeout(() => setSaveMsg(""), 3000);
+    }
+  };
+
+  /** 헤더 "마지막 서버 저장" 표시용 텍스트 */
+  const lastServerSaveText = lastServerSave ? `${fmtPdSaved(lastServerSave.at)} (${lastServerSave.by})` : "";
+
   // 이동 가능 위치 하이라이트: 선택 칸이 존재할 때 다른 칸들에 표시
   const canMoveTo = editMode && selectedZones.length > 0;
 
@@ -1968,6 +2376,177 @@ export default function ProductDisplayPage() {
         };
       })
     );
+  };
+
+  // ═══ 라인 삭제·재배열 (2026-08-23, 수정 모드) ═══
+  /** 라인 삭제: 해당 라인 칸의 제품 전부 임시보관함 이관 + 레이아웃에서 제거 (삭제 전 confirm) */
+  const deleteLine = (lineNo: number) => {
+    const d = layoutState.find((x) => x.key === dong);
+    if (!d) return;
+    const lineZoneIds = d.zones.filter((z) => z.line === lineNo).map((z) => z.id);
+    if (lineZoneIds.length === 0) return;
+    const prodCount = lineZoneIds.reduce((n, zid) => {
+      const v = data[zid];
+      return n + (v ? v.split(",").map((s) => s.trim()).filter(Boolean).length : 0);
+    }, 0);
+    if (
+      !window.confirm(
+        `${dong}동 ${lineNo}번 라인을 삭제할까요?\n칸 ${lineZoneIds.length}개${prodCount > 0 ? `, 제품 ${prodCount}개는 임시보관함으로 이동합니다.` : ""}`
+      )
+    )
+      return;
+    // 라인 내 제품 → 임시보관함 이관 (중복 제거)
+    const toStage: string[] = [];
+    for (const zid of lineZoneIds) {
+      const v = data[zid];
+      if (!v) continue;
+      for (const pn of v.split(",").map((s) => s.trim()).filter(Boolean)) {
+        if (!toStage.includes(pn)) toStage.push(pn);
+      }
+    }
+    if (toStage.length) setStaging((s) => Array.from(new Set([...s, ...toStage])));
+    setData((prev) => {
+      const next = { ...prev };
+      for (const zid of lineZoneIds) delete next[zid];
+      persistLocal(next);
+      return next;
+    });
+    setLayoutState((prev) =>
+      prev.map((x) => {
+        if (x.key !== dong) return x;
+        return {
+          ...x,
+          zones: x.zones.filter((z) => z.line !== lineNo),
+          lineLabels: x.lineLabels.filter((lb) => parseLineNoFromLabel(lb.text) !== lineNo),
+        };
+      })
+    );
+    setSaveMsg(`🗑 ${lineNo}번 라인 삭제${prodCount > 0 ? ` — 제품 ${prodCount}개 임시보관함 이관` : ""}`);
+    window.setTimeout(() => setSaveMsg(""), 2500);
+  };
+
+  /** 라인 좌우 재배열: 두 라인의 칸 좌표(좌우) 교환 — 라인 내 상하 간격·순서 유지 */
+  const swapLines = (lineA: number, lineB: number) => {
+    const d = layoutState.find((x) => x.key === dong);
+    if (!d || lineA === lineB) return;
+    const la = d.zones.filter((z) => z.line === lineA);
+    const lb = d.zones.filter((z) => z.line === lineB);
+    if (!la.length || !lb.length) return;
+    const leftOf = (z: ZoneDef) => Number(z.style.left ?? 0);
+    const topOf = (z: ZoneDef) => Number(z.style.top ?? 0);
+    // 각 라인의 좌측 정렬 기준 + 폭 (교환 후 간격 일관성 유지)
+    const laLeft = Math.min(...la.map(leftOf));
+    const lbLeft = Math.min(...lb.map(leftOf));
+    const laW = Math.max(...la.map((z) => leftOf(z) + Number(z.style.width ?? SLOT.w))) - laLeft;
+    const lbW = Math.max(...lb.map((z) => leftOf(z) + Number(z.style.width ?? SLOT.w))) - lbLeft;
+    const newLeftOf = (z: ZoneDef) =>
+      z.line === lineA ? lbLeft + (leftOf(z) - laLeft) : laLeft + (leftOf(z) - lbLeft);
+    // 폭 차이 보정: 좁은 라인 기준 중앙 정렬
+    const adjust = (z: ZoneDef, srcW: number, dstW: number) => newLeftOf(z) + Math.max(0, (dstW - srcW) / 2);
+    setLayoutState((prev) =>
+      prev.map((x) => {
+        if (x.key !== dong) return x;
+        return {
+          ...x,
+          zones: x.zones.map((z) => {
+            if (z.line === lineA) return { ...z, style: { ...z.style, left: adjust(z, laW, lbW), top: topOf(z) } };
+            if (z.line === lineB) return { ...z, style: { ...z.style, left: adjust(z, lbW, laW), top: topOf(z) } };
+            return z;
+          }),
+        };
+      })
+    );
+    setSaveMsg(`↔ ${lineA}번 ↔ ${lineB}번 라인 순서 교환`);
+    window.setTimeout(() => setSaveMsg(""), 2000);
+  };
+
+  /** 라인의 좌/우 이웃 라인 탐색 (라벨 좌표 기준) — 없으면 null */
+  const findAdjacentLine = (lineNo: number, dir: -1 | 1): number | null => {
+    const d = layoutState.find((x) => x.key === dong);
+    if (!d) return null;
+    const lines = [...new Set(d.zones.filter((z) => z.line >= 1).map((z) => z.line))];
+    const leftOfLine = (ln: number) => Math.min(...d.zones.filter((z) => z.line === ln).map((z) => Number(z.style.left ?? 0)));
+    const src = leftOfLine(lineNo);
+    let best: number | null = null;
+    let bestDist = Infinity;
+    for (const ln of lines) {
+      if (ln === lineNo) continue;
+      const delta = (leftOfLine(ln) - src) * dir;
+      if (delta > 0 && delta < bestDist) {
+        bestDist = delta;
+        best = ln;
+      }
+    }
+    return best;
+  };
+
+  // ═══ 라인 설정 편집 (LineOverride UI, 2026-08-23) ═══
+  /** 동·라인 선택 시 현재 오버라이드 값을 입력란에 로드 */
+  const lcLoad = (dk: "A" | "B" | "C" | "D", lineKey: string) => {
+    const ov = lineConfig[dk]?.[lineKey];
+    setLcCount(ov?.count != null ? String(ov.count) : "");
+    setLcBadge(ov?.badge ?? "");
+    setLcHidden(new Set(ov?.hiddenSlots ?? []));
+    setLcHiddenInput("");
+  };
+
+  /** 입력란 → LineOverride 객체 (빈 값은 필드 미포함) */
+  const buildOverrideFromInputs = (): LineOverride => {
+    const ov: LineOverride = {};
+    const cnt = parseInt(lcCount, 10);
+    if (Number.isFinite(cnt) && cnt >= 1) ov.count = cnt;
+    const trimmedBadge = lcBadge.trim();
+    if (trimmedBadge) ov.badge = trimmedBadge;
+    if (lcHidden.size > 0) ov.hiddenSlots = [...lcHidden].sort((a, b) => a - b);
+    return ov;
+  };
+
+  /** 적용: 입력값 → lineConfig 상태 (기존 applyLineOverrides 경유 반영 + 서버 스냅샷 포함) */
+  const lcApply = () => {
+    const dk = lcSelDong;
+    const lineKey = lcSelLine;
+    const ov = buildOverrideFromInputs();
+    const mergeInto = (base: LineConfigMap): LineConfigMap => {
+      const dongCfg = { ...(base[dk] ?? {}) };
+      if (Object.keys(ov).length === 0) delete dongCfg[lineKey];
+      else dongCfg[lineKey] = ov;
+      return { ...base, [dk]: dongCfg };
+    };
+    setLineConfig(mergeInto);
+    // A동은 오버라이드 반영 레이아웃 재빌드 (존재 유지 칸은 드래그 위치 보존, 새 칸은 계산 위치)
+    if (dk === "A") {
+      const rebuilt = buildAllDongLayouts(mergeInto(lineConfig));
+      setLayoutState((prev) =>
+        prev.map((d) => {
+          if (d.key !== "A") return d;
+          const oldPos = new Map(d.zones.map((z) => [z.id, { left: z.style.left, top: z.style.top }]));
+          const zones = rebuilt.A.zones.map((z) => {
+            const old = oldPos.get(z.id);
+            return old ? { ...z, style: { ...z.style, left: old.left, top: old.top } } : z;
+          });
+          return { ...d, ...rebuilt.A, zones };
+        })
+      );
+    }
+    setSaveMsg(`✅ 라인 설정 적용: ${dk}동 ${lineKey}번`);
+    window.setTimeout(() => setSaveMsg(""), 2000);
+  };
+
+  /** 숨김 슬롯 입력값 파싱 (콤마·공백·하이픈 구간 "3-5" 지원) → Set */
+  const parseHiddenInput = (txt: string): Set<number> => {
+    const out = new Set<number>();
+    for (const part of txt.split(/[,\s]+/).filter(Boolean)) {
+      const range = /^(\d+)\s*-\s*(\d+)$/.exec(part);
+      if (range) {
+        const a = +range[1];
+        const b = +range[2];
+        for (let n = Math.min(a, b); n <= Math.max(a, b); n++) out.add(n);
+        continue;
+      }
+      const n = parseInt(part, 10);
+      if (Number.isFinite(n) && n >= 1) out.add(n);
+    }
+    return out;
   };
 
   // 수정 모드 셀 클릭: 선택 없음 → 선택 / 선택 칸 → 해제 / 다른 칸(1개 선택 시) → 슬롯 좌표 이동
@@ -2894,6 +3473,18 @@ export default function ProductDisplayPage() {
         >
           🚫 3개월 미출고 ({noOut3mRows.length})
         </button>
+        <button
+          type="button"
+          onClick={() => { setPanelTab("server"); setOpenLg(null); setSelPnum(null); setSelZone(null); setMovePnum(null); void pdLoadHistory(); }}
+          className={
+            "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
+            (panelTab === "server"
+              ? "bg-indigo-600 text-white"
+              : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100")
+          }
+        >
+          🗄 서버 버전{serverVersion != null ? ` (v${serverVersion})` : ""}
+        </button>
       </div>
       {panelTab === "staging" ? (
         <StagingPanel staging={staging} onClear={clearStaging} onRemove={stagingToUnplaced} editMode={editMode} masterMap={masterMap} openLg={openLg} onToggle={(lg) => setOpenLg(openLg === lg ? null : lg)} />
@@ -3042,12 +3633,54 @@ export default function ProductDisplayPage() {
           A동 · 지그재그 배치(1-1=1, 2-1=2) · 동일 분류 묶음 ·
           7번=슬림서랍장 위주+칵투스(1칸 1품목) · A-X1/2=2품목 · 호버 시 분류·제품명·재고 표시
         </p>
-        <p className="text-base font-bold text-slate-800 mb-3">
-          배치 {placedPnums.size} / {A_TOTAL_PRODUCTS}
-          <span className="text-sm font-bold text-red-600 ml-2">
-            미배치 {unplaced.length}
+        <p className="text-base font-bold text-slate-800 mb-3 flex items-center justify-between gap-2 flex-wrap">
+          <span>
+            배치 {placedPnums.size} / {A_TOTAL_PRODUCTS}
+            <span className="text-sm font-bold text-red-600 ml-2">
+              미배치 {unplaced.length}
+            </span>
+          </span>
+          {/* 서버 저장 상태 (2026-08-23 서버 영속화) */}
+          <span className="flex items-center gap-2 text-xs font-normal">
+            {serverSyncError && (
+              <>
+                <span className="text-red-600 font-semibold">⚠ 서버 미동기(로컬 전용)</span>
+                <button
+                  type="button"
+                  className="rounded border border-red-300 bg-red-50 px-2 py-0.5 font-semibold text-red-700 hover:bg-red-100"
+                  disabled={serverRetrying}
+                  onClick={() => {
+                    setServerRetrying(true);
+                    void pdFlushNow(true).finally(() => setServerRetrying(false));
+                  }}
+                >
+                  {serverRetrying ? "재시도 중..." : "재시도"}
+                </button>
+              </>
+            )}
+            {lastServerSaveText && (
+              <span className="text-slate-500">마지막 서버 저장: {lastServerSaveText}</span>
+            )}
           </span>
         </p>
+
+        {/* 충돌 배너 (낙관적 락 409) */}
+        {conflictInfo && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-orange-300 bg-orange-50 px-3 py-2">
+            <span className="text-xs font-semibold text-orange-800">
+              ⚠ 충돌 발생 — 다른 브라우저에서 새 버전{conflictInfo.serverVersion >= 0 ? `(버전 ${conflictInfo.serverVersion})` : ""}이 저장되었습니다.
+            </span>
+            <button type="button" className="rounded bg-orange-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-orange-700" onClick={pdApplyServer}>
+              서버판 적용
+            </button>
+            <button type="button" className="rounded border border-orange-400 bg-white px-2.5 py-1 text-xs font-bold text-orange-700 hover:bg-orange-100" onClick={pdOverwrite}>
+              내 것으로 덮어쓰기
+            </button>
+            <button type="button" className="rounded px-1.5 py-1 text-xs text-orange-500 hover:text-orange-700" onClick={() => setConflictInfo(null)}>
+              닫기
+            </button>
+          </div>
+        )}
 
         {/* 제품 위치 검색: 제품명 / 로케이션 / 제품번호 / 바코드 */}
         <div className="relative mb-3">
