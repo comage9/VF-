@@ -49,7 +49,7 @@ import { aChainInsert, extractDansu, reorderInZone } from "@/pages/product-displ
 
 const STORAGE_KEY = "vf_product_display_v1";
 /** 배치 데이터 스키마 버전 — v14(A동 전용)는 v15(전 동)로 대체됨: 옛 데이터 무시 */
-const SAVED_VERSION = "rank-a-v23";
+const SAVED_VERSION = "rank-a-v24";
 /** 동적 레이아웃(칸 좌표) 저장 키 */
 const LAYOUT_KEY = "vf_product_display_layout_v1";
 const LAYOUT_VERSION = "layout-v1";
@@ -707,20 +707,10 @@ const DONG_LAYOUTS: DongLayout[] = [
   },
 ];
 
-/** 자동 교정 대상 zone — 모던플러스 25 + 로코스 21 (파일 SoT 강제) */
-const SOFT_ZONES = [
-  // 모던플러스 25 (loc 1~25)
-  "A-L1-19", "A-L2-19", "A-L2-18", "A-L1-18", "A-L1-17",
-  "A-L2-17", "A-L2-16", "A-L1-16", "A-L1-15", "A-L2-15",
-  "A-L2-14", "A-L1-14", "A-L1-13", "A-L2-13", "A-L2-12",
-  "A-L1-12", "A-L1-11", "A-L2-11", "A-L2-10", "A-L1-10",
-  "A-L1-9", "A-L2-9", "A-L2-8", "A-L1-8", "A-L1-7",
-  // 로코스 21 (loc 26~46)
-  "A-L2-7", "A-L2-6", "A-L1-6", "A-L1-5", "A-L2-5",
-  "A-L2-4", "A-L1-4", "A-L1-3", "A-L2-3", "A-L2-2",
-  "A-L1-2", "A-L1-1", "A-L2-1", "A-L3-19", "A-L4-19",
-  "A-L4-18", "A-L3-18", "A-L3-17", "A-L4-17", "A-L4-16", "A-L3-16",
-];
+/** 자동 교정 대상 zone — 사용자 확정 배치표 42칸 (loc 1~44, 38/43 빈칸) — 파일 SoT 강제 */
+const SOFT_ZONES = ["A-L1-19", "A-L2-19", "A-L2-18", "A-L1-18", "A-L1-17", "A-L2-17", "A-L2-16", "A-L1-16", "A-L1-15", "A-L2-15", "A-L2-14", "A-L1-14", "A-L1-13", "A-L2-13", "A-L2-12", "A-L1-12", "A-L1-11", "A-L2-11", "A-L2-10", "A-L1-10", "A-L1-9", "A-L2-9", "A-L2-8", "A-L1-8", "A-L1-7", "A-L2-7", "A-L2-6", "A-L1-6", "A-L1-5", "A-L2-5", "A-L2-4", "A-L1-4", "A-L1-3", "A-L2-3", "A-L2-2", "A-L1-2", "A-L1-1", "A-L3-19", "A-L4-19", "A-L4-18", "A-L3-18", "A-L4-17"];
+/** 확정 빈칸 (배치표에서 비운 자리) */
+const EMPTY_ZONES = ["A-L2-1", "A-L3-17"];
 
 function loadPlacement(): PlacementMap {
   let data: PlacementMap | null = null;
@@ -737,7 +727,7 @@ function loadPlacement(): PlacementMap {
     /* 손상 시 기본값 */
   }
   if (!data) return defaultAPlacement();
-  // 모던플러스 25칸 + 로코스 21칸 = 파일 SoT 강제 (바코드 기준 제품번호 — 옛 값 교정)
+  // 확정 배치표 42칸 = 파일 SoT 강제 (사용자 확정 2026-08-22 재배치)
   let fixed = false;
   for (const zid of SOFT_ZONES) {
     if (data[zid] !== A_RANK_PLACEMENT[zid]) {
@@ -745,25 +735,25 @@ function loadPlacement(): PlacementMap {
       fixed = true;
     }
   }
-  // 로코스 이동: 옛 자리 14곳은 빈 칸 (파일에서 삭제됨 — 잔존값 제거)
-  const ROCOS_OLD_ZONES = [
+  // 확정 빈칸(로케이션 38, 43) + 이전 배치 잔존 자리 정리
+  const cleared = [...EMPTY_ZONES,
+    "A-L2-1", "A-L3-17", "A-L4-16", "A-L3-16",
     "A-L3-14", "A-L3-15", "A-L4-4", "A-L4-5", "A-L4-6", "A-L5-7",
     "A-L4-10", "A-L4-13", "A-L4-8", "A-L4-9", "A-L4-11",
-    "A-L4-1", "A-L4-2", "A-L4-7",
-  ];
-  for (const zid of ROCOS_OLD_ZONES) {
-    if (data[zid]) {
+    "A-L4-1", "A-L4-2", "A-L4-7", "A-L4-19", "A-L4-18", "A-L3-18"];
+  for (const zid of cleared) {
+    if (data[zid] && !SOFT_ZONES.includes(zid)) {
       delete data[zid];
       fixed = true;
     }
   }
-  // 로코스 이동으로 밀려난 기존 제품 4개 → 임시보관함으로 이관
-  const bumped = ["695", "692", "690", "2146"];
+  // 재배치로 배치에서 빠진 제품 → 임시보관함 이관 (614,17,285,289,268,173)
+  const bumped = ["614", "17", "285", "289", "268", "173"];
   for (const pn of bumped) {
     for (const [zid, v] of Object.entries(data)) {
       if (!v) continue;
       const parts = v.split(",").map((s) => s.trim()).filter(Boolean);
-      if (parts.includes(pn) && !SOFT_ZONES.includes(zid)) {
+      if (parts.includes(pn)) {
         const next = parts.filter((p) => p !== pn).join(",");
         if (next) data[zid] = next;
         else delete data[zid];
@@ -1923,7 +1913,7 @@ export default function ProductDisplayPage() {
   };
 
   const persistLocal = (d: PlacementMap) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: "rank-a-v23", data: d }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: "rank-a-v24", data: d }));
   };
   const openAssign = useCallback(
     (zoneId: string) => {
@@ -2011,7 +2001,7 @@ export default function ProductDisplayPage() {
   const saveData = () => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v23", data })
+      JSON.stringify({ __v: "rank-a-v24", data })
     );
     setSaveMsg("저장되었습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
@@ -2031,7 +2021,7 @@ export default function ProductDisplayPage() {
     setData(next);
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v23", data: next })
+      JSON.stringify({ __v: "rank-a-v24", data: next })
     );
     setSaveMsg("A동만 초기화했습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
