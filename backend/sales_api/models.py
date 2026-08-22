@@ -812,3 +812,21 @@ class OutboundAnalysis(models.Model):
     
     def __str__(self):
         return f"{self.date} ({self.period})"
+
+# ============================================================
+# 제품배치도 서버 영속화 (2026-08-23, 계획: 제품배치도-서버영속화-계획-20260823)
+# ============================================================
+class ProductDisplaySnapshot(models.Model):
+    """제품배치도 스냅샷 (버전별 저장, 20개 초과 시 자동 정리)"""
+    version = models.IntegerField(db_index=True, unique=True)  # 저장 시 max(version)+1 계산
+    payload = models.TextField()  # JSON 문자열: {"data","layout","lineConfig","staging","savedAt"}
+    payload_hash = models.CharField(max_length=40, db_index=True)  # sha1 hex — 중복 저장 스킵용
+    saved_by = models.CharField(max_length=64, default='browser')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'product_display_snapshots'
+        ordering = ['-version']
+
+    def __str__(self):
+        return f"v{self.version} ({self.created_at.strftime('%Y-%m-%d %H:%M')})"

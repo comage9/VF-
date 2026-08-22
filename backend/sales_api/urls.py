@@ -345,4 +345,11 @@ urlpatterns = [
     path('master/product-specs/<str:product_name>', views_master.master_product_specs_by_product, name='master-product-specs-by-product'),
     path('master/lookup', views_master.master_lookup, name='master-lookup'),
     path('master/summary', views_master.master_summary, name='master-summary'),
+
+    # 제품배치도 스냅샷 API (서버 영속화 — 2026-08-23)
+    path("product-display", views.product_display_save, name="product-display-save"),
+    path("product-display/latest", views.product_display_latest, name="product-display-latest"),
+    path("product-display/history", views.product_display_history, name="product-display-history"),
+    path("product-display/restore", views.product_display_restore, name="product-display-restore"),
+    path("product-display/config", views.product_display_config, name="product-display-config"),
 ]

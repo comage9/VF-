@@ -14316,3 +14316,182 @@ def ai_production_forecast_by_product(request, product_name):
     result = service.get_prediction_summary(product_name, horizon=int(horizon))
     
     return JsonResponse(result)
+
+
+# =============================================================================
+# 제품배치도 스냅샷 API (제품배치도 서버 영속화 — 2026-08-23)
+# =============================================================================
+# 계획 문서: docs/의사결정/제품배치도-서버영속화-계획-20260823.md (A1 + B3)
+# 모델: sales_api/models.py ProductDisplaySnapshot
+# 보관 정책: 최근 20개 유지 (초과 시 오래된 버전부터 자동 삭제)
+# 쓰기 토큰: settings.VF_WRITE_TOKEN 설정 시 POST/restore에 X-VF-Token 헤더 검증,
+#           미설정 시 무검증 (사내망 기본)
+
+from django.conf import settings as _pd_settings
+from .models import ProductDisplaySnapshot as _PD_Snapshot
+
+# payload 크기 상한 2MB (초과 시 413)
+_PD_MAX_PAYLOAD_BYTES = 2 * 1024 * 1024
+# 보관 상한 — 초과 시 오래된 스냅샷부터 삭제
+_PD_KEEP_COUNT = 20
+
+
+def _pd_snapshot_dict(s):
+    return {
+        'version': s.version,
+        'payload': s.payload,
+        'saved_by': s.saved_by,
+        'created_at': s.created_at.isoformat(),
+    }
+
+
+def _pd_check_write_token(request):
+    """쓰기 토큰 검증. 토큰 미설정 시 무검증 통과."""
+    token = (getattr(_pd_settings, 'VF_WRITE_TOKEN', '') or '').strip()
+    if not token:
+        return None
+    if request.headers.get('X-VF-Token', '') != token:
+        return JsonResponse({'error': '쓰기 토큰이 올바르지 않습니다'}, status=403)
+    return None
+
+
+def _pd_save_snapshot(payload, saved_by, skip_duplicate=True):
+    """스냅샷 저장. (저장된 스냅샷, 중복 스킵 여부) 반환.
+
+    복원(복구 이력 보존)은 skip_duplicate=False로 항상 새 버전 생성.
+    """
+    payload_hash = hashlib.sha1(payload.encode('utf-8')).hexdigest()
+    latest = _PD_Snapshot.objects.order_by('-version').first()
+
+    # 중복 스킵: 최신 스냅샷과 payload_hash가 동일하면 새 버전 생성 안 함
+    if skip_duplicate and latest is not None and latest.payload_hash == payload_hash:
+        return latest, True
+
+    # 비순차 버전(수동 정리 등)에도 안전하도록 max+1 계산
+    max_version = _PD_Snapshot.objects.aggregate(m=Max('version'))['m'] or 0
+    snap = _PD_Snapshot.objects.create(
+        version=max_version + 1,
+        payload=payload,
+        payload_hash=payload_hash,
+        saved_by=saved_by,
+    )
+
+    # 보관 정책: 20개 초과 시 오래된 것부터 삭제
+    if _PD_Snapshot.objects.count() > _PD_KEEP_COUNT:
+        keep_ids = list(
+            _PD_Snapshot.objects.order_by('-version').values_list('id', flat=True)[:_PD_KEEP_COUNT]
+        )
+        _PD_Snapshot.objects.exclude(id__in=keep_ids).delete()
+
+    return snap, False
+
+
+@csrf_exempt
+def product_display_latest(request):
+    """GET /api/product-display/latest — 최신 스냅샷 조회"""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET만 지원합니다'}, status=405)
+    snap = _PD_Snapshot.objects.order_by('-version').first()
+    if snap is None:
+        return JsonResponse({'found': False})
+    return JsonResponse({'found': True, **_pd_snapshot_dict(snap)})
+
+
+@csrf_exempt
+def product_display_save(request):
+    """POST /api/product-display — 스냅샷 저장 (중복 스킵 + 낙관적 락)"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST만 지원합니다'}, status=405)
+
+    token_err = _pd_check_write_token(request)
+    if token_err:
+        return token_err
+
+    try:
+        body = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'error': 'JSON 형식이 올바르지 않습니다'}, status=400)
+
+    payload = body.get('payload')
+    if not isinstance(payload, str) or not payload:
+        return JsonResponse({'error': 'payload(문자열)가 필요합니다'}, status=400)
+    if len(payload.encode('utf-8')) > _PD_MAX_PAYLOAD_BYTES:
+        return JsonResponse({'error': 'payload가 2MB를 초과합니다'}, status=413)
+
+    # payload 검증: JSON 문자열이어야 함
+    try:
+        json.loads(payload)
+    except Exception:
+        return JsonResponse({'error': 'payload가 유효한 JSON 문자열이 아닙니다'}, status=400)
+
+    # 낙관적 락: base_version이 주어졌고 서버 최신과 다르면 409 + 서버판 반환
+    base_version = body.get('base_version')
+    if base_version is not None:
+        latest = _PD_Snapshot.objects.order_by('-version').first()
+        if latest is not None and latest.version != base_version:
+            return JsonResponse({
+                'conflict': True,
+                'latest': _pd_snapshot_dict(latest),
+            }, status=409)
+
+    snap, skipped = _pd_save_snapshot(payload, body.get('saved_by') or 'browser')
+    return JsonResponse({'success': True, 'version': snap.version, 'skipped': skipped})
+
+
+@csrf_exempt
+def product_display_history(request):
+    """GET /api/product-display/history — 최근 20개 목록 (최신순)"""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET만 지원합니다'}, status=405)
+    rows = [
+        {
+            'version': s.version,
+            'saved_by': s.saved_by,
+            'created_at': s.created_at.isoformat(),
+            'size': len(s.payload.encode('utf-8')),
+        }
+        for s in _PD_Snapshot.objects.order_by('-version')[:20]
+    ]
+    return JsonResponse({'history': rows})
+
+
+@csrf_exempt
+def product_display_restore(request):
+    """POST /api/product-display/restore — 지정한 버전의 스냅샷을 복사해 새 버전 생성"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST만 지원합니다'}, status=405)
+
+    token_err = _pd_check_write_token(request)
+    if token_err:
+        return token_err
+
+    try:
+        body = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'error': 'JSON 형식이 올바르지 않습니다'}, status=400)
+
+    version = body.get('version')
+    if version is None:
+        return JsonResponse({'error': 'version이 필요합니다'}, status=400)
+    try:
+        version = int(version)
+    except Exception:
+        return JsonResponse({'error': 'version은 정수여야 합니다'}, status=400)
+
+    try:
+        target = _PD_Snapshot.objects.get(version=version)
+    except _PD_Snapshot.DoesNotExist:
+        return JsonResponse({'error': '삭제된 버전입니다'}, status=404)
+
+    # 복원 = 항상 새 버전 생성 (복구 이력 보존 — 중복 스킵 우회)
+    snap, skipped = _pd_save_snapshot(target.payload, body.get('saved_by') or 'restore', skip_duplicate=False)
+    return JsonResponse({'success': True, 'version': snap.version, 'skipped': skipped})
+
+
+@csrf_exempt
+def product_display_config(request):
+    """GET /api/product-display/config — 쓰기 토큰 요구 여부 (값은 노출하지 않음)"""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET만 지원합니다'}, status=405)
+    required = bool((getattr(_pd_settings, 'VF_WRITE_TOKEN', '') or '').strip())
+    return JsonResponse({'writeTokenRequired': required})

@@ -103,6 +103,9 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024 * 1024  # 1GB
 # Optional: protect full-wipe APIs when set (see sales_api.api_guards)
 DESTRUCTIVE_API_KEY = (os.environ.get("DESTRUCTIVE_API_KEY") or "").strip()
 
+# 제품배치도 스냅샷 쓰기 토큰: 설정 시 POST/restore에 X-VF-Token 헤더 검증, 미설정 시 무검증(사내망 기본)
+VF_WRITE_TOKEN = (os.environ.get("VF_WRITE_TOKEN") or "").strip()
+
 
 # Application definition
 
