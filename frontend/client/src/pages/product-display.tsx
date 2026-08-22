@@ -51,7 +51,7 @@ import { aChainInsert, extractDansu, reorderInZone } from "@/pages/product-displ
 
 const STORAGE_KEY = "vf_product_display_v1";
 /** 배치 데이터 스키마 버전 — v14(A동 전용)는 v15(전 동)로 대체됨: 옛 데이터 무시 */
-const SAVED_VERSION = "rank-a-v28";
+const SAVED_VERSION = "rank-a-v29";
 /** 동적 레이아웃(칸 좌표) 저장 키 */
 const LAYOUT_KEY = "vf_product_display_layout_v1";
 const LAYOUT_VERSION = "layout-v1";
@@ -226,7 +226,8 @@ function buildADongLayout(
       const placeFromTop = bottomIsStart ? lineSpec.count - 1 - i : i;
       // 통로 중심 뱀 모양 로케이션 번호 (getZigzagLocNo와 동일 공식)
       const pair = Math.floor((lineSpec.line - 1) / 2); // (1|2)=0, (3|4)=1, (5|6)=2
-      const offset = 19 - numVal;
+      // L1|L2: slot 19에서 시작. L3|L4·L5|L6: slot 1에서 낮은 번호 시작
+      const offset = pair === 0 ? 19 - numVal : numVal - 1;
       const isOddLine = lineSpec.line % 2 === 1;
       const oddFirst = offset % 2 === 0;
       const locNo = ((isOddLine && oddFirst) || (!isOddLine && !oddFirst))
@@ -834,6 +835,8 @@ export default function ProductDisplayPage() {
   const [outboundMap, setOutboundMap] = useState<Record<string, { date: string; quantity: number; salesAmount?: number }[]>>({});
   // 제품 마스터: pnum → 정보 (제품목록 기준 — /api/master/specs의 is_vf_item)
   const [masterMap, setMasterMap] = useState<Record<string, MasterInfo>>({});
+  // 마스터 전체 행 (중복 제품번호 바코드 구별용 — is_vf_item 필터 없음) (2026-08-22)
+  const [masterRows, setMasterRows] = useState<MasterInfo[]>([]);
   // 3개월 미출고 pnum 집합 (masterMap 중복 덮어쓰기 방지용 별도 Set)
   const [no3mPnums, setNo3mPnums] = useState<Set<string>>(new Set());
   // 드래그앤드롭: 현재 드래그 소스 / 밀려난 품목(자리이탈) / 분류·단수 필터
@@ -942,8 +945,8 @@ export default function ProductDisplayPage() {
         const arr = Array.isArray(j) ? j : (j?.data ?? j?.results ?? []);
         const m: Record<string, MasterInfo> = {};
         const no3m = new Set<string>();
+        const allRows: MasterInfo[] = [];
         for (const it of arr) {
-          if (!it?.is_vf_item) continue;
           const entry: MasterInfo = {
             name: it.product_name || "",
             lg: it.category_lg || "",
@@ -955,11 +958,14 @@ export default function ProductDisplayPage() {
           };
           const pn = it.product_number != null ? String(it.product_number) : null;
           const ln = locToPnum(it.location || "");
+          allRows.push({ ...entry, loc: pn ?? entry.loc });
+          if (!it?.is_vf_item) continue;
           for (const k of [pn, ln]) {
             if (k && (!m[k] || entry.no3m || (entry.loc && !m[k].loc))) m[k] = entry;
             if (k && entry.no3m) no3m.add(k);
           }
         }
+        setMasterRows(allRows);
         setMasterMap(m);
         setNo3mPnums(no3m);
       })
@@ -1910,7 +1916,7 @@ export default function ProductDisplayPage() {
   };
 
   const persistLocal = (d: PlacementMap) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: "rank-a-v28", data: d }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: "rank-a-v29", data: d }));
   };
   const openAssign = useCallback(
     (zoneId: string) => {
@@ -1998,7 +2004,7 @@ export default function ProductDisplayPage() {
   const saveData = () => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v28", data })
+      JSON.stringify({ __v: "rank-a-v29", data })
     );
     setSaveMsg("저장되었습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
@@ -2018,7 +2024,7 @@ export default function ProductDisplayPage() {
     setData(next);
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ __v: "rank-a-v28", data: next })
+      JSON.stringify({ __v: "rank-a-v29", data: next })
     );
     setSaveMsg("A동만 초기화했습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
@@ -2309,6 +2315,29 @@ export default function ProductDisplayPage() {
 
   /* ═══ A동 엑셀 왕복 (2026-08-22) — 다운로드/업로드 ═══ */
 
+  /** 중복 제품번호 해결: 마스터 전체 행에서 존 맥락(바코드→분류→이름) 기준으로 일치 행 선택 (2026-08-22) */
+  const resolveMasterForZone = (pn: string, zid: string): MasterInfo | undefined => {
+    const cands = masterRows.filter((r) => r.loc === pn);
+    if (cands.length === 0) return masterMap[pn];
+    if (cands.length === 1) return cands[0];
+    const zbc = A_ZONE_BARCODE[zid] || "";
+    if (zbc) {
+      const byBc = cands.find((r) => r.barcode === zbc);
+      if (byBc) return byBc;
+    }
+    const zcat = A_ZONE_CAT[zid] || "";
+    if (zcat) {
+      const byCat = cands.find((r) => r.lg === zcat);
+      if (byCat) return byCat;
+    }
+    const zname = A_ZONE_MASTER_NAME[zid] || "";
+    if (zname) {
+      const byName = cands.find((r) => r.name && zname.slice(0, 6) && r.name.includes(zname.slice(0, 6)));
+      if (byName) return byName;
+    }
+    return cands[0];
+  };
+
   /** 엑셀 다운로드: 현재 localStorage(=state) A동 배치 → "vf 품목 제베치도" 형식
    *  순위 = 뱀모양 로케이션 번호(1~114) 오름차순, 다품목 칸은 품목당 1행(같은 번호) */
   const exportExcelA = () => {
@@ -2323,13 +2352,13 @@ export default function ProductDisplayPage() {
       const pns = val.split(",").map((s) => s.trim()).filter(Boolean);
       if (!pns.length) continue;
       const no = getZigzagLocNo(zid); // L7/X 등 뱀모양 밖 칸은 null → 번호 0
-      const cat = A_ZONE_CAT[zid] || masterMap[pns[0]]?.lg || "";
       pns.forEach((pn) => {
-        const m = masterMap[pn];
+        // 중복 제품번호는 존 맥락(바코드→분류→이름) 기준 해결 (2026-08-22)
+        const m = resolveMasterForZone(pn, zid);
         rows.push({
           no: no ?? 0,
           rank: no ?? 0,
-          cat,
+          cat: m?.lg || A_ZONE_CAT[zid] || "",
           loc: pnumToLoc(pn),
           name: m?.name || "",
           barcode: m?.barcode || "",
@@ -3790,7 +3819,8 @@ function getZigzagLocNo(zoneId: string): number | null {
   if (line < 1 || line > 6 || slot < 1 || slot > 19) return null;
 
   const pair = Math.floor((line - 1) / 2); // (1|2)=0, (3|4)=1, (5|6)=2
-  const offset = 19 - slot; // 0(상단, slot19) ~ 18(하단, slot1)
+  // L1|L2: slot 19(상단)에서 시작. L3|L4·L5|L6: slot 1(하단)에서 낮은 번호 시작 (2026-08-22 사용자 교정)
+  const offset = pair === 0 ? 19 - slot : slot - 1;
   const isOddLine = line % 2 === 1;
   const oddFirst = offset % 2 === 0; // 홀수라인이 작은 번호?
 
