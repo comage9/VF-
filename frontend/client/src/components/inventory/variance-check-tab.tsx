@@ -295,6 +295,83 @@ export default function VarianceCheckTab() {
     receipts?: { date: string; qty: number; rows: number }[];
   } | null>(null);
 
+  // 로케이션 적용(마스터 수정) 상태 + 로케이션 공유 허용 목록
+  const [applying, setApplying] = useState<Set<string>>(new Set());
+  const [appliedBarcodes, setAppliedBarcodes] = useState<Set<string>>(new Set());
+  const [locShareAllow, setLocShareAllow] = useState<string[]>(() => {
+    try {
+      return JSON.parse(window.localStorage.getItem("varianceLocShareAllow") || "[]");
+    } catch {
+      return [];
+    }
+  });
+  const persistLocShareAllow = (next: string[]) => {
+    setLocShareAllow(next);
+    try {
+      window.localStorage.setItem("varianceLocShareAllow", JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const applyLocation = async (barcode: string, location: string) => {
+    setApplying((s) => new Set(s).add(barcode));
+    try {
+      const res = await fetch("/api/inventory/variance-check/apply-location", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: [{ barcode, location }] }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        message?: string;
+      };
+      if (!res.ok || !data.success) throw new Error(data.message || `저장 실패 (${res.status})`);
+      setAppliedBarcodes((s) => new Set(s).add(barcode));
+      setResult((prev) =>
+        prev
+          ? {
+              ...prev,
+              items: prev.items.map((it) =>
+                it.barcode === barcode
+                  ? { ...it, masterLocation: location, locationConflict: false }
+                  : it
+              ),
+            }
+          : prev
+      );
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setApplying((s) => {
+        const n = new Set(s);
+        n.delete(barcode);
+        return n;
+      });
+    }
+  };
+
+  /** WMS 로케이션 기준: 한 로케이션에 2개+ 품목 (허용 목록 제외) */
+  const locShareGroups = useMemo(() => {
+    const items = result?.items || [];
+    const map = new Map<string, VarianceItem[]>();
+    for (const it of items) {
+      for (const loc of it.wmsLocations || []) {
+        const arr = map.get(loc) || [];
+        arr.push(it);
+        map.set(loc, arr);
+      }
+    }
+    const groups: { location: string; items: VarianceItem[] }[] = [];
+    for (const [loc, arr] of map.entries()) {
+      if (arr.length >= 2 && !locShareAllow.includes(loc)) {
+        groups.push({ location: loc, items: arr });
+      }
+    }
+    groups.sort((a, b) => b.items.length - a.items.length || a.location.localeCompare(b.location));
+    return groups;
+  }, [result, locShareAllow]);
+
   const runCheck = async () => {
     if (!file) {
       setError("WMS 파일(xlsx 또는 zip)을 선택하세요.");
@@ -561,6 +638,46 @@ export default function VarianceCheckTab() {
         </p>
       )}
 
+      {/* 한 로케이션에 2개 이상 품목 감지 (허용 목록 제외) */}
+      {result && locShareGroups.length > 0 && (
+        <Card className="border border-orange-200 bg-orange-50/40">
+          <CardContent className="p-4">
+            <p className="text-sm font-semibold text-orange-900">
+              한 로케이션에 2개 이상 품목 — {locShareGroups.length}건
+            </p>
+            <p className="mt-0.5 text-xs text-orange-700">
+              문제가 되는 로케이션입니다. 괜찮다고 판단한 로케이션은 [허용]으로 숨길 수 있습니다.
+            </p>
+            <div className="mt-3 space-y-2">
+              {locShareGroups.map((g) => (
+                <div key={g.location} className="rounded-md border border-orange-200 bg-white p-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-mono text-xs font-semibold text-gray-800">
+                      {g.location} — {g.items.length}개 품목
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => persistLocShareAllow([...locShareAllow, g.location])}
+                      className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50"
+                    >
+                      허용 (숨김)
+                    </button>
+                  </div>
+                  <ul className="mt-1 space-y-0.5">
+                    {g.items.map((it) => (
+                      <li key={`${g.location}-${it.barcode}`} className="text-xs text-gray-600">
+                        <span className="font-mono">{it.barcode}</span> · {it.productName} ·
+                        전산 {it.ledgerQty}박스
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Filters */}
       {result && (
         <>
@@ -641,6 +758,9 @@ export default function VarianceCheckTab() {
                         <th className="px-3 py-3 text-right" scope="col">
                           WMS
                         </th>
+                        <th className="px-3 py-3 text-center" scope="col">
+                          마스터 적용
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -689,6 +809,34 @@ export default function VarianceCheckTab() {
                             </td>
                             <td className="px-3 py-3 text-right font-semibold tabular-nums text-gray-900">
                               {it.wmsQty}
+                            </td>
+                            <td className="px-3 py-3 text-center align-middle">
+                              {wrong.length === 0 ? (
+                                <span className="text-xs text-gray-400">—</span>
+                              ) : (
+                                <div className="flex flex-col items-center gap-1">
+                                  {wrong.map((loc, i) => (
+                                    <button
+                                      key={`${it.barcode}-apply-${i}`}
+                                      type="button"
+                                      disabled={applying.has(it.barcode) || appliedBarcodes.has(it.barcode)}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        void applyLocation(it.barcode, loc);
+                                      }}
+                                      className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium ${
+                                        appliedBarcodes.has(it.barcode)
+                                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                          : "border-purple-200 bg-white text-purple-800 hover:bg-purple-50"
+                                      } disabled:opacity-60`}
+                                      title={`제품 마스터 로케이션을 ${loc}(으)로 수정`}
+                                    >
+                                      {appliedBarcodes.has(it.barcode) ? "✓ 적용됨" : "적용"}
+                                      <span className="font-mono">{loc}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                             </td>
                           </tr>
                         );

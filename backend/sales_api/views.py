@@ -1940,6 +1940,37 @@ def inventory_baseline_upload(request):
 
 
 @api_view(["POST"])
+def inventory_variance_apply_location(request):
+    """차이 확인 탭에서 마스터(BarcodeMaster) 로케이션 수정.
+    body: {"items":[{"barcode":"R...","location":"320-A1-1-14"}, ...]}
+    바코드가 BarcodeMaster에 없으면 자동 등록(로케이션만 설정).
+    """
+    payload = request.data if isinstance(request.data, dict) else {}
+    items = payload.get("items") or []
+    if not isinstance(items, list) or not items:
+        return Response({"message": "items 목록이 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
+    updated = 0
+    created = 0
+    results = []
+    for row in items:
+        bc = str((row or {}).get("barcode") or "").strip()
+        loc = str((row or {}).get("location") or "").strip()
+        if not bc or not loc:
+            continue
+        bm, was_created = BarcodeMaster.objects.get_or_create(
+            barcode=bc, defaults={"location": loc}
+        )
+        if was_created:
+            created += 1
+        elif (bm.location or "").strip() != loc:
+            bm.location = loc
+            bm.save(update_fields=["location", "updated_at"] if hasattr(bm, "updated_at") else ["location"])
+            updated += 1
+        results.append({"barcode": bc, "location": loc, "created": was_created})
+    return Response({"success": True, "updated": updated, "created": created, "results": results})
+
+
+@api_view(["POST"])
 def inventory_variance_check(request):
     """
     전산 현재고 vs WMS 파일 차이 조회 (DB 변경 없음).

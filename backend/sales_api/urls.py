@@ -100,6 +100,11 @@ urlpatterns = [
         name="inventory-variance-check",
     ),
     path(
+        "inventory/variance-check/apply-location",
+        views.inventory_variance_apply_location,
+        name="inventory-variance-check-apply-location",
+    ),
+    path(
         "inventory/barcode-master",
         views.inventory_barcode_master,
         name="inventory-barcode-master",
