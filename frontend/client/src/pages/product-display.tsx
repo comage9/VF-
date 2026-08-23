@@ -1166,6 +1166,8 @@ export default function ProductDisplayPage() {
   const [serverSyncError, setServerSyncError] = useState(false); // 3회 재시도 실패 → 헤더 경고
   const [serverRetrying, setServerRetrying] = useState(false);
   const [conflictInfo, setConflictInfo] = useState<{ serverVersion: number; serverPayload: PdSnapshotPayload | null } | null>(null);
+  const conflictPendingRef = useRef(false); // 충돌 미해결 상태 — 자동 저장 보류 가드
+  useEffect(() => { conflictPendingRef.current = conflictInfo != null; }, [conflictInfo]);
   const [lastServerSave, setLastServerSave] = useState<{ at: string; by: string } | null>(null);
   const [historyList, setHistoryList] = useState<PdHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -1293,9 +1295,11 @@ export default function ProductDisplayPage() {
       pdEchoGuardRef.current = false;
       return;
     }
+    if (conflictPendingRef.current) return; // 충돌 미해결 → 자동 저장 보류 (조용한 덮어쓰기 방지)
     if (pdSyncTimer.current != null) window.clearTimeout(pdSyncTimer.current);
     pdSyncTimer.current = window.setTimeout(() => {
       pdSyncTimer.current = null;
+      if (conflictPendingRef.current) return; // 충돌 미해결 → 저장 보류 재확인
       void pdSaveToServer(buildSnapshot(), serverVerRef.current, false);
     }, 2000);
   }, [buildSnapshot, pdSaveToServer]);
@@ -1357,25 +1361,38 @@ export default function ProductDisplayPage() {
           setServerVersion(latest.version);
         }
         if (latest.created_at) setLastServerSave({ at: latest.created_at, by: latest.saved_by || "server" });
-        const localSavedAt = localStorage.getItem(SAVEDAT_KEY) || "";
-        const serverT = Date.parse(latest.created_at || "");
-        const localT = Date.parse(localSavedAt);
-        const serverNewer = Number.isNaN(localT) || (!Number.isNaN(serverT) && serverT > localT);
-        if (serverNewer) {
-          const p = parsePdPayload(latest.payload);
-          if (p) {
-            applyServerPayload(p, typeof latest.version === "number" ? latest.version : undefined, {
-              at: latest.created_at,
-              by: latest.saved_by,
-            });
-            setSaveMsg("✅ 서버 버전 불러옴");
-            window.setTimeout(() => setSaveMsg(""), 2000);
-          } else {
-            // 파싱 실패 → 서버판 무시·로컬 유지 (경고만)
-            setSaveMsg("⚠ 서버 데이터 파싱 실패 — 로컬 유지");
-            window.setTimeout(() => setSaveMsg(""), 3000);
-          }
+        const p = parsePdPayload(latest.payload);
+        if (!p) {
+          // 파싱 실패 → 서버판 무시·로컬 유지 (경고만)
+          setSaveMsg("⚠ 서버 데이터 파싱 실패 — 로컬 유지");
+          window.setTimeout(() => setSaveMsg(""), 3000);
+          return;
         }
+        const localSavedAt = localStorage.getItem(SAVEDAT_KEY) || "";
+        // 내용 비교 (타임스탬프 비교 폐기 — 스태일 탭의 조용한 덮어쓰기 방지, 2026-08-23)
+        const fp = (x: PdSnapshotPayload) => JSON.stringify([x.data, x.staging, x.lineConfig]);
+        let localSnap: PdSnapshotPayload | null = null;
+        try { localSnap = buildSnapshot(); } catch { /* 빌드 전 무시 */ }
+        const identical = localSnap ? fp(p) === fp(localSnap) : false;
+        if (!localSavedAt) {
+          // 로컬 저장 이력 없음(첫 방문/캐시 삭제) → 서버판 적용
+          applyServerPayload(p, typeof latest.version === "number" ? latest.version : undefined, {
+            at: latest.created_at,
+            by: latest.saved_by,
+          });
+          setSaveMsg("✅ 서버 버전 불러옴");
+          window.setTimeout(() => setSaveMsg(""), 2000);
+          return;
+        }
+        if (identical) {
+          // 내용 동일 → 버전·시각만 반영
+          return;
+        }
+        // 내용 다름 → 충돌 배너 (조용한 덮어쓰기 금지: 사용자가 서버판 적용/덮어쓰기 선택)
+        setConflictInfo({
+          serverVersion: typeof latest.version === "number" ? latest.version : -1,
+          serverPayload: p,
+        });
         return;
       }
       // found=false → 현재 로컬 상태를 최초 업로드(시드) — 실패 시 재시도/경고 로직 재사용
