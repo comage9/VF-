@@ -497,18 +497,36 @@ export default function StockSurveyTab() {
     return list;
   }, [registeredVfLocations, search, locationMatchesQuery]);
 
-  type ProductWithLoc = InventoryItem & { location: string };
+  type ProductWithLoc = InventoryItem & { location: string; locationBreakdown?: { location: string; baseStock: number }[] };
   type SurveyRow =
     | { kind: "product"; key: string; product: ProductWithLoc }
     | { kind: "missing"; key: string; missing: MissingLocItem };
 
   const productsWithLoc = useMemo((): ProductWithLoc[] => {
-    return (data?.data || [])
-      .map((it) => ({
-        ...it,
-        location: resolveLocation(it) || String(it.location || "").trim(),
-      }))
-      .filter((it) => String(it.barcode || "").trim());
+    const out: ProductWithLoc[] = [];
+    for (const it of data?.data || []) {
+      const bc = String(it.barcode || "").trim();
+      if (!bc) continue;
+      const bd = (it as ProductWithLoc).locationBreakdown || [];
+      if (bd.length > 1) {
+        // 동일 바코드 다중 로케이션 → 로케이션별 행으로 분리 (기본=로케이션별 합계)
+        for (const seg of bd) {
+          out.push({
+            ...it,
+            barcode: bc,
+            location: seg.location,
+            currentStock: seg.baseStock,
+            baseStock: seg.baseStock,
+          } as ProductWithLoc);
+        }
+      } else {
+        out.push({
+          ...it,
+          location: resolveLocation(it) || String(it.location || "").trim(),
+        });
+      }
+    }
+    return out;
   }, [data, resolveLocation]);
 
   /**

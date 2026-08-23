@@ -560,10 +560,12 @@ def inventory_unified(request):
     from .inventory_reconcile import receipt_calendar_gaps
 
     # 바코드→상품명 (별칭 출고 통합 차감용) · 스냅샷 수량
+    # + 로케이션별 기준 수량 (동일 바코드 다중 로케이션 보존)
     name_by_barcode = {}
     base_qty_by_barcode = {}
+    loc_qty_by_barcode = {}  # 바코드 -> [(로케이션, 수량), ...]
     for row in baseline_items.exclude(barcode__isnull=True).exclude(barcode="").values(
-        "barcode", "product_name", "quantity_box"
+        "barcode", "product_name", "quantity_box", "location"
     ):
         bc = (row["barcode"] or "").strip()
         if not bc:
@@ -571,6 +573,11 @@ def inventory_unified(request):
         base_qty_by_barcode[bc] = base_qty_by_barcode.get(bc, 0) + int(
             row.get("quantity_box") or 0
         )
+        _l = (row.get("location") or "").strip()
+        if _l:
+            loc_qty_by_barcode.setdefault(bc, []).append(
+                (_l, int(row.get("quantity_box") or 0))
+            )
         if row.get("product_name") and bc not in name_by_barcode:
             name_by_barcode[bc] = (row["product_name"] or "").strip()
 
@@ -785,8 +792,12 @@ def inventory_unified(request):
         is_vf = bool(getattr(spec, "is_vf_item", False)) if spec else False
         is_no3m = bool(getattr(spec, "is_no_outbound_3m", False)) if spec else False
         # 로케이션 없음 = VF 아님 (제품번호 있으면 로케이션 파생으로 인정)
+        # 로케이션 SoT 우선순위: 업로드 스냅샷의 로케이션(수량 최대) > BarcodeMaster
         _row_loc = ""
-        if master and getattr(master, "location", None):
+        _locs = loc_qty_by_barcode.get(bc) or []
+        if _locs:
+            _row_loc = max(_locs, key=lambda x: x[1])[0]
+        if not _row_loc and master and getattr(master, "location", None):
             _row_loc = str(master.location or "").strip()
         _has_loc = bool(_row_loc) or (
             spec is not None and getattr(spec, "product_number", None) is not None
@@ -923,6 +934,12 @@ def inventory_unified(request):
                 "location": _row_loc or (
                     master.location if (master and master.location) else ""
                 ),
+                "locationBreakdown": [
+                    {"location": _l, "baseStock": _q}
+                    for _l, _q in sorted(
+                        loc_qty_by_barcode.get(bc) or [], key=lambda x: x[0]
+                    )
+                ],
                 "barcode": bc,
                 "price": int(unit_price),
                 "baseStock": int(base_qty),
@@ -1529,6 +1546,7 @@ def inventory_baseline_upload(request):
     total_rows = 0
     rows_zero = 0
     agg = {}
+    agg_loc = {}  # 바코드 -> {로케이션: 수량} (로케이션별 보존)
     meta = {}
     file_names = [getattr(f, "name", "") for f in files]
     parse_warnings = []
@@ -1689,14 +1707,23 @@ def inventory_baseline_upload(request):
         bc_ok = bc_s[valid]
         qty_ok = qty_s[valid]
         rows_zero += int((qty_ok == 0).sum())
-        grouped = (
-            pd.DataFrame({"barcode": bc_ok.to_numpy(), "qty": qty_ok.to_numpy()})
-            .groupby("barcode", sort=False)["qty"]
-            .sum()
+        # 로케이션별 보존: (바코드, 로케이션) 단위로 수량 집계
+        # — 동일 바코드가 여러 로케이션에 있으면 전부 유지 (로케이션 변경·분할 반영)
+        loc_ok = (
+            df.iloc[:, loc_idx].astype(str).str.strip().reindex(bc_ok.index).fillna("")
+            if loc_idx is not None
+            else pd.Series([""] * len(bc_ok), index=bc_ok.index)
         )
-        for bc, qty in grouped.items():
+        gdf = pd.DataFrame(
+            {"barcode": bc_ok.to_numpy(), "loc": loc_ok.to_numpy(), "qty": qty_ok.to_numpy()}
+        )
+        grouped = gdf.groupby(["barcode", "loc"], sort=False)["qty"].sum()
+        for (bc, loc), qty in grouped.items():
             bc_key = str(bc)
+            loc_key = str(loc).strip()
             agg[bc_key] = int(agg.get(bc_key) or 0) + int(qty)
+            per_loc = agg_loc.setdefault(bc_key, {})
+            per_loc[loc_key] = int(per_loc.get(loc_key) or 0) + int(qty)
 
         # meta: 바코드별 첫 유효 행
         first_idx = bc_ok.drop_duplicates(keep="first").index
@@ -1780,16 +1807,35 @@ def inventory_baseline_upload(request):
                 total_barcodes=int(len(agg)),
             )
 
-            items = [
-                InventoryBaselineItem(
-                    upload=upload,
-                    barcode=bc,
-                    quantity_box=int(qty),
-                    product_name=((meta.get(bc) or {}).get("product_name") or "")[:255],
-                    location=((meta.get(bc) or {}).get("location") or "")[:255],
-                )
-                for bc, qty in agg.items()
-            ]
+            # 로케이션별 보존 저장: 동일 바코드가 여러 로케이션에 있으면 각각 행 유지
+            # (바코드 총합 = 기존 집계와 동일 — 합산 수량 로직 불변)
+            items = []
+            for bc, qty in agg.items():
+                locs = agg_loc.get(bc) or {}
+                m0 = meta.get(bc) or {}
+                name0 = (m0.get("product_name") or "")[:255]
+                loc_keys = [l for l in locs.keys() if l]
+                if len(loc_keys) <= 1:
+                    items.append(
+                        InventoryBaselineItem(
+                            upload=upload,
+                            barcode=bc,
+                            quantity_box=int(qty),
+                            product_name=name0,
+                            location=(m0.get("location") or "")[:255],
+                        )
+                    )
+                else:
+                    for loc in loc_keys:
+                        items.append(
+                            InventoryBaselineItem(
+                                upload=upload,
+                                barcode=bc,
+                                quantity_box=int(locs[loc]),
+                                product_name=name0,
+                                location=loc[:255],
+                            )
+                        )
             InventoryBaselineItem.objects.bulk_create(items, batch_size=2000)
     except Exception as e:
         logger.exception(
