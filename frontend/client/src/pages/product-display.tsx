@@ -3055,18 +3055,20 @@ export default function ProductDisplayPage() {
       const pns = val.split(",").map((s) => s.trim()).filter(Boolean);
       if (!pns.length) continue;
       const no = getZigzagLocNo(zid); // L7/X 등 뱀모양 밖 칸은 null → 번호 0
-      // 다품목 칸: 대표품목 기준 메타 1행, 로케이션은 줄바꿈 결합 (Alt+Enter 왕복, 2026-08-25)
-      const m0 = resolveMasterForZone(pns[0], zid);
-      rows.push({
-        no: no ?? 0,
-        rank: no ?? 0,
-        cat: m0?.lg || A_ZONE_CAT[zid] || "",
-        loc: pns.map((pn) => pnumToLoc(pn)).join("\n"),
-        name: m0?.name || "",
-        barcode: m0?.barcode || "",
-        boxes: m0?.barcode ? calcMonthQty(m0.barcode) : 0,
-        pn: pns.join(","),
-      });
+      // 다품목 칸: 품목별 개별 행으로 출력 (같은 로케이션 번호·분류 공유, 2026-08-25)
+      for (const pn of pns) {
+        const m = resolveMasterForZone(pn, zid);
+        rows.push({
+          no: no ?? 0,
+          rank: no ?? 0,
+          cat: m?.lg || A_ZONE_CAT[zid] || "",
+          loc: pnumToLoc(pn),
+          name: m?.name || "",
+          barcode: m?.barcode || "",
+          boxes: m?.barcode ? calcMonthQty(m.barcode) : 0,
+          pn,
+        });
+      }
     }
     rows.sort((a, b) => a.no - b.no || a.loc.localeCompare(b.loc));
     const aoa: (string | number)[][] = [
