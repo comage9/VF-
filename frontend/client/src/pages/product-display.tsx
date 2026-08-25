@@ -200,6 +200,16 @@ function parsePdPayload(payloadStr: string | null | undefined): PdSnapshotPayloa
     if (!Array.isArray(p.layout)) return null;
     if (!Array.isArray(p.staging)) return null;
     const lc = (p.lineConfig && typeof p.lineConfig === "object" ? p.lineConfig : {}) as LineConfigMap;
+    // L7 마이그레이션 (2026-08-25): 옛 2슬롯 A-L7-N-1/-2 → 통일 칸 A-L7-N 병합
+    const d7 = p.data as Record<string, string>;
+    for (const [zid, val] of Object.entries(d7)) {
+      const m = /^A-L7-(\d+)-[12]$/.exec(zid);
+      if (!m || !val) continue;
+      const merged = `${d7[`A-L7-${m[1]}`] || ""},${val}`
+        .split(",").map((s) => s.trim()).filter(Boolean);
+      d7[`A-L7-${m[1]}`] = Array.from(new Set(merged)).join(",");
+      delete d7[zid];
+    }
     return {
       data: p.data as PlacementMap,
       layout: p.layout as DongLayout[],
@@ -223,10 +233,8 @@ function fmtPdSaved(iso: string): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${hh}:${mm}`;
 }
 
-/** A동 zone → (line, slot) — L1~L6는 "A-L{line}-{slot}", L7은 "A-L7-{칸}-{1|2}" (2슬롯=1칸) */
+/** A동 zone → (line, slot) — L1~L7 모두 "A-L{line}-{slot}" (L7 2026-08-25 통일: 1칸=1 zone) */
 function aZoneLineSlot(zid: string): { line: number; slot: number } | null {
-  const m7 = /^A-L7-(\d+)-([12])$/.exec(zid);
-  if (m7) return { line: 7, slot: +m7[1] };
   const m = /^A-L(\d+)-(\d+)$/.exec(zid);
   if (m) return { line: +m[1], slot: +m[2] };
   return null;
@@ -291,9 +299,7 @@ function calcZigzagLocNo(line: number, slot: number): number | null {
  * 물리 순서를 사용해야 "앞으로 당김" 방향이 L1→L2→…→L6→L7→X 가 된다.
  */
 function aZoneSortKey(id: string): [number, number, number] {
-  const m = id.match(/^A-L(\d+)-(\d+)-(\d+)$/); // L7: A-L7-1-1 형식
-  if (m) return [0, +m[1], +m[2] * 2 + (+m[3] - 1)];
-  const m2 = id.match(/^A-L(\d+)-(\d+)$/); // L1~L6: A-L1-1 형식
+  const m2 = id.match(/^A-L(\d+)-(\d+)$/); // L1~L7 (L7 통일): A-L1-1 형식
   if (m2) return [0, +m2[1], +m2[2]];
   if (id === "A-X1") return [1, 0, 0];
   if (id === "A-X2") return [1, 1, 0];
@@ -401,7 +407,7 @@ function buildADongLayout(
     });
   }
 
-  // L7: 8칸 × 2슬롯 = 16 zone (A-L7-N-1 좌, A-L7-N-2 우), 라인2 끝과 맞춤
+  // L7: 8칸 (A-L7-N, 2026-08-25 통일 — 일반 칸과 동일 크기), 라인2 끝과 맞춤
       const vertBottom =
         slot.padT + maxCount * slot.h + Math.max(0, maxCount - 1) * slot.gapY;
       const bottomTop = vertBottom + slot.bottomLineGap + slot.bottomLabelH;
@@ -409,9 +415,6 @@ function buildADongLayout(
       // L2 끝 = lineLeftOf(2) + slot.w. L7 8칸 끝을 이와 맞춤.
       const l2Right = lineLeftOf(2) + slot.w;
       const l7TotalWidth = l2Right - bottomStartLeft;
-      const l7Step = l7TotalWidth / A_BOTTOM_SLOTS; // 8칸이 L2 영역까지 꽉 참
-      const l7SlotW = Math.floor(l7Step) - 1; // 칸 간 1px gap
-      const l7SlotH = slot.h; // 각 슬롯 높이 (칸 = 2슬롯)
 
       lineLabels.push({
         text: "7번 라인 (슬림서랍장·칵투스, 7-1-1부터)",
@@ -427,36 +430,20 @@ function buildADongLayout(
       });
 
       for (let i = 0; i < A_BOTTOM_SLOTS; i++) {
-        const cellLeft = Math.round(bottomStartLeft + i * l7Step);
-        const halfW = Math.floor(l7SlotW / 2);
-        // 좌 슬롯 (7-N-1) — 일반 칸과 동일 UI (테두리 미지정 → 기본 스타일)
+        // L7 통일 (2026-08-25): 1칸=1 zone — 일반 칸과 동일 크기·간격 (기존 2슬롯 구조 폐지)
         zones.push({
-          id: `A-L7-${i + 1}-1`,
+          id: `A-L7-${i + 1}`,
           num: "",
           line: A_BOTTOM_LINE_ID,
           showNumAsProduct: false,
+          locNo: 115 + i, // 로케이션 번호 115~122
           style: {
-            left: cellLeft,
+            left: Math.round(bottomStartLeft + i * (slot.w + 6)),
             top: bottomTop,
-            width: halfW,
-            height: l7SlotH * 2,
+            width: slot.w,
+            height: slot.h,
           },
         });
-        // 우 슬롯 (7-N-2) — 일반 칸과 동일 UI
-        zones.push({
-          id: `A-L7-${i + 1}-2`,
-          num: "",
-          line: A_BOTTOM_LINE_ID,
-          showNumAsProduct: false,
-          locNo: 114 + (i + 1), // L7 로케이션 번호 115~122 (칸 기준, 좌우 슬롯 공유)
-          style: {
-            left: cellLeft + halfW,
-            top: bottomTop,
-            width: l7SlotW - halfW,
-            height: l7SlotH * 2,
-          },
-        });
-        zones[zones.length - 2].locNo = 114 + (i + 1); // 좌 슬롯에도 동일 번호
       }
 
   // 5번·6번 라인 사이 통로에 2칸 추가 (다른 라인 영향 없음)
@@ -954,6 +941,15 @@ function loadPlacement(): PlacementMap {
     /* 손상 시 기본값 */
   }
   if (!data) return defaultAPlacement();
+  // L7 마이그레이션 (2026-08-25): 옛 2슬롯 A-L7-N-1/-2 → 통일 칸 A-L7-N 병합
+  for (const [zid, val] of Object.entries(data)) {
+    const m = /^A-L7-(\d+)-[12]$/.exec(zid);
+    if (!m || !val) continue;
+    const merged = `${data[`A-L7-${m[1]}`] || ""},${val}`
+      .split(",").map((s) => s.trim()).filter(Boolean);
+    data[`A-L7-${m[1]}`] = Array.from(new Set(merged)).join(",");
+    delete data[zid];
+  }
   // 참고: v25까지만 파일 SoT 강제 — v26부터는 엑셀 업로드가 localStorage를 갱신하므로
   // SOFT_ZONES 강제 적용을 하지 않음 (2026-08-22 엑셀 왕복 도입).
   // 확정 빈칸(로케이션 38, 43) + 이전 배치 잔존 자리 정리
@@ -4617,9 +4613,9 @@ function getZigzagLocNo(zoneId: string): number | null {
   return calcZigzagLocNo(parseInt(m[1], 10), parseInt(m[2], 10));
 }
 
-/** L7(7번 라인) 로케이션 번호: 8칸 × 2슬롯 → 칸(2슬롯 묶음) 기준 115~122 (2026-08-25 사용자 지정) */
+/** L7(7번 라인) 로케이션 번호: 8칸 → 115~122 (2026-08-25 통일, 1칸=1 zone) */
 function getL7LocNo(zoneId: string): number | null {
-  const m = zoneId.match(/^A-L7-(\d+)-([12])$/);
+  const m = zoneId.match(/^A-L7-(\d+)$/);
   if (!m) return null;
   return 114 + parseInt(m[1], 10); // 칸1=115 … 칸8=122
 }
