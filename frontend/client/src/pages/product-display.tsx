@@ -3080,8 +3080,9 @@ export default function ProductDisplayPage() {
     XLSX.writeFile(wb, `A동_배치표_${ymd}.xlsx`);
   };
 
-  /** 엑셀 업로드: 행 순서(로케이션 번호)대로 뱀모양 칸 1,2,3,…에 순차 배치 (A동만)
-   *  - 같은 번호 여러 행 = 한 칸 다품목 → 콤마 병합 (품목 수 제한 없음)
+  /** 엑셀 업로드: 로케이션 번호(지그재그 1~114)에 맞는 칸에 직접 배치 (A동만)
+   *  - 로케이션 열의 마지막 숫자 N(320-A1-1-N) = 지그재그 로케이션 번호 → 해당 칸 배치
+   *  - 같은 번호 여러 행/다품목 = 한 칸 다품목 → 콤마 병합
    *  - 기존에 있었으나 새 파일에 없는 제품 → 📦임시보관함
    *  - 헤더 불일치 시 아무것도 변경하지 않음 */
   const applyExcelUploadA = (rows: string[][]) => {
@@ -3093,9 +3094,8 @@ export default function ProductDisplayPage() {
       window.alert("엑셀 형식이 맞지 않습니다. 첫 줄 헤더에 '순위_1개월박스', '로케이션' 열이 필요합니다. (기준: 시트 'vf 품목 제베치도')");
       return;
     }
-    // 데이터 행 파싱 (행 순서 그대로 배치 — 2026-08-25)
-    // 로케이션 셀 = 한 칸. 값은 제품번호만 입력 가능 (예: "161" 또는 Alt+Enter로 "5\n6\n7")
-    // "320-A1-1-N" 전체 로케이션 문자열도 하위 호환으로 인식
+    // 데이터 행 파싱 — 로케이션 번호(N)가 곧 배치 칸
+    // "320-A1-1-N" 전체 로케이션 또는 단순 번호 N 모두 인식. 다품목은 \n/콤마 구분.
     const parsed: { pn: string; cellKey: string }[] = [];
     let rowIndex = 0;
     for (const r of rows.slice(1)) {
@@ -3103,29 +3103,56 @@ export default function ProductDisplayPage() {
       const parts = raw.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
       if (!parts.length) continue;
       rowIndex++;
-      // 행 단위 그룹: 같은 행의 모든 유효 품목 = 한 칸 다품목
+      // 행 단위 그룹: 같은 행의 모든 유효 품목 = 한 칸 다품목 (첫 품목의 로케이션 번호 사용)
       const groupPns: string[] = [];
+      let locNo: number | null = null;
       for (const part of parts) {
         let pn: string | null = null;
-        if (/^\d+$/.test(part)) {
-          pn = String(parseInt(part, 10)); // 단순 제품번호
+        let n: number | null = null;
+        const mFull = /^320-A1-1-(\d+)$/.exec(part);
+        if (mFull) {
+          pn = mFull[1];
+          n = parseInt(mFull[1], 10);
+        } else if (/^\d+$/.test(part)) {
+          n = parseInt(part, 10);
+          pn = String(n);
         } else {
-          pn = locToPnum(part); // "320-A1-1-N" 형식 하위 호환
+          pn = locToPnum(part); // "320-A1-2-XX" 등 하위 호환
         }
         if (pn && !groupPns.includes(pn)) groupPns.push(pn);
+        if (locNo === null && n !== null && Number.isFinite(n)) locNo = n;
       }
       if (!groupPns.length) continue;
-      const cellKey = `row${rowIndex}`;
+      const cellKey = `row${rowIndex}#${locNo ?? "?"}`;
       for (const pn of groupPns) parsed.push({ pn, cellKey });
     }
     if (!parsed.length) {
       window.alert("적용할 데이터 행이 없습니다. 로케이션(320-…) 값을 확인해주세요.");
       return;
     }
-    // A동 L1~L6 물리 순서 칸 목록 (뱀모양 번호 1,2,3,… = 이 순서)
-    const snake = aSeq.filter((z) => /^A-L[1-6]-\d+$/.test(z));
+    // 지그재그 로케이션 번호 → 칸 ID 역매핑 (calcZigzagLocNo 단일 공식)
+    const noToZone = new Map<number, string>();
+    for (const z of aSeq.filter((z) => /^A-L[1-6]-\d+$/.test(z))) {
+      const no = getZigzagLocNo(z);
+      if (no !== null) noToZone.set(no, z);
+    }
+    // 로케이션 번호별 그룹핑 (같은 번호 = 한 칸 다품목)
+    const byLoc = new Map<number, { pns: string[]; rows: string[] }>();
+    const outOfRange: { pn: string; key: string }[] = [];
+    for (const p of parsed) {
+      const m = /#(\d+)$/.exec(p.cellKey);
+      const n = m ? parseInt(m[1], 10) : NaN;
+      if (!Number.isFinite(n) || !noToZone.has(n)) {
+        outOfRange.push({ pn: p.pn, key: p.cellKey });
+        continue;
+      }
+      if (!byLoc.has(n)) byLoc.set(n, { pns: [], rows: [] });
+      const g = byLoc.get(n)!;
+      if (!g.pns.includes(p.pn)) g.pns.push(p.pn);
+      g.rows.push(p.cellKey);
+    }
     const next: PlacementMap = { ...data };
-    // A동 초기화: L7·X칸 제품은 임시보관함 (엑셀 왕복 범위 = 뱀모양 칸 1~114), 그 외 A칸만 재배치
+    // A동 초기화: L7·X칸 제품은 임시보관함, 그 외 A칸 재배치 대상
     const toStagingX: string[] = [];
     for (const z of Object.keys(next)) {
       if (!z.startsWith("A-")) continue;
@@ -3136,21 +3163,11 @@ export default function ProductDisplayPage() {
       }
       delete next[z];
     }
-    let i = 0;
-    for (const n of snake) {
-      if (i >= parsed.length) break;
-      const group: string[] = [parsed[i].pn];
-      const cell0 = parsed[i].cellKey;
-      i++;
-      // 같은 행(cellKey)의 품목들 = 한 칸 다품목으로 병합 (제한 없음)
-      while (i < parsed.length && parsed[i].cellKey === cell0) {
-        if (!group.includes(parsed[i].pn)) group.push(parsed[i].pn);
-        i++;
-      }
-      next[n] = group.join(",");
+    for (const [n, g] of byLoc) {
+      next[noToZone.get(n)!] = g.pns.join(",");
     }
-    if (i < parsed.length) {
-      window.alert(`A동 칸(114개)을 넘어선 ${parsed.length - i}행은 적용되지 않았습니다.`);
+    if (outOfRange.length) {
+      window.alert(`로케이션 번호가 A동 범위(1~114)를 벗어나거나 인식 불가한 ${outOfRange.length}건은 적용되지 않았습니다.`);
     }
     const newPns = new Set(parsed.map((p) => p.pn));
     // 기존 배치(A동) 중 새 파일에 없는 제품 → 임시보관함 (스테이징 제품은 그대로 유지)
