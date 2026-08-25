@@ -453,6 +453,7 @@ function buildADongLayout(
           num: "",
           line: A_BOTTOM_LINE_ID,
           showNumAsProduct: false,
+          locNo: 114 + (i + 1), // L7 로케이션 번호 115~122 (칸 기준, 좌우 슬롯 공유)
           style: {
             left: cellLeft + halfW,
             top: bottomTop,
@@ -464,6 +465,7 @@ function buildADongLayout(
             borderLeft: "1px dashed #cbd5e1",
           },
         });
+        zones[zones.length - 2].locNo = 114 + (i + 1); // 좌 슬롯에도 동일 번호
       }
 
   // 5번·6번 라인 사이 통로에 2칸 추가 (다른 라인 영향 없음)
