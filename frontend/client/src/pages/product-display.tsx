@@ -3096,8 +3096,9 @@ export default function ProductDisplayPage() {
       window.alert("엑셀 형식이 맞지 않습니다. 첫 줄 헤더에 '순위_1개월박스', '로케이션' 열이 필요합니다. (기준: 시트 'vf 품목 제베치도')");
       return;
     }
-    // 데이터 행 파싱 — 로케이션 번호(N)가 곧 배치 칸
-    // "320-A1-1-N" 전체 로케이션 또는 단순 번호 N 모두 인식. 다품목은 \n/콤마 구분.
+    // 데이터 행 파싱 — 배치 칸 = "로케이션(숫자)" 열 우선, 없으면 로케이션 문자열의 마지막 숫자
+    // 제품번호 = 로케이션 문자열에서 추출 ("320-A1-2-XX"는 2XX 체계). 다품목은 \n/콤마 구분.
+    const idxLocNum = header.findIndex((h) => String(h ?? "").trim() === "로케이션(숫자)");
     const parsed: { pn: string; cellKey: string }[] = [];
     let rowIndex = 0;
     for (const r of rows.slice(1)) {
@@ -3105,9 +3106,12 @@ export default function ProductDisplayPage() {
       const parts = raw.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
       if (!parts.length) continue;
       rowIndex++;
-      // 행 단위 그룹: 같은 행의 모든 유효 품목 = 한 칸 다품목 (첫 품목의 로케이션 번호 사용)
+      // 행 단위 그룹: 같은 행의 모든 유효 품목 = 한 칸 다품목
       const groupPns: string[] = [];
       let locNo: number | null = null;
+      // 우선순위 1: 로케이션(숫자) 전용 열
+      const numCell = idxLocNum >= 0 ? parseInt(String(r[idxLocNum] ?? ""), 10) : NaN;
+      if (Number.isFinite(numCell)) locNo = numCell;
       for (const part of parts) {
         let pn: string | null = null;
         let n: number | null = null;
