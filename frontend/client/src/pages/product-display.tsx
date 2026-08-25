@@ -1036,6 +1036,8 @@ function locToPnum(loc: string): string | null {
 
 export default function ProductDisplayPage() {
   const [dong, setDong] = useState<DongKey>("ALL");
+  // 모바일 조회 뷰 (2026-08-25): 목록형 읽기 전용 — 그리드 대신 칸 목록으로 제품 확인
+  const [mobileView, setMobileView] = useState(false);
   const [data, setData] = useState<PlacementMap>(() => loadPlacement());
   const [modalOpen, setModalOpen] = useState(false);
   const [currentZone, setCurrentZone] = useState<string | null>(null);
@@ -3482,8 +3484,7 @@ export default function ProductDisplayPage() {
           editMode={editMode}
         />
       ) : panelTab === "unplaced" ? (
-        <CategoryList
-          sortBy="qty"
+        <UnplacedPanel
           rows={unplaced.map((u) => ({
             pnum: u.pnum,
             name: u.master_name || u.name,
@@ -3724,7 +3725,23 @@ export default function ProductDisplayPage() {
           )}
         </div>
 
-        <div className="flex flex-wrap gap-2 mb-4">
+        <div className="flex flex-wrap gap-2 mb-4 items-center">
+          {/* 모바일 조회 뷰 토글 (2026-08-25) */}
+          <button
+            type="button"
+            onClick={() => setMobileView((v) => !v)}
+            className={
+              "px-3 py-2 rounded-lg text-xs font-bold border transition-colors " +
+              (mobileView
+                ? "bg-emerald-600 text-white border-emerald-600"
+                : "bg-white text-slate-600 border-slate-300")
+            }
+            title="목록형 조회 뷰 — 모바일에서 제품 확인용"
+          >
+            {mobileView ? "📋 목록 뷰 (ON)" : "🗺️ 지도 뷰"}
+          </button>
+          {!mobileView && (
+          <>
           <button
             key="ALL"
             type="button"
@@ -3753,10 +3770,17 @@ export default function ProductDisplayPage() {
               {r.label}
             </button>
           ))}
+          </>
+          )}
         </div>
 
+        {/* 모바일 조회 뷰 — 목록형 (2026-08-25) */}
+        {mobileView && (
+          <MobileListView data={data} masterMap={masterMap} />
+        )}
+
         {/* 분류·단수 필터 (드래그 재배치용) — E동/총괄 제외 */}
-        {dong !== "ALL" && dong !== "E" && (
+        {!mobileView && dong !== "ALL" && dong !== "E" && (
           <div className="flex flex-wrap items-center gap-2 mb-3 rounded-lg border bg-slate-50 px-3 py-2">
             <span className="text-[11px] font-bold text-slate-600">필터</span>
             <select
@@ -3808,7 +3832,7 @@ export default function ProductDisplayPage() {
           </div>
         )}
 
-        {dong === "ALL" ? (
+        {!mobileView && (dong === "ALL" ? (
           <div className="flex flex-wrap gap-3 items-start">
             <DndContext sensors={sensors} autoScroll={false} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
             {(() => {
@@ -3972,7 +3996,7 @@ export default function ProductDisplayPage() {
           </div>
           </DndContext>
         </div>
-        )}
+        ))}
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <Button
@@ -4063,7 +4087,7 @@ export default function ProductDisplayPage() {
         </div>
       </div>
 
-      {dong === "A" ? (
+      {!mobileView && (dong === "A" ? (
         <div className="rounded-xl border bg-card p-4 shadow-sm space-y-3">
           <h3 className="text-sm font-semibold text-red-600">
             미배치 ({unplaced.length}건) — 순위·분류 · A/B/C동 배치 제외
@@ -4108,7 +4132,7 @@ export default function ProductDisplayPage() {
             </div>
           ) : null}
         </div>
-      ) : null}
+      ) : null)}
 
       {/* B/C/D동 배치 현황 통계 */}
       {(() => {
@@ -4790,6 +4814,162 @@ function RowDrag({
       style={{ touchAction: "none" }}
     >
       {children}
+    </div>
+  );
+}
+
+/* 모바일 조회 뷰 (2026-08-25) — 읽기 전용 목록형: 동 선택 → 칸 목록(로케번호+품목) 표시
+ * PC 그리드는 절대좌표라 모바일에서 식별 곤란 → 카드 리스트로 대체. 편집 기능 없음(안전). */
+function MobileListView({
+  data,
+  masterMap,
+}: {
+  data: PlacementMap;
+  masterMap: Record<string, MasterInfo>;
+}) {
+  const [mdong, setMdong] = useState<"A" | "B" | "C" | "D">("B");
+  const [q, setQ] = useState("");
+  const layout = DONG_LAYOUTS.find((r) => r.key === mdong);
+  if (!layout) return null;
+  const locNoOf = (zid: string): string => {
+    if (zid.startsWith("A-L7-")) {
+      const m = /^A-L7-(\d+)$/.exec(zid);
+      return m ? `115+${m[1]}-1` : "";
+    }
+    if (zid.startsWith("A-L")) {
+      const no = getZigzagLocNo(zid);
+      return no != null ? String(no) : "";
+    }
+    if (zid.startsWith("B-")) {
+      const no = getDongLocNo(zid);
+      return no != null ? `${no}~${no + 3}` : "";
+    }
+    const no = getDongLocNo(zid);
+    return no != null ? String(no) : "";
+  };
+  const rows = layout.zones
+    .map((z) => ({ zid: z.id, val: data[z.id] || "" }))
+    .filter((r) => r.val);
+  const filtered = q.trim()
+    ? rows.filter(
+        (r) =>
+          r.val.toLowerCase().includes(q.trim().toLowerCase()) ||
+          r.zid.includes(q.trim()) ||
+          r.val
+            .split(",")
+            .some((pn) => (masterMap[pn.trim()]?.name || "").includes(q.trim()))
+      )
+    : rows;
+  // 검색 시 로케이션 역조회 지원: 번호 입력 → 해당 칸 하이라이트
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1">
+        {(["A", "B", "C", "D"] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setMdong(k)}
+            className={
+              "px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors " +
+              (mdong === k ? "bg-[#721FE5] text-white" : "bg-muted text-foreground")
+            }
+          >
+            {k}동
+          </button>
+        ))}
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="제품번호·이름·로케번호 검색"
+          className="flex-1 min-w-[140px] h-8 rounded border bg-white px-2 text-xs"
+        />
+      </div>
+      {filtered.length === 0 ? (
+        <div className="text-xs text-muted-foreground py-6 text-center border rounded-lg bg-slate-50">
+          배치된 품목이 없습니다{q ? " (검색 결과 없음)" : ""}
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {filtered.map((r) => {
+            const pns = r.val.split(",").map((s) => s.trim()).filter(Boolean);
+            return (
+              <div key={r.zid} className="border rounded-lg bg-white px-3 py-2">
+                <div className="flex items-center justify-between gap-2 mb-0.5">
+                  <span className="text-[10px] font-mono font-bold text-amber-700 bg-amber-50 rounded px-1.5 py-0.5">
+                    {locNoOf(r.zid) || r.zid}
+                  </span>
+                  <span className="text-[9px] text-slate-400">{pns.length}품목</span>
+                </div>
+                <div className="text-[11px] font-bold tabular-nums">{pns.join(", ")}</div>
+                <div className="text-[10px] text-muted-foreground leading-snug">
+                  {pns.map((pn) => masterMap[pn]?.name || pn).join(" · ")}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* 미배치 패널 — 정렬 토글(출고 상위순 / 분류별) 지원 (2026-08-25) */
+function UnplacedPanel({
+  rows,
+  openLg,
+  onToggle,
+  onSelect,
+}: {
+  rows: CatListRow[];
+  openLg: string | null;
+  onToggle: (lg: string) => void;
+  onSelect?: (row: CatListRow) => void;
+}) {
+  const [mode, setMode] = useState<"qty" | "lg">("qty");
+  return (
+    <div>
+      <div className="flex items-center gap-1 px-1 pb-1">
+        <button
+          type="button"
+          onClick={() => setMode("qty")}
+          className={
+            "rounded-full px-2.5 py-0.5 text-[10px] font-bold border transition-colors " +
+            (mode === "qty"
+              ? "bg-purple-600 text-white border-purple-600"
+              : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50")
+          }
+        >
+          출고량 순
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("lg")}
+          className={
+            "rounded-full px-2.5 py-0.5 text-[10px] font-bold border transition-colors " +
+            (mode === "lg"
+              ? "bg-sky-600 text-white border-sky-600"
+              : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50")
+          }
+        >
+          분류별
+        </button>
+      </div>
+      {mode === "qty" ? (
+        <CategoryList
+          sortBy="qty"
+          rows={rows}
+          openLg={openLg}
+          onToggle={onToggle}
+          onSelect={onSelect}
+        />
+      ) : (
+        <CategoryList
+          rows={rows}
+          openLg={openLg}
+          onToggle={onToggle}
+          onSelect={onSelect}
+        />
+      )}
     </div>
   );
 }
