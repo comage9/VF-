@@ -3054,7 +3054,7 @@ export default function ProductDisplayPage() {
       if (!val) continue;
       const pns = val.split(",").map((s) => s.trim()).filter(Boolean);
       if (!pns.length) continue;
-      const no = getZigzagLocNo(zid); // L7/X 등 뱀모양 밖 칸은 null → 번호 0
+      const no = getALocNo(zid); // L1~L6 지그재그 + L7(115~122)
       // 다품목 칸: 품목별 개별 행으로 출력 (같은 로케이션 번호·분류 공유, 2026-08-25)
       for (const pn of pns) {
         const m = resolveMasterForZone(pn, zid);
@@ -3136,10 +3136,10 @@ export default function ProductDisplayPage() {
       window.alert("적용할 데이터 행이 없습니다. 로케이션(320-…) 값을 확인해주세요.");
       return;
     }
-    // 지그재그 로케이션 번호 → 칸 ID 역매핑 (calcZigzagLocNo 단일 공식)
+    // 로케이션 번호 → 칸 ID 역매핑 (L1~L6 지그재그 + L7 115~122)
     const noToZone = new Map<number, string>();
-    for (const z of aSeq.filter((z) => /^A-L[1-6]-\d+$/.test(z))) {
-      const no = getZigzagLocNo(z);
+    for (const z of aSeq.filter((z) => /^A-L[1-7]/.test(z))) {
+      const no = getALocNo(z);
       if (no !== null) noToZone.set(no, z);
     }
     // 로케이션 번호별 그룹핑 (같은 번호 = 한 칸 다품목)
@@ -4623,6 +4623,19 @@ function getZigzagLocNo(zoneId: string): number | null {
   const m = zoneId.match(/^A-L(\d)-(\d+)$/);
   if (!m) return null;
   return calcZigzagLocNo(parseInt(m[1], 10), parseInt(m[2], 10));
+}
+
+/** L7(7번 라인) 로케이션 번호: 8칸 × 2슬롯 → 칸(2슬롯 묶음) 기준 115~122 (2026-08-25 사용자 지정) */
+function getL7LocNo(zoneId: string): number | null {
+  const m = zoneId.match(/^A-L7-(\d+)-([12])$/);
+  if (!m) return null;
+  return 114 + parseInt(m[1], 10); // 칸1=115 … 칸8=122
+}
+
+/** 통합 로케이션 번호: L1~L6 지그재그 + L7(115~122) */
+function getALocNo(zoneId: string): number | null {
+  if (zoneId.startsWith("A-L7")) return getL7LocNo(zoneId);
+  return getZigzagLocNo(zoneId);
 }
 
 /** 한 칸에 여러 제품이 있을 때 각 제품의 로케이션 번호 반환
