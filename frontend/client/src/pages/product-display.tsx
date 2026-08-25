@@ -4634,24 +4634,29 @@ function getProductLocNos(zoneId: string, itemCount: number): number[] {
   return Array.from({ length: itemCount }, (_, i) => baseLocNo + i);
 }
 
-/** B/C/D동 로케이션 번호 — 각 동별 zone 순서대로 1번부터 */
+/** C/D동 로케이션 번호 — zone 순서대로 1번부터 */
 const dongLocMap: Record<string, number> = {};
+/** B동 로케이션 번호 (2026-08-25 재배치): 칸 하나 = 4번호, 200번부터.
+ *  B-B상단-1 → 200~203, B-B상단-2 → 204~207 … (레이아웃 zones 순서 = 물리 배치 순서) */
 function getDongLocNo(zoneId: string): number | null {
-  if (dongLocMap[zoneId]) return dongLocMap[zoneId];
-
-  const dong = zoneId.split("-")[0];
-  if (!["B", "C", "D"].includes(dong)) return null;
-
-  // 레이아웃에서 해당 동의 zones 순서 찾기
-  const layout = DONG_LAYOUTS.find((r) => r.key === dong);
+  if (!zoneId.startsWith("B-")) {
+    // C/D동: 기존 규칙(1번부터 순차)
+    if (dongLocMap[zoneId]) return dongLocMap[zoneId];
+    const dong = zoneId.split("-")[0];
+    if (!["C", "D"].includes(dong)) return null;
+    const layout = DONG_LAYOUTS.find((r) => r.key === dong);
+    if (!layout) return null;
+    const idx = layout.zones.findIndex((z) => z.id === zoneId);
+    if (idx < 0) return null;
+    const locNo = idx + 1;
+    dongLocMap[zoneId] = locNo;
+    return locNo;
+  }
+  const layout = DONG_LAYOUTS.find((r) => r.key === "B");
   if (!layout) return null;
-
   const idx = layout.zones.findIndex((z) => z.id === zoneId);
   if (idx < 0) return null;
-
-  const locNo = idx + 1;
-  dongLocMap[zoneId] = locNo;
-  return locNo;
+  return 200 + idx * 4; // 칸 시작 번호 (끝 번호 = +3)
 }
 
 /** B/C/D동 한 칸에 여러 제품이 있을 때 각 제품의 로케이션 번호 반환 */
@@ -5259,7 +5264,9 @@ function ZoneCell({
       )}
       {!isA && getDongLocNo(z.id) !== null && (
         <span className="absolute top-0.5 right-0.5 text-[7px] leading-none font-mono font-bold text-amber-600 pointer-events-none">
-          {getDongLocNo(z.id)}
+          {z.id.startsWith("B-")
+            ? `${getDongLocNo(z.id)}·${(getDongLocNo(z.id) ?? 0) + 3}` // B동: 시작·끝 번호만 (4번호/칸)
+            : getDongLocNo(z.id)}
         </span>
       )}
     </button>
