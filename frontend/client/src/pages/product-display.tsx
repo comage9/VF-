@@ -1166,8 +1166,8 @@ export default function ProductDisplayPage() {
   const [serverSyncError, setServerSyncError] = useState(false); // 3회 재시도 실패 → 헤더 경고
   const [serverRetrying, setServerRetrying] = useState(false);
   const [conflictInfo, setConflictInfo] = useState<{ serverVersion: number; serverPayload: PdSnapshotPayload | null } | null>(null);
-  const conflictPendingRef = useRef(false); // 충돌 미해결 상태 — 자동 저장 보류 가드
-  useEffect(() => { conflictPendingRef.current = conflictInfo != null; }, [conflictInfo]);
+  const conflictPendingRef = useRef(false); // last-write-wins 전환: 항상 false — 자동 저장 항상 허용
+  useEffect(() => { conflictPendingRef.current = false; }, []);
   const [lastServerSave, setLastServerSave] = useState<{ at: string; by: string } | null>(null);
   const [historyList, setHistoryList] = useState<PdHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -1183,6 +1183,7 @@ export default function ProductDisplayPage() {
   const pdSyncTimer = useRef<number | null>(null);
   const serverRestoreRef = useRef(false); // 서버판 적용 시 4개 useEffect → echo 저장 1회 스킵
   const pdEchoGuardRef = useRef(false); // 서버판 적용 직후 디바운스 저장 1회 스킵 (불필요 버전 증가 방지)
+  const pdDirtyRef = useRef(false); // 미저장 변경 플래그 (수동 저장 전용 모드)
   const snapshotRef = useRef<PdSnapshotPayload | null>(null); // 즉시 저장(복원·충돌)용 최신 스냅샷 캐시
 
   /** 최신 4개 상태 → 통합 스냅샷 (저장 직전 시각 갱신) */
@@ -1218,18 +1219,9 @@ export default function ProductDisplayPage() {
           body: JSON.stringify(body),
         });
         if (resp.status === 409) {
-          let latest: { version?: number; payload?: string } | null = null;
-          try {
-            const j = await resp.json();
-            latest = j?.latest ?? null;
-          } catch {
-            /* 본문 파싱 실패 무시 */
-          }
-          setConflictInfo({
-            serverVersion: typeof latest?.version === "number" ? latest.version : -1,
-            serverPayload: parsePdPayload(latest?.payload),
-          });
+          // last-write-wins: 서버판을 받아온 뒤 내 현재 상태로 강제 덮어쓰기 (충돌 배너 폐지, 2026-08-25)
           setServerSyncError(false);
+          void pdSaveToServer(snapshotRef.current || snap, null, true);
           return;
         }
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -1253,18 +1245,9 @@ export default function ProductDisplayPage() {
                 body: JSON.stringify(body),
               });
               if (resp.status === 409) {
-                let latest: { version?: number; payload?: string } | null = null;
-                try {
-                  const jj = await resp.json();
-                  latest = jj?.latest ?? null;
-                } catch {
-                  /* 무시 */
-                }
-                setConflictInfo({
-                  serverVersion: typeof latest?.version === "number" ? latest.version : -1,
-                  serverPayload: parsePdPayload(latest?.payload),
-                });
+                // last-write-wins: 재시도 경로에서도 강제 덮어쓰기
                 setServerSyncError(false);
+                void pdSaveToServer(snapshotRef.current || snap, null, true);
                 return;
               }
               if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -1287,22 +1270,12 @@ export default function ProductDisplayPage() {
     []
   );
 
-  /** 변경 감지 → 2초 디바운스 후 서버 저장 (localStorage 자동 저장은 별도 유지) */
+  /** 변경 감지 → 서버 자동 저장 (수동 저장 버튼 방식으로 전환: 호출 안 함) */
   const scheduleServerSave = useCallback(() => {
-    if (serverRestoreRef.current) return; // 서버판 적용 중 echo 저장 스킵
-    if (pdEchoGuardRef.current) {
-      // 서버판 적용 직후 첫 변경은 복원 자체의 반영 — 저장 스킵 (불필요 버전 증가 방지)
-      pdEchoGuardRef.current = false;
-      return;
-    }
-    if (conflictPendingRef.current) return; // 충돌 미해결 → 자동 저장 보류 (조용한 덮어쓰기 방지)
-    if (pdSyncTimer.current != null) window.clearTimeout(pdSyncTimer.current);
-    pdSyncTimer.current = window.setTimeout(() => {
-      pdSyncTimer.current = null;
-      if (conflictPendingRef.current) return; // 충돌 미해결 → 저장 보류 재확인
-      void pdSaveToServer(buildSnapshot(), serverVerRef.current, false);
-    }, 2000);
-  }, [buildSnapshot, pdSaveToServer]);
+    // 수동 저장 전용: 상태 변경 시 서버 저장하지 않음. 저장 버튼(saveData)에서만 저장.
+    if (serverRestoreRef.current) return; // 서버판 적용 중 echo 스킵 유지
+    pdDirtyRef.current = true;
+  }, []);
 
   /** 대기 중인 저장을 즉시 실행 (복원 전 자동 저장·수동 재시도·충돌 덮어쓰기) */
   const pdFlushNow = useCallback(
@@ -1388,11 +1361,13 @@ export default function ProductDisplayPage() {
           // 내용 동일 → 버전·시각만 반영
           return;
         }
-        // 내용 다름 → 충돌 배너 (조용한 덮어쓰기 금지: 사용자가 서버판 적용/덮어쓰기 선택)
-        setConflictInfo({
-          serverVersion: typeof latest.version === "number" ? latest.version : -1,
-          serverPayload: p,
+        // 내용 달라도 서버판이 정답 (last-write-wins — 어느 기기에서 접속해도 동일 화면, 2026-08-25)
+        applyServerPayload(p, typeof latest.version === "number" ? latest.version : undefined, {
+          at: latest.created_at,
+          by: latest.saved_by,
         });
+        setSaveMsg("✅ 서버 최신 버전 적용됨");
+        window.setTimeout(() => setSaveMsg(""), 2000);
         return;
       }
       // found=false → 현재 로컬 상태를 최초 업로드(시드) — 실패 시 재시도/경고 로직 재사용
@@ -1404,42 +1379,7 @@ export default function ProductDisplayPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** 충돌 처리: 서버판 적용 (4개 상태 복원 + 로컬 키 동기화) */
-  const pdApplyServer = () => {
-    const c = conflictInfo;
-    setConflictInfo(null);
-    if (!c || !c.serverPayload) {
-      // 서버판 재조회 시도
-      void (async () => {
-        try {
-          const resp = await fetch("/api/product-display/latest");
-          if (!resp.ok) return;
-          const j = await resp.json();
-          if (!j?.found) return;
-          const p = parsePdPayload(j.payload);
-          if (!p) return;
-          applyServerPayload(p, typeof j.version === "number" ? j.version : undefined, {
-            at: j.created_at ?? p.savedAt,
-            by: j.saved_by || "server",
-          });
-          setSaveMsg("✅ 서버판 적용됨");
-          window.setTimeout(() => setSaveMsg(""), 2000);
-        } catch {
-          /* 재조회 실패 무시 */
-        }
-      })();
-      return;
-    }
-    applyServerPayload(c.serverPayload, c.serverVersion >= 0 ? c.serverVersion : undefined);
-    setSaveMsg("✅ 서버판 적용됨");
-    window.setTimeout(() => setSaveMsg(""), 2000);
-  };
-
-  /** 충돌 처리: 내 것으로 덮어쓰기 (base_version 생략 강제 저장) */
-  const pdOverwrite = () => {
-    setConflictInfo(null);
-    void pdSaveToServer(buildSnapshot(), null, true);
-  };
+  /** (구) 충돌 처리 함수 — last-write-wins 전환으로 미사용, 2026-08-25 제거 대상 */
 
   /** 히스토리 목록 조회 (서버 버전 탭) */
   const pdLoadHistory = useCallback(async () => {
@@ -2766,6 +2706,9 @@ export default function ProductDisplayPage() {
       STORAGE_KEY,
       JSON.stringify({ __v: "rank-a-v29", data })
     );
+    // 수동 저장: 서버에도 즉시 저장 (자동 저장 제거됨)
+    void pdFlushNow(true);
+    pdDirtyRef.current = false;
     setSaveMsg("저장되었습니다.");
     window.setTimeout(() => setSaveMsg(""), 2000);
   };
@@ -3099,7 +3042,7 @@ export default function ProductDisplayPage() {
   };
 
   /** 엑셀 다운로드: 현재 localStorage(=state) A동 배치 → "vf 품목 제베치도" 형식
-   *  순위 = 뱀모양 로케이션 번호(1~114) 오름차순, 다품목 칸은 품목당 1행(같은 번호) */
+   *  순위 = 뱀모양 로케이션 번호(1~114) 오름차순, 다품목 칸은 한 행에 Alt+Enter 줄바꿈으로 결합 */
   const exportExcelA = () => {
     // A동 정렬된 칸 목록 (물리 순서 — 출력은 번호 정렬이지만 안전용)
     const aZones = aZonesOf(data);
@@ -3112,19 +3055,17 @@ export default function ProductDisplayPage() {
       const pns = val.split(",").map((s) => s.trim()).filter(Boolean);
       if (!pns.length) continue;
       const no = getZigzagLocNo(zid); // L7/X 등 뱀모양 밖 칸은 null → 번호 0
-      pns.forEach((pn) => {
-        // 중복 제품번호는 존 맥락(바코드→분류→이름) 기준 해결 (2026-08-22)
-        const m = resolveMasterForZone(pn, zid);
-        rows.push({
-          no: no ?? 0,
-          rank: no ?? 0,
-          cat: m?.lg || A_ZONE_CAT[zid] || "",
-          loc: pnumToLoc(pn),
-          name: m?.name || "",
-          barcode: m?.barcode || "",
-          boxes: m?.barcode ? calcMonthQty(m.barcode) : 0,
-          pn,
-        });
+      // 다품목 칸: 대표품목 기준 메타 1행, 로케이션은 줄바꿈 결합 (Alt+Enter 왕복, 2026-08-25)
+      const m0 = resolveMasterForZone(pns[0], zid);
+      rows.push({
+        no: no ?? 0,
+        rank: no ?? 0,
+        cat: m0?.lg || A_ZONE_CAT[zid] || "",
+        loc: pns.map((pn) => pnumToLoc(pn)).join("\n"),
+        name: m0?.name || "",
+        barcode: m0?.barcode || "",
+        boxes: m0?.barcode ? calcMonthQty(m0.barcode) : 0,
+        pn: pns.join(","),
       });
     }
     rows.sort((a, b) => a.no - b.no || a.loc.localeCompare(b.loc));
@@ -3152,20 +3093,35 @@ export default function ProductDisplayPage() {
       window.alert("엑셀 형식이 맞지 않습니다. 첫 줄 헤더에 '순위_1개월박스', '로케이션' 열이 필요합니다. (기준: 시트 'vf 품목 제베치도')");
       return;
     }
-    // 데이터 행 파싱 (순위 오름차순 정렬 — 행 순서 보존 정렬)
-    const parsed: { rank: number; pn: string }[] = [];
+    // 데이터 행 파싱 (행 순서 그대로 배치 — 2026-08-25)
+    // 로케이션 셀 = 한 칸. 값은 제품번호만 입력 가능 (예: "161" 또는 Alt+Enter로 "5\n6\n7")
+    // "320-A1-1-N" 전체 로케이션 문자열도 하위 호환으로 인식
+    const parsed: { pn: string; cellKey: string }[] = [];
+    let rowIndex = 0;
     for (const r of rows.slice(1)) {
-      const locStr = String(r[idxLoc] ?? "").trim();
-      const pn = locToPnum(locStr);
-      if (!pn) continue;
-      const rank = parseFloat(String(r[idxRank] ?? ""));
-      parsed.push({ rank: Number.isFinite(rank) ? rank : Number.MAX_SAFE_INTEGER, pn });
+      const raw = String(r[idxLoc] ?? "").replace(/\r\n/g, "\n");
+      const parts = raw.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
+      if (!parts.length) continue;
+      rowIndex++;
+      // 행 단위 그룹: 같은 행의 모든 유효 품목 = 한 칸 다품목
+      const groupPns: string[] = [];
+      for (const part of parts) {
+        let pn: string | null = null;
+        if (/^\d+$/.test(part)) {
+          pn = String(parseInt(part, 10)); // 단순 제품번호
+        } else {
+          pn = locToPnum(part); // "320-A1-1-N" 형식 하위 호환
+        }
+        if (pn && !groupPns.includes(pn)) groupPns.push(pn);
+      }
+      if (!groupPns.length) continue;
+      const cellKey = `row${rowIndex}`;
+      for (const pn of groupPns) parsed.push({ pn, cellKey });
     }
     if (!parsed.length) {
       window.alert("적용할 데이터 행이 없습니다. 로케이션(320-…) 값을 확인해주세요.");
       return;
     }
-    parsed.sort((a, b) => a.rank - b.rank);
     // A동 L1~L6 물리 순서 칸 목록 (뱀모양 번호 1,2,3,… = 이 순서)
     const snake = aSeq.filter((z) => /^A-L[1-6]-\d+$/.test(z));
     const next: PlacementMap = { ...data };
@@ -3184,10 +3140,10 @@ export default function ProductDisplayPage() {
     for (const n of snake) {
       if (i >= parsed.length) break;
       const group: string[] = [parsed[i].pn];
-      const r0 = parsed[i].rank;
+      const cell0 = parsed[i].cellKey;
       i++;
-      // 같은 로케이션 번호 행은 한 칸 다품목으로 병합 (제한 없음)
-      while (i < parsed.length && parsed[i].rank === r0) {
+      // 같은 행(cellKey)의 품목들 = 한 칸 다품목으로 병합 (제한 없음)
+      while (i < parsed.length && parsed[i].cellKey === cell0) {
         if (!group.includes(parsed[i].pn)) group.push(parsed[i].pn);
         i++;
       }
@@ -3541,6 +3497,35 @@ export default function ProductDisplayPage() {
             </p>
           }
         />
+      ) : panelTab === "server" ? (
+        <div className="space-y-2 px-1">
+          <p className="text-[10px] text-slate-700 bg-slate-100 rounded px-2 py-1 leading-snug">
+            서버에는 <b>직전 버전 1개</b>만 보관됩니다. 복원하면 현재 상태가 먼저 저장된 뒤 직전 버전으로 되돌립니다.
+          </p>
+          {historyLoading ? (
+            <div className="text-xs text-muted-foreground px-2 py-3 text-center">불러오는 중...</div>
+          ) : historyList.length === 0 ? (
+            <div className="text-xs text-muted-foreground px-2 py-3 text-center">보관된 이전 버전 없음</div>
+          ) : (
+            historyList.slice(0, 1).map((h) => (
+              <div key={h.version} className="border rounded-md px-2 py-1.5 flex items-center justify-between gap-2">
+                <div className="min-w-0 text-[11px]">
+                  <div className="font-bold tabular-nums">버전 {h.version}</div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {new Date(h.created_at).toLocaleString("ko-KR")} · {h.saved_by}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="shrink-0 rounded bg-indigo-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-indigo-700"
+                  onClick={() => void pdRestoreVersion(h.version)}
+                >
+                  이 버전으로 복원
+                </button>
+              </div>
+            ))
+          )}
+        </div>
       ) : (
         <div className="overflow-auto max-h-[560px] space-y-1 pr-1">
           {overflow.length === 0 ? (
@@ -3681,23 +3666,7 @@ export default function ProductDisplayPage() {
           </span>
         </p>
 
-        {/* 충돌 배너 (낙관적 락 409) */}
-        {conflictInfo && (
-          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-orange-300 bg-orange-50 px-3 py-2">
-            <span className="text-xs font-semibold text-orange-800">
-              ⚠ 충돌 발생 — 다른 브라우저에서 새 버전{conflictInfo.serverVersion >= 0 ? `(버전 ${conflictInfo.serverVersion})` : ""}이 저장되었습니다.
-            </span>
-            <button type="button" className="rounded bg-orange-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-orange-700" onClick={pdApplyServer}>
-              서버판 적용
-            </button>
-            <button type="button" className="rounded border border-orange-400 bg-white px-2.5 py-1 text-xs font-bold text-orange-700 hover:bg-orange-100" onClick={pdOverwrite}>
-              내 것으로 덮어쓰기
-            </button>
-            <button type="button" className="rounded px-1.5 py-1 text-xs text-orange-500 hover:text-orange-700" onClick={() => setConflictInfo(null)}>
-              닫기
-            </button>
-          </div>
-        )}
+        {/* 충돌 배너 — last-write-wins 전환으로 폐지 (2026-08-25) */}
 
         {/* 제품 위치 검색: 제품명 / 로케이션 / 제품번호 / 바코드 */}
         <div className="relative mb-3">
