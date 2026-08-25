@@ -427,10 +427,9 @@ function buildADongLayout(
       });
 
       for (let i = 0; i < A_BOTTOM_SLOTS; i++) {
-        const isLast = i === A_BOTTOM_SLOTS - 1;
         const cellLeft = Math.round(bottomStartLeft + i * l7Step);
         const halfW = Math.floor(l7SlotW / 2);
-        // 좌 슬롯 (7-N-1) — 외곽 테두리(좌/상/하)로 한 칸 묶음 표현
+        // 좌 슬롯 (7-N-1) — 일반 칸과 동일 UI (테두리 미지정 → 기본 스타일)
         zones.push({
           id: `A-L7-${i + 1}-1`,
           num: "",
@@ -441,13 +440,9 @@ function buildADongLayout(
             top: bottomTop,
             width: halfW,
             height: l7SlotH * 2,
-            borderLeft: "2px solid #334155",
-            borderTop: "2px solid #334155",
-            borderBottom: "2px solid #334155",
-            borderRight: "1px dashed #cbd5e1",
           },
         });
-        // 우 슬롯 (7-N-2) — 외곽 테두리(우/상/하)로 한 칸 묶음 표현
+        // 우 슬롯 (7-N-2) — 일반 칸과 동일 UI
         zones.push({
           id: `A-L7-${i + 1}-2`,
           num: "",
@@ -459,10 +454,6 @@ function buildADongLayout(
             top: bottomTop,
             width: l7SlotW - halfW,
             height: l7SlotH * 2,
-            borderRight: isLast ? "2px solid #334155" : "2px solid #334155",
-            borderTop: "2px solid #334155",
-            borderBottom: "2px solid #334155",
-            borderLeft: "1px dashed #cbd5e1",
           },
         });
         zones[zones.length - 2].locNo = 114 + (i + 1); // 좌 슬롯에도 동일 번호
@@ -3943,7 +3934,6 @@ export default function ProductDisplayPage() {
                 key={z.id}
                 z={z}
                 value={data[z.id]}
-                isL7={z.line === 7}
                 matched={filterMatchedZones.has(z.id)}
                 flash={flashZone === z.id}
                 sel={selZone === z.id}
@@ -5126,7 +5116,6 @@ function DragChip({
 function ZoneCell({
   z,
   value,
-  isL7,
   matched,
   flash,
   sel,
@@ -5143,7 +5132,6 @@ function ZoneCell({
 }: {
   z: ZoneDef;
   value: string;
-  isL7: boolean;
   matched: boolean;
   flash: boolean;
   sel: boolean;
@@ -5229,9 +5217,7 @@ function ZoneCell({
       className={
         "absolute flex items-center justify-center rounded border text-center px-0.5 transition-colors " +
         (assigned
-          ? isL7
-            ? "border-orange-600 bg-orange-50"
-            : "border-blue-700 bg-blue-50"
+          ? "border-blue-700 bg-blue-50"
           : "border-slate-500 bg-white hover:bg-sky-50 hover:border-blue-500") +
         (sel ? " ring-2 ring-amber-400 ring-offset-1" : "") +
         (flash ? " vf-zone-flash" : "") +
@@ -5246,8 +5232,7 @@ function ZoneCell({
       {assigned ? (
         <span
           className={
-            "font-semibold text-[10px] leading-tight tabular-nums " +
-            (isL7 ? "text-orange-900" : "text-blue-900") +
+            "font-semibold text-[10px] leading-tight tabular-nums text-blue-900" +
             (items.length > 1 ? " flex flex-col items-center text-[8px] leading-[1.15]" : "")
           }
         >
