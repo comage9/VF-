@@ -261,7 +261,12 @@ def _zai_get_config():
 def _zai_call_messages(
     *, system: str, user: str, max_tokens: int = 2048, temperature: float = 0.3
 ):
-    """OpenRouter 무료 모델만 호출. 유료 모델 경로는 없음."""
+    """OpenRouter 무료 모델만 호출. 유료 모델 경로는 없음.
+
+    [2026-08-23 비활성화] OpenRouter가 무료 모델 제공을 중단하여 404 반복.
+    강제 비활성화 — None 반환으로 호출처는 폴백/스킵 처리.
+    """
+    return None
     try:
         from . import openrouter_service as ors
 
@@ -14409,8 +14414,8 @@ from .models import ProductDisplaySnapshot as _PD_Snapshot
 
 # payload 크기 상한 2MB (초과 시 413)
 _PD_MAX_PAYLOAD_BYTES = 2 * 1024 * 1024
-# 보관 상한 — 초과 시 오래된 스냅샷부터 삭제
-_PD_KEEP_COUNT = 20
+# 보관 상한 — 직전 버전 1개만 보관 (복원용), 초과 시 오래된 것부터 삭제 (2026-08-25)
+_PD_KEEP_COUNT = 2
 
 
 def _pd_snapshot_dict(s):
@@ -14432,11 +14437,59 @@ def _pd_check_write_token(request):
     return None
 
 
+def _pd_sanitize_payload(payload_str):
+    """제품번호 중복 제거 (2026-08-28): 같은 제품번호는 전체 칸 통틀어 1회만 유지.
+    동 우선순위 A→B→C→D→E — 먼저 나오는 동에 배치 유지, 나중 동에서 제거.
+    (사용자 정본 배치 동 보존: 예) 슬림형 서랍장 B동 정본·C동 중복 → C동에서 제거)
+    같은 칸 내 중복은 첫 발생만 유지. 파싱 실패 시 원본 반환."""
+    try:
+        p = json.loads(payload_str)
+    except Exception:
+        return payload_str
+    data = p.get('data')
+    if not isinstance(data, dict):
+        return payload_str
+    _DONG_ORDER = {'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4}
+
+    def _rank(zid):
+        return _DONG_ORDER.get((zid or '').split('-')[0], 9)
+
+    seen = set()
+    cleaned = {}
+    changed = False
+    # 안정 정렬: 동 우선순위 → 동 내 삽입 순서 유지
+    for zid in sorted(data.keys(), key=_rank):
+        val = data[zid]
+        if not isinstance(val, str):
+            cleaned[zid] = val
+            continue
+        items = [x.strip() for x in val.split(',') if x.strip()]
+        kept = []
+        for pn in items:
+            if pn in seen:
+                changed = True
+                continue
+            seen.add(pn)
+            kept.append(pn)
+        if kept:
+            cleaned[zid] = ','.join(kept)
+        elif val.strip():
+            cleaned[zid] = ''
+        else:
+            cleaned[zid] = val
+    if not changed:
+        return payload_str
+    p['data'] = cleaned
+    return json.dumps(p, ensure_ascii=False, separators=(',', ':'))
+
+
 def _pd_save_snapshot(payload, saved_by, skip_duplicate=True):
     """스냅샷 저장. (저장된 스냅샷, 중복 스킵 여부) 반환.
 
     복원(복구 이력 보존)은 skip_duplicate=False로 항상 새 버전 생성.
+    저장 전 제품번호 중복은 항상 제거 (_pd_sanitize_payload, 2026-08-28).
     """
+    payload = _pd_sanitize_payload(payload)
     payload_hash = hashlib.sha1(payload.encode('utf-8')).hexdigest()
     latest = _PD_Snapshot.objects.order_by('-version').first()
 

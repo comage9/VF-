@@ -60,6 +60,7 @@ const STAGING_KEY = "vf_product_display_staging_v1";
 const STAGING_VERSION = "staging-v3";
 /** 라인 구성(라인별 칸 수·숨김 슬롯·라벨) 저장 키 — 기본 LineSpec 상수를 오버라이드 (편집 패널: 수정 모드 "라인 설정") */
 const LINE_CONFIG_KEY = "vf_pd_line_config_v1";
+const LOC_EXC_KEY = "vf_pd_loc_exceptions_v1";
 const LINE_CONFIG_VERSION = "line-config-v1";
 /** 로컬 마지막 저장 시각 키 — 서버 로드 시 서버판 vs 로컬판 비교 기준 (서버 영속화, 2026-08-23) */
 const SAVEDAT_KEY = "vf_pd_savedat_v1";
@@ -186,18 +187,19 @@ type PdSnapshotPayload = {
   layout: DongLayout[];
   lineConfig: LineConfigMap;
   staging: string[];
+  locExceptions?: string[];
   savedAt: string;
 };
 type PdHistoryItem = { version: number; saved_by: string; created_at: string; size?: number };
 
-/** 서버 스냅샷 payload 파싱 — 유효하지 않으면 null (로컬 유지) */
+/** 서버 스냅샷 payload 파싱 — 유효하지 않으면 null (로컬 유지)
+ *  layout 누락 시 코드 기본 레이아웃(DONG_LAYOUTS) 사용 (2026-08-27) */
 function parsePdPayload(payloadStr: string | null | undefined): PdSnapshotPayload | null {
   if (!payloadStr || typeof payloadStr !== "string") return null;
   try {
     const p = JSON.parse(payloadStr);
     if (!p || typeof p !== "object") return null;
     if (!p.data || typeof p.data !== "object") return null;
-    if (!Array.isArray(p.layout)) return null;
     if (!Array.isArray(p.staging)) return null;
     const lc = (p.lineConfig && typeof p.lineConfig === "object" ? p.lineConfig : {}) as LineConfigMap;
     // L7 마이그레이션 (2026-08-25): 옛 2슬롯 A-L7-N-1/-2 → 통일 칸 A-L7-N 병합
@@ -210,11 +212,19 @@ function parsePdPayload(payloadStr: string | null | undefined): PdSnapshotPayloa
       d7[`A-L7-${m[1]}`] = Array.from(new Set(merged)).join(",");
       delete d7[zid];
     }
+    // layout 누락/손상 시 코드 기본 레이아웃 사용 (2026-08-27)
+    const layout: DongLayout[] = Array.isArray(p.layout) && p.layout.length > 0
+      ? (p.layout as DongLayout[])
+      : DONG_LAYOUTS;
     return {
-      data: p.data as PlacementMap,
-      layout: p.layout as DongLayout[],
+      // 전역 중복 정리 후 반환 (2026-08-28) — 서버판·옛 스냅샷 오염 데이터 교정
+      data: sanitizePlacementMap(p.data as PlacementMap),
+      layout,
       lineConfig: lc,
       staging: (p.staging as unknown[]).filter((x): x is string => typeof x === "string"),
+      locExceptions: Array.isArray(p.locExceptions)
+        ? (p.locExceptions as unknown[]).filter((x): x is string => typeof x === "string")
+        : undefined,
       savedAt: typeof p.savedAt === "string" ? p.savedAt : "",
     };
   } catch {
@@ -257,6 +267,7 @@ function writeLocalFromPayload(p: PdSnapshotPayload) {
     localStorage.setItem(LAYOUT_KEY, JSON.stringify({ __v: LAYOUT_VERSION, layout: p.layout }));
     localStorage.setItem(STAGING_KEY, JSON.stringify({ __v: STAGING_VERSION, items: p.staging }));
     localStorage.setItem(LINE_CONFIG_KEY, JSON.stringify({ __v: LINE_CONFIG_VERSION, data: p.lineConfig }));
+    if (p.locExceptions) localStorage.setItem(LOC_EXC_KEY, JSON.stringify(p.locExceptions));
     if (p.savedAt) localStorage.setItem(SAVEDAT_KEY, p.savedAt);
   } catch {
     /* 저장 실패 무시 */
@@ -370,7 +381,7 @@ function buildADongLayout(
       // 숨김 슬롯(입구 자리 등)은 화면에서만 제외 — 배치 데이터는 보존
       if (lineSpec.hiddenSlots?.includes(numVal)) continue;
       const placeFromTop = bottomIsStart ? lineSpec.count - 1 - i : i;
-      // 통로 중심 뱀 모양 로케이션 번호 (getZigzagLocNo와 단일 공식 — calcZigzagLocNo)
+      // 통로 중심 뱀 모양 순서 = 누적 번호 순서의 기준 (단일 공식: calcZigzagLocNo)
       const locNo = calcZigzagLocNo(lineSpec.line, numVal) ?? undefined;
       zones.push({
         id: `${dong}-L${lineSpec.line}-${numVal}`,
@@ -417,20 +428,18 @@ function buildADongLayout(
       const l7TotalWidth = l2Right - bottomStartLeft;
 
       lineLabels.push({
-        text: "7번 라인 (슬림서랍장·칵투스, 7-1-1부터)",
+        text: "7번 라인 (슬림서랍장·칵투스)",
         style: {
           left: bottomStartLeft,
           top: vertBottom + slot.bottomLineGap - 2,
           width: l7TotalWidth,
           textAlign: "left",
-          fontSize: 11,
-          fontWeight: 700,
-          color: "#b45309",
         },
       });
 
       for (let i = 0; i < A_BOTTOM_SLOTS; i++) {
         // L7 통일 (2026-08-25): 1칸=1 zone — 일반 칸과 동일 크기·간격 (기존 2슬롯 구조 폐지)
+        // 간격은 SLOT.tightGap(6) 사용 — 일반 라인의 tight pair 간격과 동일
         zones.push({
           id: `A-L7-${i + 1}`,
           num: "",
@@ -438,7 +447,7 @@ function buildADongLayout(
           showNumAsProduct: false,
           locNo: 115 + i, // 로케이션 번호 115~122
           style: {
-            left: Math.round(bottomStartLeft + i * (slot.w + 6)),
+            left: Math.round(bottomStartLeft + i * (slot.w + slot.tightGap)),
             top: bottomTop,
             width: slot.w,
             height: slot.h,
@@ -926,6 +935,29 @@ const SOFT_ZONES = ["A-L1-19", "A-L2-19", "A-L2-18", "A-L1-18", "A-L1-17", "A-L2
 /** 확정 빈칸 (배치표에서 비운 자리) */
 const EMPTY_ZONES = ["A-L2-1", "A-L3-17"];
 
+/** 배치맵 전역 중복 제거 (2026-08-28) — 한 제품은 전역에서 정확히 한 칸에만 배치 (R1 규칙)
+ *  동 우선순위: A→B→C→D→E 순으로 처리해 먼저 나오는 동에 배치 유지, 나중 동에서 제거.
+ *  (같은 동 내에서는 삽입 순서 유지 — 안정 정렬)
+ *  같은 칸 안 중복: 첫 제품번호만 유지. 빈 칸이 되면 키 제거. 새 맵 반환. */
+function sanitizePlacementMap(map: PlacementMap): PlacementMap {
+  const DONG_ORDER: Record<string, number> = { A: 0, B: 1, C: 2, D: 3, E: 4 };
+  const dongRank = (zid: string) => DONG_ORDER[(zid || "").split("-")[0]] ?? 9;
+  const entries = Object.entries(map).sort((a, b) => dongRank(a[0]) - dongRank(b[0]));
+  const out: PlacementMap = {};
+  const seen = new Set<string>();
+  for (const [zid, val] of entries) {
+    const items = (val || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const kept: string[] = [];
+    for (const pn of items) {
+      if (seen.has(pn)) continue; // 중복 — 이미 앞선 동·칸에 배치됨
+      seen.add(pn);
+      kept.push(pn);
+    }
+    if (kept.length) out[zid] = kept.join(",");
+  }
+  return out;
+}
+
 function loadPlacement(): PlacementMap {
   let data: PlacementMap | null = null;
   try {
@@ -940,7 +972,7 @@ function loadPlacement(): PlacementMap {
   } catch {
     /* 손상 시 기본값 */
   }
-  if (!data) return defaultAPlacement();
+  if (!data) return sanitizePlacementMap(defaultAPlacement());
   // L7 마이그레이션 (2026-08-25): 옛 2슬롯 A-L7-N-1/-2 → 통일 칸 A-L7-N 병합
   for (const [zid, val] of Object.entries(data)) {
     const m = /^A-L7-(\d+)-[12]$/.exec(zid);
@@ -993,14 +1025,18 @@ function loadPlacement(): PlacementMap {
       /* staging 저장 실패 무시 */
     }
   }
-  if (fixed) {
+  // 전역 중복 정리 (2026-08-28) — 오염된 로컬 데이터도 읽을 때 자동 교정
+  const cleaned = sanitizePlacementMap(data);
+  const changed = Object.keys(cleaned).length !== Object.keys(data).length
+    || JSON.stringify(cleaned) !== JSON.stringify(data);
+  if (fixed || changed) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: SAVED_VERSION, data }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ __v: SAVED_VERSION, data: cleaned }));
     } catch {
       /* 저장 실패 시 무시 */
     }
   }
-  return data;
+  return cleaned;
 }
 
 /** 임시 보관함 로드 — 손상/버전 불일치 시 칵투스/데크 기본값 */
@@ -1046,7 +1082,7 @@ export default function ProductDisplayPage() {
   const [movePnum, setMovePnum] = useState<string | null>(null); // 자리이탈 품목 이동 모드 (클릭한 칸으로 배치)
   const [saveMsg, setSaveMsg] = useState("");
   // 총괄 우측 패널: 배치/미배치 대분류별 목록 + 선택 상세
-  const [panelTab, setPanelTab] = useState<"placed" | "unplaced" | "overflow" | "staging" | "noout3m" | "server">("placed");
+  const [panelTab, setPanelTab] = useState<"placed" | "unplaced" | "overflow" | "staging" | "noout3m" | "list" | "server">("placed");
   const [openLg, setOpenLg] = useState<string | null>(null); // 분류 아코디언 (null=전부 접힘)
   const [selPnum, setSelPnum] = useState<string | null>(null);
   const [selZone, setSelZone] = useState<string | null>(null);
@@ -1141,6 +1177,25 @@ export default function ProductDisplayPage() {
       /* 용량/오류 무시 */
     }
   }, [staging]);
+
+  // 로케이션 번호 공유 예외칸 (사용자 지정 — 한 칸 여러 품목이어도 번호 1개만 소진)
+  const [locExceptions, setLocExceptions] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(LOC_EXC_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(arr) ? arr.filter((x): x is string => typeof x === "string") : []);
+    } catch {
+      return new Set<string>();
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOC_EXC_KEY, JSON.stringify(Array.from(locExceptions)));
+    } catch {
+      /* 무시 */
+    }
+  }, [locExceptions]);
+
   // 라인 구성 오버라이드 (초기값 = localStorage 저장분 — 반영은 레이아웃 재빌드 시)
   // ※ 편집 패널: 수정 모드 우측 "라인 설정" (2026-08-23)
   const [lineConfig, setLineConfig] = useState<LineConfigMap>(INITIAL_LINE_CONFIG);
@@ -1184,6 +1239,7 @@ export default function ProductDisplayPage() {
       layout: layoutState,
       lineConfig,
       staging,
+      locExceptions: Array.from(locExceptions),
       savedAt: new Date().toISOString(),
     };
     snapshotRef.current = snap;
@@ -1193,13 +1249,15 @@ export default function ProductDisplayPage() {
       /* 무시 */
     }
     return snap;
-  }, [data, layoutState, lineConfig, staging]);
+  }, [data, layoutState, lineConfig, staging, locExceptions]);
 
   /** 서버 저장 (낙관적 락) — 409: 충돌 배너 / 네트워크 실패: 재시도·경고 */
   const pdSaveToServer = useCallback(
     async (snap: PdSnapshotPayload, baseVersion: number | null, force: boolean) => {
+      // 전역 중복 정리 후 저장 (2026-08-28) — 오염 데이터가 서버에 다시 저장되지 않도록 방어
+      const cleanSnap: PdSnapshotPayload = { ...snap, data: sanitizePlacementMap(snap.data) };
       const body: { payload: string; saved_by: string; base_version?: number } = {
-        payload: JSON.stringify(snap),
+        payload: JSON.stringify(cleanSnap),
         saved_by: "browser",
       };
       if (baseVersion != null) body.base_version = baseVersion;
@@ -1284,11 +1342,14 @@ export default function ProductDisplayPage() {
   const applyServerPayload = useCallback((p: PdSnapshotPayload, version?: number, meta?: { at?: string; by?: string }) => {
     serverRestoreRef.current = true;
     pdEchoGuardRef.current = true;
-    setData(p.data);
+    // 전역 중복 정리 후 상태 적용 (2026-08-28) — 로컬 저장도 동일 데이터 사용
+    const cleanData = sanitizePlacementMap(p.data);
+    setData(cleanData);
     setLayoutState(p.layout);
     setLineConfig(p.lineConfig);
     setStaging(p.staging);
-    writeLocalFromPayload(p);
+    setLocExceptions(new Set(p.locExceptions || []));
+    writeLocalFromPayload({ ...p, data: cleanData });
     if (typeof version === "number") {
       serverVerRef.current = version;
       setServerVersion(version);
@@ -1751,6 +1812,36 @@ export default function ProductDisplayPage() {
     () => layoutState.find((r) => r.key === dong) ?? layoutState[0],
     [dong, layoutState]
   );
+
+  // 누적 로케이션 번호 지도 (2026-08-26) — 전 동 적용. A는 물리순 정렬 + L1·L2(1~38) 고정 앵커.
+  const dongLocNos = useMemo(() => {
+    const zs = dong === "A" ? orderAZones(current.zones) : current.zones;
+    return computeDongLocMap(zs, data, {
+      fixedUpTo: dong === "A" ? A_FIXED_LOC_MAX : undefined,
+      exceptions: locExceptions,
+    });
+  }, [current, data, dong, locExceptions]);
+
+  // 개별 동 화면 가로 확대 — 컨테이너 폭에 맞춰 지도 확대 표시 (수정 모드는 좌표 정밀도 위해 1배)
+  const mapWrapRef = useRef<HTMLDivElement | null>(null);
+  const [fitScale, setFitScale] = useState(1);
+  useEffect(() => {
+    const compute = () => {
+      if (!mapWrapRef.current || editMode || mobileView || dong === "ALL") {
+        setFitScale(1);
+        return;
+      }
+      const availW = mapWrapRef.current.clientWidth - 24;
+      if (availW <= 0) return;
+      const target = current.width + gridPad.l + gridPad.r;
+      if (target <= 0) return;
+      const s = Math.max(1, Math.min(2.5, (availW / target) * 0.9));
+      setFitScale(Number(s.toFixed(3)));
+    };
+    compute();
+    window.addEventListener("resize", compute);
+    return () => window.removeEventListener("resize", compute);
+  });
 
   // A동 zone 시퀀스 (물리 순서) — shift 기준.
   // buildADongLayout은 라인 내림차순으로 zones를 생성하므로 cmpZoneOrderA로 물리 순서 정렬.
@@ -2925,13 +3016,14 @@ export default function ProductDisplayPage() {
         }
       }
 
-      const allItems = [...topN, ...rest].filter(item => !aDongPnums.has(item.pnum));
-      let itemIdx = 0;
-
+      // B/C/D동: A동 미배치 제품 큐에서 하나씩 꺼내 배치 (shift 큐 — 2026-08-28)
+      // FIX: 인덱스(itemIdx) 추적은 큐 소진/재배열 시 중복·잔존 배치의 원인 → 큐에서 직접 꺼내면
+      // 각 제품이 정확히 한 번씩만 배치되어 칸 단위·크로스동 중복이 원천 차단됨.
+      const itemQueue = [...topN, ...rest].filter(item => !aDongPnums.has(item.pnum));
       for (const zoneId of dongZones) {
-        if (itemIdx < allItems.length) {
-          newDongPlacement[zoneId] = allItems[itemIdx++].pnum;
-        }
+        const item = itemQueue.shift();
+        if (!item) break;
+        newDongPlacement[zoneId] = item.pnum;
       }
     }
 
@@ -3032,77 +3124,93 @@ export default function ProductDisplayPage() {
     return cands[0];
   };
 
-  /** 엑셀 다운로드: 현재 localStorage(=state) A동 배치 → "vf 품목 제베치도" 형식
-   *  순위 = 뱀모양 로케이션 번호(1~114) 오름차순, 다품목 칸은 한 행에 Alt+Enter 줄바꿈으로 결합 */
-  const exportExcelA = () => {
-    // A동 정렬된 칸 목록 (물리 순서 — 출력은 번호 정렬이지만 안전용)
-    const aZones = aZonesOf(data);
-    type Row = { no: number; rank: number; cat: string; loc: string; name: string; barcode: string; boxes: number; pn: string };
+  /** 엑셀 다운로드: 현재 state A동 배치 → "vf 품목 제베치도" 형식
+   *  순위/로케이션(숫자) = 누적 로케이션 번호 (L1·L2 1~38 고정, 이후 품목수 누적).
+   *  다품목 칸은 품목별 개별 행 + 각자 번호 (2026-08-26 전 동 동적 규칙). */
+  const exportExcel = () => {
+    const isAll = dong === "ALL";
+    const activeDong = dong;
+    const zoneById = new Map(current.zones.map((z) => [z.id, z]));
+    const zonesToExport = isAll
+      ? current.zones.map((z) => z.id)
+      : current.zones.filter((z) => z.id.startsWith(`${activeDong}-`)).map((z) => z.id);
+    const activeZoneDefs = zonesToExport.map((id) => zoneById.get(id)).filter((z): z is ZoneDef => !!z);
+    const dongLocNos = computeDongLocMap(
+      activeDong === "A" ? orderAZones(activeZoneDefs) : activeZoneDefs,
+      data,
+      { fixedUpTo: activeDong === "A" ? A_FIXED_LOC_MAX : undefined, exceptions: locExceptions }
+    );
+    type Row = { dong: string; no: number; cat: string; loc: string; cellName: string; name: string; barcode: string; boxes: number; pn: string };
     const rows: Row[] = [];
-    for (const zid of aZones) {
-      if (!zid.startsWith("A-")) continue;
-      const val = data[zid];
+    for (const zoneId of zonesToExport) {
+      const val = data[zoneId];
       if (!val) continue;
       const pns = val.split(",").map((s) => s.trim()).filter(Boolean);
       if (!pns.length) continue;
-      const no = getALocNo(zid); // L1~L6 지그재그 + L7(115~122)
-      // 다품목 칸: 품목별 개별 행으로 출력 (같은 로케이션 번호·분류 공유, 2026-08-25)
-      for (const pn of pns) {
-        const m = resolveMasterForZone(pn, zid);
+      const zoneNos = dongLocNos[zoneId];
+      const zoneDong = zoneId.split("-")[0];
+      const parts = zoneId.split("-");
+      const cellName = parts.length >= 3 ? `${parts[0]}${parts[1]}-${parts.slice(2).join("-")}` : zoneId;
+      pns.forEach((pn, i) => {
+        const m = resolveMasterForZone(pn, zoneId);
         rows.push({
-          no: no ?? 0,
-          rank: no ?? 0,
-          cat: m?.lg || A_ZONE_CAT[zid] || "",
+          dong: zoneDong,
+          no: zoneNos?.[i] ?? 0,
+          cat: m?.lg || "",
           loc: pnumToLoc(pn),
+          cellName: zoneId,
           name: m?.name || "",
           barcode: m?.barcode || "",
           boxes: m?.barcode ? calcMonthQty(m.barcode) : 0,
           pn,
         });
-      }
+      });
     }
-    rows.sort((a, b) => a.no - b.no || a.loc.localeCompare(b.loc));
+    const sortedByBoxes = [...rows].sort((a, b) => b.boxes - a.boxes || a.pn.localeCompare(b.pn));
+    const rankMap = new Map<string, number>();
+    sortedByBoxes.forEach((r, i) => rankMap.set(r.pn, i + 1));
+    const rank = (pn: string) => rankMap.get(pn) ?? 0;
+    rows.sort((a, b) => {
+      if (a.dong !== b.dong) return a.dong.localeCompare(b.dong);
+      return a.no - b.no || a.loc.localeCompare(b.loc);
+    });
+    const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const fileName = isAll ? `전체_배치표_${ymd}.xlsx` : `${activeDong}동_배치표_${ymd}.xlsx`;
     const aoa: (string | number)[][] = [
-      ["순위_1개월박스", "분류", "로케이션", "제품명", "바코드", "1개월_출고박스", "단수", "로케이션(숫자)", "비고"],
-      ...rows.map((r) => [r.rank, r.cat, r.loc, r.name, r.barcode, r.boxes, extractDansu(r.name), r.no, ""]),
+      ["동", "칸(위치)", "순위_1개월박스", "분류", "로케이션", "제품명", "바코드", "1개월_출고박스", "단수", "로케이션(숫자)", "비고"],
+      ...rows.map((r) => [
+        r.dong, r.cellName, rank(r.pn), r.cat, r.loc, r.name, r.barcode, r.boxes, extractDansu(r.name), r.no, ""
+      ]),
     ];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "vf 품목 제베치도");
-    const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    XLSX.writeFile(wb, `A동_배치표_${ymd}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, "vf 품목 배치표");
+    XLSX.writeFile(wb, fileName);
   };
 
-  /** 엑셀 업로드: 로케이션 번호(지그재그 1~114)에 맞는 칸에 직접 배치 (A동만)
-   *  - 로케이션 열의 마지막 숫자 N(320-A1-1-N) = 지그재그 로케이션 번호 → 해당 칸 배치
-   *  - 같은 번호 여러 행/다품목 = 한 칸 다품목 → 콤마 병합
-   *  - 기존에 있었으나 새 파일에 없는 제품 → 📦임시보관함
-   *  - 헤더 불일치 시 아무것도 변경하지 않음 */
-  const applyExcelUploadA = (rows: string[][]) => {
-    // 헤더 검증: 순위_1개월박스 + 로케이션 열 필수
+  const applyExcelUpload = (rows: string[][]) => {
+    const activeDong = dong;
+    const isA = activeDong === "A";
     const header = rows[0] || [];
     const idxRank = header.findIndex((h) => String(h ?? "").trim() === "순위_1개월박스");
     const idxLoc = header.findIndex((h) => String(h ?? "").trim() === "로케이션");
+    const idxCellName = header.findIndex((h) => String(h ?? "").trim() === "칸(위치)");
     if (idxRank < 0 || idxLoc < 0) {
-      window.alert("엑셀 형식이 맞지 않습니다. 첫 줄 헤더에 '순위_1개월박스', '로케이션' 열이 필요합니다. (기준: 시트 'vf 품목 제베치도')");
+      window.alert("엑셀 형식이 맞지 않습니다. 첫 줄 헤더에 '순위_1개월박스', '로케이션' 열이 필요합니다.");
       return;
     }
-    // 데이터 행 파싱 — 배치 칸 = "로케이션(숫자)" 열 우선, 없으면 로케이션 문자열의 마지막 숫자
-    // 제품번호 = 로케이션 문자열에서 추출 ("320-A1-2-XX"는 2XX 체계). 다품목은 \n/콤마 구분.
     const idxLocNum = header.findIndex((h) => String(h ?? "").trim() === "로케이션(숫자)");
-    const parsed: { pn: string; cellKey: string }[] = [];
-    let rowIndex = 0;
+    const parsed: { pn: string; cellName: string; locNo: number; dong: string }[] = [];
     for (const r of rows.slice(1)) {
       const raw = String(r[idxLoc] ?? "").replace(/\r\n/g, "\n");
       const parts = raw.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
       if (!parts.length) continue;
-      rowIndex++;
-      // 행 단위 그룹: 같은 행의 모든 유효 품목 = 한 칸 다품목
       const groupPns: string[] = [];
       let locNo: number | null = null;
-      // 우선순위 1: 로케이션(숫자) 전용 열
       const numCell = idxLocNum >= 0 ? parseInt(String(r[idxLocNum] ?? ""), 10) : NaN;
       if (Number.isFinite(numCell)) locNo = numCell;
+      let rowDong = activeDong;
+      const cellName = idxCellName >= 0 ? String(r[idxCellName] ?? "").trim() : "";
       for (const part of parts) {
         let pn: string | null = null;
         let n: number | null = null;
@@ -3110,72 +3218,76 @@ export default function ProductDisplayPage() {
         if (mFull) {
           pn = mFull[1];
           n = parseInt(mFull[1], 10);
+          rowDong = "A";
         } else if (/^\d+$/.test(part)) {
           n = parseInt(part, 10);
           pn = String(n);
         } else {
-          pn = locToPnum(part); // "320-A1-2-XX" 등 하위 호환
+          pn = locToPnum(part);
         }
         if (pn && !groupPns.includes(pn)) groupPns.push(pn);
         if (locNo === null && n !== null && Number.isFinite(n)) locNo = n;
       }
       if (!groupPns.length) continue;
-      const cellKey = `row${rowIndex}#${locNo ?? "?"}`;
-      for (const pn of groupPns) parsed.push({ pn, cellKey });
+      for (const pn of groupPns) parsed.push({ pn, cellName, locNo: locNo ?? 0, dong: rowDong });
     }
     if (!parsed.length) {
-      window.alert("적용할 데이터 행이 없습니다. 로케이션(320-…) 값을 확인해주세요.");
+      window.alert("적용할 데이터 행이 없습니다.");
       return;
     }
-    // 로케이션 번호 → 칸 ID 역매핑 (L1~L6 지그재그 + L7 115~122)
+    const activeZoneDefs = current.zones.filter(z => z.id.startsWith(`${activeDong}-`));
+    const sortedZones = isA ? orderAZones(activeZoneDefs) : [...activeZoneDefs];
+    const zoneSet = new Set(sortedZones.map(z => z.id));
+    const dongLocNos = computeDongLocMap(sortedZones, data, {
+      fixedUpTo: isA ? A_FIXED_LOC_MAX : undefined,
+      exceptions: locExceptions,
+    });
     const noToZone = new Map<number, string>();
-    for (const z of aSeq.filter((z) => /^A-L[1-7]/.test(z))) {
-      const no = getALocNo(z);
-      if (no !== null) noToZone.set(no, z);
-    }
-    // 로케이션 번호별 그룹핑 (같은 번호 = 한 칸 다품목)
-    const byLoc = new Map<number, { pns: string[]; rows: string[] }>();
-    const outOfRange: { pn: string; key: string }[] = [];
-    for (const p of parsed) {
-      const m = /#(\d+)$/.exec(p.cellKey);
-      const n = m ? parseInt(m[1], 10) : NaN;
-      if (!Number.isFinite(n) || !noToZone.has(n)) {
-        outOfRange.push({ pn: p.pn, key: p.cellKey });
-        continue;
-      }
-      if (!byLoc.has(n)) byLoc.set(n, { pns: [], rows: [] });
-      const g = byLoc.get(n)!;
-      if (!g.pns.includes(p.pn)) g.pns.push(p.pn);
-      g.rows.push(p.cellKey);
+    for (const [zid, nos] of Object.entries(dongLocNos)) {
+      for (const n of nos) noToZone.set(n, zid);
     }
     const next: PlacementMap = { ...data };
-    // A동 초기화: L7·X칸 제품은 임시보관함, 그 외 A칸 재배치 대상
-    const toStagingX: string[] = [];
     for (const z of Object.keys(next)) {
-      if (!z.startsWith("A-")) continue;
-      if (z.startsWith("A-L7") || z === "A-X1" || z === "A-X2") {
-        for (const pn of next[z].split(",").map((s) => s.trim()).filter(Boolean)) {
-          if (!toStagingX.includes(pn)) toStagingX.push(pn);
-        }
-      }
+      if (!z.startsWith(`${activeDong}-`)) continue;
+      if (isA && (z.startsWith("A-L7") || z === "A-X1" || z === "A-X2")) continue;
       delete next[z];
     }
-    for (const [n, g] of byLoc) {
-      next[noToZone.get(n)!] = g.pns.join(",");
+    const byZone = new Map<string, string[]>();
+    const outOfRange: string[] = [];
+    for (const p of parsed) {
+      let zoneId = "";
+      if (p.cellName && zoneSet.has(p.cellName)) {
+        zoneId = p.cellName;
+      } else if (p.locNo > 0) {
+        zoneId = noToZone.get(p.locNo) || "";
+        if (!zoneId) {
+          const zoneIdx = p.locNo - (isA ? 1 : 200);
+          if (zoneIdx >= 0 && zoneIdx < sortedZones.length) {
+            zoneId = sortedZones[zoneIdx].id;
+          }
+        }
+      }
+      if (!zoneId) {
+        outOfRange.push(p.pn);
+        continue;
+      }
+      const pns = byZone.get(zoneId) || [];
+      if (!pns.includes(p.pn)) pns.push(p.pn);
+      byZone.set(zoneId, pns);
+    }
+    for (const [zid, pns] of byZone) {
+      next[zid] = pns.join(",");
     }
     if (outOfRange.length) {
-      window.alert(`로케이션 번호가 A동 범위(1~114)를 벗어나거나 인식 불가한 ${outOfRange.length}건은 적용되지 않았습니다.`);
+      window.alert(`유효하지 않은 위치의 ${outOfRange.length}건은 적용되지 않았습니다.`);
     }
     const newPns = new Set(parsed.map((p) => p.pn));
-    // 기존 배치(A동) 중 새 파일에 없는 제품 → 임시보관함 (스테이징 제품은 그대로 유지)
     const oldPnums = new Set<string>();
     for (const [zid, val] of Object.entries(data)) {
-      if (!zid.startsWith("A-")) continue;
+      if (!zid.startsWith(`${activeDong}-`)) continue;
       for (const pn of val.split(",").map((s) => s.trim()).filter(Boolean)) oldPnums.add(pn);
     }
-    // 보관함 이동 대상: 기존 배치(A동) 또는 L7·X에 있었으나 새 파일에 없는 제품
-    const movedToStaging = Array.from(new Set([...oldPnums, ...toStagingX])).filter((pn) => !newPns.has(pn));
-    // 새 파일에 배정된 제품은 임시보관함에서 제거
+    const movedToStaging = Array.from(oldPnums).filter((pn) => !newPns.has(pn));
     setStaging((s) => {
       const merged = Array.from(new Set([...s, ...movedToStaging]));
       return merged.filter((pn) => !newPns.has(pn));
@@ -3183,21 +3295,21 @@ export default function ProductDisplayPage() {
     removeCrossDongDupes(next, Array.from(newPns));
     setData(next);
     persistLocal(next);
-    setSaveMsg(`✅ 엑셀 업로드 적용: ${newPns.size}개 제품 배치, 보관함 이동 ${movedToStaging.length}개 (v26)`);
+    setSaveMsg(`✅ ${activeDong}동 엑셀 업로드: ${newPns.size}개 제품 배치, 보관함 이동 ${movedToStaging.length}개`);
     window.setTimeout(() => setSaveMsg(""), 4000);
   };
 
-  /** 엑셀 업로드 버튼 핸들러 — 파일 읽기 후 applyExcelUploadA 호출 */
+  /** 엑셀 업로드 버튼 핸들러 — 파일 읽기 후 applyExcelUpload 호출 */
   const excelInputRef = useRef<HTMLInputElement | null>(null);
-  const onExcelUploadA = (e: ChangeEvent<HTMLInputElement>) => {
+  const onExcelUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    e.target.value = ""; // 같은 파일 재선택 가능하도록 리셋
+    e.target.value = "";
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
         const wb = XLSX.read(ev.target?.result, { type: "array" });
-        const sheetName = wb.SheetNames.includes("vf 품목 제베치도") ? "vf 품목 제베치도" : wb.SheetNames[0];
+        const sheetName = wb.SheetNames.includes("vf 품목 배치표") ? "vf 품목 배치표" : wb.SheetNames[0];
         const ws = sheetName ? wb.Sheets[sheetName] : null;
         if (!ws) {
           window.alert("시트를 읽을 수 없습니다.");
@@ -3205,15 +3317,14 @@ export default function ProductDisplayPage() {
         }
         const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as unknown[][];
         const cleaned = rows.map((r) => (Array.isArray(r) ? r : []).map((c) => String(c ?? "")));
-        // 빈 행 제거 (모든 셀이 빈 문자열)
         const body = cleaned.filter((r) => r.some((c) => c.trim() !== ""));
         if (body.length < 2) {
           window.alert("데이터 행이 없습니다.");
           return;
         }
-        applyExcelUploadA(body);
+        applyExcelUpload(body);
       } catch {
-        window.alert("엑셀 파일을 읽는 중 오류가 발생했습니다. 파일 형식을 확인해주세요.");
+        window.alert("엑셀 파일을 읽는 중 오류가 발생했습니다.");
       }
     };
     reader.onerror = () => window.alert("파일을 읽을 수 없습니다.");
@@ -3249,13 +3360,20 @@ export default function ProductDisplayPage() {
         return parts.join("\n");
       }
       for (const pn of pnums) {
+        // 동적 마스터 우선 (이후 배치된 신규 제품도 이름 표시) — 정적 시드는 폴백
+        const m = masterMap[pn];
         const info = B_PNUM_INFO[pn] || C_PNUM_INFO[pn] || D_PNUM_INFO[pn];
-        if (info) {
-          const sub = [`${pn}: ${info.name}`];
-          if (info.lg || info.md) sub.push(`분류: ${info.lg}${info.md ? " / " + info.md : ""}`);
-          if (info.stock !== null && info.stock !== undefined) sub.push(`재고: ${info.stock}`);
-          if (info.barcode) {
-            const ob4d = calcOutbound4d(info.barcode);
+        const nm = m?.name || info?.name;
+        if (nm) {
+          const sub = [`${pn}: ${nm}`];
+          const lg = m?.lg ?? info?.lg ?? "";
+          const md = m?.md ?? info?.md ?? "";
+          if (lg || md) sub.push(`분류: ${lg}${md ? " / " + md : ""}`);
+          const stock = m && m.stock !== null && m.stock !== undefined ? m.stock : info?.stock;
+          if (stock !== null && stock !== undefined) sub.push(`재고: ${stock}`);
+          const bc = m?.barcode || info?.barcode || "";
+          if (bc) {
+            const ob4d = calcOutbound4d(bc);
             if (ob4d !== null) sub.push(`출고 4일치: ${ob4d}박스`);
           }
           parts.push(sub.join("\n"));
@@ -3305,6 +3423,167 @@ export default function ProductDisplayPage() {
     }
     if (isL7) parts.push("7번 라인 (슬림서랍장·칵투스)");
     return parts.join("\n\n");
+  };
+
+  // 로케이션 리스트 데이터 — 동별(총괄=전 동) 누적 번호순 행 목록
+  const locListSections = useMemo(() => {
+    const dks = (dong === "ALL" ? ["A", "B", "C", "D"] : [dong]) as Array<"A" | "B" | "C" | "D">;
+    return dks.map((dk) => {
+      const lay = dk === dong ? current : layoutState.find((r) => r.key === dk);
+      if (!lay) return { dk, rows: [] as { no: number; pn: string; name: string; lg: string; md: string; zone: string }[] };
+      const zs = dk === "A" ? orderAZones(lay.zones) : lay.zones;
+      const dyn = computeDongLocMap(zs, data, {
+        fixedUpTo: dk === "A" ? A_FIXED_LOC_MAX : undefined,
+        exceptions: locExceptions,
+      });
+      const rows: { no: number; pn: string; name: string; lg: string; md: string; zone: string }[] = [];
+      for (const z of zs) {
+        const nos = dyn[z.id];
+        if (!nos || nos.length === 0) continue;
+        const pns = (data[z.id] || "").split(",").map((s) => s.trim()).filter(Boolean);
+        pns.forEach((pn, i) => {
+          const m = masterMap[pn];
+          rows.push({ no: nos[i] ?? 0, pn, name: m?.name || "", lg: m?.lg || "", md: m?.md || "", zone: z.id });
+        });
+      }
+      rows.sort((a, b) => a.no - b.no);
+      return { dk, rows };
+    });
+  }, [dong, current, layoutState, data, locExceptions, masterMap]);
+
+  /** 인쇄용 동 코어 데이터 (레이아웃·누적번호·품목행 공통 조립) */
+  const getDongPrintCore = useCallback(
+    (dk: "A" | "B" | "C" | "D") => {
+      const lay = layoutState.find((r) => r.key === dk);
+      if (!lay) return null;
+      const zs = dk === "A" ? orderAZones(lay.zones) : lay.zones;
+      const dyn = computeDongLocMap(zs, data, {
+        fixedUpTo: dk === "A" ? A_FIXED_LOC_MAX : undefined,
+        exceptions: locExceptions,
+      });
+      const esc = (s: string) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const items: { no: string; pn: string; nm: string; cat: string }[] = [];
+      for (const z of zs) {
+        const nos = dyn[z.id];
+        if (!nos || !nos.length) continue;
+        const pns = (data[z.id] || "").split(",").map((s) => s.trim()).filter(Boolean);
+        pns.forEach((pn, i) => {
+          const m = masterMap[pn];
+          items.push({ no: String(nos[i] ?? ""), pn, nm: m?.name || "", cat: [m?.lg || "", m?.md || ""].filter(Boolean).join("/") });
+        });
+      }
+      return { lay, zs, dyn, esc, items };
+    },
+    [layoutState, data, locExceptions, masterMap]
+  );
+
+  /** 인쇄 창 열기 + 자동 print 호출 */
+  const openPrintWindow = (title: string, landscape: boolean, bodyHtml: string, css: string) => {
+    const html =
+      `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${title}</title><style>` +
+      `@page{size:A4 ${landscape ? "landscape" : "portrait"};margin:${landscape ? "8mm" : "12mm"}}` +
+      css +
+      `</style></head><body>${bodyHtml}` +
+      `<script>window.onload=function(){setTimeout(function(){window.print();},200);}</scr` +
+      `ipt></body></html>`;
+    const w = window.open("", "_blank", "width=1180,height=820");
+    if (!w) {
+      window.alert("팝업이 차단되었습니다. 팝업 허용 후 다시 시도해 주세요.");
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  };
+
+  /** 배치도 인쇄 — A4 가로, 도면을 페이지 최대 크기로 확대 */
+  const printLayoutSheets = () => {
+    const targets = (dong === "ALL" ? ["A", "B", "C", "D"] : [dong]) as Array<"A" | "B" | "C" | "D">;
+    const isAOnly = targets.length === 1 && targets[0] === "A";
+    const base =
+      `*{box-sizing:border-box}body{margin:0;color:#111;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif}` +
+      `section.sheet{page-break-after:always}section.sheet:last-child{page-break-after:auto}` +
+      `h2{font-size:15px;margin:0 0 6px;display:flex;justify-content:space-between;align-items:baseline}` +
+      `h2 small{font-size:10px;color:#555;font-weight:normal}` +
+      `.map{position:relative;border:1px solid #94a3b8;background:#f8fafc;margin:0 auto}` +
+      `.map .lbl{position:absolute;font-weight:700;color:#475569;white-space:nowrap;overflow:hidden}` +
+      `.cell{position:absolute;border:1px solid #94a3b8;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.05;overflow:hidden}` +
+      `.cell.on{background:#dbeafe;border-color:#1d4ed8}` +
+      `.cell .no{font-size:9px;font-weight:800;color:#b45309}` +
+      `.cell .pn{font-size:8px;color:#1e3a8a;text-align:center}` +
+      `.rotate-90{transform:rotate(90deg);transform-origin:center center}`;
+    const parts: string[] = [];
+    for (const dk of targets) {
+      const core = getDongPrintCore(dk);
+      if (!core) continue;
+      const { lay, zs, dyn } = core;
+      const isADong = dk === "A";
+      const sc = isADong ? Math.min(1040 / lay.width, 690 / lay.height) : Math.min(1040 / lay.width, 690 / lay.height);
+      const W = Math.round(lay.width * sc);
+      const H = Math.round(lay.height * sc);
+      const labelsHtml = lay.lineLabels
+        .map(
+          (lb) =>
+            `<div class="lbl" style="left:${Math.round(Number(lb.style.left ?? 0) * sc)}px;top:${Math.round(Number(lb.style.top ?? 0) * sc)}px;width:${Math.round(Number(lb.style.width ?? 90) * sc)}px">${core.esc(String(lb.text))}</div>`
+        )
+        .join("");
+      const cellsHtml = zs
+        .map((z) => {
+          const st = z.style as { left: number; top: number; width: number; height: number };
+          const pns = (data[z.id] || "").split(",").map((s) => s.trim()).filter(Boolean);
+          const n = dyn[z.id];
+          return (
+            `<div class="cell${pns.length ? " on" : ""}" style="left:${Math.round(st.left * sc)}px;top:${Math.round(st.top * sc)}px;width:${Math.round(st.width * sc)}px;height:${Math.round(st.height * sc)}px">` +
+            `<span class="no">${core.esc(n && n.length ? n.join(",") : "")}</span>` +
+            (pns.length ? `<span class="pn">${pns.map(core.esc).join("<br>")}</span>` : "") +
+            `</div>`
+          );
+        })
+        .join("");
+      const mapClass = isADong ? 'map rotate-90' : 'map';
+      parts.push(
+        `<section class="sheet"><h2><span>${dk}동 배치도</span><small>출력: ${new Date().toLocaleString("ko-KR")} / ${core.items.length}품목${dk === "A" ? " · L1·L2(1~38) 고정" : ""}</small></h2>` +
+          `<div class="${mapClass}" style="width:${W}px;height:${H}px">${labelsHtml}${cellsHtml}</div></section>`
+      );
+    }
+    if (!parts.length) {
+      window.alert("인쇄할 동이 없습니다.");
+      return;
+    }
+    openPrintWindow("배치도 인쇄", true, parts.join(""), base);
+  };
+
+  /** 품목 목록 인쇄 — A4 세로, 표 본문 14px */
+  const printListSheets = () => {
+    const targets = (dong === "ALL" ? ["A", "B", "C", "D"] : [dong]) as Array<"A" | "B" | "C" | "D">;
+    const base =
+      `*{box-sizing:border-box}body{margin:0;color:#111;font-size:14px;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif}` +
+      `section.sheet{page-break-after:always}section.sheet:last-child{page-break-after:auto}` +
+      `h2{font-size:17px;margin:0 0 8px;display:flex;justify-content:space-between;align-items:baseline}` +
+      `h2 small{font-size:11px;color:#555;font-weight:normal}` +
+      `table{border-collapse:collapse;width:100%;font-size:14px}` +
+      `th,td{border:1px solid #cbd5e1;padding:4px 6px;text-align:left;vertical-align:top}` +
+      `th{background:#e2e8f0;font-size:13px}` +
+      `td.no{text-align:center;font-family:Consolas,monospace;font-weight:700;color:#b45309;width:64px}` +
+      `th.w-no{width:64px}th.w-pn{width:84px}th.w-cat{width:180px}` +
+      `thead{display:table-header-group}tr{page-break-inside:avoid}`;
+    const parts: string[] = [];
+    for (const dk of targets) {
+      const core = getDongPrintCore(dk);
+      if (!core) continue;
+      const rowsHtml = core.items.length
+        ? core.items.map((r) => `<tr><td class="no">${core.esc(r.no)}</td><td>${core.esc(r.pn)}</td><td>${core.esc(r.nm)}</td><td>${core.esc(r.cat)}</td></tr>`).join("")
+        : `<tr><td colspan="4" style="text-align:center;color:#888">배치 없음</td></tr>`;
+      parts.push(
+        `<section class="sheet"><h2><span>${dk}동 로케이션 · 품목 목록</span><small>출력: ${new Date().toLocaleString("ko-KR")} / ${core.items.length}품목</small></h2>` +
+          `<table><thead><tr><th class="w-no">로케</th><th class="w-pn">제품번호</th><th>제품명</th><th class="w-cat">분류</th></tr></thead><tbody>${rowsHtml}</tbody></table></section>`
+      );
+    }
+    if (!parts.length) {
+      window.alert("인쇄할 동이 없습니다.");
+      return;
+    }
+    openPrintWindow("품목 목록 인쇄", false, parts.join(""), base);
   };
 
   // 동별 화면용 배치 행 (해당 동만 필터)
@@ -3462,6 +3741,18 @@ export default function ProductDisplayPage() {
         </button>
         <button
           type="button"
+          onClick={() => { setPanelTab("list"); setOpenLg(null); setSelPnum(null); setSelZone(null); setMovePnum(null); }}
+          className={
+            "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
+            (panelTab === "list"
+              ? "bg-sky-600 text-white"
+              : "bg-sky-50 text-sky-700 hover:bg-sky-100")
+          }
+        >
+          📋 리스트
+        </button>
+        <button
+          type="button"
           onClick={() => { setPanelTab("server"); setOpenLg(null); setSelPnum(null); setSelZone(null); setMovePnum(null); void pdLoadHistory(); }}
           className={
             "flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors " +
@@ -3510,6 +3801,49 @@ export default function ProductDisplayPage() {
             </p>
           }
         />
+      ) : panelTab === "list" ? (
+        <div className="space-y-3 px-1 max-h-[62vh] overflow-auto">
+          <p className="text-[10px] text-slate-700 bg-slate-100 rounded px-2 py-1 leading-snug">
+            동별 · 로케이션 번호순 배치 목록 — 행 클릭 시 해당 칸으로 이동·강조됩니다.
+          </p>
+          {locListSections.map((sec) => (
+            <div key={sec.dk} className="rounded-lg border bg-white overflow-hidden">
+              <div className="px-2 py-1.5 text-xs font-bold text-slate-800 bg-slate-50 border-b flex items-center justify-between">
+                <span>{sec.dk}동</span>
+                <span className="text-[10px] font-normal text-muted-foreground">{sec.rows.length}품목</span>
+              </div>
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-left text-[10px] text-muted-foreground border-b bg-white">
+                    <th className="px-2 py-1 w-16">로케이션</th>
+                    <th className="px-2 py-1 w-16">제품번호</th>
+                    <th className="px-2 py-1">제품명</th>
+                    <th className="px-2 py-1 w-28">분류</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sec.rows.map((r) => (
+                    <tr
+                      key={`${r.zone}-${r.pn}`}
+                      className="border-b last:border-b-0 hover:bg-sky-50 cursor-pointer"
+                      onClick={() => { if (!handleMoveToZone(r.zone)) setDong(r.zone.split("-")[0] as DongKey); }}
+                    >
+                      <td className="px-2 py-1 font-mono font-bold text-amber-700">{r.no}</td>
+                      <td className="px-2 py-1 tabular-nums">{r.pn}</td>
+                      <td className="px-2 py-1 truncate max-w-[190px]" title={r.name}>{r.name || "(정보 없음)"}</td>
+                      <td className="px-2 py-1 text-[10px] text-muted-foreground">{[r.lg, r.md].filter(Boolean).join("/")}</td>
+                    </tr>
+                  ))}
+                  {sec.rows.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-2 py-3 text-center text-muted-foreground">배치 없음</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
       ) : panelTab === "server" ? (
         <div className="space-y-2 px-1">
           <p className="text-[10px] text-slate-700 bg-slate-100 rounded px-2 py-1 leading-snug">
@@ -3842,7 +4176,13 @@ export default function ProductDisplayPage() {
                 wOverride?: number,
                 hOverride?: number
               ) => {
-                const dl = DONG_LAYOUTS.find((r) => r.key === k)!;
+                const dl = layoutState.find((r) => r.key === k) ?? DONG_LAYOUTS.find((r) => r.key === k)!;
+                // 총괄 미니맵도 개별 동과 동일한 누적 로케이션 번호 표시 (전 동 규칙 통일)
+                const miniNos = computeDongLocMap(
+                  k === "A" ? orderAZones(dl.zones) : dl.zones,
+                  data,
+                  { fixedUpTo: k === "A" ? A_FIXED_LOC_MAX : undefined, exceptions: locExceptions }
+                );
                 const boxW = wOverride ?? Math.round(dl.width * scale);
                 const boxH = hOverride ?? Math.round(dl.height * scale);
                 return (
@@ -3884,6 +4224,7 @@ export default function ProductDisplayPage() {
                             flash={flashZone === z.id}
                             editMode={editMode}
                             onNavigate={() => { if (!handleMoveToZone(z.id)) setDong(k); }}
+                            locNos={miniNos[z.id]}
                           />
                         ))}
                       </div>
@@ -3911,10 +4252,11 @@ export default function ProductDisplayPage() {
             </DndContext>
           </div>
         ) : (
-        <div className="w-full overflow-auto pb-2" style={{ maxHeight: "calc(100vh - 240px)" }}>
+        <div ref={mapWrapRef} className="w-full overflow-auto pb-2" style={{ maxHeight: "calc(100vh - 240px)" }}>
           <DndContext sensors={sensors} autoScroll={false} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div className="flex gap-3 items-start">
           <div className="flex flex-col gap-2">
+          <div style={{ width: (current.width + gridPad.l + gridPad.r) * fitScale, height: (current.height + gridPad.t + gridPad.b) * fitScale }}>
           <div
             ref={gridRef}
             className="relative rounded-xl border bg-slate-50 shrink-0"
@@ -3923,6 +4265,8 @@ export default function ProductDisplayPage() {
               width: current.width + gridPad.l + gridPad.r,
               minWidth: current.width + gridPad.l + gridPad.r,
               minHeight: current.height + gridPad.t + gridPad.b,
+              transform: `scale(${fitScale})`,
+              transformOrigin: "top left",
             }}
             onPointerDown={handleSelDown}
             onPointerMove={handleSelMove}
@@ -3967,6 +4311,7 @@ export default function ProductDisplayPage() {
                 onEditCommit={() => commitInlineEdit(z.id)}
                 onEditCancel={() => { setEditingZone(null); setEditVal(""); }}
                 tip={makeTooltip(z)}
+                locNos={dongLocNos[z.id]}
               />
             ))}
             {editMode && selRect && selStartRef.current ? (
@@ -3989,9 +4334,10 @@ export default function ProductDisplayPage() {
                   {dragSource.kind === "overflow" ? " (자리이탈)" : ""}
                 </div>
               ) : null}
-            </DragOverlay>
-          </div>
-          </div>
+             </DragOverlay>
+           </div>
+           </div>
+           </div>
           {renderRightPanel(dongRows)}
           </div>
           </DndContext>
@@ -4072,15 +4418,21 @@ export default function ProductDisplayPage() {
             <Download className="w-4 h-4 mr-1.5" />
                         JSON 내보내기
                       </Button>
-                      <Button type="button" className="bg-emerald-600 hover:bg-emerald-700" onClick={exportExcelA} title="현재 A동 배치를 엑셀로 다운로드">
+                      <Button type="button" className="bg-emerald-600 hover:bg-emerald-700" onClick={exportExcel} title="현재 보고 있는 동의 배치를 엑셀로 다운로드 (전체 화면에서는 전체)">
                         <Download className="w-4 h-4 mr-1.5" />
                         엑셀 다운로드
                       </Button>
-                      <Button type="button" className="bg-orange-600 hover:bg-orange-700" onClick={() => excelInputRef.current?.click()} title="엑셀 업로드로 A동 배치 반영">
+                      <Button type="button" className="bg-orange-600 hover:bg-orange-700" onClick={() => excelInputRef.current?.click()} title="엑셀 업로드로 현재 동 배치 반영">
                         <Upload className="w-4 h-4 mr-1.5" />
                         엑셀 업로드
                       </Button>
-                      <input ref={excelInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={onExcelUploadA} />
+                      <input ref={excelInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={onExcelUpload} />
+                      <Button type="button" className="bg-slate-700 hover:bg-slate-800" onClick={printLayoutSheets} title="현재 동(총괄 화면에서는 전체 동) 배치도를 A4 가로 최대 크기로 인쇄">
+                        🗺 배치도 인쇄
+                      </Button>
+                      <Button type="button" className="bg-sky-700 hover:bg-sky-800" onClick={printListSheets} title="현재 동(총괄 화면에서는 전체 동) 로케이션·품명 목록을 A4 세로 14pt로 인쇄">
+                        📋 목록 인쇄
+                      </Button>
           {saveMsg ? (
             <span className="text-sm text-green-700 font-medium">{saveMsg}</span>
           ) : null}
@@ -4623,71 +4975,60 @@ export default function ProductDisplayPage() {
     </div>
   );
 }
-/* ===== 로케이션 번호 (통로 중심 뱀 모양) ===== */
-/** A동 L1~L6 지그재그 번호 — 통로 중심 뱀 모양 (단일 공식: calcZigzagLocNo)
- *  3개 통로 쌍: (1|2)=1~38, (3|4)=39~76, (5|6)=77~114
- *  (1|2): slot 19(상단)에서 시작, 홀수라인→짝수라인 교차, 아래로 진행
- *  예: L1-19=1, L2-19=2, L2-18=3, L1-18=4, L1-17=5, L2-17=6, ...
- *  (3|4)·(5|6): slot 1에서 낮은 번호 시작 (2026-08-22 사용자 교정)
- *  예: L3-1=39, L4-1=40, …, L3-19=75, L4-19=76 / L5-1=77, L6-1=78, …, L5-19=113, L6-19=114
- *  slot > 19 (오버라이드 확장 칸)도 NaN/음수 없이 연속 번호로 확장 */
-function getZigzagLocNo(zoneId: string): number | null {
-  const m = zoneId.match(/^A-L(\d)-(\d+)$/);
-  if (!m) return null;
-  return calcZigzagLocNo(parseInt(m[1], 10), parseInt(m[2], 10));
-}
+/* ===== 로케이션 번호 (전 동 누적 — computeDongLocMap 단일 구현) ===== */
+/** 동별 로케이션 시작 번호 (2026-08-26 확정): A=1(누적·전 동 동적), B=200, C=500, D=900.
+ *  A는 1~38(L1·L2 쌍) 고정 앵커(A_FIXED_LOC_MAX) — 해당 칸은 항상 자기 번호 유지.
+ *  D 800→900: C동 3개/칸 재배치로 C 최대 823까지 진행 → 충돌 방지 */
+const DONG_LOC_START: Record<string, number> = { A: 1, B: 200, C: 500, D: 900 };
+const A_FIXED_LOC_MAX = 38;
 
-/** L7(7번 라인) 로케이션 번호: 8칸 → 115~122 (2026-08-25 통일, 1칸=1 zone) */
-function getL7LocNo(zoneId: string): number | null {
-  const m = zoneId.match(/^A-L7-(\d+)$/);
-  if (!m) return null;
-  return 114 + parseInt(m[1], 10); // 칸1=115 … 칸8=122
-}
+/**
+ * 누적 로케이션 번호 계산 (2026-08-26) — 칸 순서대로 품목 수만큼 번호 소진.
+ * 동 내 모든 칸을 레이아웃 순서로 훑으며 각 칸에 (품목 수)개 번호 배정.
+ * 빈칸은 번호 소진 없음. 앞 칸 품목 추가/삭제 시 뒤 전체 자동 재계산.
+ */
+type DongLocOpts = { exceptions?: Set<string>; fixedUpTo?: number };
 
-/** 통합 로케이션 번호: L1~L6 지그재그 + L7(115~122) */
-function getALocNo(zoneId: string): number | null {
-  if (zoneId.startsWith("A-L7")) return getL7LocNo(zoneId);
-  return getZigzagLocNo(zoneId);
-}
-
-/** 한 칸에 여러 제품이 있을 때 각 제품의 로케이션 번호 반환
- *  예: zoneId="A-L1-1"에 제품 2개 → [1, 2] */
-function getProductLocNos(zoneId: string, itemCount: number): number[] {
-  const baseLocNo = getZigzagLocNo(zoneId);
-  if (baseLocNo === null) return [];
-  return Array.from({ length: itemCount }, (_, i) => baseLocNo + i);
-}
-
-/** C/D동 로케이션 번호 — zone 순서대로 1번부터 */
-const dongLocMap: Record<string, number> = {};
-/** B동 로케이션 번호 (2026-08-25 재배치): 칸 하나 = 4번호, 200번부터.
- *  B-B상단-1 → 200~203, B-B상단-2 → 204~207 … (레이아웃 zones 순서 = 물리 배치 순서) */
-function getDongLocNo(zoneId: string): number | null {
-  if (!zoneId.startsWith("B-")) {
-    // C/D동: 기존 규칙(1번부터 순차)
-    if (dongLocMap[zoneId]) return dongLocMap[zoneId];
-    const dong = zoneId.split("-")[0];
-    if (!["C", "D"].includes(dong)) return null;
-    const layout = DONG_LAYOUTS.find((r) => r.key === dong);
-    if (!layout) return null;
-    const idx = layout.zones.findIndex((z) => z.id === zoneId);
-    if (idx < 0) return null;
-    const locNo = idx + 1;
-    dongLocMap[zoneId] = locNo;
-    return locNo;
+/**
+ * 누적 로케이션 번호 계산 (2026-08-26, 전 동 적용) — 칸 순서대로 품목 수만큼 번호 소진.
+ * 실제 표시 중인 레이아웃(layoutState 반영) 기준 — 사용자가 추가한 라인/칸도 번호 부여 대상.
+ * fixedUpTo: 이 번호 이하 locNo 칸은 고정(자기 번호 유지·소진 없음·다품목 시 대표번호만).
+ * exceptions: 사용자 지정 예외칸 — 품목 수 무관 번호 1개 공유.
+ */
+function computeDongLocMap(zones: ZoneDef[], data: Record<string, string>, opts?: DongLocOpts): Record<string, number[]> {
+  const result: Record<string, number[]> = {};
+  if (zones.length === 0) return result;
+  const dong = zones[0].id.split("-")[0];
+  const startNo = DONG_LOC_START[dong];
+  if (!startNo) return result;
+  const fixedMax = opts?.fixedUpTo;
+  let next = fixedMax ? fixedMax + 1 : startNo;
+  for (const z of zones) {
+    if (fixedMax != null && (z.id === "A-X1" || z.id === "A-X2")) continue; // 특수 추가칸 — 번호 없음(기존 유지)
+    if (fixedMax != null && z.locNo != null && z.locNo <= fixedMax) {
+      result[z.id] = [z.locNo]; // 고정 앵커 (A 1~38)
+      continue;
+    }
+    const items = (data[z.id] || "").split(",").map((s) => s.trim()).filter(Boolean);
+    if (items.length === 0) continue;
+    if (opts?.exceptions?.has(z.id)) {
+      result[z.id] = [next];
+      next += 1;
+      continue;
+    }
+    result[z.id] = Array.from({ length: items.length }, (_, i) => next + i);
+    next += items.length;
   }
-  const layout = DONG_LAYOUTS.find((r) => r.key === "B");
-  if (!layout) return null;
-  const idx = layout.zones.findIndex((z) => z.id === zoneId);
-  if (idx < 0) return null;
-  return 200 + idx * 4; // 칸 시작 번호 (끝 번호 = +3)
+  return result;
 }
 
-/** B/C/D동 한 칸에 여러 제품이 있을 때 각 제품의 로케이션 번호 반환 */
-function getDongProductLocNos(zoneId: string, itemCount: number): number[] {
-  const baseLocNo = getDongLocNo(zoneId);
-  if (baseLocNo === null) return [];
-  return Array.from({ length: itemCount }, (_, i) => baseLocNo + i);
+/** A동 zones를 뱀 순번(locNo 오름차순)으로 정렬 — 기존 부여 번호의 연장선에서 누적 진행.
+ *  (통로 쌍 L3|L4 등은 슬롯 위치로 좌우 교차하며 연속 번호 → 다품목 칸이 여러 개 소비)
+ *  locNo 없는 사용자 추가 칸(X제외)은 맨 뒤에서 이어받음. */
+function orderAZones(zones: ZoneDef[]): ZoneDef[] {
+  return [...zones].sort(
+    (a, b) => (a.locNo ?? Number.MAX_SAFE_INTEGER) - (b.locNo ?? Number.MAX_SAFE_INTEGER)
+  );
 }
 
 /* ===== 드래그앤드롭 셀 컴포넌트 (2026-08-17) — 편집 모드 확장 예정 ===== */
@@ -4699,6 +5040,7 @@ function MiniZoneCell({
   flash,
   editMode,
   onNavigate,
+  locNos,
 }: {
   z: ZoneDef;
   value: string;
@@ -4706,7 +5048,9 @@ function MiniZoneCell({
   flash: boolean;
   editMode: boolean;
   onNavigate: () => void;
+  locNos?: number[];
 }) {
+  const isA = z.id.startsWith("A-");
   const { setNodeRef: dropRef, isOver } = useDroppable({
     id: `drop-ov-${z.id}`,
     data: { zoneId: z.id, fromOverview: true },
@@ -4744,8 +5088,8 @@ function MiniZoneCell({
       }
       style={z.style}
     >
-      {/* 통로쪽 로케이션 번호 (ZoneCell과 동일) */}
-      {z.locNo != null && (
+      {/* 로케이션 번호 — ZoneCell과 동일 규칙 (전 동 누적값) */}
+      {isA && ((locNos && locNos.length > 0) || z.locNo != null) && (
         <span
           className="absolute text-[9px] leading-none font-mono font-bold text-amber-600 pointer-events-none"
           style={{
@@ -4753,7 +5097,12 @@ function MiniZoneCell({
             ...(z.line % 2 === 1 ? { left: -18 } : { right: -18 }),
           }}
         >
-          {z.locNo}
+          {locNos && locNos.length > 0 ? locNos.join(",") : z.locNo}
+        </span>
+      )}
+      {!isA && locNos && locNos.length > 0 && (
+        <span className="absolute top-0.5 right-0.5 text-[7px] leading-none font-mono font-bold text-amber-600 pointer-events-none">
+          {locNos.join(",")}
         </span>
       )}
       {assigned ? (
@@ -4831,21 +5180,16 @@ function MobileListView({
   const [q, setQ] = useState("");
   const layout = DONG_LAYOUTS.find((r) => r.key === mdong);
   if (!layout) return null;
+  // 전 동 동적 누적 번호 (A: 물리순 + 1~38 고정)
+  const mdyn = computeDongLocMap(
+    mdong === "A" ? orderAZones(layout.zones) : layout.zones,
+    data,
+    { fixedUpTo: mdong === "A" ? A_FIXED_LOC_MAX : undefined }
+  );
   const locNoOf = (zid: string): string => {
-    if (zid.startsWith("A-L7-")) {
-      const m = /^A-L7-(\d+)$/.exec(zid);
-      return m ? `115+${m[1]}-1` : "";
-    }
-    if (zid.startsWith("A-L")) {
-      const no = getZigzagLocNo(zid);
-      return no != null ? String(no) : "";
-    }
-    if (zid.startsWith("B-")) {
-      const no = getDongLocNo(zid);
-      return no != null ? `${no}~${no + 3}` : "";
-    }
-    const no = getDongLocNo(zid);
-    return no != null ? String(no) : "";
+    const nos = mdyn[zid];
+    if (!nos || nos.length === 0) return "";
+    return nos.length > 1 ? `${nos[0]}~${nos[nos.length - 1]}` : String(nos[0]);
   };
   const rows = layout.zones
     .map((z) => ({ zid: z.id, val: data[z.id] || "" }))
@@ -5310,6 +5654,7 @@ function ZoneCell({
   onEditChange,
   onEditCommit,
   onEditCancel,
+  locNos,
 }: {
   z: ZoneDef;
   value: string;
@@ -5326,6 +5671,7 @@ function ZoneCell({
   onEditChange: (v: string) => void;
   onEditCommit: () => void;
   onEditCancel: () => void;
+  locNos?: number[];
 }) {
   const assigned = Boolean(value);
   const items = value ? value.split(",").map((s) => s.trim()).filter(Boolean) : [];
@@ -5430,8 +5776,8 @@ function ZoneCell({
       ) : (
         <span className="text-[9px] text-slate-300 leading-none">·</span>
       )}
-      {/* 통로쪽 로케이션 번호 — 제품번호와 분리, 겹침 방지 */}
-      {isA && z.locNo != null && (
+      {/* 로케이션 번호 — 전 동 누적값 (A=통로쪽·1~38 고정 포함, B/C/D=우상단) */}
+      {isA && ((locNos && locNos.length > 0) || z.locNo != null) && (
         <span
           className="absolute text-[9px] leading-none font-mono font-bold text-amber-600 pointer-events-none"
           style={{
@@ -5439,14 +5785,12 @@ function ZoneCell({
             ...(z.line % 2 === 1 ? { left: -18 } : { right: -18 }),
           }}
         >
-          {z.locNo}
+          {locNos && locNos.length > 0 ? locNos.join(",") : z.locNo}
         </span>
       )}
-      {!isA && getDongLocNo(z.id) !== null && (
+      {!isA && locNos && locNos.length > 0 && (
         <span className="absolute top-0.5 right-0.5 text-[7px] leading-none font-mono font-bold text-amber-600 pointer-events-none">
-          {z.id.startsWith("B-")
-            ? `${getDongLocNo(z.id)}·${(getDongLocNo(z.id) ?? 0) + 3}` // B동: 시작·끝 번호만 (4번호/칸)
-            : getDongLocNo(z.id)}
+          {locNos.join(",")}
         </span>
       )}
     </button>
