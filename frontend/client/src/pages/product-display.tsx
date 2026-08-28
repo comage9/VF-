@@ -1926,16 +1926,9 @@ export default function ProductDisplayPage() {
   const zoomReset = () => setZoomFactor(1);
   useEffect(() => {
     const compute = () => {
-      if (!mapWrapRef.current || editMode || mobileView || dong === "ALL") {
-        setFitScale(1);
-        return;
-      }
-      const availW = mapWrapRef.current.clientWidth - 24;
-      if (availW <= 0) return;
-      const target = current.width + gridPad.l + gridPad.r;
-      if (target <= 0) return;
-      const s = Math.max(1, Math.min(2.5, (availW / target) * 0.9));
-      setFitScale(Number(s.toFixed(3)));
+      // 자동 맞춤 확대 폐지 (2026-08-28) — 배율은 줌 컨트롤(zoomFactor)만 결정.
+      // 우측 패널(동별 출고 비율 테이블 등)은 줌과 무관하게 항상 원래 크기 유지.
+      setFitScale(1);
     };
     compute();
     window.addEventListener("resize", compute);
