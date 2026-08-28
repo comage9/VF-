@@ -1834,6 +1834,40 @@ export default function ProductDisplayPage() {
     });
   }, [current, data, dong, locExceptions]);
 
+  // 가상 그리드 (2026-08-28, 수정 모드 전용): 현재 칸들이 차지한 열·행을 기준으로
+  // 여백 공간까지 그리드를 확장해 점선 칸 표시 — 라인/칸을 빈 그리드 자리로 이동 가능하게 함.
+  const ghostCells = useMemo(() => {
+    if (!editMode) return [] as { left: number; top: number; width: number; height: number }[];
+    const STEP_X = SLOT.w + 4;
+    const STEP_Y = SLOT.h + SLOT.gapY;
+    const zs = current.zones;
+    if (zs.length === 0) return [];
+    const roundTo = (v: number, step: number, origin: number) => origin + Math.round((v - origin) / step) * step;
+    const minX = Math.min(...zs.map((z) => Number(z.style.left ?? 0)));
+    const minY = Math.min(...zs.map((z) => Number(z.style.top ?? 0)));
+    const maxX = Math.max(...zs.map((z) => Number(z.style.left ?? 0) + Number(z.style.width ?? SLOT.w)));
+    const maxY = Math.max(...zs.map((z) => Number(z.style.top ?? 0) + Number(z.style.height ?? SLOT.h)));
+    // 점유 셀 집합 (존재하는 칸은 실선으로 이미 그려짐)
+    const occupied = new Set(
+      zs.map((z) => `${roundTo(Number(z.style.left ?? 0), STEP_X, minX)}:${roundTo(Number(z.style.top ?? 0), STEP_Y, minY)}`)
+    );
+    const ghosts: { left: number; top: number; width: number; height: number }[] = [];
+    const yStart = Math.max(0, minY - STEP_Y * 2); // 위쪽 여백 2행 추가
+    const yEnd = maxY + STEP_Y * 2; // 아래쪽 여백 2행 추가
+    for (let gy = yStart; gy <= yEnd; gy += STEP_Y) {
+      const y = roundTo(gy, STEP_Y, minY);
+      if (y < 0) continue;
+      for (let gx = Math.max(0, minX - STEP_X); gx <= maxX; gx += STEP_X) {
+        const x = roundTo(gx, STEP_X, minX);
+        const key = `${x}:${y}`;
+        if (occupied.has(key)) continue;
+        occupied.add(key);
+        ghosts.push({ left: x, top: y, width: SLOT.w, height: SLOT.h });
+      }
+    }
+    return ghosts;
+  }, [editMode, current.zones]);
+
   // 개별 동 화면 가로 확대 — 컨테이너 폭에 맞춰 지도 확대 표시 (수정 모드는 좌표 정밀도 위해 1배)
   const mapWrapRef = useRef<HTMLDivElement | null>(null);
   const [fitScale, setFitScale] = useState(1);
@@ -2165,6 +2199,7 @@ export default function ProductDisplayPage() {
   // 내용물(data)은 zoneId에 바인딩되어 있으므로 칸과 함께 자연스럽게 이동.
   const groupMove = (dir: 1 | -1) => {
     if (!selectedZones.length || !editMode) return;
+    const STEP = SLOT.h + SLOT.gapY; // 세로 그리드 한 칸 (38px)
     const COL_TOL = SLOT.w * 0.6; // 같은 열(비슷한 x) 판정 허용 오차
 
     setLayoutState((prev) =>
@@ -2173,7 +2208,7 @@ export default function ProductDisplayPage() {
         const zones = d.zones.map((z) => ({ ...z, style: { ...z.style } }));
 
         // 정렬: dir=1(위)=위쪽 칸 먼저, dir=-1(아래)=아래쪽 칸 먼저
-        // → 블록 이동 시 순차 교환으로 전체가 한 칸씩 이동
+        // → 블록 이동 시 순차 처리로 전체가 한 칸씩 이동
         const selIdxs = selectedZones
           .map((zid) => zones.findIndex((z) => z.id === zid))
           .filter((i) => i >= 0)
@@ -2188,8 +2223,9 @@ export default function ProductDisplayPage() {
         for (const si of selIdxs) {
           const sx = Number(zones[si].style.left ?? 0);
           const sy = Number(zones[si].style.top ?? 0);
+          const ty = sy + (dir === 1 ? -STEP : STEP); // 목적 그리드 한 칸 위/아래
 
-          // 같은 열에서 dir 방향의 가장 가까운 비선택 칸 찾기
+          // 목적 그리드 자리에 비선택 칸이 있으면 좌표 교환 (라인 통째 교환 동작 유지)
           let best = -1;
           let bestDist = Infinity;
           for (let j = 0; j < zones.length; j++) {
@@ -2197,18 +2233,18 @@ export default function ProductDisplayPage() {
             const jx = Number(zones[j].style.left ?? 0);
             const jy = Number(zones[j].style.top ?? 0);
             if (Math.abs(jx - sx) > COL_TOL) continue;
-            const dy = jy - sy;
-            if (dir === 1 && dy >= 0) continue;  // 위: y가 더 작은 칸
-            if (dir === -1 && dy <= 0) continue;  // 아래: y가 더 큰 칸
-            const dist = Math.abs(dy);
+            const dist = Math.abs(jy - ty);
             if (dist < bestDist) { bestDist = dist; best = j; }
           }
 
-          if (best >= 0) {
-            // 좌표 교환 (즉시 적용 — 다음 칸의 neighbor 탐색에 반영)
+          if (best >= 0 && bestDist < SLOT.h) {
+            // 점유 칸 → 교환
             const tmpStyle = { ...zones[si].style };
             zones[si] = { ...zones[si], style: { ...zones[best].style } };
             zones[best] = { ...zones[best], style: tmpStyle };
+          } else {
+            // 빈 그리드 자리(여백·가상 그리드 영역) → 그대로 한 칸 이동 (2026-08-28)
+            zones[si] = { ...zones[si], style: { ...zones[si].style, top: Math.max(0, Math.round(ty)) } };
           }
         }
 
@@ -4326,6 +4362,15 @@ export default function ProductDisplayPage() {
               >
                 {lb.text}
               </div>
+            ))}
+
+            {/* 가상 그리드 — 수정 모드 전용, 여백까지 점선 칸 표시 (2026-08-28) */}
+            {ghostCells.map((g, i) => (
+              <div
+                key={`ghost-${i}`}
+                className="absolute pointer-events-none rounded border border-dashed border-slate-300"
+                style={{ left: g.left, top: g.top, width: g.width, height: g.height }}
+              />
             ))}
 
           {current.zones.length === 0 ? (
