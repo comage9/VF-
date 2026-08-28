@@ -93,6 +93,8 @@ type ZoneDef = {
   style: CSSProperties;
   locNo?: number | null;
   gridCoord?: string;
+  /** 고정 칸 (2026-08-28): 드래그·라인 이동·좌표 이동 전부 차단 — 건들면 안 되는 칸 표시 */
+  fixed?: boolean;
 };
 
 type LineLabel = {
@@ -2068,6 +2070,13 @@ export default function ProductDisplayPage() {
     }
     // 수정 모드 칸(슬롯) 이동: 드래그로 자유 좌표 배치 또는 다른 칸과 교환
     if (src.kind === "cell") {
+      // 고정 칸 가드 (2026-08-28): 드래그 이동 완전 차단
+      if (current.zones.find((z) => z.id === src.zoneId)?.fixed) {
+        setSaveMsg("🔒 고정 칸은 드래그 이동할 수 없습니다");
+        window.setTimeout(() => setSaveMsg(""), 2000);
+        setDragSource(null);
+        return;
+      }
       // 드래그한 칸을 보관함 드롭존에 놓음 → 칸 비우기 + 제품 보관 (A동 1칸 1품목)
       if (overId === "drop-staging") {
         setData((prev) => {
@@ -2258,9 +2267,10 @@ export default function ProductDisplayPage() {
 
         // 정렬: dir=1(위)=위쪽 칸 먼저, dir=-1(아래)=아래쪽 칸 먼저
         // → 블록 이동 시 순차 처리로 전체가 한 칸씩 이동
+        // 고정 칸(fixed)은 이동·교환 대상에서 전부 제외 (2026-08-28)
         const selIdxs = selectedZones
           .map((zid) => zones.findIndex((z) => z.id === zid))
-          .filter((i) => i >= 0)
+          .filter((i) => i >= 0 && !zones[i].fixed)
           .sort((a, b) => {
             const ay = Number(zones[a].style.top ?? 0);
             const by = Number(zones[b].style.top ?? 0);
@@ -2279,6 +2289,7 @@ export default function ProductDisplayPage() {
           let bestDist = Infinity;
           for (let j = 0; j < zones.length; j++) {
             if (selSet.has(j)) continue;
+            if (zones[j].fixed) continue; // 고정 칸과 교환 금지 (2026-08-28)
             const jx = Number(zones[j].style.left ?? 0);
             const jy = Number(zones[j].style.top ?? 0);
             if (Math.abs(jx - sx) > COL_TOL) continue;
@@ -2315,9 +2326,10 @@ export default function ProductDisplayPage() {
         const zones = d.zones.map((z) => ({ ...z, style: { ...z.style } }));
 
         // 정렬: 오른쪽 이동이면 오른쪽 칸 먼저, 왼쪽 이동이면 왼쪽 칸 먼저 (블록 순차 처리)
+        // 고정 칸(fixed)은 이동·교환 대상에서 전부 제외 (2026-08-28)
         const selIdxs = selectedZones
           .map((zid) => zones.findIndex((z) => z.id === zid))
-          .filter((i) => i >= 0)
+          .filter((i) => i >= 0 && !zones[i].fixed)
           .sort((a, b) => {
             const ax = Number(zones[a].style.left ?? 0);
             const bx = Number(zones[b].style.left ?? 0);
@@ -2336,6 +2348,7 @@ export default function ProductDisplayPage() {
           let bestDist = Infinity;
           for (let j = 0; j < zones.length; j++) {
             if (selSet.has(j)) continue;
+            if (zones[j].fixed) continue; // 고정 칸과 교환 금지 (2026-08-28)
             const jx = Number(zones[j].style.left ?? 0);
             const jy = Number(zones[j].style.top ?? 0);
             if (Math.abs(jy - sy) > ROW_TOL) continue;
@@ -2422,6 +2435,14 @@ export default function ProductDisplayPage() {
   // 슬롯(칸) 좌표 이동: 선택 칸과 목적지 칸의 좌표를 교환 (그리드에서 칸 자체가 이동)
   const moveSlotTo = (srcId: string, dstId: string) => {
     if (srcId === dstId) return;
+    // 고정 칸 가드 (2026-08-28): 고정 칸은 교환 대상에서 제외
+    const srcZ = current.zones.find((z) => z.id === srcId);
+    const dstZ = current.zones.find((z) => z.id === dstId);
+    if (srcZ?.fixed || dstZ?.fixed) {
+      setSaveMsg("🔒 고정 칸은 이동·교환할 수 없습니다");
+      window.setTimeout(() => setSaveMsg(""), 2000);
+      return;
+    }
     setLayoutState((prev) =>
       prev.map((d) => {
         if (d.key !== dong) return d;
@@ -2469,6 +2490,28 @@ export default function ProductDisplayPage() {
     );
   };
 
+  // ═══ 고정 칸 토글 (2026-08-28): 건들면 안 되는 칸 잠금 ═══
+  // 선택 칸의 fixed 플래그를 반전 — 드래그·라인 이동·좌표 이동 전부 차단, 화면에 🔒 표시
+  const toggleFixedSelected = () => {
+    if (!selectedZones.length) { setSaveMsg("고정할 칸을 먼저 선택하세요"); window.setTimeout(() => setSaveMsg(""), 2000); return; }
+    setLayoutState((prev) =>
+      prev.map((d) =>
+        d.key !== dong
+          ? d
+          : {
+              ...d,
+              zones: d.zones.map((z) =>
+                selectedZones.includes(z.id) ? { ...z, fixed: !z.fixed } : z
+              ),
+            }
+      )
+    );
+    const sel = current.zones.filter((z) => selectedZones.includes(z.id));
+    const locking = sel.some((z) => !z.fixed);
+    setSaveMsg(`${locking ? "🔒 고정 설정" : "🔓 고정 해제"}: ${sel.length}칸 (저장 버튼으로 확정)`);
+    window.setTimeout(() => setSaveMsg(""), 2500);
+  };
+
   // ═══ 좌표 입력 이동 (2026-08-28): 선택 칸을 "가로-세로" 좌표로 정밀 이동 ═══
   // 드래그 없이 좌표 입력만으로 이동 — 화면 라벨(상단 열번호/좌측 행번호) 기준.
   // 여러 칸 선택 시 그룹 상대 위치 유지하며 목표 좌표로 이동.
@@ -2478,6 +2521,7 @@ export default function ProductDisplayPage() {
     if (!m) { setSaveMsg("좌표 형식: 가로-세로 (예: 3-7)"); window.setTimeout(() => setSaveMsg(""), 2000); return; }
     const sel = current.zones.filter((z) => selectedZones.includes(z.id));
     if (!sel.length) { setSaveMsg("이동할 칸을 먼저 선택하세요"); window.setTimeout(() => setSaveMsg(""), 2000); return; }
+    if (sel.some((z) => z.fixed)) { setSaveMsg("🔒 고정 칸이 포함되어 이동할 수 없습니다"); window.setTimeout(() => setSaveMsg(""), 2000); return; }
     const col = parseInt(m[1], 10);
     const rowTxt = m[2];
     const gc = computeGridCoords(current.zones);
@@ -3638,6 +3682,9 @@ export default function ProductDisplayPage() {
     if (z.gridCoord) {
       parts.unshift(`좌표 ${z.gridCoord}`);
     }
+    if (z.fixed) {
+      parts.unshift("🔒 고정 칸 — 이동·교환 불가");
+    }
 
     const assigned = data[zid] || "";
     const pnums = assigned ? assigned.split(",").map((s) => s.trim()).filter(Boolean) : [];
@@ -4722,6 +4769,11 @@ export default function ProductDisplayPage() {
           {editMode && (
             <Button type="button" variant="outline" onClick={addCell} title="그리드 오른쪽에 새 빈 칸 추가 — 드래그로 원하는 위치에 배치">
               + 칸 추가
+            </Button>
+          )}
+          {editMode && (
+            <Button type="button" variant="outline" onClick={toggleFixedSelected} title="선택한 칸을 고정(🔒)/해제 — 고정 칸은 드래그·라인 이동·좌표 이동 전부 차단">
+              🔒 고정
             </Button>
           )}
           {editMode && (
@@ -6025,9 +6077,10 @@ function ZoneCell({
     data: { zoneId: z.id } as { zoneId: string; itemIdx?: number },
   });
   // 셀 드래그: 수정 모드에서만 활성 (비수정=변경 불가) — 수정=칸(cell), data 동적
+  // 고정 칸은 드래그 자체 비활성 (2026-08-28)
   const cellDrag = useDraggable({
     id: `cell-${z.id}`,
-    disabled: !editMode,
+    disabled: !editMode || Boolean(z.fixed),
     data: (editMode
       ? { kind: "cell", zoneId: z.id }
       : { kind: "zone", zoneId: z.id, itemIdx: 0, pnum: items[0] || "" }) as DragSource,
@@ -6090,6 +6143,7 @@ function ZoneCell({
         (assigned
           ? "border-blue-700 bg-blue-50"
           : "border-slate-500 bg-white hover:bg-sky-50 hover:border-blue-500") +
+        (z.fixed ? " !border-rose-600 !bg-rose-50" : "") +
         (sel ? " ring-2 ring-amber-400 ring-offset-1" : "") +
         (flash ? " vf-zone-flash" : "") +
         (matched ? " ring-2 ring-emerald-500 ring-offset-1" : "") +
@@ -6100,6 +6154,9 @@ function ZoneCell({
       }
       style={z.style}
     >
+      {z.fixed ? (
+        <span className="absolute -top-1.5 -left-1.5 text-[9px] leading-none pointer-events-none" title="고정 칸 — 이동 불가">🔒</span>
+      ) : null}
       {assigned ? (
         <span
           className={
