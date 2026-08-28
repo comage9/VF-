@@ -275,15 +275,26 @@ function colLetter(n: number): string {
 /** 물리 그리드 좌표 (2026-08-28) — 존의 실제 픽셀 위치를 기준으로
  *  행(위→아래 1~N)·열(좌→우 A~)을 클러스터링해 부여.
  *  예: "C12-J" = C동 12행 J열. 사용자가 이 좌표로 칸을 부를 수 있게 함. */
+/** 로케이션 번호 표시 포맷 (2026-08-28) — 다품목 칸은 구분 어려우므로 처음→끝 화살표로 요약 */
+function fmtLocNos(nos: number[] | undefined | null): string {
+  if (!nos || nos.length === 0) return "";
+  if (nos.length === 1) return String(nos[0]);
+  return `${nos[0]}→${nos[nos.length - 1]}`;
+}
+
+/** 물리 그리드 좌표 계산 — 모든 동(A/B/C/D) 공통 (2026-08-28)
+ *  각 칸의 중심점을 기준으로 행·열 클러스터링하여 숫자 인덱스(1부터 시작) 부여.
+ *  반환: coords(Map<존ID, {row, col}>), rows(행 대표 y), cols(열 대표 x), minLeft, minTop
+ */
 function computeGridCoords(zones: ZoneDef[]): {
   coords: Map<string, { row: number; col: number }>;
-  rows: number[]; // 각 행의 대표 y-중앙
-  cols: number[]; // 각 열의 대표 x-중앙
+  rows: number[];
+  cols: number[];
   minLeft: number;
   minTop: number;
 } | null {
   if (zones.length === 0) return null;
-  const TOL = 8; // 같은 행/열 판정 허용 오차 (칸 간격 4보다 큼, 어긋난 블록 14px은 분리)
+  const TOL = 8; // 같은 행/열 판정 허용 오차
   const cy = (z: ZoneDef) => Number(z.style.top ?? 0) + Number(z.style.height ?? SLOT.h) / 2;
   const cx = (z: ZoneDef) => Number(z.style.left ?? 0) + Number(z.style.width ?? SLOT.w) / 2;
   const cluster = (vals: number[]) => {
@@ -422,22 +433,7 @@ function buildADongLayout(
   ordered.forEach((lineSpec) => {
     const colLeft = lineLeftOf(lineSpec.line);
     const bottomIsStart = lineSpec.bottomIsStart !== false;
-    const header = lineSpec.badge
-      ? `L${lineSpec.line}\n${lineSpec.badge}`
-      : `L${lineSpec.line}`;
-
-    lineLabels.push({
-      text: header,
-      style: {
-        left: colLeft - 4,
-        top: lineSpec.badge ? 2 : 10,
-        width: slot.w + 8,
-        textAlign: "center",
-        whiteSpace: "pre-line",
-        lineHeight: 1.15,
-        fontSize: lineSpec.badge ? 10 : undefined,
-      },
-    });
+    // L 라인 헤더 제거 (2026-08-28) — 숫자 좌표만 표시
 
     for (let i = 0; i < lineSpec.count; i++) {
       const numVal = i + 1;
@@ -462,24 +458,7 @@ function buildADongLayout(
     }
   });
 
-  const line1Count = ordered.find((l) => l.line === 1)?.count ?? A_SLOTS_PER_LINE;
-  const rowIdxLeft = lineLeftOf(1) + slot.w + slot.rowIdxGap;
-  for (let cell = 1; cell <= line1Count; cell++) {
-    const placeFromTop = line1Count - cell;
-    lineLabels.push({
-      text: String(cell),
-      style: {
-        left: rowIdxLeft,
-        top: slot.padT + placeFromTop * (slot.h + slot.gapY),
-        width: slot.rowIdxW,
-        height: slot.h,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "flex-start",
-        textAlign: "left",
-      },
-    });
-  }
+  // A동 1~19 슬롯 인덱스 라벨 제거 (2026-08-28) — 통일 좌표 라벨 시스템으로 대체
 
   // L7: 8칸 (A-L7-N, 2026-08-25 통일 — 일반 칸과 동일 크기), 라인2 끝과 맞춤
       const vertBottom =
@@ -490,15 +469,7 @@ function buildADongLayout(
       const l2Right = lineLeftOf(2) + slot.w;
       const l7TotalWidth = l2Right - bottomStartLeft;
 
-      lineLabels.push({
-        text: "7번 라인 (슬림서랍장·칵투스)",
-        style: {
-          left: bottomStartLeft,
-          top: vertBottom + slot.bottomLineGap - 2,
-          width: l7TotalWidth,
-          textAlign: "left",
-        },
-      });
+      // "7번 라인" 라벨 제거 (2026-08-28) — 숫자 좌표만 표시
 
       for (let i = 0; i < A_BOTTOM_SLOTS; i++) {
         // L7 통일 (2026-08-25): 1칸=1 zone — 일반 칸과 동일 크기·간격 (기존 2슬롯 구조 폐지)
@@ -594,18 +565,7 @@ function buildBlockLayout(
     const total = b.cols * b.rows;
     const gap = 4;
 
-    lineLabels.push({
-      text: b.name,
-      style: {
-        left: b.x,
-        top: b.y - 16,
-        width: Math.max(b.cols * (slot.w + gap), 48),
-        textAlign: "left",
-        fontSize: 10,
-        fontWeight: 700,
-        color: "#475569",
-      },
-    });
+    // 블록 헤더 제거 (2026-08-28) — 숫자 좌표만 사용
 
     for (let i = 0; i < total; i++) {
       const idx = startIdx + i;
@@ -842,29 +802,7 @@ function buildCDongLayout(
     });
   }
 
-  // 컬럼 그룹 헤더 (파일 위치 그대로)
-  lineLabels.push(
-    {
-      text: "A",
-      style: { left: xOf(1), top: slot.padT - 18, width: slot.w, textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
-    },
-    {
-      text: "C",
-      style: { left: xOf(3), top: slot.padT - 18, width: slot.w, textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
-    },
-    {
-      text: "중앙",
-      style: { left: xOf(4), top: slot.padT - 18, width: 8 * (slot.w + gap), textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
-    },
-    {
-      text: "M",
-      style: { left: xOf(13), top: slot.padT - 18, width: slot.w, textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
-    },
-    {
-      text: "우측",
-      style: { left: xOf(14), top: slot.padT - 18, width: 8 * (slot.w + gap), textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
-    }
-  );
+  // 컬럼 그룹 헤더 제거 (2026-08-28) — 숫자 좌표만 표시
 
   const width = xOf(21) + slot.w + slot.padR;
   const height = yOf(23) + slot.h + slot.padB;
@@ -898,33 +836,7 @@ function buildDDongLayout(
     });
   }
 
-  // 컬럼 그룹 헤더 (파일 위치 그대로)
-  lineLabels.push(
-    {
-      text: "D상단",
-      style: { left: xOf(2), top: slot.padT - 18, width: 8 * (slot.w + gap), textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
-    },
-    {
-      text: "D중앙1",
-      style: { left: xOf(2), top: yOf(7) - 18, width: 8 * (slot.w + gap), textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
-    },
-    {
-      text: "D중앙2",
-      style: { left: xOf(2), top: yOf(8) - 18, width: 8 * (slot.w + gap), textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
-    },
-    {
-      text: "D우측1",
-      style: { left: xOf(11), top: slot.padT - 18, width: slot.w, textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
-    },
-    {
-      text: "D우측2",
-      style: { left: xOf(13), top: slot.padT - 18, width: slot.w, textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
-    },
-    {
-      text: "D하단",
-      style: { left: xOf(2), top: yOf(13) - 18, width: 5 * (slot.w + gap), textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
-    }
-  );
+  // 컬럼 그룹 헤더 제거 (2026-08-28) — 숫자 좌표만 표시
 
   const width = xOf(13) + slot.w + slot.padR;
   const height = yOf(13) + slot.h + slot.padB;
@@ -1888,30 +1800,55 @@ export default function ProductDisplayPage() {
     });
   }, [current, data, dong, locExceptions]);
 
-  // 물리 그리드 좌표 라벨 (2026-08-28) — 현재 렌더 중인 존 기준으로 동적 계산.
-  // 빌트 레이아웃 상수가 아닌 렌더 시점 존 좌표 기준이라, 저장된 레이아웃(localStorage) 변경에도 항상 정확.
-  // B/C/D동: 행 라벨(왼쪽, "B3"/"C12"...)+열 헤더(상단, "A"~"AA") 표시 + 툴팁용 gridCoord 계산.
+  // 물리 그리드 좌표 라벨 — 전 동 통일 "행-열" 숫자 체계 (2026-08-28)
+  // 렌더 시점 존 좌표 기준 동적 계산 — 저장된 레이아웃 변경에도 항상 정확.
+  // 행 번호: 좌측 + 우측 / 열 번호: 상단 + 하단.
+  // A동 행 번호는 기존 슬롯 번호 체계(아래=1) 유지 — L1~L6 슬롯 번호 기준, 하단 1줄=20.
   const gridLabels = useMemo(() => {
-    if (dong === "A" || dong === "ALL") return { labels: [] as LineLabel[], coordOf: new Map<string, string>() };
+    if (dong === "ALL") return { labels: [] as LineLabel[], coordOf: new Map<string, string>() };
     const gc = computeGridCoords(current.zones);
     if (!gc) return { labels: [] as LineLabel[], coordOf: new Map<string, string>() };
     const labels: LineLabel[] = [];
     const coordOf = new Map<string, string>();
+    const maxColX = Math.max(...current.zones.map((z) => Number(z.style.left ?? 0) + Number(z.style.width ?? SLOT.w)));
+    const maxRowY = Math.max(...current.zones.map((z) => Number(z.style.top ?? 0) + Number(z.style.height ?? SLOT.h)));
+    const lblStyle = (extra: React.CSSProperties): React.CSSProperties => ({ fontSize: 10, fontWeight: 700, color: "#2563eb", ...extra });
+    const cyOf = (z: ZoneDef) => Number(z.style.top ?? 0) + Number(z.style.height ?? SLOT.h) / 2;
+    const nearestRow = (y: number) => {
+      let bi = 0;
+      let bd = Infinity;
+      gc.rows.forEach((r, i) => {
+        const d = Math.abs(y - r);
+        if (d < bd) { bd = d; bi = i; }
+      });
+      return bi;
+    };
+
+    // 행 라벨 텍스트 계산
+    const rowLabelOf = (ri: number): string => {
+      if (dong !== "A") return String(ri + 1);
+      // A동: 해당 행의 L1~L6 슬롯 번호 사용 (기존 1~19 체계, 아래=1)
+      const inRow = current.zones.filter((z) => nearestRow(cyOf(z)) === ri);
+      const slotZone = inRow.find((z) => /^A-L[1-6]-\d+$/.test(z.id));
+      if (slotZone) return slotZone.id.split("-").pop() || String(ri + 1);
+      if (inRow.some((z) => z.id.startsWith("A-L7"))) return "20";
+      return String(gc.rows.length - ri); // 폴백
+    };
+
+    // 열 번호 — 상단 + 하단 (물리 좌→우 1~N)
     gc.cols.forEach((cx, ci) => {
-      labels.push({
-        text: colLetter(ci + 1),
-        style: { left: cx - SLOT.w / 2, top: Math.max(2, gc.minTop - 20), width: SLOT.w, textAlign: "center", fontSize: 9, fontWeight: 700, color: "#2563eb" },
-      });
+      labels.push({ text: String(ci + 1), style: lblStyle({ left: cx - SLOT.w / 2, top: Math.max(2, gc.minTop - 18), width: SLOT.w, textAlign: "center" }) });
+      labels.push({ text: String(ci + 1), style: lblStyle({ left: cx - SLOT.w / 2, top: maxRowY + 4, width: SLOT.w, textAlign: "center" }) });
     });
+    // 행 번호 — 좌측 + 우측
     gc.rows.forEach((cy, ri) => {
-      labels.push({
-        text: `${dong}${ri + 1}`,
-        style: { left: Math.max(0, gc.minLeft - 40), top: cy - 6, width: 36, textAlign: "right", fontSize: 9, fontWeight: 700, color: "#2563eb" },
-      });
+      const txt = rowLabelOf(ri);
+      labels.push({ text: txt, style: lblStyle({ left: Math.max(0, gc.minLeft - 28), top: cy - 6, width: 24, textAlign: "right" }) });
+      labels.push({ text: txt, style: lblStyle({ left: maxColX + 6, top: cy - 6, width: 24, textAlign: "left" }) });
     });
     current.zones.forEach((z) => {
       const c = gc.coords.get(z.id);
-      if (c) coordOf.set(z.id, `${dong}${c.row}-${colLetter(c.col)}`);
+      if (c) coordOf.set(z.id, `${rowLabelOf(c.row - 1)}-${c.col}`);
     });
     return { labels, coordOf };
   }, [dong, current.zones]);
@@ -3506,12 +3443,12 @@ export default function ProductDisplayPage() {
   const makeTooltip = (z: ZoneDef): string => {
     const zid = z.id;
     const isL7 = z.line === 7;
-    const posName = zid.replace(/^(A-L|B-)/, "");
-    const parts: string[] = [posName];
+    // 좌표는 숫자 좌표만 노출 (2026-08-28) — 내부 존 아이디 미표시
+    const parts: string[] = [];
 
-    // 그리드 좌표 표시 (B/C/D동) (2026-08-28)
-    if ((zid.startsWith("B-") || zid.startsWith("C-") || zid.startsWith("D-")) && z.gridCoord) {
-      parts.unshift(`[${z.gridCoord}]`);
+    // 그리드 좌표 표시 (전 동, 숫자 "행-열") (2026-08-28)
+    if (z.gridCoord) {
+      parts.unshift(`좌표 ${z.gridCoord}`);
     }
 
     const assigned = data[zid] || "";
@@ -5287,12 +5224,12 @@ function MiniZoneCell({
             ...(z.line % 2 === 1 ? { left: -18 } : { right: -18 }),
           }}
         >
-          {locNos && locNos.length > 0 ? locNos.join(",") : z.locNo}
+          {locNos && locNos.length > 0 ? fmtLocNos(locNos) : z.locNo}
         </span>
       )}
       {!isA && locNos && locNos.length > 0 && (
         <span className="absolute top-0.5 right-0.5 text-[7px] leading-none font-mono font-bold text-amber-600 pointer-events-none">
-          {locNos.join(",")}
+          {fmtLocNos(locNos)}
         </span>
       )}
       {assigned ? (
@@ -5975,12 +5912,12 @@ function ZoneCell({
             ...(z.line % 2 === 1 ? { left: -18 } : { right: -18 }),
           }}
         >
-          {locNos && locNos.length > 0 ? locNos.join(",") : z.locNo}
+          {locNos && locNos.length > 0 ? fmtLocNos(locNos) : z.locNo}
         </span>
       )}
       {!isA && locNos && locNos.length > 0 && (
         <span className="absolute top-0.5 right-0.5 text-[7px] leading-none font-mono font-bold text-amber-600 pointer-events-none">
-          {locNos.join(",")}
+          {fmtLocNos(locNos)}
         </span>
       )}
     </button>
