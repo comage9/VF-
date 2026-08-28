@@ -2122,13 +2122,16 @@ export default function ProductDisplayPage() {
         }
       } else {
         // 빈 공간에 놓음 → 드래그 최종 위치로 자유 배치
+        // ⚠ 확대 배율 보정 (2026-08-28): dnd-kit translated는 화면(px) 단위,
+        // 컨테이너는 scale() 적용 상태 → 배율로 나눠야 실제 그리드 좌표가 됨
         const translated = e.active.rect.current.translated;
         const cont = gridRef.current?.getBoundingClientRect();
+        const scale = fitScale * zoomFactor || 1;
         if (translated && cont) {
           moveCellTo(
             src.zoneId,
-            translated.left - cont.left,
-            translated.top - cont.top
+            (translated.left - cont.left) / scale,
+            (translated.top - cont.top) / scale
           );
           setSaveMsg("칸 이동");
           window.setTimeout(() => setSaveMsg(""), 1500);
@@ -2466,6 +2469,69 @@ export default function ProductDisplayPage() {
     );
   };
 
+  // ═══ 좌표 입력 이동 (2026-08-28): 선택 칸을 "가로-세로" 좌표로 정밀 이동 ═══
+  // 드래그 없이 좌표 입력만으로 이동 — 화면 라벨(상단 열번호/좌측 행번호) 기준.
+  // 여러 칸 선택 시 그룹 상대 위치 유지하며 목표 좌표로 이동.
+  const [moveCoordText, setMoveCoordText] = useState("");
+  const moveSelectedToCoord = () => {
+    const m = /^(\d+)\s*-\s*(\d+)$/.exec(moveCoordText.trim());
+    if (!m) { setSaveMsg("좌표 형식: 가로-세로 (예: 3-7)"); window.setTimeout(() => setSaveMsg(""), 2000); return; }
+    const sel = current.zones.filter((z) => selectedZones.includes(z.id));
+    if (!sel.length) { setSaveMsg("이동할 칸을 먼저 선택하세요"); window.setTimeout(() => setSaveMsg(""), 2000); return; }
+    const col = parseInt(m[1], 10);
+    const rowTxt = m[2];
+    const gc = computeGridCoords(current.zones);
+    if (!gc) return;
+    // 행 라벨 매핑 (gridLabels의 rowLabelOf와 동일 규칙)
+    const cyOf = (z: ZoneDef) => Number(z.style.top ?? 0) + Number(z.style.height ?? SLOT.h) / 2;
+    const nearestRow = (y: number) => {
+      let bi = 0; let bd = Infinity;
+      gc.rows.forEach((r, i) => { const d = Math.abs(y - r); if (d < bd) { bd = d; bi = i; } });
+      return bi;
+    };
+    const rowLabelOf = (ri: number): string => {
+      if (dong !== "A") return String(ri + 1);
+      const inRow = current.zones.filter((z) => nearestRow(cyOf(z)) === ri);
+      const slotZone = inRow.find((z) => /^A-L[1-6]-\d+$/.test(z.id));
+      if (slotZone) return slotZone.id.split("-").pop() || String(ri + 1);
+      if (inRow.some((z) => z.id.startsWith("A-L7"))) return "20";
+      return String(gc.rows.length - ri);
+    };
+    // 목표 중심 좌표: 존재 행/열은 실제 위치, 범위 밖은 52×38 그리드로 확장 계산
+    let cx: number;
+    if (col >= 1 && col <= gc.cols.length) cx = gc.cols[col - 1];
+    else if (col > gc.cols.length) cx = gc.cols[gc.cols.length - 1] + (col - gc.cols.length) * (SLOT.w + 4);
+    else { setSaveMsg(`가로 ${col}은(는) 범위 밖 (1~${gc.cols.length} 또는 그 이상 확장만 가능)`); window.setTimeout(() => setSaveMsg(""), 2500); return; }
+    const ri = gc.rows.findIndex((_, i) => rowLabelOf(i) === rowTxt);
+    let cy: number;
+    if (ri >= 0) cy = gc.rows[ri];
+    else if (dong !== "A" && /^\d+$/.test(rowTxt)) {
+      const li = parseInt(rowTxt, 10) - 1;
+      cy = gc.minTop + Number(SLOT.h) / 2 + li * (SLOT.h + SLOT.gapY);
+    } else { setSaveMsg(`세로 ${rowTxt} 좌표를 찾을 수 없습니다`); window.setTimeout(() => setSaveMsg(""), 2500); return; }
+    // 그룹 이동: 선택 칸 바운딩박스 좌상단을 목표 칸 좌상단으로 (상대 배치 유지)
+    const minX = Math.min(...sel.map((z) => Number(z.style.left ?? 0)));
+    const minY = Math.min(...sel.map((z) => Number(z.style.top ?? 0)));
+    const dx = cx - SLOT.w / 2 - minX;
+    const dy = cy - SLOT.h / 2 - minY;
+    setLayoutState((prev) =>
+      prev.map((d) =>
+        d.key !== dong
+          ? d
+          : {
+              ...d,
+              zones: d.zones.map((z) =>
+                selectedZones.includes(z.id)
+                  ? { ...z, style: { ...z.style, left: Number(z.style.left ?? 0) + dx, top: Number(z.style.top ?? 0) + dy } }
+                  : z
+              ),
+            }
+      )
+    );
+    setSaveMsg(`선택 ${sel.length}칸 → ${dong}동 ${col}-${rowTxt} 이동 완료 (저장 버튼으로 확정)`);
+    window.setTimeout(() => setSaveMsg(""), 2500);
+  };
+
   // 새 빈 칸 추가: 기존 라인에 맞춰 정렬된 위치에 생성 (2026-08-19)
   // - y는 기준 라인(가장 아래 라인, 칸 선택 시 그 칸의 라인)에 맞추고
   //   x는 그 라인의 마지막 칸 다음 위치
@@ -2501,9 +2567,14 @@ export default function ProductDisplayPage() {
         const rowRight = Math.max(
           ...targetRow.map((z) => leftOf(z) + Number(z.style.width ?? SLOT.w))
         );
+        // 그리드 정렬 (2026-08-28): 새 칸은 52px(가로) 가상 그리드에 정확히 스냅 —
+        // 드래그 스냅 주기(52px)와 일치해야 추가 후 이동 시 포인터↔칸 어긋남이 없음
+        const STEP_X = SLOT.w + 4;
+        const originX = Math.min(...d.zones.map(leftOf));
+        const snappedLeft = originX + Math.ceil((rowRight - originX) / STEP_X) * STEP_X;
         const zone: ZoneDef = {
           id, num: "＋", line: -1, showNumAsProduct: false,
-          style: { left: rowRight + SLOT.tightGap, top: rowTop, width: SLOT.w, height: SLOT.h },
+          style: { left: snappedLeft, top: rowTop, width: SLOT.w, height: SLOT.h },
         };
         return { ...d, zones: [...d.zones, zone] };
       })
@@ -4567,10 +4638,11 @@ export default function ProductDisplayPage() {
               <div
                 className="pointer-events-none absolute z-50"
                 style={{
-                  left: Math.min(selRect.x1, selRect.x2) - selStartRef.current.cx,
-                  top: Math.min(selRect.y1, selRect.y2) - selStartRef.current.cy,
-                  width: Math.abs(selRect.x2 - selRect.x1),
-                  height: Math.abs(selRect.y2 - selRect.y1),
+                  // 확대 배율 보정 (2026-08-28): 화면(px)→그리드 좌표 환산
+                  left: (Math.min(selRect.x1, selRect.x2) - selStartRef.current.cx) / (fitScale * zoomFactor || 1),
+                  top: (Math.min(selRect.y1, selRect.y2) - selStartRef.current.cy) / (fitScale * zoomFactor || 1),
+                  width: Math.abs(selRect.x2 - selRect.x1) / (fitScale * zoomFactor || 1),
+                  height: Math.abs(selRect.y2 - selRect.y1) / (fitScale * zoomFactor || 1),
                   border: "1.5px dashed #721FE5",
                   background: "rgba(114,31,229,0.12)",
                 }}
@@ -4651,6 +4723,20 @@ export default function ProductDisplayPage() {
             <Button type="button" variant="outline" onClick={addCell} title="그리드 오른쪽에 새 빈 칸 추가 — 드래그로 원하는 위치에 배치">
               + 칸 추가
             </Button>
+          )}
+          {editMode && (
+            <span className="flex items-center gap-1 text-[11px] text-slate-500">
+              이동:
+              <input
+                value={moveCoordText}
+                onChange={(e) => setMoveCoordText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); moveSelectedToCoord(); } }}
+                placeholder="가로-세로"
+                className="w-20 rounded border px-1.5 py-0.5 text-xs"
+                title="목표 좌표 입력 (화면 라벨 기준, 예: 3-7)"
+              />
+              <button type="button" className="px-1.5 py-0.5 rounded border hover:bg-slate-100" onClick={moveSelectedToCoord} title="선택한 칸을 입력한 좌표로 이동">→</button>
+            </span>
           )}
           {editMode && (
             <span className="flex items-center gap-1 text-[11px] text-slate-500">
