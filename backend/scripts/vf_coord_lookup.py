@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""VF 제품배치도 좌표 조회 — 숫자 좌표(행-열) 체계 (2026-08-28)
+"""VF 제품배치도 좌표 조회 — 숫자 좌표 체계 (2026-08-28 확정)
 
+좌표 형식: "동 가로-세로" (예: C동 1-7 = 가로 1열, 세로 7행)
+— 브라우저 화면의 열 번호(상단)/행 번호(좌측) 라벨과 정확히 일치.
 브라우저의 computeGridCoords와 동일한 클러스터링(TOL=8)으로 서버 스냅샷에서
 각 동의 좌표를 재계산하여 조회. 좌표/제품번호/로케이션/제품명 상호 변환.
+⚠ 내부 존 아이디(예: C-R9-C1) ≠ 좌표 — 절대 좌표로 사용하지 말 것.
 
 사용:
-  python vf_coord_lookup.py coord C 3-4      # 좌표 → 존·제품·로케이션
+  python vf_coord_lookup.py coord C 1-7      # 좌표(가로-세로) → 존·제품·로케이션
   python vf_coord_lookup.py product 322      # 제품번호 → 좌표·존
   python vf_coord_lookup.py loc 45           # 로케이션 → 좌표·존·제품
-  python vf_coord_lookup.py dump             # 전체 좌표표 (JSON)
+  python vf_coord_lookup.py dump             # 전체 좌표표 (JSON, 키=가로-세로)
 """
 import json
 import sys
@@ -83,7 +86,8 @@ def build_index(layout, master):
             cx, cy = center(z)
             ci = nearest(cx, col_reps)
             ri = nearest(cy, row_reps)
-            coord = f"{row_label(ri)}-{ci + 1}"
+            # 좌표 = "가로-세로" (화면 라벨 기준 확정, 2026-08-28)
+            coord = f"{ci + 1}-{row_label(ri)}"
             entries[coord] = {
                 "zone": zid,
                 "row": row_label(ri),
