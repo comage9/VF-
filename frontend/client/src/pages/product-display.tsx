@@ -2385,9 +2385,25 @@ export default function ProductDisplayPage() {
     setLayoutState((prev) =>
       prev.map((d) => {
         if (d.key !== dong) return d;
+        // 그리드 스냅 (2026-08-28): 드롭 좌표를 52×38 그리드(기준=동 최소 좌표)에 정렬 —
+        // 통로 빈칸 포함 모든 칸이 가상 그리드와 정확히 일치, 좌표 어긋남·중복 방지
+        const zs = d.zones;
+        const stepX = SLOT.w + 4;
+        const stepY = SLOT.h + SLOT.gapY;
+        const snap = (v: number, vals: number[], step: number) => {
+          const origin = Math.min(...vals);
+          return origin + Math.round((v - origin) / step) * step;
+        };
         const zones = d.zones.map((z) =>
           z.id === zid
-            ? { ...z, style: { ...z.style, left: Math.round(left), top: Math.round(top) } }
+            ? {
+                ...z,
+                style: {
+                  ...z.style,
+                  left: snap(left, zs.map((x) => Number(x.style.left ?? 0)), stepX),
+                  top: snap(top, zs.map((x) => Number(x.style.top ?? 0)), stepY),
+                },
+              }
             : z
         );
         return { ...d, zones };
@@ -3647,17 +3663,39 @@ export default function ProductDisplayPage() {
       if (!core) continue;
       const { lay, zs, dyn } = core;
       const isADong = dk === "A";
-      const sc = isADong ? Math.min(1080 / lay.width, 745 / lay.height) : Math.min(1080 / lay.width, 745 / lay.height);
-      const W = Math.round(lay.width * sc);
-      const H = Math.round(lay.height * sc);
-      const labelsHtml = ""; // 구 lineLabels 인쇄 제거 (2026-08-28) — 좌표 라벨 필요 시 인쇄에도 추가 가능
+      // 좌표 라벨용 패드 (2026-08-28): 좌·우 행 번호, 상·하 열 번호 인쇄
+      const PADL = 28, PADT = 18, PADR = 30, PADB = 20;
+      // A동은 90° 회전 인쇄 → 회전 후 기준(폭=lay.height, 높이=lay.width)으로 스케일 계산 — 여백 최소화
+      const sc = isADong
+        ? Math.min(1080 / (lay.height + PADT + PADB), 745 / (lay.width + PADL + PADR))
+        : Math.min(1080 / (lay.width + PADL + PADR), 745 / (lay.height + PADT + PADB));
+      const W = Math.round((lay.width + PADL + PADR) * sc);
+      const H = Math.round((lay.height + PADT + PADB) * sc);
+      // 좌표 라벨: 브라우저와 동일 클러스터링(computeGridCoords) — 가로 1..N 상·하단, 세로 1..N 좌·우측
+      let labelsHtml = "";
+      const gc = computeGridCoords(zs);
+      if (gc) {
+        const fs = Math.max(7, Math.round(10 * sc));
+        const lbl = (left: number, top: number, w: number, txt: string, align: string) =>
+          `<div class="lbl" style="left:${Math.round(left * sc)}px;top:${Math.round(top * sc)}px;width:${Math.round(w * sc)}px;text-align:${align};font-size:${fs}px;color:#1d4ed8">${txt}</div>`;
+        const maxBottom = Math.max(...zs.map((z) => Number(z.style.top ?? 0) + Number(z.style.height ?? SLOT.h)));
+        gc.cols.forEach((cx, ci) => {
+          const x = cx - SLOT.w / 2 + PADL;
+          labelsHtml += lbl(x, PADT - fs - 4, SLOT.w, String(ci + 1), "center");
+          labelsHtml += lbl(x, maxBottom + 6, SLOT.w, String(ci + 1), "center");
+        });
+        gc.rows.forEach((cy, ri) => {
+          labelsHtml += lbl(2, cy - fs / 2 + PADT, PADL - 4, String(ri + 1), "right");
+          labelsHtml += lbl(PADL + gc.cols[gc.cols.length - 1] + SLOT.w / 2 + 6, cy - fs / 2, PADR - 6, String(ri + 1), "left");
+        });
+      }
       const cellsHtml = zs
         .map((z) => {
           const st = z.style as { left: number; top: number; width: number; height: number };
           const pns = (data[z.id] || "").split(",").map((s) => s.trim()).filter(Boolean);
           const n = dyn[z.id];
           return (
-            `<div class="cell${pns.length ? " on" : ""}" style="left:${Math.round(st.left * sc)}px;top:${Math.round(st.top * sc)}px;width:${Math.round(st.width * sc)}px;height:${Math.round(st.height * sc)}px">` +
+            `<div class="cell${pns.length ? " on" : ""}" style="left:${Math.round((st.left + PADL) * sc)}px;top:${Math.round((st.top + PADT) * sc)}px;width:${Math.round(st.width * sc)}px;height:${Math.round(st.height * sc)}px">` +
             `<span class="no">${core.esc(n && n.length ? n.join(",") : "")}</span>` +
             (pns.length ? `<span class="pn">${pns.map(core.esc).join("<br>")}</span>` : "") +
             `</div>`
