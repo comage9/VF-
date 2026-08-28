@@ -1919,6 +1919,11 @@ export default function ProductDisplayPage() {
   // 개별 동 화면 가로 확대 — 컨테이너 폭에 맞춰 지도 확대 표시 (수정 모드는 좌표 정밀도 위해 1배)
   const mapWrapRef = useRef<HTMLDivElement | null>(null);
   const [fitScale, setFitScale] = useState(1);
+  // 배치도 전용 수동 줌 — 동별 출고 비율 테이블과 독립적으로 배치도만 확대/축소 (2026-08-28)
+  const [zoomFactor, setZoomFactor] = useState(1);
+  const zoomIn = () => setZoomFactor((z) => Math.min(3, Number((z + 0.1).toFixed(2))));
+  const zoomOut = () => setZoomFactor((z) => Math.max(0.3, Number((z - 0.1).toFixed(2))));
+  const zoomReset = () => setZoomFactor(1);
   useEffect(() => {
     const compute = () => {
       if (!mapWrapRef.current || editMode || mobileView || dong === "ALL") {
@@ -2860,12 +2865,19 @@ export default function ProductDisplayPage() {
   };
 
   // 인라인 편집 저장 — 빠진 제품은 📦임시보관함으로, 배치된 임시보관함 제품은 제거
+  // 칸당 최대 품목 수 (2026-08-28): 전 동 공통 — 최대 10개까지 자유롭게 입력 가능
+  const MAX_ITEMS_PER_CELL = 10;
   const commitInlineEdit = (zid: string) => {
     if (editingZoneRef.current !== zid) return; // ref 가드 — Enter→blur/더블 Enter 경쟁 안전
     const raw = editVal.replace(/[^0-9,\s]/g, ""); // 숫자/콤마/공백만 허용
-    const newPns = Array.from(
+    let newPns = Array.from(
       new Set(raw.split(",").map((s) => s.trim()).filter(Boolean))
     );
+    let overMsg = "";
+    if (newPns.length > MAX_ITEMS_PER_CELL) {
+      overMsg = ` (⚠ ${newPns.length - MAX_ITEMS_PER_CELL}개는 최대 ${MAX_ITEMS_PER_CELL}개 제한으로 제외)`;
+      newPns = newPns.slice(0, MAX_ITEMS_PER_CELL);
+    }
     const newVal = newPns.join(",");
     const oldPns = (data[zid] || "")
       .split(",").map((s) => s.trim()).filter(Boolean);
@@ -2890,7 +2902,7 @@ export default function ProductDisplayPage() {
     editingZoneRef.current = null;
     setEditingZone(null);
     setEditVal("");
-    setSaveMsg(`✅ ${zid} 저장: ${newVal || "(비움)"}`);
+    setSaveMsg(`✅ ${zid} 저장: ${newVal || "(비움)"}${overMsg}`);
     window.setTimeout(() => setSaveMsg(""), 2000);
   };
 
@@ -2955,9 +2967,10 @@ export default function ProductDisplayPage() {
   const confirmAssign = (forceVal?: string) => {
     if (!currentZone) return;
     const val = (forceVal ?? inputVal).trim().replace(/[^0-9,\s]/g, "");
-    const newPns = Array.from(
+    let newPns = Array.from(
       new Set(val.split(",").map((s) => s.trim()).filter(Boolean))
     );
+    if (newPns.length > MAX_ITEMS_PER_CELL) newPns = newPns.slice(0, MAX_ITEMS_PER_CELL);
     const newVal = newPns.join(",");
     // 현재 칸의 기존 제품 중 빠진 것 → 📦임시보관함으로 이동
     const oldPns = (data[currentZone] || "")
@@ -4477,10 +4490,18 @@ export default function ProductDisplayPage() {
           </div>
         ) : (
         <div ref={mapWrapRef} className="w-full overflow-auto pb-2" style={{ maxHeight: "calc(100vh - 240px)" }}>
+          {/* 배치도 전용 줌 컨트롤 — 출고비율 테이블과 독립 (2026-08-28) */}
+          <div className="flex items-center gap-1 mb-2">
+            <button type="button" onClick={zoomOut} className="px-2 py-0.5 text-xs rounded border bg-white hover:bg-slate-100" title="배치도 축소">−</button>
+            <span className="text-xs text-slate-600 w-12 text-center">{Math.round(zoomFactor * 100)}%</span>
+            <button type="button" onClick={zoomIn} className="px-2 py-0.5 text-xs rounded border bg-white hover:bg-slate-100" title="배치도 확대">＋</button>
+            <button type="button" onClick={zoomReset} className="px-2 py-0.5 text-xs rounded border bg-white hover:bg-slate-100" title="원래 크기">100%</button>
+            <span className="text-[10px] text-slate-400 ml-1">배치도 전용 확대/축소</span>
+          </div>
           <DndContext sensors={sensors} autoScroll={false} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div className="flex gap-3 items-start">
           <div className="flex flex-col gap-2">
-          <div style={{ width: (current.width + gridPad.l + gridPad.r) * fitScale, height: (current.height + gridPad.t + gridPad.b) * fitScale }}>
+          <div style={{ width: (current.width + gridPad.l + gridPad.r) * fitScale * zoomFactor, height: (current.height + gridPad.t + gridPad.b) * fitScale * zoomFactor }}>
           <div
             ref={gridRef}
             className="relative rounded-xl border bg-slate-50 shrink-0"
@@ -4489,7 +4510,7 @@ export default function ProductDisplayPage() {
               width: current.width + gridPad.l + gridPad.r,
               minWidth: current.width + gridPad.l + gridPad.r,
               minHeight: current.height + gridPad.t + gridPad.b,
-              transform: `scale(${fitScale})`,
+              transform: `scale(${fitScale * zoomFactor})`,
               transformOrigin: "top left",
             }}
             onPointerDownCapture={handleSelDownCapture}
