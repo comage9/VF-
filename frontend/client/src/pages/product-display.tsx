@@ -3448,17 +3448,57 @@ export default function ProductDisplayPage() {
   const exportExcel = () => {
     const isAll = dong === "ALL";
     const activeDong = dong;
-    const zoneById = new Map(current.zones.map((z) => [z.id, z]));
+    // 총괄 모드 = 전 동 존 (레이아웃 전부) — 2026-08-28 수정: 기존은 current(A동만) 내보내기 버그
+    const sourceZones = isAll ? layoutState.flatMap((d) => d.zones) : current.zones;
+    const zoneById = new Map(sourceZones.map((z) => [z.id, z]));
     const zonesToExport = isAll
-      ? current.zones.map((z) => z.id)
-      : current.zones.filter((z) => z.id.startsWith(`${activeDong}-`)).map((z) => z.id);
+      ? sourceZones.map((z) => z.id)
+      : sourceZones.filter((z) => z.id.startsWith(`${activeDong}-`)).map((z) => z.id);
     const activeZoneDefs = zonesToExport.map((id) => zoneById.get(id)).filter((z): z is ZoneDef => !!z);
-    const dongLocNos = computeDongLocMap(
-      activeDong === "A" ? orderAZones(activeZoneDefs) : activeZoneDefs,
-      data,
-      { fixedUpTo: activeDong === "A" ? A_FIXED_LOC_MAX : undefined, exceptions: locExceptions }
-    );
-    type Row = { dong: string; no: number; cat: string; loc: string; cellName: string; name: string; barcode: string; boxes: number; pn: string };
+    // 동별 개별 계산 (2026-08-28 수정) — 프론트 표시(dongLocNos)와 동일 경로.
+    // 기존: 전 존 단일 계산 → 총괄 모드에서 동별 시작번호(A=1/B=200/C=500/D=900)·A동 뱀정렬 누락으로 번호 불일치
+    const byDong = new Map<string, ZoneDef[]>();
+    for (const z of activeZoneDefs) {
+      const dk = z.id.split("-")[0];
+      if (!byDong.has(dk)) byDong.set(dk, []);
+      byDong.get(dk)!.push(z);
+    }
+    const dongLocNos: Record<string, number[]> = {};
+    for (const [dk, zs] of byDong) {
+      const sorted = dk === "A" ? orderAZones(zs) : zs;
+      Object.assign(
+        dongLocNos,
+        computeDongLocMap(sorted, data, {
+          fixedUpTo: dk === "A" ? A_FIXED_LOC_MAX : undefined,
+          exceptions: locExceptions,
+        })
+      );
+    }
+    // 좌표 매핑 (배치도 파란 좌표 그대로, 2026-08-28) — 동별 클러스터링 재계산
+    const coordOf = new Map<string, string>();
+    for (const [dk, zs] of byDong) {
+      const gc = computeGridCoords(zs);
+      if (!gc) continue;
+      const cyOf = (z: ZoneDef) => Number(z.style.top ?? 0) + Number(z.style.height ?? SLOT.h) / 2;
+      const nearestRow = (y: number) => {
+        let bi = 0; let bd = Infinity;
+        gc.rows.forEach((r, i) => { const d = Math.abs(y - r); if (d < bd) { bd = d; bi = i; } });
+        return bi;
+      };
+      const rowLabelOf = (ri: number): string => {
+        if (dk !== "A") return String(ri + 1);
+        const inRow = zs.filter((z) => nearestRow(cyOf(z)) === ri);
+        const slotZone = inRow.find((z) => /^A-L[1-6]-\d+$/.test(z.id));
+        if (slotZone) return slotZone.id.split("-").pop() || String(ri + 1);
+        if (inRow.some((z) => z.id.startsWith("A-L7"))) return "20";
+        return String(gc.rows.length - ri);
+      };
+      zs.forEach((z) => {
+        const c = gc.coords.get(z.id);
+        if (c) coordOf.set(z.id, `${rowLabelOf(c.row - 1)}-${c.col}`);
+      });
+    }
+    type Row = { dong: string; no: number; cat: string; loc: string; cellName: string; coord: string; name: string; barcode: string; boxes: number; pn: string };
     const rows: Row[] = [];
     for (const zoneId of zonesToExport) {
       const val = data[zoneId];
@@ -3477,6 +3517,7 @@ export default function ProductDisplayPage() {
           cat: m?.lg || "",
           loc: pnumToLoc(pn),
           cellName: zoneId,
+          coord: coordOf.get(zoneId) || "",
           name: m?.name || "",
           barcode: m?.barcode || "",
           boxes: m?.barcode ? calcMonthQty(m.barcode) : 0,
@@ -3495,9 +3536,9 @@ export default function ProductDisplayPage() {
     const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     const fileName = isAll ? `전체_배치표_${ymd}.xlsx` : `${activeDong}동_배치표_${ymd}.xlsx`;
     const aoa: (string | number)[][] = [
-      ["동", "칸(위치)", "순위_1개월박스", "분류", "로케이션", "제품명", "바코드", "1개월_출고박스", "단수", "로케이션(숫자)", "비고"],
+      ["동", "칸(위치)", "좌표", "순위_1개월박스", "분류", "로케이션", "제품명", "바코드", "1개월_출고박스", "단수", "로케이션(숫자)", "비고"],
       ...rows.map((r) => [
-        r.dong, r.cellName, rank(r.pn), r.cat, r.loc, r.name, r.barcode, r.boxes, extractDansu(r.name), r.no, ""
+        r.dong, r.cellName, r.coord, rank(r.pn), r.cat, r.loc, r.name, r.barcode, r.boxes, extractDansu(r.name), r.no, ""
       ]),
     ];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
