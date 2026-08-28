@@ -92,6 +92,7 @@ type ZoneDef = {
   showNumAsProduct: boolean;
   style: CSSProperties;
   locNo?: number | null;
+  gridCoord?: string;
 };
 
 type LineLabel = {
@@ -258,6 +259,68 @@ function parseLineNoFromLabel(text: string): number | null {
   m = /^(\d+)번/.exec(t);
   if (m) return +m[1];
   return null;
+}
+
+/** 열 번호 → 알파벳 라벨 (1=A, 2=B, ... 27=AA) */
+function colLetter(n: number): string {
+  let s = "";
+  while (n > 0) {
+    const m = (n - 1) % 26;
+    s = String.fromCharCode(65 + m) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+/** 물리 그리드 좌표 (2026-08-28) — 존의 실제 픽셀 위치를 기준으로
+ *  행(위→아래 1~N)·열(좌→우 A~)을 클러스터링해 부여.
+ *  예: "C12-J" = C동 12행 J열. 사용자가 이 좌표로 칸을 부를 수 있게 함. */
+function computeGridCoords(zones: ZoneDef[]): {
+  coords: Map<string, { row: number; col: number }>;
+  rows: number[]; // 각 행의 대표 y-중앙
+  cols: number[]; // 각 열의 대표 x-중앙
+  minLeft: number;
+  minTop: number;
+} | null {
+  if (zones.length === 0) return null;
+  const TOL = 8; // 같은 행/열 판정 허용 오차 (칸 간격 4보다 큼, 어긋난 블록 14px은 분리)
+  const cy = (z: ZoneDef) => Number(z.style.top ?? 0) + Number(z.style.height ?? SLOT.h) / 2;
+  const cx = (z: ZoneDef) => Number(z.style.left ?? 0) + Number(z.style.width ?? SLOT.w) / 2;
+  const cluster = (vals: number[]) => {
+    const sorted = [...new Set(vals)].sort((a, b) => a - b);
+    const reps: number[] = [];
+    for (const v of sorted) {
+      const last = reps[reps.length - 1];
+      if (last === undefined || v - last > TOL) reps.push(v);
+      else reps[reps.length - 1] = (last + v) / 2;
+    }
+    return reps;
+  };
+  const rowReps = cluster(zones.map(cy));
+  const colReps = cluster(zones.map(cx));
+  const nearest = (v: number, reps: number[]) => {
+    let bi = 0;
+    let bd = Infinity;
+    reps.forEach((r, i) => {
+      const d = Math.abs(v - r);
+      if (d < bd) {
+        bd = d;
+        bi = i;
+      }
+    });
+    return bi;
+  };
+  const coords = new Map<string, { row: number; col: number }>();
+  zones.forEach((z) => {
+    coords.set(z.id, { row: nearest(cy(z), rowReps) + 1, col: nearest(cx(z), colReps) + 1 });
+  });
+  return {
+    coords,
+    rows: rowReps,
+    cols: colReps,
+    minLeft: Math.min(...zones.map((z) => Number(z.style.left ?? 0))),
+    minTop: Math.min(...zones.map((z) => Number(z.style.top ?? 0))),
+  };
 }
 
 /** 서버 스냅샷 적용 → 4개 로컬 키 동기화 (실패 무시) */
@@ -703,6 +766,7 @@ function buildAllDongLayouts(config: LineConfigMap) {
   cBuilt.zones = buildCDongZones("C", config.C);
   const dBuilt = buildDDongLayout("D");
   dBuilt.zones = buildDDongZones("D", config.D);
+
   return { A: aBuilt, B: bBuilt, C: cBuilt, D: dBuilt };
 }
 
@@ -801,16 +865,6 @@ function buildCDongLayout(
       style: { left: xOf(14), top: slot.padT - 18, width: 8 * (slot.w + gap), textAlign: "center", fontSize: 10, fontWeight: 700, color: "#475569" },
     }
   );
-
-  // 행 라벨 (2026-08-28): 기존 좌표 체계 C-R{행}-C{열} 기준으로 행 바깥(왼쪽)에 표시
-  // 가로 라인 = 중앙/우측 블록의 수평 행 (R16 포함 8개 라인)
-  const C_ROW_LINES = [14, 15, 16, 17, 18, 20, 21, 23];
-  C_ROW_LINES.forEach((row) => {
-    lineLabels.push({
-      text: `R${row}`,
-      style: { left: xOf(4) - 48, top: yOf(row) + slot.h / 2 - 6, width: 44, textAlign: "right", fontSize: 9, fontWeight: 700, color: "#dc2626" },
-    });
-  });
 
   const width = xOf(21) + slot.w + slot.padR;
   const height = yOf(23) + slot.h + slot.padB;
@@ -1833,6 +1887,34 @@ export default function ProductDisplayPage() {
       exceptions: locExceptions,
     });
   }, [current, data, dong, locExceptions]);
+
+  // 물리 그리드 좌표 라벨 (2026-08-28) — 현재 렌더 중인 존 기준으로 동적 계산.
+  // 빌트 레이아웃 상수가 아닌 렌더 시점 존 좌표 기준이라, 저장된 레이아웃(localStorage) 변경에도 항상 정확.
+  // B/C/D동: 행 라벨(왼쪽, "B3"/"C12"...)+열 헤더(상단, "A"~"AA") 표시 + 툴팁용 gridCoord 계산.
+  const gridLabels = useMemo(() => {
+    if (dong === "A" || dong === "ALL") return { labels: [] as LineLabel[], coordOf: new Map<string, string>() };
+    const gc = computeGridCoords(current.zones);
+    if (!gc) return { labels: [] as LineLabel[], coordOf: new Map<string, string>() };
+    const labels: LineLabel[] = [];
+    const coordOf = new Map<string, string>();
+    gc.cols.forEach((cx, ci) => {
+      labels.push({
+        text: colLetter(ci + 1),
+        style: { left: cx - SLOT.w / 2, top: Math.max(2, gc.minTop - 20), width: SLOT.w, textAlign: "center", fontSize: 9, fontWeight: 700, color: "#2563eb" },
+      });
+    });
+    gc.rows.forEach((cy, ri) => {
+      labels.push({
+        text: `${dong}${ri + 1}`,
+        style: { left: Math.max(0, gc.minLeft - 40), top: cy - 6, width: 36, textAlign: "right", fontSize: 9, fontWeight: 700, color: "#2563eb" },
+      });
+    });
+    current.zones.forEach((z) => {
+      const c = gc.coords.get(z.id);
+      if (c) coordOf.set(z.id, `${dong}${c.row}-${colLetter(c.col)}`);
+    });
+    return { labels, coordOf };
+  }, [dong, current.zones]);
 
   // 가상 그리드 (2026-08-28, 수정 모드 전용): 현재 칸들이 차지한 열·행을 기준으로
   // 여백 공간까지 그리드를 확장해 점선 칸 표시 — 라인/칸을 빈 그리드 자리로 이동 가능하게 함.
@@ -3427,6 +3509,11 @@ export default function ProductDisplayPage() {
     const posName = zid.replace(/^(A-L|B-)/, "");
     const parts: string[] = [posName];
 
+    // 그리드 좌표 표시 (B/C/D동) (2026-08-28)
+    if ((zid.startsWith("B-") || zid.startsWith("C-") || zid.startsWith("D-")) && z.gridCoord) {
+      parts.unshift(`[${z.gridCoord}]`);
+    }
+
     const assigned = data[zid] || "";
     const pnums = assigned ? assigned.split(",").map((s) => s.trim()).filter(Boolean) : [];
 
@@ -4364,6 +4451,17 @@ export default function ProductDisplayPage() {
               </div>
             ))}
 
+            {/* 그리드 좌표 라벨 — 렌더 존 기준 동적 계산 (2026-08-28) */}
+            {gridLabels.labels.map((lb, i) => (
+              <div
+                key={`gl-${i}`}
+                className="absolute pointer-events-none text-[9px] font-bold text-blue-600 leading-none"
+                style={lb.style}
+              >
+                {lb.text}
+              </div>
+            ))}
+
             {/* 가상 그리드 — 수정 모드 전용, 여백까지 점선 칸 표시 (2026-08-28) */}
             {ghostCells.map((g, i) => (
               <div
@@ -4379,10 +4477,12 @@ export default function ProductDisplayPage() {
               </div>
             ) : null}
 
-            {current.zones.map((z) => (
+            {current.zones.map((z) => {
+              const zz = gridLabels.coordOf.has(z.id) ? { ...z, gridCoord: gridLabels.coordOf.get(z.id) } : z;
+              return (
               <ZoneCell
                 key={z.id}
-                z={z}
+                z={zz}
                 value={data[z.id]}
                 matched={filterMatchedZones.has(z.id)}
                 flash={flashZone === z.id}
@@ -4396,10 +4496,11 @@ export default function ProductDisplayPage() {
                 onEditChange={setEditVal}
                 onEditCommit={() => commitInlineEdit(z.id)}
                 onEditCancel={() => { setEditingZone(null); setEditVal(""); }}
-                tip={makeTooltip(z)}
+                tip={makeTooltip(zz)}
                 locNos={dongLocNos[z.id]}
               />
-            ))}
+              );
+            })}
             {editMode && selRect && selStartRef.current ? (
               <div
                 className="pointer-events-none absolute z-50"
