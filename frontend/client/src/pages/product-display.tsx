@@ -2301,6 +2301,63 @@ export default function ProductDisplayPage() {
     );
   };
 
+  // 좌우 이동 (2026-08-28): 상하 이동과 동일 패턴 — 방향키(←/→)·버튼 지원
+  // dir: -1=왼쪽, 1=오른쪽. 이웃 칸이 있으면 교환, 빈 그리드 자리면 그대로 이동
+  const groupMoveX = (dir: -1 | 1) => {
+    if (!selectedZones.length || !editMode) return;
+    const STEP = SLOT.w + 4; // 가로 그리드 한 칸 (52px)
+    const ROW_TOL = SLOT.h * 0.6; // 같은 행(비슷한 y) 판정 허용 오차
+
+    setLayoutState((prev) =>
+      prev.map((d) => {
+        if (d.key !== dong) return d;
+        const zones = d.zones.map((z) => ({ ...z, style: { ...z.style } }));
+
+        // 정렬: 오른쪽 이동이면 오른쪽 칸 먼저, 왼쪽 이동이면 왼쪽 칸 먼저 (블록 순차 처리)
+        const selIdxs = selectedZones
+          .map((zid) => zones.findIndex((z) => z.id === zid))
+          .filter((i) => i >= 0)
+          .sort((a, b) => {
+            const ax = Number(zones[a].style.left ?? 0);
+            const bx = Number(zones[b].style.left ?? 0);
+            return dir === 1 ? bx - ax : ax - bx;
+          });
+
+        const selSet = new Set(selIdxs);
+
+        for (const si of selIdxs) {
+          const sx = Number(zones[si].style.left ?? 0);
+          const sy = Number(zones[si].style.top ?? 0);
+          const tx = sx + dir * STEP; // 목적 그리드 한 칸 왼쪽/오른쪽
+
+          // 목적 그리드 자리에 비선택 칸이 있으면 교환
+          let best = -1;
+          let bestDist = Infinity;
+          for (let j = 0; j < zones.length; j++) {
+            if (selSet.has(j)) continue;
+            const jx = Number(zones[j].style.left ?? 0);
+            const jy = Number(zones[j].style.top ?? 0);
+            if (Math.abs(jy - sy) > ROW_TOL) continue;
+            const dist = Math.abs(jx - tx);
+            if (dist < bestDist) { bestDist = dist; best = j; }
+          }
+
+          if (best >= 0 && bestDist < SLOT.w) {
+            // 점유 칸 → 교환
+            const tmpStyle = { ...zones[si].style };
+            zones[si] = { ...zones[si], style: { ...zones[best].style } };
+            zones[best] = { ...zones[best], style: tmpStyle };
+          } else {
+            // 빈 그리드 자리 → 그대로 한 칸 이동
+            zones[si] = { ...zones[si], style: { ...zones[si].style, left: Math.max(0, Math.round(tx)) } };
+          }
+        }
+
+        return { ...d, zones };
+      })
+    );
+  };
+
   const handleSelDown = (e: React.PointerEvent) => {
     if (!editMode) return;
     // 셀(button)에서 시작하면 셀 클릭 처리로 위임 — 셀 위 박스 선택은 Shift+드래그(아래 캡처 핸들러)
@@ -3478,11 +3535,20 @@ export default function ProductDisplayPage() {
         if (assignFiltered.length > 0) confirmAssign(assignFiltered[0].pnum);
         else confirmAssign();
       }
+      // 수정 모드 방향키 이동 (2026-08-28): ←/→ 좌우, ↑/↓ 상하 (인라인 편집·모달 중엔 무시)
+      if (editMode && !modalOpen && selectedZones.length) {
+        const el = document.activeElement as HTMLElement | null;
+        if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
+        if (e.key === "ArrowLeft") { e.preventDefault(); groupMoveX(-1); }
+        else if (e.key === "ArrowRight") { e.preventDefault(); groupMoveX(1); }
+        else if (e.key === "ArrowUp") { e.preventDefault(); groupMove(1); }
+        else if (e.key === "ArrowDown") { e.preventDefault(); groupMove(-1); }
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modalOpen, inputVal, currentZone, assignFiltered]);
+  }, [modalOpen, inputVal, currentZone, assignFiltered, editMode, selectedZones]);
 
   // 툴팁 생성: A동=배치 제품번호 기준(masterMap, 미로드 시 칸 하드코딩 fallback), B/C/D동=pnum 기반(다품목 나열)
   const makeTooltip = (z: ZoneDef): string => {
@@ -4541,6 +4607,12 @@ export default function ProductDisplayPage() {
               </Button>
               <Button type="button" className="bg-sky-600 hover:bg-sky-700" onClick={() => groupMove(-1)} title="선택한 칸들을 한 칸 아래로 이동 (한 라인을 통째로 내리려면 라인 전체를 드래그 선택)">
                 ↓ 아래로 이동
+              </Button>
+              <Button type="button" className="bg-sky-600 hover:bg-sky-700" onClick={() => groupMoveX(-1)} title="선택한 칸들을 한 칸 왼쪽으로 이동 (단축키: ← 방향키)">
+                ← 왼쪽으로 이동
+              </Button>
+              <Button type="button" className="bg-sky-600 hover:bg-sky-700" onClick={() => groupMoveX(1)} title="선택한 칸들을 한 칸 오른쪽으로 이동 (단축키: → 방향키)">
+                → 오른쪽으로 이동
               </Button>
               <Button type="button" variant="outline" onClick={() => setSelectedZones([])}>
                 선택 해제
