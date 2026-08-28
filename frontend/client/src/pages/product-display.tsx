@@ -1805,9 +1805,9 @@ export default function ProductDisplayPage() {
   // 행 번호: 좌측 + 우측 / 열 번호: 상단 + 하단.
   // A동 행 번호는 기존 슬롯 번호 체계(아래=1) 유지 — L1~L6 슬롯 번호 기준, 하단 1줄=20.
   const gridLabels = useMemo(() => {
-    if (dong === "ALL") return { labels: [] as LineLabel[], coordOf: new Map<string, string>() };
+    if (dong === "ALL") return { labels: [] as LineLabel[], coordOf: new Map<string, string>(), locOuter: new Set<string>() };
     const gc = computeGridCoords(current.zones);
-    if (!gc) return { labels: [] as LineLabel[], coordOf: new Map<string, string>() };
+    if (!gc) return { labels: [] as LineLabel[], coordOf: new Map<string, string>(), locOuter: new Set<string>() };
     const labels: LineLabel[] = [];
     const coordOf = new Map<string, string>();
     const maxColX = Math.max(...current.zones.map((z) => Number(z.style.left ?? 0) + Number(z.style.width ?? SLOT.w)));
@@ -1850,8 +1850,37 @@ export default function ProductDisplayPage() {
       const c = gc.coords.get(z.id);
       if (c) coordOf.set(z.id, `${rowLabelOf(c.row - 1)}-${c.col}`);
     });
-    return { labels, coordOf };
-  }, [dong, current.zones]);
+
+    // 로케이션 번호 통로 배치 (2026-08-28): 칸 위쪽 통로 여유 >= 13px면 칸 밖에 표시
+    // (제품번호는 칸 안, 로케이션은 통로/빈 공간) — 공간 없는 밀집 칸은 칸 안 표시 유지
+    const locOuter = new Set<string>();
+    if (dong !== "A") {
+      const TOLC = SLOT.w * 0.6;
+      current.zones.forEach((z) => {
+        const nos = dongLocNos[z.id];
+        if (!nos || nos.length === 0) return;
+        const zx = Number(z.style.left ?? 0);
+        const zy = Number(z.style.top ?? 0);
+        const zw = Number(z.style.width ?? SLOT.w);
+        let aboveBottom = 0;
+        for (const o of current.zones) {
+          if (o.id === z.id) continue;
+          const ox = Number(o.style.left ?? 0);
+          if (Math.abs(ox - zx) > TOLC) continue;
+          const ob = Number(o.style.top ?? 0) + Number(o.style.height ?? SLOT.h);
+          if (ob <= zy + 2 && ob > aboveBottom) aboveBottom = ob;
+        }
+        if (zy - aboveBottom >= 13) {
+          locOuter.add(z.id);
+          labels.push({
+            text: fmtLocNos(nos),
+            style: { left: zx, top: zy - 10, width: zw, textAlign: "center", fontSize: 8, fontWeight: 700, color: "#d97706", fontFamily: "ui-monospace, monospace" },
+          });
+        }
+      });
+    }
+    return { labels, coordOf, locOuter };
+  }, [dong, current.zones, dongLocNos]);
 
   // 가상 그리드 (2026-08-28, 수정 모드 전용): 현재 칸들이 차지한 열·행을 기준으로
   // 여백 공간까지 그리드를 확장해 점선 칸 표시 — 라인/칸을 빈 그리드 자리로 이동 가능하게 함.
@@ -3621,12 +3650,7 @@ export default function ProductDisplayPage() {
       const sc = isADong ? Math.min(1080 / lay.width, 745 / lay.height) : Math.min(1080 / lay.width, 745 / lay.height);
       const W = Math.round(lay.width * sc);
       const H = Math.round(lay.height * sc);
-      const labelsHtml = lay.lineLabels
-        .map(
-          (lb) =>
-            `<div class="lbl" style="left:${Math.round(Number(lb.style.left ?? 0) * sc)}px;top:${Math.round(Number(lb.style.top ?? 0) * sc)}px;width:${Math.round(Number(lb.style.width ?? 90) * sc)}px">${core.esc(String(lb.text))}</div>`
-        )
-        .join("");
+      const labelsHtml = ""; // 구 lineLabels 인쇄 제거 (2026-08-28) — 좌표 라벨 필요 시 인쇄에도 추가 가능
       const cellsHtml = zs
         .map((z) => {
           const st = z.style as { left: number; top: number; width: number; height: number };
@@ -4310,11 +4334,7 @@ export default function ProductDisplayPage() {
                           transformOrigin: "top left",
                         }}
                       >
-                        {dl.lineLabels.map((lb, i) => (
-                          <div key={`all-ll-${k}-${i}`} className="absolute pointer-events-none text-[10px] font-semibold text-slate-600" style={lb.style}>
-                            {lb.text}
-                          </div>
-                        ))}
+                        {/* 구 lineLabels 미니맵 렌더링 제거 (2026-08-28) */}
                         {dl.zones.map((z) => (
                           <MiniZoneCell
                             key={z.id}
@@ -4373,20 +4393,7 @@ export default function ProductDisplayPage() {
             onPointerMove={handleSelMove}
             onPointerUp={handleSelUp}
           >
-            {current.lineLabels.map((lb, i) => (
-              <div
-                key={`ll-${i}`}
-                className={
-                  "absolute pointer-events-none " +
-                  (lb.style.height
-                    ? "text-[10px] font-bold text-slate-500 leading-none"
-                    : "text-[11px] font-semibold text-slate-700")
-                }
-                style={lb.style}
-              >
-                {lb.text}
-              </div>
-            ))}
+            {/* 구 lineLabels 렌더링 제거 (2026-08-28) — 숫자 좌표는 아래 gridLabels로만 표시 */}
 
             {/* 그리드 좌표 라벨 — 렌더 존 기준 동적 계산 (2026-08-28) */}
             {gridLabels.labels.map((lb, i) => (
@@ -4434,7 +4441,7 @@ export default function ProductDisplayPage() {
                 onEditCommit={() => commitInlineEdit(z.id)}
                 onEditCancel={() => { setEditingZone(null); setEditVal(""); }}
                 tip={makeTooltip(zz)}
-                locNos={dongLocNos[z.id]}
+                locNos={gridLabels.locOuter.has(z.id) ? undefined : dongLocNos[z.id]}
               />
               );
             })}
