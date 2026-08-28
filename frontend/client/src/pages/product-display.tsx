@@ -802,6 +802,16 @@ function buildCDongLayout(
     }
   );
 
+  // 행 라벨 (2026-08-28): 기존 좌표 체계 C-R{행}-C{열} 기준으로 행 바깥(왼쪽)에 표시
+  // 가로 라인 = 중앙/우측 블록의 수평 행 (R16 포함 8개 라인)
+  const C_ROW_LINES = [14, 15, 16, 17, 18, 20, 21, 23];
+  C_ROW_LINES.forEach((row) => {
+    lineLabels.push({
+      text: `R${row}`,
+      style: { left: xOf(4) - 48, top: yOf(row) + slot.h / 2 - 6, width: 44, textAlign: "right", fontSize: 9, fontWeight: 700, color: "#dc2626" },
+    });
+  });
+
   const width = xOf(21) + slot.w + slot.padR;
   const height = yOf(23) + slot.h + slot.padB;
   return { zones, lineLabels, width, height };
@@ -1137,6 +1147,8 @@ export default function ProductDisplayPage() {
   const gridRef = useRef<HTMLDivElement | null>(null);
   const [selRect, setSelRect] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const selStartRef = useRef<{ x: number; y: number; cx: number; cy: number } | null>(null);
+  const selMovedRef = useRef(false);
+  const selSuppressClickRef = useRef(false);
   // 동적 레이아웃: 칸(슬롯) 좌표 이동 반영 (초기값 = localStorage 저장분 or DONG_LAYOUTS)
   const [layoutState, setLayoutState] = useState(() => {
     try {
@@ -2207,21 +2219,44 @@ export default function ProductDisplayPage() {
 
   const handleSelDown = (e: React.PointerEvent) => {
     if (!editMode) return;
-    // 셀(button)에서 시작하면 셀 클릭 처리로 위임
+    // 셀(button)에서 시작하면 셀 클릭 처리로 위임 — 셀 위 박스 선택은 Shift+드래그(아래 캡처 핸들러)
     if ((e.target as HTMLElement).closest("button")) return;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     selStartRef.current = { x: e.clientX, y: e.clientY, cx: rect.left, cy: rect.top };
+    selMovedRef.current = false;
+    setSelRect({ x1: e.clientX, y1: e.clientY, x2: e.clientX, y2: e.clientY });
+  };
+
+  // Shift+드래그: 셀(버튼) 위에서 시작해도 박스 선택 (2026-08-28)
+  // 캡처 단계에서 stopPropagation → dnd-kit 칸 이동 드래그 미발동. C동처럼 칸이 빽빽해
+  // 빈 공간에서 드래그를 시작할 수 없을 때 라인 선택 가능.
+  const handleSelDownCapture = (e: React.PointerEvent) => {
+    if (!editMode || !e.shiftKey) return;
+    e.stopPropagation();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    selStartRef.current = { x: e.clientX, y: e.clientY, cx: rect.left, cy: rect.top };
+    selMovedRef.current = false;
+    selSuppressClickRef.current = false;
     setSelRect({ x1: e.clientX, y1: e.clientY, x2: e.clientX, y2: e.clientY });
   };
 
   const handleSelMove = (e: React.PointerEvent) => {
     if (!selStartRef.current) return;
+    if (!selMovedRef.current) {
+      const dx = Math.abs(e.clientX - selStartRef.current.x);
+      const dy = Math.abs(e.clientY - selStartRef.current.y);
+      if (dx < 5 && dy < 5) return;
+      selMovedRef.current = true;
+      selSuppressClickRef.current = true;
+    }
     setSelRect((r) => (r ? { ...r, x2: e.clientX, y2: e.clientY } : r));
   };
 
   const handleSelUp = () => {
     const s = selStartRef.current;
-    if (!s || !selRect) {
+    const moved = selMovedRef.current;
+    if (!s || !selRect || !moved) {
+      // 미이동 = 클릭 (셀 클릭·인라인 편집 경로가 처리) — 기존 선택 보존
       selStartRef.current = null;
       setSelRect(null);
       return;
@@ -2591,6 +2626,11 @@ export default function ProductDisplayPage() {
   // 수정 모드 셀 클릭: 선택 없음 → 선택 / 선택 칸 → 해제 / 다른 칸(1개 선택 시) → 슬롯 좌표 이동
   const handleCellClick = (zid: string) => {
     if (!editMode) return;
+    // 드래그 직후 click 이벤트 잔재 방지 (2026-08-28) — 셀 클릭으로 오발동 금지
+    if (selSuppressClickRef.current) {
+      selSuppressClickRef.current = false;
+      return;
+    }
     // 수기 편집: 칸 클릭 → 인라인 입력 (기존 값 표시, 콤마 구분 다품목)
     editingZoneRef.current = zid;
     setEditingZone(zid);
@@ -3481,7 +3521,7 @@ export default function ProductDisplayPage() {
   const openPrintWindow = (title: string, landscape: boolean, bodyHtml: string, css: string) => {
     const html =
       `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${title}</title><style>` +
-      `@page{size:A4 ${landscape ? "landscape" : "portrait"};margin:${landscape ? "8mm" : "12mm"}}` +
+      `@page{size:A4 ${landscape ? "landscape" : "portrait"};margin:${landscape ? "4mm" : "6mm"}}` +
       css +
       `</style></head><body>${bodyHtml}` +
       `<script>window.onload=function(){setTimeout(function(){window.print();},200);}</scr` +
@@ -3518,7 +3558,7 @@ export default function ProductDisplayPage() {
       if (!core) continue;
       const { lay, zs, dyn } = core;
       const isADong = dk === "A";
-      const sc = isADong ? Math.min(1040 / lay.width, 690 / lay.height) : Math.min(1040 / lay.width, 690 / lay.height);
+      const sc = isADong ? Math.min(1080 / lay.width, 745 / lay.height) : Math.min(1080 / lay.width, 745 / lay.height);
       const W = Math.round(lay.width * sc);
       const H = Math.round(lay.height * sc);
       const labelsHtml = lay.lineLabels
@@ -4268,6 +4308,7 @@ export default function ProductDisplayPage() {
               transform: `scale(${fitScale})`,
               transformOrigin: "top left",
             }}
+            onPointerDownCapture={handleSelDownCapture}
             onPointerDown={handleSelDown}
             onPointerMove={handleSelMove}
             onPointerUp={handleSelUp}
@@ -4359,15 +4400,18 @@ export default function ProductDisplayPage() {
           >
             {editMode ? "✓ 수정 중" : "수정"}
           </Button>
+          {editMode && selectedZones.length === 0 ? (
+            <span className="text-[11px] text-slate-500">빈 공간 드래그 = 칸 선택 · 칸 위에서는 Shift+드래그</span>
+          ) : null}
           {editMode && selectedZones.length > 0 ? (
             <>
               <span className="text-xs font-bold text-purple-700">
                 {selectedZones.length}칸 선택
               </span>
-              <Button type="button" className="bg-sky-600 hover:bg-sky-700" onClick={() => groupMove(1)}>
+              <Button type="button" className="bg-sky-600 hover:bg-sky-700" onClick={() => groupMove(1)} title="선택한 칸들을 한 칸 위로 이동 (한 라인을 통째로 올리려면 라인 전체를 드래그 선택)">
                 ↑ 위로 이동
               </Button>
-              <Button type="button" className="bg-sky-600 hover:bg-sky-700" onClick={() => groupMove(-1)}>
+              <Button type="button" className="bg-sky-600 hover:bg-sky-700" onClick={() => groupMove(-1)} title="선택한 칸들을 한 칸 아래로 이동 (한 라인을 통째로 내리려면 라인 전체를 드래그 선택)">
                 ↓ 아래로 이동
               </Button>
               <Button type="button" variant="outline" onClick={() => setSelectedZones([])}>
