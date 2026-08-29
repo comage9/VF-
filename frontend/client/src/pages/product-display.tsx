@@ -95,6 +95,12 @@ type ZoneDef = {
   gridCoord?: string;
   /** 고정 칸 (2026-08-28): 드래그·라인 이동·좌표 이동 전부 차단 — 건들면 안 되는 칸 표시 */
   fixed?: boolean;
+  /**
+   * 배치 방향 (2026-08-29): 다품목 칸 분할 방향 결정.
+   * - "h" = 가로 배치 (물건이 좌→우로 나열) → 칸을 좌우로 분할 (예: A동 L7/20행)
+   * - "v"(기본) = 세로 배치 (파레트가 상하 적재) → 칸을 상하로 분할 (예: A동 L1~L6)
+   */
+  splitDir?: "h" | "v";
 };
 
 type LineLabel = {
@@ -132,6 +138,27 @@ const SLOT = {
 
 const A_SLOTS_PER_LINE = 19;
 const A_BOTTOM_LINE_ID = 7;
+
+/**
+ * 저장된 레이아웃(서버 스냅샷·옛 localStorage) 존에 배치 방향 재부여 (2026-08-29).
+ * 옛 스냅샷에는 splitDir 필드가 없어 복원 시 전부 세로 분할로 떨어지는 것을 방지:
+ * 1) DONG_LAYOUTS 기본 레이아웃에 같은 존 아이디가 있으면 그 방향을 사용
+ * 2) 없으면(사용자 추가 칸) 규칙 기반 — A동 L7(가로 배치/20행)=좌우 분할, 그 외=상하 분할
+ */
+function hydrateZoneSplitDir(layout: DongLayout[]): DongLayout[] {
+  const baseDir = new Map<string, "h" | "v">();
+  DONG_LAYOUTS.forEach((d) =>
+    d.zones.forEach((z) => {
+      if (z.splitDir) baseDir.set(z.id, z.splitDir);
+    })
+  );
+  return layout.map((d) => ({
+    ...d,
+    zones: d.zones.map((z) =>
+      z.splitDir ? z : { ...z, splitDir: baseDir.get(z.id) ?? (/^A-L7-/.test(z.id) ? "h" : "v") }
+    ),
+  }));
+}
 const A_BOTTOM_SLOTS = 8;
 const TIGHT_PAIRS: [number, number][] = [
   [2, 3],
@@ -449,6 +476,7 @@ function buildADongLayout(
         num: "",
         line: lineSpec.line,
         showNumAsProduct: false,
+        splitDir: "v", // 세로 배치 — 파레트 상하 적재 (2026-08-29)
         locNo,
         style: {
           left: colLeft,
@@ -481,6 +509,7 @@ function buildADongLayout(
           num: "",
           line: A_BOTTOM_LINE_ID,
           showNumAsProduct: false,
+          splitDir: "h", // 가로 배치 — 물건 좌→우 나열 (20행, 2026-08-29)
           locNo: 115 + i, // 로케이션 번호 115~122
           style: {
             left: Math.round(bottomStartLeft + i * (slot.w + slot.tightGap)),
@@ -593,6 +622,7 @@ function buildBlockLayout(
         num: "",
         line: bi + 1,
         showNumAsProduct: false,
+        splitDir: b.horizontal ? "h" : "v", // 블록 나열 방향 = 배치 방향 (2026-08-29)
         style: {
           left,
           top,
@@ -1124,7 +1154,7 @@ export default function ProductDisplayPage() {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.__v === LAYOUT_VERSION && Array.isArray(parsed.layout) && parsed.layout.length === DONG_LAYOUTS.length) {
-          return parsed.layout as typeof DONG_LAYOUTS;
+          return hydrateZoneSplitDir(parsed.layout as typeof DONG_LAYOUTS);
         }
       }
     } catch {
@@ -1325,7 +1355,7 @@ export default function ProductDisplayPage() {
     // 전역 중복 정리 후 상태 적용 (2026-08-28) — 로컬 저장도 동일 데이터 사용
     const cleanData = sanitizePlacementMap(p.data);
     setData(cleanData);
-    setLayoutState(p.layout);
+    setLayoutState(hydrateZoneSplitDir(p.layout));
     setLineConfig(p.lineConfig);
     setStaging(p.staging);
     setLocExceptions(new Set(p.locExceptions || []));
@@ -1861,6 +1891,9 @@ export default function ProductDisplayPage() {
       current.zones.forEach((z) => {
         const nos = dongLocNos[z.id];
         if (!nos || nos.length === 0) return;
+        // 다품목 칸은 칸 내부에 구획별 로케이션 표시 — 통로 외부 라벨 생략 (2026-08-29)
+        const multiCount = (data[z.id] || "").split(",").map((s) => s.trim()).filter(Boolean).length;
+        if (multiCount > 1) return;
         const zx = Number(z.style.left ?? 0);
         const zy = Number(z.style.top ?? 0);
         const zw = Number(z.style.width ?? SLOT.w);
@@ -5543,6 +5576,22 @@ function MiniZoneCell({
         </span>
       )}
       {assigned ? (
+        z.splitDir === "h" && items.length > 1 ? (
+          /* 가로 배치 칸: 좌→우 분할 (구획 사이 세로 구분선, 2026-08-29) */
+          <span className="font-semibold tabular-nums text-blue-900 flex flex-row items-center justify-center w-full h-full overflow-hidden text-[8px] leading-[1.15]">
+            {items.map((it, i) => (
+              <span
+                key={i}
+                className={
+                  "flex-1 min-w-0 flex items-center justify-center" +
+                  (i < items.length - 1 ? " border-r border-slate-300" : "")
+                }
+              >
+                {it}
+              </span>
+            ))}
+          </span>
+        ) : (
         <span
           className={
             "font-semibold text-[10px] leading-tight tabular-nums text-blue-900" +
@@ -5553,6 +5602,7 @@ function MiniZoneCell({
             ? items.map((it, i) => <span key={i}>{it}</span>)
             : value}
         </span>
+        )
       ) : null}
     </button>
   );
@@ -6199,27 +6249,70 @@ function ZoneCell({
         <span className="absolute -top-1.5 -left-1.5 text-[9px] leading-none pointer-events-none" title="고정 칸 — 이동 불가">🔒</span>
       ) : null}
       {assigned ? (
+        items.length > 1 ? (
+          z.splitDir === "h" ? (
+            /* 가로 배치 칸: 좌→우 분할 (구획 사이 세로 구분선, 2026-08-29) */
+            <span className="flex flex-row w-full h-full items-stretch justify-center overflow-hidden">
+              {items.map((it, i) => (
+                <span
+                  key={`${z.id}-seg-${i}`}
+                  className={
+                    "flex flex-col items-center justify-center min-w-0 flex-1 px-px " +
+                    (i < items.length - 1 ? " border-r border-slate-300" : "")
+                  }
+                >
+                  <span className="font-semibold text-[9px] leading-none tabular-nums text-blue-900">
+                    <DragChip zoneId={z.id} itemIdx={i} pnum={it} text={it} disabled={!editMode} />
+                  </span>
+                  {locNos && locNos[i] != null && (
+                    <span className="text-[6px] leading-none font-mono font-bold text-amber-600 mt-px">
+                      {locNos[i]}
+                    </span>
+                  )}
+                </span>
+              ))}
+            </span>
+          ) : (
+            /* 세로 배치 칸(기본): 상→하 분할, 구획 사이 가로 구분선 (2026-08-29) */
+            <span className="flex flex-col w-full h-full items-stretch justify-center overflow-hidden">
+              {items.map((it, i) => (
+                <span
+                  key={`${z.id}-seg-${i}`}
+                  className={
+                    "flex flex-col items-center justify-center min-h-0 py-0.5 " +
+                    (i < items.length - 1 ? " border-b border-slate-300" : "")
+                  }
+                >
+                  <span className="font-semibold text-[9px] leading-none tabular-nums text-blue-900">
+                    <DragChip zoneId={z.id} itemIdx={i} pnum={it} text={it} disabled={!editMode} />
+                  </span>
+                  {locNos && locNos[i] != null && (
+                    <span className="text-[6px] leading-none font-mono font-bold text-amber-600 mt-px">
+                      {locNos[i]}
+                    </span>
+                  )}
+                </span>
+              ))}
+            </span>
+          )
+        ) : (
         <span
           className={
-            "font-semibold text-[10px] leading-tight tabular-nums text-blue-900" +
-            (items.length > 1 ? " flex flex-col items-center text-[8px] leading-[1.15]" : "")
+            "font-semibold text-[10px] leading-tight tabular-nums text-blue-900"
           }
         >
-          {items.length > 1
-            ? items.map((it, i) => (
-                <DragChip key={`${z.id}-${i}`} zoneId={z.id} itemIdx={i} pnum={it} text={it} disabled={!editMode} />
-              ))
-            : isA && items[0]
-              ? (
-                <DragChip zoneId={z.id} itemIdx={0} pnum={items[0]} text={items[0]} disabled={!editMode} />
-              )
-              : displayOnly(items[0])}
+          {isA && items[0]
+            ? (
+              <DragChip zoneId={z.id} itemIdx={0} pnum={items[0]} text={items[0]} disabled={!editMode} />
+            )
+            : displayOnly(items[0])}
         </span>
+        )
       ) : (
         <span className="text-[9px] text-slate-300 leading-none">·</span>
       )}
-      {/* 로케이션 번호 — 전 동 누적값 (A=통로쪽·1~38 고정 포함, B/C/D=우상단) */}
-      {isA && ((locNos && locNos.length > 0) || z.locNo != null) && (
+      {/* 로케이션 번호 — 단일 품목 칸만 외부/우상단 표시 (다품목은 구획별 내부 표시, 2026-08-29) */}
+      {items.length <= 1 && isA && ((locNos && locNos.length > 0) || z.locNo != null) && (
         <span
           className="absolute text-[9px] leading-none font-mono font-bold text-amber-600 pointer-events-none"
           style={{
