@@ -1850,7 +1850,7 @@ export default function ProductDisplayPage() {
     });
     current.zones.forEach((z) => {
       const c = gc.coords.get(z.id);
-      if (c) coordOf.set(z.id, `${rowLabelOf(c.row - 1)}-${c.col}`);
+      if (c) coordOf.set(z.id, `${c.col}-${rowLabelOf(c.row - 1)}`);
     });
 
     // 로케이션 번호 통로 배치 (2026-08-28): 칸 위쪽 통로 여유 >= 13px면 칸 밖에 표시
@@ -3495,7 +3495,7 @@ export default function ProductDisplayPage() {
       };
       zs.forEach((z) => {
         const c = gc.coords.get(z.id);
-        if (c) coordOf.set(z.id, `${rowLabelOf(c.row - 1)}-${c.col}`);
+        if (c) coordOf.set(z.id, `${c.col}-${rowLabelOf(c.row - 1)}`);
       });
     }
     type Row = { dong: string; no: number; cat: string; loc: string; cellName: string; coord: string; name: string; barcode: string; boxes: number; pn: string };
@@ -4652,7 +4652,7 @@ export default function ProductDisplayPage() {
           </div>
           <DndContext sensors={sensors} autoScroll={false} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div className="flex gap-3 items-start">
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 shrink-0">
           <div style={{ width: (current.width + gridPad.l + gridPad.r) * fitScale * zoomFactor, height: (current.height + gridPad.t + gridPad.b) * fitScale * zoomFactor }}>
           <div
             ref={gridRef}
