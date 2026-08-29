@@ -981,6 +981,7 @@ curl -s "http://localhost:5176/departure/api/print-kpp/{호차}?plt={N}&date={YY
 - 스크립트: `backend/scripts/vf_daily_stock_place.py` (매일 11:00, code-bot 크론 `94a2ac5db72f`)
 - 규칙: ① 재고 0 + 최근 3개월 출고 0 → 3개월 미출고 플래그 ② 재고 생긴 미출고 품목 → 플래그 해제 ③ 미배치 재고>0 → C동 좌표 1-1~1-3, 2-1~2-4 빈칸에 한 칸 3품목씩 (30일 출고량 순, 점유 칸 미접촉, 전역 중복 방지)
 - 배치도 전용 확대/축소: 단일 동 뷰 −/＋/100% 컨트롤 (`zoomFactor`, 동별 출고 비율 테이블과 독립)
+- 다품목 칸 분할 방향 (2026-08-29): `ZoneDef.splitDir` — 가로 배치 칸(A동 L7/20행)=좌우 분할, 세로 배치 칸(열 내 파레트 적재)=상하 분할. 옛 스냅샷은 `hydrateZoneSplitDir`이 복원 시 재부여.
 
 ---
 
