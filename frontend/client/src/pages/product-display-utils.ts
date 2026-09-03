@@ -183,3 +183,69 @@ export function buildGridCoordMap(zones: any[]): Map<string, { x: number; y: num
   for (const o of cxs) m.set(o.zid, { x: xOf(o.x), y: yOf(ys[cxs.findIndex(c=>c.zid===o.zid)]) });
   return m;
 }
+
+/** 다품목 칸: 제품 목록 변화를 locNos 배열에 미러링 (2026-09-04, 실버그 수정) */
+export function mirrorLocNos(
+  oldItems: string[],
+  newItems: string[],
+  locNos: number[] | undefined
+): number[] | undefined {
+  if (!locNos || locNos.length === 0) return undefined;
+  const sameSet = (a: string[], b: string[]) =>
+    a.length === b.length && [...a].sort().join("|") === [...b].sort().join("|");
+  if (sameSet(oldItems, newItems)) {
+    return newItems.map((pn) => {
+      const oi = oldItems.indexOf(pn);
+      return oi >= 0 && oi < locNos.length ? locNos[oi] : locNos[locNos.length - 1];
+    });
+  }
+  if (newItems.length === oldItems.length - 1) {
+    let ri = -1;
+    for (let i = 0; i < oldItems.length; i++) {
+      if (oldItems[i] !== newItems[i]) { ri = i; break; }
+    }
+    if (ri === -1) ri = oldItems.length - 1;
+    const out = locNos.slice();
+    out.splice(Math.min(ri, out.length - 1), 1);
+    return out;
+  }
+  if (newItems.length === oldItems.length + 1) {
+    let ai = -1;
+    for (let i = 0; i < newItems.length; i++) {
+      if (oldItems[i] !== newItems[i]) { ai = i; break; }
+    }
+    if (ai === -1) ai = newItems.length - 1;
+    const out = locNos.slice();
+    const maxv = Math.max(...out);
+    out.splice(Math.min(ai, out.length), 0, maxv + 1);
+    return out;
+  }
+  let maxv = Math.max(...locNos);
+  const out = locNos.slice(0, newItems.length);
+  while (out.length < newItems.length) out.push(++maxv);
+  return out;
+}
+
+/** setData 경로에서 변경된 칸들의 locNos를 data 변경에 미러링 (2026-09-04) */
+export function syncLocNosAfterDataChange(
+  layoutState: any[],
+  prev: Record<string, string>,
+  next: Record<string, string>,
+  zoneIds: string[]
+): any[] {
+  const ids = zoneIds.filter((id, i) => zoneIds.indexOf(id) === i);
+  if (!ids.length) return layoutState;
+  return layoutState.map((d) => ({
+    ...d,
+    zones: (d.zones || []).map((z: any) => {
+      if (!ids.includes(z.id)) return z;
+      const oldItems = (prev[z.id] || "").split(",").map((s: string) => s.trim()).filter(Boolean);
+      const newItems = (next[z.id] || "").split(",").map((s: string) => s.trim()).filter(Boolean);
+      if (oldItems.join(",") === newItems.join(",")) return z;
+      const mirrored = mirrorLocNos(oldItems, newItems, z.locNos);
+      if (mirrored === undefined) return z.locNos === undefined ? z : { ...z, locNos: undefined };
+      if (JSON.stringify(mirrored) === JSON.stringify(z.locNos)) return z;
+      return { ...z, locNos: mirrored };
+    }),
+  }));
+}

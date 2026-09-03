@@ -47,7 +47,7 @@ import {
 import { B_PNUM_INFO, B_RANK_PLACEMENT } from "@/pages/product-display-b-data";
 import { C_PNUM_INFO, C_RANK_PLACEMENT } from "@/pages/product-display-c-data";
 import { D_PNUM_INFO, D_RANK_PLACEMENT } from "@/pages/product-display-d-data";
-import { aChainInsert, extractDansu, reorderInZone } from "@/pages/product-display-utils";
+import { aChainInsert, extractDansu, reorderInZone, syncLocNosAfterDataChange } from "@/pages/product-display-utils";
 
 const STORAGE_KEY = "vf_product_display_v1";
 /** 배치 데이터 스키마 버전 — v14(A동 전용)는 v15(전 동)로 대체됨: 옛 데이터 무시 */
@@ -2182,6 +2182,7 @@ export default function ProductDisplayPage() {
           else next[src.zoneId] = items.filter((x) => x !== src.pnum).join(",");
         }
         setStaging((s) => (s.includes(src.pnum) ? s : [...s, src.pnum]));
+        setLayoutState((prevL) => syncLocNosAfterDataChange(prevL, prev, next, Object.keys(next).filter((k) => next[k] !== prev[k])));
         persistLocal(next);
         return next;
       });
@@ -2217,6 +2218,7 @@ export default function ProductDisplayPage() {
         }
         // 크로스동 중복 제거: 새 pnum이 B/C/D동에도 있으면 제거(전역 1칸 유일)
         removeCrossDongDupes(next, [src.pnum], dst.zoneId);
+        setLayoutState((prevL) => syncLocNosAfterDataChange(prevL, prev, next, Object.keys(next).filter((k) => next[k] !== prev[k])));
         persistLocal(next);
         return next;
       });
@@ -2243,6 +2245,7 @@ export default function ProductDisplayPage() {
             const pns = val.split(",").map((s) => s.trim()).filter(Boolean);
             setStaging((s) => Array.from(new Set([...s, ...pns])));
             delete next[src.zoneId];
+            setLayoutState((prevL) => syncLocNosAfterDataChange(prevL, prev, next, Object.keys(next).filter((k) => next[k] !== prev[k])));
             persistLocal(next);
             return next;
           }
@@ -2328,6 +2331,7 @@ export default function ProductDisplayPage() {
           setOverflow((ov) => ov.filter((o) => o.pnum !== src.pnum));
           // 크로스동 중복 제거: 새 pnum이 B/C/D동에도 있으면 제거(전역 1칸 유일)
           removeCrossDongDupes(next, [src.pnum], dst.zoneId);
+          setLayoutState((prevL) => syncLocNosAfterDataChange(prevL, prev, next, Object.keys(next).filter((k) => next[k] !== prev[k])));
           persistLocal(next);
         }
         return next;
@@ -2362,6 +2366,7 @@ export default function ProductDisplayPage() {
         const { next: n2, overflow: ov } = aChainInsert(aSeq, next0, dst.zoneId, src.pnum);
         if (ov.length || n2[dst.zoneId] !== src.pnum) {
           pushOverflow(ov);
+          setLayoutState((prevL) => syncLocNosAfterDataChange(prevL, prev, n2, Object.keys(n2).filter((k) => n2[k] !== prev[k])));
           persistLocal(n2);
           return n2;
         }
@@ -2402,6 +2407,7 @@ export default function ProductDisplayPage() {
           removeCrossDongDupes(next, [srcItem], dst.zoneId);
           changed = true;
         }
+      setLayoutState((prevL) => syncLocNosAfterDataChange(prevL, prev, next, Object.keys(next).filter((k) => next[k] !== prev[k])));
       if (changed) persistLocal(next);
       return next;
     });
@@ -3151,6 +3157,7 @@ export default function ProductDisplayPage() {
         const merged = Array.from(new Set([...s, ...removedFromZone]));
         return stagedAdded.length ? merged.filter((pn) => !stagedAdded.includes(pn)) : merged;
       });
+      setLayoutState((prevL) => syncLocNosAfterDataChange(prevL, prev, next, Object.keys(next).filter((k) => next[k] !== prev[k])));
       return next;
     });
     editingZoneRef.current = null;
@@ -3212,7 +3219,11 @@ export default function ProductDisplayPage() {
         return add.length ? [...ov, ...add] : ov;
       });
     }
-    setData((prev) => applyPlacementEdit(prev, zid, [movePnum], movePnum));
+    setData((prev) => {
+      const next = applyPlacementEdit(prev, zid, [movePnum], movePnum);
+      setLayoutState((prevL) => syncLocNosAfterDataChange(prevL, prev, next, Object.keys(next).filter((k) => next[k] !== prev[k])));
+      return next;
+    });
     setOverflow((ov) => ov.filter((o) => o.pnum !== movePnum));
     setMovePnum(null);
     return true;
