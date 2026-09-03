@@ -67,6 +67,21 @@ const SAVEDAT_KEY = "vf_pd_savedat_v1";
 /** 칵투스 11 + 데크 타일 5 — A동 132칸 재배치 시 진열 제외 (2026-08-18) */
 const A_STAGING_DEFAULT: string[] = ["988", "987", "982", "990", "980", "979", "985", "983", "986", "984", "981", "2070", "2074", "2071", "2073", "2072"];
 
+/** 좌표 표기 포맷터 (2026-09-03 확정 규칙): 사용자에게 보이는 좌표는 반드시 "X<값>, Y<값>" (예: "X9, Y21").
+ *  하이픈 "9-21"·"9,21"·"(9,21)" 표기 금지. 내부 맵 키는 고유 문자열("9-21") 그대로 유지하고
+ *  화면·툴팁·검색·엑셀 등 표시 시점에만 이 유틸로 변환한다. */
+const fmtCoord = (x: number | string, y: number | string): string => `X${x}, Y${y}`;
+/** 내부 좌표 키("9-21") → 표기용("X9, Y21"). 키 형식(숫자-숫자)이 아니면 원문 그대로 반환. */
+const fmtCoordKey = (key: string): string => {
+  const m = /^\s*(\d+)\s*-\s*(\d+)\s*$/.exec(key);
+  return m ? fmtCoord(m[1], m[2]) : key;
+};
+/** 표기용 좌표("X9, Y21" / "9,21" / "9-21") → 내부 키("9-21"). 업로드 등 역매칭 전 정규화용. */
+const normCoordKey = (s: string): string => {
+  const m = /^\s*X?\s*(\d+)\s*[,~-]\s*Y?\s*(\d+)\s*$/i.exec(s);
+  return m ? `${m[1]}-${m[2]}` : s.trim();
+};
+
 /** 드래그 소스: A동=칸(zoneId), B/C/D=칸 내 품목 인덱스, staging=임시 보관함 */
 type DragSource = {
   kind: "zone" | "overflow" | "cell" | "staging";
@@ -92,6 +107,8 @@ type ZoneDef = {
   showNumAsProduct: boolean;
   style: CSSProperties;
   locNo?: number | null;
+  /** 다품목 칸 제품별 번호 (2026-08-31): 데이터 품목 순서와 align — locNo보다 우선 */
+  locNos?: number[];
   gridCoord?: string;
   /** 고정 칸 (2026-08-28): 드래그·라인 이동·좌표 이동 전부 차단 — 건들면 안 되는 칸 표시 */
   fixed?: boolean;
@@ -101,6 +118,8 @@ type ZoneDef = {
    * - "v"(기본) = 세로 배치 (파레트가 상하 적재) → 칸을 상하로 분할 (예: A동 L1~L6)
    */
   splitDir?: "h" | "v";
+  /** 가로 배치 칸(예: A동 L7): 제품명 세로 나열 표시 (2026-08-29) */
+  productNamesVertical?: boolean;
 };
 
 type LineLabel = {
@@ -147,16 +166,20 @@ const A_BOTTOM_LINE_ID = 7;
  */
 function hydrateZoneSplitDir(layout: DongLayout[]): DongLayout[] {
   const baseDir = new Map<string, "h" | "v">();
+  const basePNV = new Map<string, boolean>();
   DONG_LAYOUTS.forEach((d) =>
     d.zones.forEach((z) => {
       if (z.splitDir) baseDir.set(z.id, z.splitDir);
+      if (z.productNamesVertical) basePNV.set(z.id, z.productNamesVertical);
     })
   );
   return layout.map((d) => ({
     ...d,
-    zones: d.zones.map((z) =>
-      z.splitDir ? z : { ...z, splitDir: baseDir.get(z.id) ?? (/^A-L7-/.test(z.id) ? "h" : "v") }
-    ),
+    zones: d.zones.map((z) => ({
+      ...z,
+      splitDir: z.splitDir ?? baseDir.get(z.id) ?? (/^A-L7-/.test(z.id) ? "h" : "v"),
+      productNamesVertical: z.productNamesVertical ?? basePNV.get(z.id) ?? false,
+    })),
   }));
 }
 const A_BOTTOM_SLOTS = 8;
@@ -363,6 +386,58 @@ function computeGridCoords(zones: ZoneDef[]): {
   };
 }
 
+/** 전 동 공통 물리 좌표 시스템 (2026-09-03) — 화면 gridLabels와 검색·총괄(coordOfAll)이
+ *  반드시 같은 값을 내도록 이 단일 구현만 사용한다. 좌표계 규칙(확정 20260903):
+ *  - X = 열 중심 클러스터(computeGridCoords, 좌→우) 1..N
+ *  - Y = 아래(top 큼)=1 ~ 위=top 작은 순 1씩 증가
+ *    · A동: 통로 행 포함 38px 연속 행 (그 layout의 yMin~yMax, 상단 반 칸 오차 허용)
+ *    · B/C/D: 점유 행 클러스터를 아래→위 역순 번호
+ *  반환: gc(라벨 배치용 원본), rowRepsDesc(아래=1 순 행 대표 y), colReps(좌→우 열 대표 x),
+ *        coordOf(존 ID → 내부 키 "X-Y". 표시는 fmtCoordKey가 담당)
+ *  주의: product-display-utils의 buildGridCoordMap은 B/C/D도 38px 연속 행으로 계산하고
+ *  A동 상단 PX/2 오차 허용이 없어 이 규칙과 값이 어긋난다 → 좌표 값 일치가 최우선이라
+ *  직접 호출하지 않고 이 함수로 통일한다. */
+function buildGridCoordSystem(
+  dong: DongKey,
+  zones: ZoneDef[]
+): {
+  gc: NonNullable<ReturnType<typeof computeGridCoords>>;
+  rowRepsDesc: number[];
+  colReps: number[];
+  coordOf: Map<string, string>;
+} | null {
+  const gc = computeGridCoords(zones);
+  if (!gc) return null;
+  const PX = SLOT.h + SLOT.gapY; // 세로 한 칸 주기 38px (칸 34 + 간격 4)
+  const centerYOf = (z: ZoneDef) => Number(z.style.top ?? 0) + Number(z.style.height ?? SLOT.h) / 2;
+  const cys = zones.map(centerYOf);
+  const yMax = Math.max(...cys); // 최하단 칸 중심 Y
+  const yMin = Math.min(...cys); // 최상단 칸 중심 Y
+  // 행 대표 y 목록 — 아래→위 순서, index+1 = Y
+  const rowRepsDesc: number[] = [];
+  if (dong === "A") {
+    // A동: 통로 포함 연속 38px 행 (아래=1). 상단 반 칸 치수 오차 허용으로 부동 오차 흡수
+    for (let t = yMax; t >= yMin - PX / 2; t -= PX) rowRepsDesc.push(t);
+  } else {
+    // B/C/D: 점유 행 클러스터(computeGridCoords)를 아래→위로 역순 번호
+    rowRepsDesc.push(...[...gc.rows].sort((a, b) => b - a));
+  }
+  const nearestIdx = (v: number, reps: number[]) => {
+    let bi = 0;
+    let bd = Infinity;
+    reps.forEach((r, i) => { const d = Math.abs(v - r); if (d < bd) { bd = d; bi = i; } });
+    return bi;
+  };
+  const coordOf = new Map<string, string>();
+  zones.forEach((z) => {
+    const zcx = Number(z.style.left ?? 0) + Number(z.style.width ?? SLOT.w) / 2;
+    const x = nearestIdx(zcx, gc.cols) + 1;
+    const y = nearestIdx(centerYOf(z), rowRepsDesc) + 1;
+    coordOf.set(z.id, `${x}-${y}`);
+  });
+  return { gc, rowRepsDesc, colReps: gc.cols, coordOf };
+}
+
 /** 서버 스냅샷 적용 → 4개 로컬 키 동기화 (실패 무시) */
 function writeLocalFromPayload(p: PdSnapshotPayload) {
   try {
@@ -377,30 +452,9 @@ function writeLocalFromPayload(p: PdSnapshotPayload) {
   }
 }
 
-/** 통로 중심 뱀 모양 로케이션 번호 공식 — A동 L1~L6 지그재그 (빌더·툴팁 단일 구현).
- *  3개 통로 쌍: (1|2)=1~38, (3|4)=39~76, (5|6)=77~114.
- *  pair 0은 slot 19(상단)에서 시작, pair 1·2는 slot 1에서 시작.
- *  slot > 19 확장 칸: pair 0은 114 뒤로 뱀 패턴 교대 연속 (충돌 없음),
- *  pair 1·2는 증가 방향이 곧 전진이라 공식 그대로 확장됨. */
-function calcZigzagLocNo(line: number, slot: number): number | null {
-  if (!Number.isFinite(line) || !Number.isFinite(slot) || line < 1 || line > 6 || slot < 1) return null;
-  const numVal = Math.floor(slot);
-  const pair = Math.floor((line - 1) / 2); // (1|2)=0, (3|4)=1, (5|6)=2
-  const isOddLine = line % 2 === 1;
-  // pair 0 확장 슬롯(20~): 114 뒤로 교대 뱀 패턴 계속 — k=1→115,116 / k=2→117,118 …
-  if (pair === 0 && numVal > 19) {
-    const k = numVal - 19;
-    const base = 114 + 2 * (k - 1);
-    const oddFirst = k % 2 === 1; // slot 19 패턴(L1 먼저) 미러 후 교대
-    return ((isOddLine && oddFirst) || (!isOddLine && !oddFirst)) ? base + 1 : base + 2;
-  }
-  // L1|L2: slot 19에서 시작. L3|L4·L5|L6: slot 1에서 낮은 번호 시작
-  const offset = pair === 0 ? 19 - numVal : numVal - 1;
-  const oddFirst = offset % 2 === 0;
-  return ((isOddLine && oddFirst) || (!isOddLine && !oddFirst))
-    ? pair * 38 + offset * 2 + 1
-    : pair * 38 + offset * 2 + 2;
-}
+/** (2026-08-31 삭제) 로케이션 번호 자동 배정 공식(calcZigzagLocNo) 제거.
+ *  번호는 칸 데이터(zone.locNo)에 사용자가 수기 지정한 값만 사용하며
+ *  어떤 코드도 번호를 계산·부여하지 않는다. */
 
 /**
  * A동 zone 물리 순서 정렬 키.
@@ -469,15 +523,18 @@ function buildADongLayout(
       // 숨김 슬롯(입구 자리 등)은 화면에서만 제외 — 배치 데이터는 보존
       if (lineSpec.hiddenSlots?.includes(numVal)) continue;
       const placeFromTop = bottomIsStart ? lineSpec.count - 1 - i : i;
-      // 통로 중심 뱀 모양 순서 = 누적 번호 순서의 기준 (단일 공식: calcZigzagLocNo)
-      const locNo = calcZigzagLocNo(lineSpec.line, numVal) ?? undefined;
+      // A동: 엑셀 배치표 로케이션 번호 (2026-09-01, 뱀 형식, 다품목 개별 번호)
+      const aLocKey = `L${lineSpec.line}-${numVal}`;
+      const aLocNo = dong === "A" ? (A_LOCNO_MAP[aLocKey] ?? null) : null;
+      const aLocNos = dong === "A" ? (A_LOCNOS_MAP[aLocKey] ?? undefined) : undefined;
       zones.push({
         id: `${dong}-L${lineSpec.line}-${numVal}`,
         num: "",
         line: lineSpec.line,
         showNumAsProduct: false,
         splitDir: "v", // 세로 배치 — 파레트 상하 적재 (2026-08-29)
-        locNo,
+        locNo: (aLocNos && aLocNos.length > 0) ? aLocNos[0] : (aLocNo ?? undefined),
+        locNos: aLocNos,
         style: {
           left: colLeft,
           top: slot.padT + placeFromTop * (slot.h + slot.gapY),
@@ -509,7 +566,7 @@ function buildADongLayout(
           num: "",
           line: A_BOTTOM_LINE_ID,
           showNumAsProduct: false,
-          splitDir: "h", // 가로 배치 — 물건 좌→우 나열 (20행, 2026-08-29)
+          productNamesVertical: true, // 가로 배치 칸: 제품명 세로 나열 (2026-08-29)
           locNo: 115 + i, // 로케이션 번호 115~122
           style: {
             left: Math.round(bottomStartLeft + i * (slot.w + slot.tightGap)),
@@ -649,6 +706,44 @@ const A_LINES: LineSpec[] = [
   { line: 5, count: A_SLOTS_PER_LINE, badge: "확장" },
   { line: 6, count: A_SLOTS_PER_LINE, badge: "확장" },
 ];
+
+/**
+ * A동 L1~L4 로케이션 번호 (2026-09-01 엑셀 배치표 반영)
+ * 엑셀 좌표 X=9→L1, X=7→L2, X=6→L3, X=4→L4 (slot=Y) — 뱀패턴 직접 명시.
+ * key = "L{line}-{slot}", value = 로케이션 번호(위치번호).
+ * 2026-09-02 수정: 60번 이후 뱀패턴(L3←L4 지그재그) 재정비 — 중복 61 해소, 누락 번호 채움, L3-19/L4-19 순서 교정
+ */
+const A_LOCNO_MAP: Record<string, number> = {
+  "L1-19": 1, "L2-19": 2, "L2-18": 3, "L1-18": 4, "L1-17": 5, "L2-17": 6, "L2-16": 7, "L1-16": 8, "L1-15": 9, "L2-15": 10, "L2-14": 11, "L1-14": 12, "L1-13": 13, "L2-13": 14, "L2-12": 15, "L1-12": 16, "L1-11": 17, "L2-11": 18, "L2-10": 19, "L1-10": 20, "L1-9": 21, "L2-9": 22, "L2-8": 23, "L1-8": 24, "L1-7": 25, "L2-7": 26, "L2-6": 27, "L1-6": 28, "L1-5": 29, "L2-5": 30, "L2-4": 31, "L1-4": 32, "L1-3": 33, "L2-3": 34, "L2-2": 35, "L1-2": 36, "L2-1": 38,
+  "L3-1": 39, "L4-1": 40, "L4-2": 41, "L3-2": 42, "L3-3": 43, "L4-3": 44, "L4-4": 45, "L3-4": 46, "L3-5": 47, "L4-5": 48, "L4-6": 49, "L3-6": 50, "L3-7": 51, "L4-7": 52, "L4-8": 53, "L3-8": 54, "L3-9": 55, "L4-9": 56, "L4-10": 57, "L3-10": 58, "L3-11": 59, "L4-11": 60, 
+  // 12~19 뱀패턴: L4(짝수, 우→좌) → L3(홀수, 좌→우)
+  "L4-12": 61, "L3-12": 62,
+  "L4-13": 63, "L3-13": 64,
+  "L4-14": 65, "L3-14": 66,
+  "L4-15": 67, "L3-15": 68,
+  "L4-16": 69, "L3-16": 70,
+  "L4-17": 71, "L3-17": 72,
+  "L4-18": 73, "L3-18": 74,
+  "L4-19": 75, "L3-19": 76,
+  "L5-19": 77, "L6-19": 78, "L6-18": 79, "L5-18": 80, "L5-17": 81, "L6-17": 82, "L6-16": 83, "L5-16": 84, "L5-15": 85, "L6-15": 86, "L6-14": 87, "L5-14": 88, "L5-13": 89, "L6-13": 90, "L6-12": 91, "L5-12": 92, "L5-11": 93, "L6-11": 95, "L6-10": 97, "L5-10": 99, "L5-9": 101, "L6-9": 103, "L6-8": 105, "L5-8": 107, "L5-7": 109, "L6-7": 111, "L6-6": 113, "L5-6": 114, "L5-5": 117, "L6-5": 119, "L6-4": 121, "L5-4": 123, "L5-3": 125, "L6-3": 126, "L6-2": 128, "L5-2": 130, "L5-1": 132, "L6-1": 134,
+  "L7-1": 136, "L7-2": 138, "L7-3": 140, "L7-4": 142, "L7-5": 144, "L7-6": 146, "L7-7": 148, "L7-8": 150,
+};
+
+/**
+ * A동 다품목 칸 개별 로케이션 번호 (2026-09-01 배치도 뱀 형식)
+ * key = "L{line}-{slot}", value = 각 품목별 로케이션 번호 배열 (제품번호 낮은 순 = 낮은 번호)
+ */
+const A_LOCNOS_MAP: Record<string, number[]> = {
+  "L3-16": [74, 75], "L4-16": [72, 73],
+  "L5-1": [132, 133], "L5-2": [130, 131], "L5-4": [123, 124], "L5-5": [117, 118],
+  "L5-6": [114, 115, 116], "L5-7": [109, 110], "L5-8": [107, 108], "L5-9": [101, 102],
+  "L5-10": [99, 100], "L5-11": [93, 94],
+  "L6-1": [134, 135], "L6-2": [128, 129], "L6-3": [126, 127], "L6-4": [121, 122],
+  "L6-5": [119, 120], "L6-7": [111, 112], "L6-8": [105, 106], "L6-9": [103, 104],
+  "L6-10": [97, 98], "L6-11": [95, 96],
+  "L7-1": [136, 137], "L7-2": [138, 139], "L7-3": [140, 141], "L7-4": [142, 143],
+  "L7-5": [144, 145], "L7-6": [146, 147], "L7-7": [148, 149], "L7-8": [150, 151],
+};
 
 /** B동: 엑셀 b동.xlsx 도면 그대로 (2026-08-16) */
 // 도면: B좌측=왼쪽 세로(B상단 옆~B하단 위), B중앙1-9=B우측 옆 통로, B통로 없음
@@ -1064,10 +1159,12 @@ function loadStaging(): string[] {
 }
 
 /** 제품 마스터 항목 (pnum → 정보) — 제품목록 기준 */
-type MasterInfo = { name: string; lg: string; md: string; stock: number | null; barcode: string; loc: string; no3m: boolean };
+type MasterInfo = { pnum: string | null; name: string; lg: string; md: string; stock: number | null; barcode: string; loc: string; no3m: boolean };
 
-/** 로케이션 → 제품번호 (A동 규칙: 320-A1-1-N → N, 320-A1-2-N → n<100이면 2000+n, n>=100이면 2N) */
-function locToPnum(loc: string): string | null {
+/** [구형 파일 전용·마스터/검색 경로 사용 금지] 로케이션 → 제품번호 (옛 체계: 끝번호=제품번호).
+ *  A안(2026-08-30) 신규 체계에서는 로케이션 끝번호 = 배치표 위치번호(locNo)이므로
+ *  마스터 로드·검색에서 이 변환을 쓰면 제품을 연쇄 오독한다. 엑셀 업로드 구형 파일 폴백 전용. */
+function legacyLocToPnum(loc: string): string | null {
   const m1 = /^320-A1-1-(\d+)$/.exec(loc.trim());
   if (m1) return String(parseInt(m1[1], 10));
   const m2 = /^320-A1-2-(\d+)$/.exec(loc.trim());
@@ -1538,7 +1635,9 @@ export default function ProductDisplayPage() {
         const no3m = new Set<string>();
         const allRows: MasterInfo[] = [];
         for (const it of arr) {
+          const pn = it.product_number != null ? String(it.product_number) : null;
           const entry: MasterInfo = {
+            pnum: pn,
             name: it.product_name || "",
             lg: it.category_lg || "",
             md: it.category_md || "",
@@ -1547,13 +1646,11 @@ export default function ProductDisplayPage() {
             loc: it.location || "",
             no3m: Boolean(it.is_no_outbound_3m),
           };
-          const pn = it.product_number != null ? String(it.product_number) : null;
-          const ln = locToPnum(it.location || "");
-          allRows.push({ ...entry, loc: pn ?? entry.loc });
+          allRows.push(entry);
           if (!it?.is_vf_item) continue;
-          for (const k of [pn, ln]) {
-            if (k && (!m[k] || entry.no3m || (entry.loc && !m[k].loc))) m[k] = entry;
-            if (k && entry.no3m) no3m.add(k);
+          if (pn) {
+            if (!m[pn] || entry.no3m || (entry.loc && !m[pn].loc)) m[pn] = entry;
+            if (entry.no3m) no3m.add(pn);
           }
         }
         setMasterRows(allRows);
@@ -1626,14 +1723,6 @@ export default function ProductDisplayPage() {
       amount += d.salesAmount || 0;
     }
     return { qty, amount };
-  };
-
-  // 제품번호 → 로케이션 문자열 (A동 규칙: 320-A1-1-N / 2XXX → 320-A1-2-XX)
-  const pnumToLoc = (pn: string): string => {
-    const n = parseInt(pn, 10);
-    if (Number.isNaN(n)) return "";
-    if (n >= 2000) return `320-A1-2-${String(n).slice(1)}`;
-    return `320-A1-1-${n}`;
   };
 
   // 전체 배치된 제품번호 집합 (A동 순위 + B동 + 사용자 배정) — 통합 기준
@@ -1726,7 +1815,24 @@ export default function ProductDisplayPage() {
     }));
   }, [masterMap, no3mPnums]);
 
-  // 검색: 제품명 / 로케이션 / 제품번호 / 바코드
+  // 제품번호 → 배치도 위치번호 맵(전 동) — 저장된 칸 번호(zone.locNo)만 읽음 (2026-08-31 자동 배정 삭제)
+  const pnumLocNoMap = useMemo(() => {
+    const nosByZone: Record<string, number[]> = {};
+    for (const d of layoutState) {
+      Object.assign(nosByZone, storedLocNos(d.zones));
+    }
+    const map = new Map<string, number>();
+    for (const [zid, nos] of Object.entries(nosByZone)) {
+      const pns = (data[zid] || "").split(",").map((s) => s.trim()).filter(Boolean);
+      pns.forEach((pn, i) => {
+        const n = nos?.length === 1 ? nos[0] : nos?.[i];
+        if (n && n > 0) map.set(pn, n);
+      });
+    }
+    return map;
+  }, [layoutState, data, locExceptions]);
+
+  // 검색: 제품명 / 로케이션(배치도 위치번호) / 제품번호 / 바코드
   const searchResults = useMemo(() => {
     const q = searchQ.trim().toLowerCase();
     if (!q) return [];
@@ -1734,6 +1840,7 @@ export default function ProductDisplayPage() {
       pnum: string;
       name: string;
       loc: string;
+      locNo: number | null;
       zone: string | null;
       dong: DongKey | null;
       placed: boolean;
@@ -1755,18 +1862,34 @@ export default function ProductDisplayPage() {
         const binfo = B_PNUM_INFO[pn] || C_PNUM_INFO[pn] || D_PNUM_INFO[pn];
         const name = binfo?.name || masterMap[pn]?.name || A_ZONE_MASTER_NAME[zid] || "";
         const barcode = binfo?.barcode || masterMap[pn]?.barcode || A_ZONE_BARCODE[zid] || "";
-        const loc = pnumToLoc(pn);
-        const dong: DongKey = zid.startsWith("B-") ? "B" : zid.startsWith("C-") ? "C" : "A";
-        if (match(pn) || match(name) || match(loc) || match(zid) || match(barcode)) {
-          hitOf({ pnum: pn, name, loc: loc || zid, zone: zid, dong, placed: true });
+        const loc = masterMap[pn]?.loc || "";
+        const locNo = pnumLocNoMap.get(pn) ?? null;
+        const dong: DongKey = zid.startsWith("B-")
+          ? "B"
+          : zid.startsWith("C-")
+            ? "C"
+            : zid.startsWith("D-")
+              ? "D"
+              : zid.startsWith("E-")
+                ? "E"
+                : "A";
+        if (
+          match(pn) ||
+          match(name) ||
+          match(loc) ||
+          match(zid) ||
+          match(barcode) ||
+          (locNo !== null && String(locNo).includes(q))
+        ) {
+          hitOf({ pnum: pn, name, loc: loc || zid, locNo, zone: zid, dong, placed: true });
         }
       }
     }
-    // 2) 미배치 제품 (통합 미배치)
+    // 2) 미배치 제품 (통합 미배치) — u.loc은 마스터(쿠팡 전산) 값이라 위치번호 없음
     for (const u of unplaced) {
       const name = u.master_name || u.name || "";
       if (match(u.pnum) || match(name) || match(u.loc) || match(u.barcode)) {
-        hitOf({ pnum: u.pnum, name, loc: u.loc, zone: null, dong: null, placed: false });
+        hitOf({ pnum: u.pnum, name, loc: u.loc, locNo: null, zone: null, dong: null, placed: false });
       }
     }
 
@@ -1796,7 +1919,7 @@ export default function ProductDisplayPage() {
     });
 
     return hits.slice(0, 40);
-  }, [searchQ, data, unplaced, masterMap]);
+  }, [searchQ, data, unplaced, masterMap, pnumLocNoMap]);
 
   const gotoSearchHit = (h: (typeof searchResults)[number]) => {
     if (h.placed && h.zone && h.dong) {
@@ -1823,70 +1946,46 @@ export default function ProductDisplayPage() {
     [dong, layoutState]
   );
 
-  // 누적 로케이션 번호 지도 (2026-08-26) — 전 동 적용. A는 물리순 정렬 + L1·L2(1~38) 고정 앵커.
-  const dongLocNos = useMemo(() => {
-    const zs = dong === "A" ? orderAZones(current.zones) : current.zones;
-    return computeDongLocMap(zs, data, {
-      fixedUpTo: dong === "A" ? A_FIXED_LOC_MAX : undefined,
-      exceptions: locExceptions,
-    });
-  }, [current, data, dong, locExceptions]);
+  // 로케이션 번호 지도 — 저장된 칸 번호(zone.locNo)만 읽음 (2026-08-31 자동 배정 삭제)
+  const dongLocNos = useMemo(() => storedLocNos(current.zones), [current]);
 
   // 물리 그리드 좌표 라벨 — 전 동 통일 "행-열" 숫자 체계 (2026-08-28)
-  // 렌더 시점 존 좌표 기준 동적 계산 — 저장된 레이아웃 변경에도 항상 정확.
-  // 행 번호: 좌측 + 우측 / 열 번호: 상단 + 하단.
-  // A동 행 번호는 기존 슬롯 번호 체계(아래=1) 유지 — L1~L6 슬롯 번호 기준, 하단 1줄=20.
+  // 2026-09-03 좌표계 규칙 확정(공유/배치도-좌표계-규칙-확정-20260903.md) 반영:
+  //   X = 좌→우 1..N (점유 열 픽셀 클러스터), Y = 아래(top큰)=1 ~ 위(top작)=N.
+  //   행/열 산출과 coordOf는 buildGridCoordSystem(단일 구현) 사용 — 검색·총괄 coordOfAll과
+  //   항상 동일 좌표. A동은 통로 행 포함 38px 연속 행, B/C/D는 점유 행 클러스터 아래→위.
   const gridLabels = useMemo(() => {
-    if (dong === "ALL") return { labels: [] as LineLabel[], coordOf: new Map<string, string>(), locOuter: new Set<string>() };
-    const gc = computeGridCoords(current.zones);
-    if (!gc) return { labels: [] as LineLabel[], coordOf: new Map<string, string>(), locOuter: new Set<string>() };
-    const labels: LineLabel[] = [];
-    const coordOf = new Map<string, string>();
-    const maxColX = Math.max(...current.zones.map((z) => Number(z.style.left ?? 0) + Number(z.style.width ?? SLOT.w)));
-    const maxRowY = Math.max(...current.zones.map((z) => Number(z.style.top ?? 0) + Number(z.style.height ?? SLOT.h)));
-    const lblStyle = (extra: React.CSSProperties): React.CSSProperties => ({ fontSize: 10, fontWeight: 700, color: "#2563eb", ...extra });
-    const cyOf = (z: ZoneDef) => Number(z.style.top ?? 0) + Number(z.style.height ?? SLOT.h) / 2;
-    const nearestRow = (y: number) => {
-      let bi = 0;
-      let bd = Infinity;
-      gc.rows.forEach((r, i) => {
-        const d = Math.abs(y - r);
-        if (d < bd) { bd = d; bi = i; }
-      });
-      return bi;
-    };
+      const empty = { labels: [] as LineLabel[], coordOf: new Map<string, string>(), locOuter: new Set<string>() };
+      if (dong === "ALL") return empty;
+      const sys = buildGridCoordSystem(dong, current.zones);
+      if (!sys) return empty;
+      const { gc, rowRepsDesc, colReps, coordOf } = sys;
+      const labels: LineLabel[] = [];
+      const maxColX = Math.max(...current.zones.map((z) => Number(z.style.left ?? 0) + Number(z.style.width ?? SLOT.w)));
+      const maxRowY = Math.max(...current.zones.map((z) => Number(z.style.top ?? 0) + Number(z.style.height ?? SLOT.h)));
+      const lblStyle = (extra: React.CSSProperties): React.CSSProperties => ({ fontSize: 10, fontWeight: 700, color: "#2563eb", ...extra });
+      const nCols = colReps.length;
+      const nRows = rowRepsDesc.length;
 
-    // 행 라벨 텍스트 계산
-    const rowLabelOf = (ri: number): string => {
-      if (dong !== "A") return String(ri + 1);
-      // A동: 해당 행의 L1~L6 슬롯 번호 사용 (기존 1~19 체계, 아래=1)
-      const inRow = current.zones.filter((z) => nearestRow(cyOf(z)) === ri);
-      const slotZone = inRow.find((z) => /^A-L[1-6]-\d+$/.test(z.id));
-      if (slotZone) return slotZone.id.split("-").pop() || String(ri + 1);
-      if (inRow.some((z) => z.id.startsWith("A-L7"))) return "20";
-      return String(gc.rows.length - ri); // 폴백
-    };
+      // 열 번호 라벨 (상단/하단) — X=1..N (좌→우)
+      for (let col = 1; col <= nCols; col++) {
+        const cx = colReps[col - 1];
+        labels.push({ text: String(col), style: lblStyle({ left: cx - SLOT.w / 2, top: Math.max(2, gc.minTop - 18), width: SLOT.w, textAlign: "center" }) });
+        labels.push({ text: String(col), style: lblStyle({ left: cx - SLOT.w / 2, top: maxRowY + 4, width: SLOT.w, textAlign: "center" }) });
+      }
 
-    // 열 번호 — 상단 + 하단 (물리 좌→우 1~N)
-    gc.cols.forEach((cx, ci) => {
-      labels.push({ text: String(ci + 1), style: lblStyle({ left: cx - SLOT.w / 2, top: Math.max(2, gc.minTop - 18), width: SLOT.w, textAlign: "center" }) });
-      labels.push({ text: String(ci + 1), style: lblStyle({ left: cx - SLOT.w / 2, top: maxRowY + 4, width: SLOT.w, textAlign: "center" }) });
-    });
-    // 행 번호 — 좌측 + 우측
-    gc.rows.forEach((cy, ri) => {
-      const txt = rowLabelOf(ri);
-      labels.push({ text: txt, style: lblStyle({ left: Math.max(0, gc.minLeft - 28), top: cy - 6, width: 24, textAlign: "right" }) });
-      labels.push({ text: txt, style: lblStyle({ left: maxColX + 6, top: cy - 6, width: 24, textAlign: "left" }) });
-    });
-    current.zones.forEach((z) => {
-      const c = gc.coords.get(z.id);
-      if (c) coordOf.set(z.id, `${c.col}-${rowLabelOf(c.row - 1)}`);
-    });
+      // 행 번호 라벨 (좌측/우측) — Y=1(아래)..N(위)
+      for (let row = 1; row <= nRows; row++) {
+        const cy = rowRepsDesc[row - 1];
+        labels.push({ text: String(row), style: lblStyle({ left: Math.max(0, gc.minLeft - 28), top: cy - 6, width: 24, textAlign: "right" }) });
+        labels.push({ text: String(row), style: lblStyle({ left: maxColX + 6, top: cy - 6, width: 24, textAlign: "left" }) });
+      }
 
-    // 로케이션 번호 통로 배치 (2026-08-28): 칸 위쪽 통로 여유 >= 13px면 칸 밖에 표시
-    // (제품번호는 칸 안, 로케이션은 통로/빈 공간) — 공간 없는 밀집 칸은 칸 안 표시 유지
-    const locOuter = new Set<string>();
-    if (dong !== "A") {
+      // coordOf: 존 ID → 물리 좌표 내부 키 "X-Y" — 라벨과 동일 규칙(buildGridCoordSystem)이라
+      // 표시 좌표가 라벨과 항상 일치한다.
+
+      // 로케이션 번호 통로 배치 (A동 포함): 칸 위쪽 통로 여유 >= 13px면 칸 밖에 표시
+      const locOuter = new Set<string>();
       const TOLC = SLOT.w * 0.6;
       current.zones.forEach((z) => {
         const nos = dongLocNos[z.id];
@@ -1911,11 +2010,36 @@ export default function ProductDisplayPage() {
             text: fmtLocNos(nos),
             style: { left: zx, top: zy - 10, width: zw, textAlign: "center", fontSize: 8, fontWeight: 700, color: "#d97706", fontFamily: "ui-monospace, monospace" },
           });
+        } else {
+          // 통로 여유가 부족하면 칸 내부에 로케이션 번호 표시
+          labels.push({
+            text: fmtLocNos(nos),
+            style: { left: zx + 2, top: zy + 4, width: zw - 4, textAlign: "center", fontSize: 7, fontWeight: 600, color: "#d97706", fontFamily: "ui-monospace, monospace" },
+          });
         }
       });
+
+      return { labels, coordOf, locOuter };
+    }, [dong, current.zones, dongLocNos]);
+
+  // 전 동 칸 좌표 맵 (2026-08-31): 존 ID(A-L4-12 등) 표시 개념 폐지 — 위치는 좌표(X열, Y행)로만 확인한다.
+  // 2026-09-03: gridLabels와 동일 규칙(buildGridCoordSystem 단일 구현)으로 통일 —
+  // 구 computeGridCoords 점유 행 클러스터 + A동 슬롯번호계(rowLabelOf) 제거.
+  // 내부 키는 존 ID → "X-Y" 그대로, 화면 표기는 fmtCoordKey가 담당.
+  const coordOfAll = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const lay of layoutState) {
+      const sys = buildGridCoordSystem(lay.key, lay.zones);
+      if (!sys) continue;
+      sys.coordOf.forEach((v, zid) => m.set(zid, v));
     }
-    return { labels, coordOf, locOuter };
-  }, [dong, current.zones, dongLocNos]);
+    return m;
+  }, [layoutState]);
+  const coordToZoneAll = useMemo(() => {
+    const m = new Map<string, string>();
+    coordOfAll.forEach((coord, zid) => { if (!m.has(coord)) m.set(coord, zid); });
+    return m;
+  }, [coordOfAll]);
 
   // 가상 그리드 (2026-08-28, 수정 모드 전용): 현재 칸들이 차지한 열·행을 기준으로
   // 여백 공간까지 그리드를 확장해 점선 칸 표시 — 라인/칸을 빈 그리드 자리로 이동 가능하게 함.
@@ -2545,47 +2669,36 @@ export default function ProductDisplayPage() {
     window.setTimeout(() => setSaveMsg(""), 2500);
   };
 
-  // ═══ 좌표 입력 이동 (2026-08-28): 선택 칸을 "가로-세로" 좌표로 정밀 이동 ═══
+  // ═══ 좌표 입력 이동 (2026-08-28): 선택 칸을 "X(가로), Y(세로)" 좌표로 정밀 이동 ═══
   // 드래그 없이 좌표 입력만으로 이동 — 화면 라벨(상단 열번호/좌측 행번호) 기준.
   // 여러 칸 선택 시 그룹 상대 위치 유지하며 목표 좌표로 이동.
   const [moveCoordText, setMoveCoordText] = useState("");
   const moveSelectedToCoord = () => {
-    const m = /^(\d+)\s*-\s*(\d+)$/.exec(moveCoordText.trim());
-    if (!m) { setSaveMsg("좌표 형식: 가로-세로 (예: 3-7)"); window.setTimeout(() => setSaveMsg(""), 2000); return; }
+    // 표기 규칙(2026-09-03): "X3, Y7" 형식. 기존 "3-7"/"3,7" 입력도 호환 허용.
+    const m = /^(?:x\s*)?(\d+)\s*[,~-]\s*(?:y\s*)?(\d+)$/i.exec(moveCoordText.trim());
+    if (!m) { setSaveMsg("좌표 형식: X가로, Y세로 (예: X3, Y7)"); window.setTimeout(() => setSaveMsg(""), 2000); return; }
     const sel = current.zones.filter((z) => selectedZones.includes(z.id));
     if (!sel.length) { setSaveMsg("이동할 칸을 먼저 선택하세요"); window.setTimeout(() => setSaveMsg(""), 2000); return; }
     if (sel.some((z) => z.fixed)) { setSaveMsg("🔒 고정 칸이 포함되어 이동할 수 없습니다"); window.setTimeout(() => setSaveMsg(""), 2000); return; }
     const col = parseInt(m[1], 10);
     const rowTxt = m[2];
-    const gc = computeGridCoords(current.zones);
-    if (!gc) return;
-    // 행 라벨 매핑 (gridLabels의 rowLabelOf와 동일 규칙)
-    const cyOf = (z: ZoneDef) => Number(z.style.top ?? 0) + Number(z.style.height ?? SLOT.h) / 2;
-    const nearestRow = (y: number) => {
-      let bi = 0; let bd = Infinity;
-      gc.rows.forEach((r, i) => { const d = Math.abs(y - r); if (d < bd) { bd = d; bi = i; } });
-      return bi;
-    };
-    const rowLabelOf = (ri: number): string => {
-      if (dong !== "A") return String(ri + 1);
-      const inRow = current.zones.filter((z) => nearestRow(cyOf(z)) === ri);
-      const slotZone = inRow.find((z) => /^A-L[1-6]-\d+$/.test(z.id));
-      if (slotZone) return slotZone.id.split("-").pop() || String(ri + 1);
-      if (inRow.some((z) => z.id.startsWith("A-L7"))) return "20";
-      return String(gc.rows.length - ri);
-    };
+    const sys = buildGridCoordSystem(dong, current.zones);
+    if (!sys) return;
+    const { gc, rowRepsDesc } = sys;
+    // 행 해석 — 화면 라벨(gridLabels)과 동일 규칙(2026-09-03 통일): rowRepsDesc index+1 = Y (아래=1)
     // 목표 중심 좌표: 존재 행/열은 실제 위치, 범위 밖은 52×38 그리드로 확장 계산
     let cx: number;
     if (col >= 1 && col <= gc.cols.length) cx = gc.cols[col - 1];
     else if (col > gc.cols.length) cx = gc.cols[gc.cols.length - 1] + (col - gc.cols.length) * (SLOT.w + 4);
-    else { setSaveMsg(`가로 ${col}은(는) 범위 밖 (1~${gc.cols.length} 또는 그 이상 확장만 가능)`); window.setTimeout(() => setSaveMsg(""), 2500); return; }
-    const ri = gc.rows.findIndex((_, i) => rowLabelOf(i) === rowTxt);
+    else { setSaveMsg(`X${col}은(는) 범위 밖 (1~${gc.cols.length} 또는 그 이상 확장만 가능)`); window.setTimeout(() => setSaveMsg(""), 2500); return; }
+    const ri = rowRepsDesc.findIndex((_, i) => String(i + 1) === rowTxt);
     let cy: number;
-    if (ri >= 0) cy = gc.rows[ri];
+    if (ri >= 0) cy = rowRepsDesc[ri];
     else if (dong !== "A" && /^\d+$/.test(rowTxt)) {
       const li = parseInt(rowTxt, 10) - 1;
-      cy = gc.minTop + Number(SLOT.h) / 2 + li * (SLOT.h + SLOT.gapY);
-    } else { setSaveMsg(`세로 ${rowTxt} 좌표를 찾을 수 없습니다`); window.setTimeout(() => setSaveMsg(""), 2500); return; }
+      // 라벨 범위 확장: 맨 위 행(마지막 라벨) 기준 38px 간격으로 위로 연장
+      cy = rowRepsDesc[rowRepsDesc.length - 1] - li * (SLOT.h + SLOT.gapY);
+    } else { setSaveMsg(`Y${rowTxt} 좌표를 찾을 수 없습니다`); window.setTimeout(() => setSaveMsg(""), 2500); return; }
     // 그룹 이동: 선택 칸 바운딩박스 좌상단을 목표 칸 좌상단으로 (상대 배치 유지)
     const minX = Math.min(...sel.map((z) => Number(z.style.left ?? 0)));
     const minY = Math.min(...sel.map((z) => Number(z.style.top ?? 0)));
@@ -2605,7 +2718,7 @@ export default function ProductDisplayPage() {
             }
       )
     );
-    setSaveMsg(`선택 ${sel.length}칸 → ${dong}동 ${col}-${rowTxt} 이동 완료 (저장 버튼으로 확정)`);
+    setSaveMsg(`선택 ${sel.length}칸 → ${dong}동 ${fmtCoord(col, rowTxt)} 이동 완료 (저장 버튼으로 확정)`);
     window.setTimeout(() => setSaveMsg(""), 2500);
   };
 
@@ -3454,7 +3567,7 @@ export default function ProductDisplayPage() {
 
   /** 중복 제품번호 해결: 마스터 전체 행에서 존 맥락(바코드→분류→이름) 기준으로 일치 행 선택 (2026-08-22) */
   const resolveMasterForZone = (pn: string, zid: string): MasterInfo | undefined => {
-    const cands = masterRows.filter((r) => r.loc === pn);
+    const cands = masterRows.filter((r) => r.pnum === pn);
     if (cands.length === 0) return masterMap[pn];
     if (cands.length === 1) return cands[0];
     const zbc = A_ZONE_BARCODE[zid] || "";
@@ -3475,8 +3588,9 @@ export default function ProductDisplayPage() {
     return cands[0];
   };
 
-  /** 엑셀 다운로드: 현재 state A동 배치 → "vf 품목 제베치도" 형식
-   *  순위/로케이션(숫자) = 누적 로케이션 번호 (L1·L2 1~38 고정, 이후 품목수 누적).
+  /** 엑셀 다운로드: 현재 state 배치 → "vf 품목 배치도" 형식
+   *  2026-08-29 용어 기준 정리: '제품번호' 열 = 제품 고유 번호(구 '로케이션' 유도 문자열 대체),
+   *  '로케이션' 열 = 제품 배치도의 위치 번호(구 '로케이션(숫자)' 개명, A동 1~ / B 200~ / C 500~ / D 900~).
    *  다품목 칸은 품목별 개별 행 + 각자 번호 (2026-08-26 전 동 동적 규칙). */
   const exportExcel = () => {
     const isAll = dong === "ALL";
@@ -3497,41 +3611,18 @@ export default function ProductDisplayPage() {
       byDong.get(dk)!.push(z);
     }
     const dongLocNos: Record<string, number[]> = {};
-    for (const [dk, zs] of byDong) {
-      const sorted = dk === "A" ? orderAZones(zs) : zs;
-      Object.assign(
-        dongLocNos,
-        computeDongLocMap(sorted, data, {
-          fixedUpTo: dk === "A" ? A_FIXED_LOC_MAX : undefined,
-          exceptions: locExceptions,
-        })
-      );
+    for (const zs of byDong.values()) {
+      Object.assign(dongLocNos, storedLocNos(zs));
     }
-    // 좌표 매핑 (배치도 파란 좌표 그대로, 2026-08-28) — 동별 클러스터링 재계산
+    // 좌표 매핑 (배치도 파란 좌표 그대로, 2026-08-28) — gridLabels와 동일 규칙으로 통일
+    // (2026-09-03: 구 rowLabelOf 슬롯번호계 제거. 업로드 적용(coordToZoneAll)과 왕복 일치 필수)
     const coordOf = new Map<string, string>();
     for (const [dk, zs] of byDong) {
-      const gc = computeGridCoords(zs);
-      if (!gc) continue;
-      const cyOf = (z: ZoneDef) => Number(z.style.top ?? 0) + Number(z.style.height ?? SLOT.h) / 2;
-      const nearestRow = (y: number) => {
-        let bi = 0; let bd = Infinity;
-        gc.rows.forEach((r, i) => { const d = Math.abs(y - r); if (d < bd) { bd = d; bi = i; } });
-        return bi;
-      };
-      const rowLabelOf = (ri: number): string => {
-        if (dk !== "A") return String(ri + 1);
-        const inRow = zs.filter((z) => nearestRow(cyOf(z)) === ri);
-        const slotZone = inRow.find((z) => /^A-L[1-6]-\d+$/.test(z.id));
-        if (slotZone) return slotZone.id.split("-").pop() || String(ri + 1);
-        if (inRow.some((z) => z.id.startsWith("A-L7"))) return "20";
-        return String(gc.rows.length - ri);
-      };
-      zs.forEach((z) => {
-        const c = gc.coords.get(z.id);
-        if (c) coordOf.set(z.id, `${c.col}-${rowLabelOf(c.row - 1)}`);
-      });
+      const sys = buildGridCoordSystem(dk as DongKey, zs);
+      if (!sys) continue;
+      sys.coordOf.forEach((v, zid) => coordOf.set(zid, v));
     }
-    type Row = { dong: string; no: number; cat: string; loc: string; cellName: string; coord: string; name: string; barcode: string; boxes: number; pn: string };
+    type Row = { dong: string; no: number; cat: string; cellName: string; name: string; barcode: string; boxes: number; pn: string };
     const rows: Row[] = [];
     for (const zoneId of zonesToExport) {
       const val = data[zoneId];
@@ -3540,17 +3631,13 @@ export default function ProductDisplayPage() {
       if (!pns.length) continue;
       const zoneNos = dongLocNos[zoneId];
       const zoneDong = zoneId.split("-")[0];
-      const parts = zoneId.split("-");
-      const cellName = parts.length >= 3 ? `${parts[0]}${parts[1]}-${parts.slice(2).join("-")}` : zoneId;
       pns.forEach((pn, i) => {
         const m = resolveMasterForZone(pn, zoneId);
         rows.push({
           dong: zoneDong,
-          no: zoneNos?.[i] ?? 0,
+          no: zoneNos?.length === 1 ? zoneNos[0] : (zoneNos?.[i] ?? 0),
           cat: m?.lg || "",
-          loc: pnumToLoc(pn),
-          cellName: zoneId,
-          coord: coordOf.get(zoneId) || "",
+          cellName: coordOf.get(zoneId) || zoneId,
           name: m?.name || "",
           barcode: m?.barcode || "",
           boxes: m?.barcode ? calcMonthQty(m.barcode) : 0,
@@ -3564,14 +3651,16 @@ export default function ProductDisplayPage() {
     const rank = (pn: string) => rankMap.get(pn) ?? 0;
     rows.sort((a, b) => {
       if (a.dong !== b.dong) return a.dong.localeCompare(b.dong);
-      return a.no - b.no || a.loc.localeCompare(b.loc);
+      return a.no - b.no || a.pn.localeCompare(b.pn);
     });
     const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     const fileName = isAll ? `전체_배치표_${ymd}.xlsx` : `${activeDong}동_배치표_${ymd}.xlsx`;
     const aoa: (string | number)[][] = [
-      ["동", "칸(위치)", "좌표", "순위_1개월박스", "분류", "로케이션", "제품명", "바코드", "1개월_출고박스", "단수", "로케이션(숫자)", "비고"],
+      ["동", "칸(위치)", "순위_1개월박스", "분류", "제품번호", "제품명", "바코드", "1개월_출고박스", "단수", "로케이션", "비고"],
       ...rows.map((r) => [
-        r.dong, r.cellName, r.coord, rank(r.pn), r.cat, r.loc, r.name, r.barcode, r.boxes, extractDansu(r.name), r.no, ""
+        r.dong, fmtCoordKey(r.cellName), rank(r.pn), r.cat,
+        /^\d+$/.test(r.pn) ? Number(r.pn) : r.pn,
+        r.name, r.barcode, r.boxes, extractDansu(r.name), r.no, ""
       ]),
     ];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -3585,16 +3674,25 @@ export default function ProductDisplayPage() {
     const isA = activeDong === "A";
     const header = rows[0] || [];
     const idxRank = header.findIndex((h) => String(h ?? "").trim() === "순위_1개월박스");
+    // 2026-08-29 형식: '제품번호' 열=제품 고유 번호, '로케이션' 열=배치도 위치 번호.
+    // 구형 파일 호환: '로케이션' 열=320-A1-1-N 문자열(제품번호 역추출), '로케이션(숫자)' 열=위치 번호
+    const idxPn = header.findIndex((h) => String(h ?? "").trim() === "제품번호");
     const idxLoc = header.findIndex((h) => String(h ?? "").trim() === "로케이션");
     const idxCellName = header.findIndex((h) => String(h ?? "").trim() === "칸(위치)");
-    if (idxRank < 0 || idxLoc < 0) {
-      window.alert("엑셀 형식이 맞지 않습니다. 첫 줄 헤더에 '순위_1개월박스', '로케이션' 열이 필요합니다.");
+    if (idxRank < 0 || (idxPn < 0 && idxLoc < 0)) {
+      window.alert("엑셀 형식이 맞지 않습니다. 첫 줄 헤더에 '순위_1개월박스', '제품번호' 열이 필요합니다.");
       return;
     }
-    const idxLocNum = header.findIndex((h) => String(h ?? "").trim() === "로케이션(숫자)");
+    // 동별 재적용 로직 — 전체 업로드 시 다른 동 배치 삭제 위험
+    if (activeDong === "ALL") {
+      window.alert("총괄 화면에서는 엑셀 업로드가 지원되지 않습니다. 동(A/B/C/D) 탭을 선택한 뒤 업로드해 주세요.");
+      return;
+    }
+    const pnColIdx = idxPn >= 0 ? idxPn : idxLoc;
+    const idxLocNum = idxPn >= 0 ? idxLoc : header.findIndex((h) => String(h ?? "").trim() === "로케이션(숫자)");
     const parsed: { pn: string; cellName: string; locNo: number; dong: string }[] = [];
     for (const r of rows.slice(1)) {
-      const raw = String(r[idxLoc] ?? "").replace(/\r\n/g, "\n");
+      const raw = String(r[pnColIdx] ?? "").replace(/\r\n/g, "\n");
       const parts = raw.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
       if (!parts.length) continue;
       const groupPns: string[] = [];
@@ -3602,7 +3700,10 @@ export default function ProductDisplayPage() {
       const numCell = idxLocNum >= 0 ? parseInt(String(r[idxLocNum] ?? ""), 10) : NaN;
       if (Number.isFinite(numCell)) locNo = numCell;
       let rowDong = activeDong;
-      const cellName = idxCellName >= 0 ? String(r[idxCellName] ?? "").trim() : "";
+      // 표기 규칙(2026-09-03): "X9, Y21" 표기를 내부 키("9-21")로 정규화 — 기존 하이픈 파일도 그대로 통과
+      const cellName = normCoordKey(idxCellName >= 0 ? String(r[idxCellName] ?? "").trim() : "");
+      const cellDong = cellName ? cellName.split("-")[0] : "";
+      if (cellDong && cellDong !== activeDong) continue;
       for (const part of parts) {
         let pn: string | null = null;
         let n: number | null = null;
@@ -3615,10 +3716,11 @@ export default function ProductDisplayPage() {
           n = parseInt(part, 10);
           pn = String(n);
         } else {
-          pn = locToPnum(part);
+          pn = legacyLocToPnum(part);
         }
         if (pn && !groupPns.includes(pn)) groupPns.push(pn);
-        if (locNo === null && n !== null && Number.isFinite(n)) locNo = n;
+        // 구형 파일 전용 폴백 (옛 체계: 로케이션 끝번호=제품번호). 신규 형식은 '제품번호' 열 + '로케이션' 열(위치번호) 사용
+        if (locNo === null && idxPn < 0 && n !== null && Number.isFinite(n)) locNo = n;
       }
       if (!groupPns.length) continue;
       for (const pn of groupPns) parsed.push({ pn, cellName, locNo: locNo ?? 0, dong: rowDong });
@@ -3628,12 +3730,8 @@ export default function ProductDisplayPage() {
       return;
     }
     const activeZoneDefs = current.zones.filter(z => z.id.startsWith(`${activeDong}-`));
-    const sortedZones = isA ? orderAZones(activeZoneDefs) : [...activeZoneDefs];
-    const zoneSet = new Set(sortedZones.map(z => z.id));
-    const dongLocNos = computeDongLocMap(sortedZones, data, {
-      fixedUpTo: isA ? A_FIXED_LOC_MAX : undefined,
-      exceptions: locExceptions,
-    });
+    const sortedZones = [...activeZoneDefs];
+    const dongLocNos = storedLocNos(sortedZones);
     const noToZone = new Map<number, string>();
     for (const [zid, nos] of Object.entries(dongLocNos)) {
       for (const n of nos) noToZone.set(n, zid);
@@ -3648,8 +3746,9 @@ export default function ProductDisplayPage() {
     const outOfRange: string[] = [];
     for (const p of parsed) {
       let zoneId = "";
-      if (p.cellName && zoneSet.has(p.cellName)) {
-        zoneId = p.cellName;
+      const coordMatch = p.cellName ? coordToZoneAll.get(p.cellName) : undefined;
+      if (p.cellName && coordMatch && coordMatch.startsWith(`${activeDong}-`)) {
+        zoneId = coordMatch; // 좌표 매칭 — 유일한 칸 참조 방식 (2026-08-31 좌표 통일)
       } else if (p.locNo > 0) {
         zoneId = noToZone.get(p.locNo) || "";
         if (!zoneId) {
@@ -3752,9 +3851,9 @@ export default function ProductDisplayPage() {
     // 좌표는 숫자 좌표만 노출 (2026-08-28) — 내부 존 아이디 미표시
     const parts: string[] = [];
 
-    // 그리드 좌표 표시 (전 동, 숫자 "행-열") (2026-08-28)
+    // 그리드 좌표 표시 (전 동) — 표기 규칙(2026-09-03): "X열, Y행" 형식 통일 (내부 키 "X-Y"는 표시 시점에 변환)
     if (z.gridCoord) {
-      parts.unshift(`좌표 ${z.gridCoord}`);
+      parts.unshift(`좌표 ${fmtCoordKey(z.gridCoord)}`);
     }
     if (z.fixed) {
       parts.unshift("🔒 고정 칸 — 이동·교환 불가");
@@ -3840,11 +3939,8 @@ export default function ProductDisplayPage() {
     return dks.map((dk) => {
       const lay = dk === dong ? current : layoutState.find((r) => r.key === dk);
       if (!lay) return { dk, rows: [] as { no: number; pn: string; name: string; lg: string; md: string; zone: string }[] };
-      const zs = dk === "A" ? orderAZones(lay.zones) : lay.zones;
-      const dyn = computeDongLocMap(zs, data, {
-        fixedUpTo: dk === "A" ? A_FIXED_LOC_MAX : undefined,
-        exceptions: locExceptions,
-      });
+      const zs = lay.zones;
+      const dyn = storedLocNos(zs);
       const rows: { no: number; pn: string; name: string; lg: string; md: string; zone: string }[] = [];
       for (const z of zs) {
         const nos = dyn[z.id];
@@ -3865,11 +3961,8 @@ export default function ProductDisplayPage() {
     (dk: "A" | "B" | "C" | "D") => {
       const lay = layoutState.find((r) => r.key === dk);
       if (!lay) return null;
-      const zs = dk === "A" ? orderAZones(lay.zones) : lay.zones;
-      const dyn = computeDongLocMap(zs, data, {
-        fixedUpTo: dk === "A" ? A_FIXED_LOC_MAX : undefined,
-        exceptions: locExceptions,
-      });
+      const zs = lay.zones;
+      const dyn = storedLocNos(zs);
       const esc = (s: string) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       const items: { no: string; pn: string; nm: string; cat: string }[] = [];
       for (const z of zs) {
@@ -3935,22 +4028,23 @@ export default function ProductDisplayPage() {
         : Math.min(1080 / (lay.width + PADL + PADR), 745 / (lay.height + PADT + PADB));
       const W = Math.round((lay.width + PADL + PADR) * sc);
       const H = Math.round((lay.height + PADT + PADB) * sc);
-      // 좌표 라벨: 브라우저와 동일 클러스터링(computeGridCoords) — 가로 1..N 상·하단, 세로 1..N 좌·우측
+      // 좌표 라벨: 화면 gridLabels·coordOfAll·엑셀과 동일 규칙(buildGridCoordSystem 단일 구현) —
+      // 상·하단 X=1..N(좌→우 colReps), 좌·우측 Y=1(아래)..N(위 rowRepsDesc, 통로 행 포함)
       let labelsHtml = "";
-      const gc = computeGridCoords(zs);
-      if (gc) {
+      const sys = buildGridCoordSystem(isADong ? "A" : dk, zs);
+      if (sys) {
         const fs = Math.max(7, Math.round(10 * sc));
         const lbl = (left: number, top: number, w: number, txt: string, align: string) =>
           `<div class="lbl" style="left:${Math.round(left * sc)}px;top:${Math.round(top * sc)}px;width:${Math.round(w * sc)}px;text-align:${align};font-size:${fs}px;color:#1d4ed8">${txt}</div>`;
         const maxBottom = Math.max(...zs.map((z) => Number(z.style.top ?? 0) + Number(z.style.height ?? SLOT.h)));
-        gc.cols.forEach((cx, ci) => {
+        sys.colReps.forEach((cx, ci) => {
           const x = cx - SLOT.w / 2 + PADL;
           labelsHtml += lbl(x, PADT - fs - 4, SLOT.w, String(ci + 1), "center");
           labelsHtml += lbl(x, maxBottom + 6, SLOT.w, String(ci + 1), "center");
         });
-        gc.rows.forEach((cy, ri) => {
+        sys.rowRepsDesc.forEach((cy, ri) => {
           labelsHtml += lbl(2, cy - fs / 2 + PADT, PADL - 4, String(ri + 1), "right");
-          labelsHtml += lbl(PADL + gc.cols[gc.cols.length - 1] + SLOT.w / 2 + 6, cy - fs / 2, PADR - 6, String(ri + 1), "left");
+          labelsHtml += lbl(PADL + sys.colReps[sys.colReps.length - 1] + SLOT.w / 2 + 6, cy - fs / 2, PADR - 6, String(ri + 1), "left");
         });
       }
       const cellsHtml = zs
@@ -4405,8 +4499,8 @@ export default function ProductDisplayPage() {
     <div className="space-y-4 w-full max-w-none">
       <div className="rounded-xl border bg-card p-4 shadow-sm">
         <p className="text-sm text-muted-foreground mb-3">
-          A동 · 지그재그 배치(1-1=1, 2-1=2) · 동일 분류 묶음 ·
-          7번=슬림서랍장 위주+칵투스(1칸 1품목) · A-X1/2=2품목 · 호버 시 분류·제품명·재고 표시
+          A동 · 위치는 좌표(X열, Y행)로 확인 · 동일 분류 묶음 ·
+          7번=슬림서랍장 위주+칵투스(1칸 1품목) · X1/X2=2품목 · 호버 시 좌표·분류·제품명·재고 표시
         </p>
         <p className="text-base font-bold text-slate-800 mb-3 flex items-center justify-between gap-2 flex-wrap">
           <span>
@@ -4447,7 +4541,7 @@ export default function ProductDisplayPage() {
           <Input
             value={searchQ}
             onChange={(e) => setSearchQ(e.target.value)}
-            placeholder="제품명 · 로케이션(320-A1-1-111) · 제품번호 · 바코드 검색"
+            placeholder="제품명 · 로케이션(위치번호) · 제품번호 · 바코드 검색"
             className="pl-8"
           />
           {searchQ.trim() && (
@@ -4465,7 +4559,9 @@ export default function ProductDisplayPage() {
                     <span className="flex flex-col min-w-0">
                       <span className="font-semibold tabular-nums">{h.pnum} · {h.name || "-"}</span>
                       <span className="text-[10px] text-muted-foreground truncate">
-                        {h.placed ? `위치 ${h.dong}동 ${h.zone}` : `미배치 · 로케이션 ${h.loc}`}
+                        {h.placed
+                          ? `위치 ${h.dong}동 좌표 ${h.zone ? fmtCoordKey(coordOfAll.get(h.zone) || h.zone) : ""}${h.locNo ? ` · 로케이션 ${h.locNo}` : ""}`
+                          : `미배치${h.loc ? ` · 쿠팡 로케이션 ${h.loc}` : ""}`}
                       </span>
                     </span>
                     <span
@@ -4603,12 +4699,8 @@ export default function ProductDisplayPage() {
                 hOverride?: number
               ) => {
                 const dl = layoutState.find((r) => r.key === k) ?? DONG_LAYOUTS.find((r) => r.key === k)!;
-                // 총괄 미니맵도 개별 동과 동일한 누적 로케이션 번호 표시 (전 동 규칙 통일)
-                const miniNos = computeDongLocMap(
-                  k === "A" ? orderAZones(dl.zones) : dl.zones,
-                  data,
-                  { fixedUpTo: k === "A" ? A_FIXED_LOC_MAX : undefined, exceptions: locExceptions }
-                );
+                // 총괄 미니맵 번호 — 저장된 칸 번호만 표시 (2026-08-31 자동 배정 삭제)
+                const miniNos = storedLocNos(dl.zones);
                 const boxW = wOverride ?? Math.round(dl.width * scale);
                 const boxH = hOverride ?? Math.round(dl.height * scale);
                 return (
@@ -4857,9 +4949,9 @@ export default function ProductDisplayPage() {
                 value={moveCoordText}
                 onChange={(e) => setMoveCoordText(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); moveSelectedToCoord(); } }}
-                placeholder="가로-세로"
-                className="w-20 rounded border px-1.5 py-0.5 text-xs"
-                title="목표 좌표 입력 (화면 라벨 기준, 예: 3-7)"
+                placeholder="X가로, Y세로"
+                className="w-24 rounded border px-1.5 py-0.5 text-xs"
+                title="목표 좌표 입력 (화면 라벨 기준, 예: X3, Y7)"
               />
               <button type="button" className="px-1.5 py-0.5 rounded border hover:bg-slate-100" onClick={moveSelectedToCoord} title="선택한 칸을 입력한 좌표로 이동">→</button>
             </span>
@@ -5445,60 +5537,14 @@ export default function ProductDisplayPage() {
     </div>
   );
 }
-/* ===== 로케이션 번호 (전 동 누적 — computeDongLocMap 단일 구현) ===== */
-/** 동별 로케이션 시작 번호 (2026-08-26 확정): A=1(누적·전 동 동적), B=200, C=500, D=900.
- *  A는 1~38(L1·L2 쌍) 고정 앵커(A_FIXED_LOC_MAX) — 해당 칸은 항상 자기 번호 유지.
- *  D 800→900: C동 3개/칸 재배치로 C 최대 823까지 진행 → 충돌 방지 */
-const DONG_LOC_START: Record<string, number> = { A: 1, B: 200, C: 500, D: 900 };
-const A_FIXED_LOC_MAX = 38;
-
-/**
- * 누적 로케이션 번호 계산 (2026-08-26) — 칸 순서대로 품목 수만큼 번호 소진.
- * 동 내 모든 칸을 레이아웃 순서로 훑으며 각 칸에 (품목 수)개 번호 배정.
- * 빈칸은 번호 소진 없음. 앞 칸 품목 추가/삭제 시 뒤 전체 자동 재계산.
- */
-type DongLocOpts = { exceptions?: Set<string>; fixedUpTo?: number };
-
-/**
- * 누적 로케이션 번호 계산 (2026-08-26, 전 동 적용) — 칸 순서대로 품목 수만큼 번호 소진.
- * 실제 표시 중인 레이아웃(layoutState 반영) 기준 — 사용자가 추가한 라인/칸도 번호 부여 대상.
- * fixedUpTo: 이 번호 이하 locNo 칸은 고정(자기 번호 유지·소진 없음·다품목 시 대표번호만).
- * exceptions: 사용자 지정 예외칸 — 품목 수 무관 번호 1개 공유.
- */
-function computeDongLocMap(zones: ZoneDef[], data: Record<string, string>, opts?: DongLocOpts): Record<string, number[]> {
-  const result: Record<string, number[]> = {};
-  if (zones.length === 0) return result;
-  const dong = zones[0].id.split("-")[0];
-  const startNo = DONG_LOC_START[dong];
-  if (!startNo) return result;
-  const fixedMax = opts?.fixedUpTo;
-  let next = fixedMax ? fixedMax + 1 : startNo;
+/* ===== 로케이션 번호 (표시 전용) — 번호는 칸 데이터(zone.locNo)의 수기 지정값만 사용하며, 어떤 코드도 자동 계산·부여하지 않는다 (2026-08-31). ===== */
+function storedLocNos(zones: ZoneDef[]): Record<string, number[]> {
+  const out: Record<string, number[]> = {};
   for (const z of zones) {
-    if (fixedMax != null && (z.id === "A-X1" || z.id === "A-X2")) continue; // 특수 추가칸 — 번호 없음(기존 유지)
-    if (fixedMax != null && z.locNo != null && z.locNo <= fixedMax) {
-      result[z.id] = [z.locNo]; // 고정 앵커 (A 1~38)
-      continue;
-    }
-    const items = (data[z.id] || "").split(",").map((s) => s.trim()).filter(Boolean);
-    if (items.length === 0) continue;
-    if (opts?.exceptions?.has(z.id)) {
-      result[z.id] = [next];
-      next += 1;
-      continue;
-    }
-    result[z.id] = Array.from({ length: items.length }, (_, i) => next + i);
-    next += items.length;
+    if (z.locNos && z.locNos.length > 0) out[z.id] = z.locNos;
+    else if (z.locNo != null) out[z.id] = [z.locNo];
   }
-  return result;
-}
-
-/** A동 zones를 뱀 순번(locNo 오름차순)으로 정렬 — 기존 부여 번호의 연장선에서 누적 진행.
- *  (통로 쌍 L3|L4 등은 슬롯 위치로 좌우 교차하며 연속 번호 → 다품목 칸이 여러 개 소비)
- *  locNo 없는 사용자 추가 칸(X제외)은 맨 뒤에서 이어받음. */
-function orderAZones(zones: ZoneDef[]): ZoneDef[] {
-  return [...zones].sort(
-    (a, b) => (a.locNo ?? Number.MAX_SAFE_INTEGER) - (b.locNo ?? Number.MAX_SAFE_INTEGER)
-  );
+  return out;
 }
 
 /* ===== 드래그앤드롭 셀 컴포넌트 (2026-08-17) — 편집 모드 확장 예정 ===== */
@@ -5576,15 +5622,15 @@ function MiniZoneCell({
         </span>
       )}
       {assigned ? (
-        z.splitDir === "h" && items.length > 1 ? (
-          /* 가로 배치 칸: 좌→우 분할 (구획 사이 세로 구분선, 2026-08-29) */
-          <span className="font-semibold tabular-nums text-blue-900 flex flex-row items-center justify-center w-full h-full overflow-hidden text-[8px] leading-[1.15]">
+        z.productNamesVertical && items.length > 1 ? (
+          /* 가로 배치 칸: 제품명 세로 나열 (구획 사이 가로 구분선, 2026-08-29) */
+          <span className="font-semibold tabular-nums text-blue-900 flex flex-col items-center justify-center w-full h-full overflow-hidden text-[8px] leading-[1.15]">
             {items.map((it, i) => (
               <span
                 key={i}
                 className={
                   "flex-1 min-w-0 flex items-center justify-center" +
-                  (i < items.length - 1 ? " border-r border-slate-300" : "")
+                  (i < items.length - 1 ? " border-b border-slate-300" : "")
                 }
               >
                 {it}
@@ -5654,7 +5700,7 @@ function RowDrag({
   );
 }
 
-/* 모바일 조회 뷰 (2026-08-25) — 읽기 전용 목록형: 동 선택 → 칸 목록(로케번호+품목) 표시
+/* 모바일 조회 뷰 (2026-08-25) — 읽기 전용 목록형: 동 선택 → 칸 목록(위치번호+품목) 표시
  * PC 그리드는 절대좌표라 모바일에서 식별 곤란 → 카드 리스트로 대체. 편집 기능 없음(안전). */
 function MobileListView({
   data,
@@ -5667,12 +5713,8 @@ function MobileListView({
   const [q, setQ] = useState("");
   const layout = DONG_LAYOUTS.find((r) => r.key === mdong);
   if (!layout) return null;
-  // 전 동 동적 누적 번호 (A: 물리순 + 1~38 고정)
-  const mdyn = computeDongLocMap(
-    mdong === "A" ? orderAZones(layout.zones) : layout.zones,
-    data,
-    { fixedUpTo: mdong === "A" ? A_FIXED_LOC_MAX : undefined }
-  );
+  // 저장된 칸 번호만 표시 (2026-08-31 자동 배정 삭제)
+  const mdyn = storedLocNos(layout.zones);
   const locNoOf = (zid: string): string => {
     const nos = mdyn[zid];
     if (!nos || nos.length === 0) return "";
@@ -5681,17 +5723,18 @@ function MobileListView({
   const rows = layout.zones
     .map((z) => ({ zid: z.id, val: data[z.id] || "" }))
     .filter((r) => r.val);
+  // 위치번호(로케이션) 검색 — 번호 입력 시 해당 칸 카드가 목록에 남는다
   const filtered = q.trim()
     ? rows.filter(
         (r) =>
           r.val.toLowerCase().includes(q.trim().toLowerCase()) ||
           r.zid.includes(q.trim()) ||
+          locNoOf(r.zid).includes(q.trim()) ||
           r.val
             .split(",")
             .some((pn) => (masterMap[pn.trim()]?.name || "").includes(q.trim()))
       )
     : rows;
-  // 검색 시 로케이션 역조회 지원: 번호 입력 → 해당 칸 하이라이트
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-1">
@@ -5711,7 +5754,7 @@ function MobileListView({
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="제품번호·이름·로케번호 검색"
+          placeholder="제품번호·이름·로케이션 검색"
           className="flex-1 min-w-[140px] h-8 rounded border bg-white px-2 text-xs"
         />
       </div>
@@ -6250,23 +6293,23 @@ function ZoneCell({
       ) : null}
       {assigned ? (
         items.length > 1 ? (
-          z.splitDir === "h" ? (
-            /* 가로 배치 칸: 좌→우 분할 (구획 사이 세로 구분선, 2026-08-29) */
-            <span className="flex flex-row w-full h-full items-stretch justify-center overflow-hidden">
+          z.productNamesVertical ? (
+            /* 가로 배치 칸: 제품명 세로 나열 (구획 사이 가로 구분선, 2026-08-29) */
+            <span className="flex flex-col w-full h-full items-stretch justify-center overflow-hidden">
               {items.map((it, i) => (
                 <span
                   key={`${z.id}-seg-${i}`}
                   className={
-                    "flex flex-col items-center justify-center min-w-0 flex-1 px-px " +
-                    (i < items.length - 1 ? " border-r border-slate-300" : "")
+                    "flex flex-col items-center justify-center min-h-0 py-0.5 " +
+                    (i < items.length - 1 ? " border-b border-slate-300" : "")
                   }
                 >
                   <span className="font-semibold text-[9px] leading-none tabular-nums text-blue-900">
                     <DragChip zoneId={z.id} itemIdx={i} pnum={it} text={it} disabled={!editMode} />
                   </span>
-                  {locNos && locNos[i] != null && (
+                  {locNos && (locNos.length === 1 ? locNos[0] : locNos[i]) != null && (
                     <span className="text-[6px] leading-none font-mono font-bold text-amber-600 mt-px">
-                      {locNos[i]}
+                      {locNos.length === 1 ? locNos[0] : locNos[i]}
                     </span>
                   )}
                 </span>
@@ -6286,9 +6329,9 @@ function ZoneCell({
                   <span className="font-semibold text-[9px] leading-none tabular-nums text-blue-900">
                     <DragChip zoneId={z.id} itemIdx={i} pnum={it} text={it} disabled={!editMode} />
                   </span>
-                  {locNos && locNos[i] != null && (
+                  {locNos && (locNos.length === 1 ? locNos[0] : locNos[i]) != null && (
                     <span className="text-[6px] leading-none font-mono font-bold text-amber-600 mt-px">
-                      {locNos[i]}
+                      {locNos.length === 1 ? locNos[0] : locNos[i]}
                     </span>
                   )}
                 </span>

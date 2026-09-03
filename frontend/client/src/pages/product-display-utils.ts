@@ -149,3 +149,37 @@ export function groupShiftInsert(
   }
   return { next, overflow: [] };
 }
+
+/**
+ * 배치 좌표맵 생성 (2026-09-03 좌표 규칙).
+ * 각 존에 (X,Y) 좌표 부여. X=left 좌->우 1based, Y=아래(top큼) 1 -> 위로 1씩.
+ * 반환: Map<zoneId, {x:number,y:number}>
+ */
+export function buildGridCoordMap(zones: any[]): Map<string, { x: number; y: number }> {
+  if (!zones || zones.length === 0) return new Map();
+  const SLOT_H = 34, GAP_Y = 4, PX = SLOT_H + GAP_Y; // 38
+  const cxs: {zid:string, x:number}[] = [];
+  const ys: number[] = []; // each 존의 center-top
+  for (const z of zones) {
+    const cx = Number(z?.style?.left ?? 0) + (Number(z?.style?.width ?? 48) / 2);
+    cxs.push({ zid: z.id, x: cx });
+    ys.push(Number(z?.style?.top ?? 0) + (Number(z?.style?.height ?? 34) / 2));
+  }
+  // X: cx 고유값 오름차순 클러스터(8px 오차 허용)로 1..N 부여
+  const xReps: number[] = [];
+  for (const c of [...new Set(cxs.map(o=>o.x))].sort((a,b)=>a-b)) {
+    const last = xReps[xReps.length-1];
+    if (last === undefined || c - last > 8) xReps.push(c);
+  }
+  const xOf = (cx:number) => xReps.reduce((bi,v,i)=> Math.abs(v-cx)<Math.abs(xReps[bi]-cx)? i:bi, 0) + 1;
+  // Y: 가장 큰 top(아래) = 1, 위로 PX마다 +1
+  const minTop = Math.min(...ys); const maxTop = Math.max(...ys);
+  const yRepsDesc: number[] = [];
+  for (let t=maxTop; t>=minTop; t-=PX) { yRepsDesc.push(t); } // 전체 38px 그리드 행(빈 줄 포함) — 점유 여부 무관 Y부여
+  const yOf = (top:number) => {
+    let bi=0,bd=1e9; yRepsDesc.forEach((r,i)=>{const dd=Math.abs(top-r);if(dd<bd){bd=dd;bi=i;}}); return bi+1;
+  };
+  const m = new Map<string,{x:number,y:number}>();
+  for (const o of cxs) m.set(o.zid, { x: xOf(o.x), y: yOf(ys[cxs.findIndex(c=>c.zid===o.zid)]) });
+  return m;
+}
