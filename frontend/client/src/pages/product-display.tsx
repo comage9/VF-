@@ -1881,7 +1881,7 @@ export default function ProductDisplayPage() {
           match(barcode) ||
           (locNo !== null && String(locNo).includes(q))
         ) {
-          hitOf({ pnum: pn, name, loc: loc || zid, locNo, zone: zid, dong, placed: true });
+          hitOf({ pnum: pn, name, loc: loc || "", locNo, zone: zid, dong, placed: true });
         }
       }
     }
@@ -2036,8 +2036,12 @@ export default function ProductDisplayPage() {
     return m;
   }, [layoutState]);
   const coordToZoneAll = useMemo(() => {
+    // 동별 좌표 키 (2026-09-04): "A-9-21" — 동 간 동일 좌표 문자열 충돌 방지
     const m = new Map<string, string>();
-    coordOfAll.forEach((coord, zid) => { if (!m.has(coord)) m.set(coord, zid); });
+    coordOfAll.forEach((coord, zid) => {
+      const key = `${zid.split("-")[0]}-${coord}`;
+      if (!m.has(key)) m.set(key, zid);
+    });
     return m;
   }, [coordOfAll]);
 
@@ -3648,7 +3652,7 @@ export default function ProductDisplayPage() {
           dong: zoneDong,
           no: zoneNos?.length === 1 ? zoneNos[0] : (zoneNos?.[i] ?? 0),
           cat: m?.lg || "",
-          cellName: coordOf.get(zoneId) || zoneId,
+          cellName: coordOf.get(zoneId) || "",
           name: m?.name || "",
           barcode: m?.barcode || "",
           boxes: m?.barcode ? calcMonthQty(m.barcode) : 0,
@@ -3714,7 +3718,8 @@ export default function ProductDisplayPage() {
       // 표기 규칙(2026-09-03): "X9, Y21" 표기를 내부 키("9-21")로 정규화 — 기존 하이픈 파일도 그대로 통과
       const cellName = normCoordKey(idxCellName >= 0 ? String(r[idxCellName] ?? "").trim() : "");
       const cellDong = cellName ? cellName.split("-")[0] : "";
-      if (cellDong && cellDong !== activeDong) continue;
+      // 좌표 형식("9-21")은 split[0]이 숫자 → 동 문자(ABCD)일 때만 동 필터 적용 (2026-09-04)
+      if (cellDong && /^[ABCD]$/.test(cellDong) && cellDong !== activeDong) continue;
       for (const part of parts) {
         let pn: string | null = null;
         let n: number | null = null;
@@ -3757,7 +3762,7 @@ export default function ProductDisplayPage() {
     const outOfRange: string[] = [];
     for (const p of parsed) {
       let zoneId = "";
-      const coordMatch = p.cellName ? coordToZoneAll.get(p.cellName) : undefined;
+      const coordMatch = p.cellName ? coordToZoneAll.get(`${p.dong}-${p.cellName}`) : undefined;
       if (p.cellName && coordMatch && coordMatch.startsWith(`${activeDong}-`)) {
         zoneId = coordMatch; // 좌표 매칭 — 유일한 칸 참조 방식 (2026-08-31 좌표 통일)
       } else if (p.locNo > 0) {
@@ -4571,7 +4576,7 @@ export default function ProductDisplayPage() {
                       <span className="font-semibold tabular-nums">{h.pnum} · {h.name || "-"}</span>
                       <span className="text-[10px] text-muted-foreground truncate">
                         {h.placed
-                          ? `위치 ${h.dong}동 좌표 ${h.zone ? fmtCoordKey(coordOfAll.get(h.zone) || h.zone) : ""}${h.locNo ? ` · 로케이션 ${h.locNo}` : ""}`
+                          ? `위치 ${h.dong}동${h.zone && coordOfAll.get(h.zone) ? ` 좌표 ${fmtCoordKey(coordOfAll.get(h.zone)!)}` : ""}${h.locNo ? ` · 로케이션 ${h.locNo}` : ""}`
                           : `미배치${h.loc ? ` · 쿠팡 로케이션 ${h.loc}` : ""}`}
                       </span>
                     </span>
@@ -5781,7 +5786,7 @@ function MobileListView({
               <div key={r.zid} className="border rounded-lg bg-white px-3 py-2">
                 <div className="flex items-center justify-between gap-2 mb-0.5">
                   <span className="text-[10px] font-mono font-bold text-amber-700 bg-amber-50 rounded px-1.5 py-0.5">
-                    {locNoOf(r.zid) || r.zid}
+                    {locNoOf(r.zid) || "번호 없음"}
                   </span>
                   <span className="text-[9px] text-slate-400">{pns.length}품목</span>
                 </div>

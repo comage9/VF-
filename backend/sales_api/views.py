@@ -14414,7 +14414,7 @@ from .models import ProductDisplaySnapshot as _PD_Snapshot
 
 # payload 크기 상한 2MB (초과 시 413)
 _PD_MAX_PAYLOAD_BYTES = 2 * 1024 * 1024
-# 보관 상한 — 직전 버전 1개만 보관 (복원용), 초과 시 오래된 것부터 삭제 (2026-08-25)
+# 보관 상한 — 직전 2개 보관 (복원용), 초과 시 오래된 것부터 삭제 (2026-09-04 주석 정정: 값=2와 일치)
 _PD_KEEP_COUNT = 2
 
 
@@ -14512,6 +14512,10 @@ def _pd_save_snapshot(payload, saved_by, skip_duplicate=True):
             _PD_Snapshot.objects.order_by('-version').values_list('id', flat=True)[:_PD_KEEP_COUNT]
         )
         _PD_Snapshot.objects.exclude(id__in=keep_ids).delete()
+
+    # (2026-08-31 삭제) 배치도 → 마스터 로케이션 자동 동기화.
+    # 배치도 수기 번호가 마스터·스캐너 로케이션을 덮어쓰는 문제로 제거 —
+    # 마스터 로케이션의 기준은 전산 재고(기준 스냅샷) 등록값이다.
 
     return snap, False
 
