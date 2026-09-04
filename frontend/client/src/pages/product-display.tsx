@@ -773,6 +773,116 @@ const A_COORD_NOS: Map<string, number[]> = (() => {
   return m;
 })();
 
+/* ═══════════ A동 존 표준 그리드 재정렬 (2026-09-05, 작업지시-존배치-정렬) ═══════════
+ * 문제: layout에 영속된 A동 존(left/top)이 표준 좌표(좌표계 규칙 확정 20260903)를 벗어나
+ *       뒤섞여 저장돼 제품이 엉뚱한 좌표·로케이션 번호에 표시됨. (과거 칸 이동 저장 잔재)
+ * 표준: 세로 랙 A-L{1..6}-{s} → 라인별 X열(colReps) + top = padT+(19-s)*PX (Y=s+2)
+ *       하단 A-L7-{n} → Y=1 행 (top=808, left=padL+(n-1)*(w+gapY))
+ * 처리: 표준 존은 항상 표준 그리드 좌표로 재계산하고, 표준 칸 자리를 차지한 커스텀 존
+ *       (A-NEW-* 등)은 표준 존이 없는 여분 슬롯으로 재배치해 겹침을 막는다. 제품 배치
+ *       data는 절대 변경하지 않는다. (복원/저장 방어 — 이전 커밋들이 표시만 고치고 존 위치를
+ *       안 고쳐 반복 재발한 것을 근절: 저장본 자체를 항상 표준 좌표로 강제) */
+const A_GRID_COLS = [28, 80, 132, 184, 236, 288, 340, 392, 444];
+const A_GRID_LINE_TO_X: Record<number, number> = { 1: 9, 2: 7, 3: 6, 4: 4, 5: 3, 6: 1 };
+const A_L7_BOTTOM_TOP = 808; // 서버 v340 저장 레이아웃의 하단 L7 행 top (Y=1)
+
+/** A동 표준 존 id → 표준 그리드 left/top. 비표준(A-NEW-*, A-X1/X2 등)이면 null */
+function aCanonicalStyleOf(id: string): { left: number; top: number } | null {
+  const PX = SLOT.h + SLOT.gapY; // 38
+  const m = /^A-L([1-6])-(\d+)$/.exec(id);
+  if (m) {
+    const line = Number(m[1]);
+    const s = Number(m[2]);
+    if (s < 1 || s > A_SLOTS_PER_LINE) return null;
+    const x = A_GRID_LINE_TO_X[line];
+    return { left: A_GRID_COLS[x - 1], top: SLOT.padT + (A_SLOTS_PER_LINE - s) * PX };
+  }
+  const m7 = /^A-L7-(\d+)$/.exec(id);
+  if (m7) {
+    const n = Number(m7[1]);
+    if (n < 1 || n > A_BOTTOM_SLOTS) return null;
+    return { left: SLOT.padL + (n - 1) * (SLOT.w + SLOT.gapY), top: A_L7_BOTTOM_TOP };
+  }
+  return null;
+}
+
+/** A동 layout 존들을 표준 그리드 좌표로 재정렬 (멱등). data는 건드리지 않음. */
+function canonicalizeALayoutZones(layout: DongLayout[]): DongLayout[] {
+  const a = layout.find((l) => l.key === "A");
+  if (!a) return layout;
+  const w = (z: ZoneDef) => Number(z.style.width ?? SLOT.w) || SLOT.w;
+  const h = (z: ZoneDef) => Number(z.style.height ?? SLOT.h) || SLOT.h;
+  const pos = (z: ZoneDef) => ({
+    left: Number(z.style.left ?? 0),
+    top: Number(z.style.top ?? 0),
+  });
+  const overlaps = (z: ZoneDef, left: number, top: number) => {
+    const p = pos(z);
+    return !(p.left + w(z) <= left || left + SLOT.w <= p.left || p.top + h(z) <= top || top + SLOT.h <= p.top);
+  };
+  const samePos = (z: ZoneDef, left: number, top: number) => pos(z).left === left && pos(z).top === top;
+
+  const zones = a.zones.map((z) => ({ ...z, style: { ...z.style } }));
+  const std: ZoneDef[] = [];
+  const cust: ZoneDef[] = [];
+  for (const z of zones) {
+    if (aCanonicalStyleOf(z.id)) std.push(z);
+    else cust.push(z);
+  }
+  const target = new Map<string, { left: number; top: number }>();
+  for (const z of std) {
+    const c = aCanonicalStyleOf(z.id);
+    if (c) target.set(z.id, c);
+  }
+  // 표준 대상 자리를 차지한 커스텀 → 재배치 대상, 그 외 커스텀(통로 X1/X2·빈칸 대체)은 유지
+  const reloc: ZoneDef[] = [];
+  const kept: ZoneDef[] = [];
+  for (const c of cust) {
+    let blocked = false;
+    for (const t of target.values()) {
+      if (overlaps(c, t.left, t.top)) { blocked = true; break; }
+    }
+    (blocked ? reloc : kept).push(c);
+  }
+  // 여분(표준 존 부재) 슬롯 중 유지 커스텀이 차지하지 않은 자리
+  const rackIds: string[] = [];
+  for (let ln = 1; ln <= 6; ln++) {
+    for (let s = 1; s <= A_SLOTS_PER_LINE; s++) rackIds.push(`A-L${ln}-${s}`);
+  }
+  for (let n = 1; n <= A_BOTTOM_SLOTS; n++) rackIds.push(`A-L7-${n}`);
+  const stdIds = new Set(std.map((z) => z.id));
+  const free: { id: string; left: number; top: number }[] = [];
+  for (const id of rackIds) {
+    if (stdIds.has(id)) continue;
+    const c = aCanonicalStyleOf(id);
+    if (!c) continue;
+    if (kept.some((k) => overlaps(k, c.left, c.top))) continue;
+    free.push({ id, ...c });
+  }
+  free.sort((x, y) => {
+    const mx = /^A-L(\d+)-(\d+)$/.exec(x.id)!;
+    const my = /^A-L(\d+)-(\d+)$/.exec(y.id)!;
+    return Number(mx[1]) - Number(my[1]) || Number(mx[2]) - Number(my[2]);
+  });
+  reloc.sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+  const relocDest = new Map<string, { left: number; top: number }>();
+  reloc.forEach((z, i) => {
+    if (i < free.length) relocDest.set(z.id, { left: free[i].left, top: free[i].top });
+  });
+  // 실제 배치 계산 후 변화가 없으면 원본 반환 (상태 재렌더·저장 루프 방지)
+  let changed = false;
+  const out = zones.map((z) => {
+    const c = target.get(z.id) ?? relocDest.get(z.id);
+    if (c && !samePos(z, c.left, c.top)) {
+      changed = true;
+      return { ...z, style: { ...z.style, left: c.left, top: c.top } };
+    }
+    return z;
+  });
+  if (!changed) return layout;
+  return layout.map((l) => (l.key === "A" ? { ...a, zones: out } : l));
+}
+
 /** B동: 엑셀 b동.xlsx 도면 그대로 (2026-08-16) */
 // 도면: B좌측=왼쪽 세로(B상단 옆~B하단 위), B중앙1-9=B우측 옆 통로, B통로 없음
 const B_BLOCKS: BlockSpec[] = [
@@ -1281,7 +1391,7 @@ export default function ProductDisplayPage() {
         if (parsed && parsed.__v === LAYOUT_VERSION && Array.isArray(parsed.layout) && parsed.layout.length === DONG_LAYOUTS.length) {
           const restored = hydrateZoneSplitDir(parsed.layout as typeof DONG_LAYOUTS);
           // L7 잔재 번호 정리 (2026-09-04): 구 빌더 하드코딩(115~122) 제거 — 모든 칸은 좌표로만 식별
-          return restored.map((d) => ({
+          const cleaned = restored.map((d) => ({
             ...d,
             zones: d.zones.map((z) =>
               /^A-L7-\d+$/.test(z.id) && typeof z.locNo === "number" && z.locNo >= 115 && z.locNo <= 122
@@ -1289,12 +1399,16 @@ export default function ProductDisplayPage() {
                 : z
             ),
           }));
+          // A동 존 표준 그리드 재정렬 (2026-09-05) — 저장본의 뒤섞인 존 좌표를 복원 시 정상화
+          return canonicalizeALayoutZones(cleaned);
         }
       }
     } catch {
       /* 손상 시 기본값 */
     }
-    return DONG_LAYOUTS.map((d) => ({ ...d, zones: d.zones.map((z) => ({ ...z, style: { ...z.style } })) }));
+    return canonicalizeALayoutZones(
+      DONG_LAYOUTS.map((d) => ({ ...d, zones: d.zones.map((z) => ({ ...z, style: { ...z.style } })) }))
+    );
   });
   // 데이터 자동 저장 (소실 안전망) — 모든 변경 즉시 localStorage 반영
   useEffect(() => {
@@ -1380,7 +1494,8 @@ export default function ProductDisplayPage() {
   const buildSnapshot = useCallback((): PdSnapshotPayload => {
     const snap: PdSnapshotPayload = {
       data,
-      layout: layoutState,
+      // A동 존 표준 그리드 재정렬 (2026-09-05) — 저장 시에도 표준 좌표 강제 (방어)
+      layout: canonicalizeALayoutZones(layoutState),
       lineConfig,
       staging,
       locExceptions: Array.from(locExceptions),
@@ -1489,11 +1604,13 @@ export default function ProductDisplayPage() {
     // 전역 중복 정리 후 상태 적용 (2026-08-28) — 로컬 저장도 동일 데이터 사용
     const cleanData = sanitizePlacementMap(p.data);
     setData(cleanData);
-    setLayoutState(hydrateZoneSplitDir(p.layout));
+    // A동 존 표준 그리드 재정렬 (2026-09-05) — 서버판 복원 시 저장본 뒤섞인 좌표 정상화
+    const canonLayout = canonicalizeALayoutZones(hydrateZoneSplitDir(p.layout));
+    setLayoutState(canonLayout);
     setLineConfig(p.lineConfig);
     setStaging(p.staging);
     setLocExceptions(new Set(p.locExceptions || []));
-    writeLocalFromPayload({ ...p, data: cleanData });
+    writeLocalFromPayload({ ...p, data: cleanData, layout: canonLayout });
     if (typeof version === "number") {
       serverVerRef.current = version;
       setServerVersion(version);
