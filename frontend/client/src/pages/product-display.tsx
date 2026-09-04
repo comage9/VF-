@@ -6368,11 +6368,6 @@ function ZoneCell({
                   <span className="font-semibold text-[9px] leading-none tabular-nums text-blue-900">
                     <DragChip zoneId={z.id} itemIdx={i} pnum={it} text={it} disabled={!editMode} />
                   </span>
-                  {locNos && locNos.length > 1 && locNos[i] != null && (
-                    <span className="text-[6px] leading-none font-mono font-bold text-amber-600 mt-px">
-                      {locNos[i]}
-                    </span>
-                  )}
                 </span>
               ))}
             </span>
@@ -6390,11 +6385,6 @@ function ZoneCell({
                   <span className="font-semibold text-[9px] leading-none tabular-nums text-blue-900">
                     <DragChip zoneId={z.id} itemIdx={i} pnum={it} text={it} disabled={!editMode} />
                   </span>
-                  {locNos && locNos.length > 1 && locNos[i] != null && (
-                    <span className="text-[6px] leading-none font-mono font-bold text-amber-600 mt-px">
-                      {locNos[i]}
-                    </span>
-                  )}
                 </span>
               ))}
             </span>
