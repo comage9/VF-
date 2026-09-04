@@ -2112,9 +2112,15 @@ export default function ProductDisplayPage() {
   const [fitScale, setFitScale] = useState(1);
   // 배치도 전용 수동 줌 — 동별 출고 비율 테이블과 독립적으로 배치도만 확대/축소 (2026-08-28)
   const [zoomFactor, setZoomFactor] = useState(1);
+  /** 동별 기본 배율 (2026-09-04): A120%·B220%·C130%·D220% — 동 전환 시 적용 */
+  const DONG_DEFAULT_ZOOM: Record<string, number> = { A: 1.2, B: 2.2, C: 1.3, D: 2.2 };
+  useEffect(() => {
+    const def = DONG_DEFAULT_ZOOM[dong];
+    if (def) setZoomFactor(def);
+  }, [dong]);
   const zoomIn = () => setZoomFactor((z) => Math.min(3, Number((z + 0.1).toFixed(2))));
   const zoomOut = () => setZoomFactor((z) => Math.max(0.3, Number((z - 0.1).toFixed(2))));
-  const zoomReset = () => setZoomFactor(1);
+  const zoomReset = () => setZoomFactor(DONG_DEFAULT_ZOOM[dong] ?? 1);
   useEffect(() => {
     const compute = () => {
       // 자동 맞춤 확대 폐지 (2026-08-28) — 배율은 줌 컨트롤(zoomFactor)만 결정.
@@ -4814,7 +4820,7 @@ export default function ProductDisplayPage() {
             <button type="button" onClick={zoomOut} className="px-2 py-0.5 text-xs rounded border bg-white hover:bg-slate-100" title="배치도 축소">−</button>
             <span className="text-xs text-slate-600 w-12 text-center">{Math.round(zoomFactor * 100)}%</span>
             <button type="button" onClick={zoomIn} className="px-2 py-0.5 text-xs rounded border bg-white hover:bg-slate-100" title="배치도 확대">＋</button>
-            <button type="button" onClick={zoomReset} className="px-2 py-0.5 text-xs rounded border bg-white hover:bg-slate-100" title="원래 크기">100%</button>
+            <button type="button" onClick={zoomReset} className="px-2 py-0.5 text-xs rounded border bg-white hover:bg-slate-100" title="기본 배율">기본</button>
             <span className="text-[10px] text-slate-400 ml-1">배치도 전용 확대/축소</span>
           </div>
           <DndContext sensors={sensors} autoScroll={false} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
