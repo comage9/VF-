@@ -4790,7 +4790,32 @@ export default function ProductDisplayPage() {
                           transformOrigin: "top left",
                         }}
                       >
-                        {/* 구 lineLabels 미니맵 렌더링 제거 (2026-08-28) */}
+                        {/* 좌표 기준 오버레이 (2026-09-04): 총괄 미니맵도 단독 뷰와 동일한 번호 라벨 — 존 위치·유무 무관 */}
+                        {k === "A" && (() => {
+                          const sysO = buildGridCoordSystem("A", dl.zones);
+                          if (!sysO) return null;
+                          return Array.from(A_COORD_NOS.entries()).map(([coordO, nosO]) => {
+                            const cMatchO = /^(\d+)-(\d+)$/.exec(coordO);
+                            if (!cMatchO) return null;
+                            const colPxO = sysO.colReps[Number(cMatchO[1]) - 1];
+                            const rowPxO = sysO.rowRepsDesc[Number(cMatchO[2]) - 1];
+                            if (colPxO == null || rowPxO == null) return null;
+                            return (
+                              <div
+                                key={`ovl-${coordO}`}
+                                className="absolute pointer-events-none text-[8px] leading-none font-mono font-bold text-amber-600"
+                                style={{
+                                  left: colPxO - SLOT.w / 2 + 2,
+                                  top: rowPxO - SLOT.h / 2 + 3,
+                                  width: SLOT.w - 4,
+                                  textAlign: "left",
+                                }}
+                              >
+                                {fmtLocNos(nosO)}
+                              </div>
+                            );
+                          });
+                        })()}
                         {dl.zones.map((z) => (
                           <MiniZoneCell
                             key={z.id}
@@ -5666,16 +5691,7 @@ function MiniZoneCell({
       }
       style={z.style}
     >
-      {/* 로케이션 번호 — 좌표 귀속(coordNosByZone)만 사용, z.locNo 폴백 제거 (스테일 차단) —
-          칸 내부 상단 배치 (단독 뷰 좌표 오버레이와 동일, 2026-09-04) */}
-      {isA && locNos && locNos.length > 0 && (
-        <span
-          className="absolute text-[8px] leading-none font-mono font-bold text-amber-600 pointer-events-none"
-          style={{ top: 1, left: 2, width: SLOT.w - 4, textAlign: "left" }}
-        >
-          {fmtLocNos(locNos)}
-        </span>
-      )}
+      {/* 로케이션 번호 — 좌표 기준 오버레이로 단일 렌더 (2026-09-04, 총괄=단독 통일) */}
       {!isA && locNos && locNos.length > 0 && (
         <span className="absolute top-0.5 right-0.5 text-[7px] leading-none font-mono font-bold text-amber-600 pointer-events-none">
           {fmtLocNos(locNos)}
