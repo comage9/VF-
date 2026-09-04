@@ -567,7 +567,6 @@ function buildADongLayout(
           line: A_BOTTOM_LINE_ID,
           showNumAsProduct: false,
           productNamesVertical: true, // 가로 배치 칸: 제품명 세로 나열 (2026-08-29)
-          locNo: 115 + i, // 로케이션 번호 115~122
           style: {
             left: Math.round(bottomStartLeft + i * (slot.w + slot.tightGap)),
             top: bottomTop,
@@ -1251,7 +1250,16 @@ export default function ProductDisplayPage() {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.__v === LAYOUT_VERSION && Array.isArray(parsed.layout) && parsed.layout.length === DONG_LAYOUTS.length) {
-          return hydrateZoneSplitDir(parsed.layout as typeof DONG_LAYOUTS);
+          const restored = hydrateZoneSplitDir(parsed.layout as typeof DONG_LAYOUTS);
+          // L7 잔재 번호 정리 (2026-09-04): 구 빌더 하드코딩(115~122) 제거 — 모든 칸은 좌표로만 식별
+          return restored.map((d) => ({
+            ...d,
+            zones: d.zones.map((z) =>
+              /^A-L7-\d+$/.test(z.id) && typeof z.locNo === "number" && z.locNo >= 115 && z.locNo <= 122
+                ? { ...z, locNo: undefined }
+                : z
+            ),
+          }));
         }
       }
     } catch {
@@ -3863,7 +3871,6 @@ export default function ProductDisplayPage() {
   // 툴팁 생성: A동=배치 제품번호 기준(masterMap, 미로드 시 칸 하드코딩 fallback), B/C/D동=pnum 기반(다품목 나열)
   const makeTooltip = (z: ZoneDef): string => {
     const zid = z.id;
-    const isL7 = z.line === 7;
     // 좌표는 숫자 좌표만 노출 (2026-08-28) — 내부 존 아이디 미표시
     const parts: string[] = [];
 
@@ -3910,7 +3917,6 @@ export default function ProductDisplayPage() {
 
     // A동: 배치된 제품번호 기준 (masterMap) — 마스터 미로드 시 칸 하드코딩 fallback
     if (pnums.length === 0) {
-      if (isL7) parts.push("7번 라인 (슬림서랍장·칵투스)");
       return parts.join("\n");
     }
     for (const pn of pnums) {
@@ -3945,7 +3951,6 @@ export default function ProductDisplayPage() {
         parts.push(sub.join("\n"));
       }
     }
-    if (isL7) parts.push("7번 라인 (슬림서랍장·칵투스)");
     return parts.join("\n\n");
   };
 
