@@ -2131,6 +2131,27 @@ export default function ProductDisplayPage() {
   useEffect(() => {
     const def = DONG_DEFAULT_ZOOM[dong];
     if (def) setZoomFactor(def);
+    else setZoomFactor(1); // 총괄(ALL): 동별 기본 배율 미적용 — 총괄은 자체 auto-fit 사용
+  }, [dong]);
+  // 총괄 뷰 auto-fit (2026-09-04): 모든 동 카드를 뷰포트에 맞춰 축소 — 스크롤 없이 120개 라벨 전부 표시
+  const ovInnerRef = useRef<HTMLDivElement | null>(null);
+  const [ovFit, setOvFit] = useState(1);
+  const [ovNatural, setOvNatural] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    if (dong !== "ALL") return;
+    const compute = () => {
+      const el = ovInnerRef.current;
+      if (!el) return;
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      setOvNatural({ w, h });
+      const availH = Math.max(320, window.innerHeight - 240);
+      const availW = Math.max(360, window.innerWidth - 380);
+      setOvFit(Math.min(1, Number((availH / h).toFixed(3)), Number((availW / w).toFixed(3))));
+    };
+    const t = window.setTimeout(compute, 80);
+    window.addEventListener("resize", compute);
+    return () => { window.clearTimeout(t); window.removeEventListener("resize", compute); };
   }, [dong]);
   const zoomIn = () => setZoomFactor((z) => Math.min(3, Number((z + 0.1).toFixed(2))));
   const zoomOut = () => setZoomFactor((z) => Math.max(0.3, Number((z - 0.1).toFixed(2))));
@@ -4751,7 +4772,7 @@ export default function ProductDisplayPage() {
         )}
 
         {!mobileView && (dong === "ALL" ? (
-          <div className="flex flex-wrap gap-3 items-start">
+          <div className="flex gap-3 items-start">
             <DndContext sensors={sensors} autoScroll={false} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
             {(() => {
               const renderCard = (
@@ -4835,6 +4856,9 @@ export default function ProductDisplayPage() {
               };
               return (
                 <>
+                  <div style={ovNatural.w > 0 ? { width: Math.round(ovNatural.w * ovFit), height: Math.round(ovNatural.h * ovFit), flexShrink: 0 } : undefined}>
+                  <div ref={ovInnerRef} style={{ transform: `scale(${ovFit})`, transformOrigin: "top left", width: "max-content" }}>
+                  <div className="flex gap-3 w-fit">
                   {/* 좌측 컬럼: A동(원본) + D동(작게) */}
                   <div className="flex flex-col gap-3 w-fit">
                     {renderCard("A", 1)}
@@ -4846,7 +4870,12 @@ export default function ProductDisplayPage() {
                     {renderCard("C", 0.558)}
                     {renderCard("E", 1, 634, 140)}
                   </div>
+                  </div>
+                  </div>
+                  </div>
+                  <div className="shrink-0 overflow-auto" style={{ maxHeight: "calc(100vh - 240px)" }}>
                   {renderRightPanel(placedRows)}
+                  </div>
                 </>
               );
             })()}
