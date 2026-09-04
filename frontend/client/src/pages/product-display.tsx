@@ -47,7 +47,7 @@ import {
 import { B_PNUM_INFO, B_RANK_PLACEMENT } from "@/pages/product-display-b-data";
 import { C_PNUM_INFO, C_RANK_PLACEMENT } from "@/pages/product-display-c-data";
 import { D_PNUM_INFO, D_RANK_PLACEMENT } from "@/pages/product-display-d-data";
-import { aChainInsert, extractDansu, reorderInZone, syncLocNosAfterDataChange } from "@/pages/product-display-utils";
+import { aChainInsert, extractDansu, reorderInZone } from "@/pages/product-display-utils";
 
 const STORAGE_KEY = "vf_product_display_v1";
 /** 배치 데이터 스키마 버전 — v14(A동 전용)는 v15(전 동)로 대체됨: 옛 데이터 무시 */
@@ -525,18 +525,13 @@ function buildADongLayout(
       // 숨김 슬롯(입구 자리 등)은 화면에서만 제외 — 배치 데이터는 보존
       if (lineSpec.hiddenSlots?.includes(numVal)) continue;
       const placeFromTop = bottomIsStart ? lineSpec.count - 1 - i : i;
-      // A동: 엑셀 배치표 로케이션 번호 (2026-09-01, 뱀 형식, 다품목 개별 번호)
-      const aLocKey = `L${lineSpec.line}-${numVal}`;
-      const aLocNo = dong === "A" ? (A_LOCNO_MAP[aLocKey] ?? null) : null;
-      const aLocNos = dong === "A" ? (A_LOCNOS_MAP[aLocKey] ?? undefined) : undefined;
+      // 로케이션 번호는 저장하지 않음 — 배치(data) 기반 동적 계산(computeLocNosAll)이 유일 소스 (2026-09-05)
       zones.push({
         id: `${dong}-L${lineSpec.line}-${numVal}`,
         num: "",
         line: lineSpec.line,
         showNumAsProduct: false,
         splitDir: "v", // 세로 배치 — 파레트 상하 적재 (2026-08-29)
-        locNo: (aLocNos && aLocNos.length > 0) ? aLocNos[0] : (aLocNo ?? undefined),
-        locNos: aLocNos,
         style: {
           left: colLeft,
           top: slot.padT + placeFromTop * (slot.h + slot.gapY),
@@ -708,70 +703,127 @@ const A_LINES: LineSpec[] = [
   { line: 6, count: A_SLOTS_PER_LINE, badge: "확장" },
 ];
 
-/**
- * A동 L1~L4 로케이션 번호 (2026-09-01 엑셀 배치표 반영)
- * 엑셀 좌표 X=9→L1, X=7→L2, X=6→L3, X=4→L4 (slot=Y) — 뱀패턴 직접 명시.
- * key = "L{line}-{slot}", value = 로케이션 번호(위치번호).
- * 2026-09-02 수정: 60번 이후 뱀패턴(L3←L4 지그재그) 재정비 — 중복 61 해소, 누락 번호 채움, L3-19/L4-19 순서 교정
- */
-const A_LOCNO_MAP: Record<string, number> = {
-  "L1-1": 37, "L1-19": 1, "L2-19": 2, "L2-18": 3, "L1-18": 4, "L1-17": 5, "L2-17": 6, "L2-16": 7, "L1-16": 8, "L1-15": 9, "L2-15": 10, "L2-14": 11, "L1-14": 12, "L1-13": 13, "L2-13": 14, "L2-12": 15, "L1-12": 16, "L1-11": 17, "L2-11": 18, "L2-10": 19, "L1-10": 20, "L1-9": 21, "L2-9": 22, "L2-8": 23, "L1-8": 24, "L1-7": 25, "L2-7": 26, "L2-6": 27, "L1-6": 28, "L1-5": 29, "L2-5": 30, "L2-4": 31, "L1-4": 32, "L1-3": 33, "L2-3": 34, "L2-2": 35, "L1-2": 36, "L2-1": 38,
-  "L3-1": 39, "L4-1": 40, "L4-2": 41, "L3-2": 42, "L3-3": 43, "L4-3": 44, "L4-4": 45, "L3-4": 46, "L3-5": 47, "L4-5": 48, "L4-6": 49, "L3-6": 50, "L3-7": 51, "L4-7": 52, "L4-8": 53, "L3-8": 54, "L3-9": 55, "L4-9": 56, "L4-10": 57, "L3-10": 58, "L3-11": 59, "L4-11": 60, 
-  // 12~19 뱀패턴: L4(짝수, 우→좌) → L3(홀수, 좌→우)
-  "L4-12": 61, "L3-12": 62,
-  "L4-13": 64, "L3-13": 63,
-  "L4-14": 65, "L3-14": 66,
-  "L4-15": 68, "L3-15": 67,
-  // 슬롯16: L4-16·L3-16 다품목(2품목씩) → A_LOCNOS_MAP [69,70]·[71,72]로 소진 — 39~76 정확 마감
-  // 슬롯19(L4-19/L3-19): 카논 경계 — ③구간 77=(3,3) 시작으로 번호 미부여 (L3-19 존 부재)
-  "L4-17": 74, "L3-17": 73,
-  "L4-18": 75, "L3-18": 76,
-  // ③구간 (2026-09-04 카논): 아래→위 뱀 — 77=(3,3)=L5-1 시작, L6-19=135 종료 (L7=136~151 연속)
-  "L5-1": 77, "L6-1": 79, "L6-2": 81, "L5-2": 83, "L5-3": 85, "L6-3": 86, "L6-4": 88, "L5-4": 90, "L5-5": 92, "L6-5": 94, "L6-6": 96, "L5-6": 97, "L5-7": 100, "L6-7": 102, "L6-8": 104, "L5-8": 106, "L5-9": 108, "L6-9": 110, "L6-10": 112, "L5-10": 114, "L5-11": 116, "L6-11": 118, "L6-12": 120, "L5-12": 121, "L5-13": 122, "L6-13": 123, "L6-14": 124, "L5-14": 125, "L5-15": 126, "L6-15": 127, "L6-16": 128, "L5-16": 129, "L5-17": 130, "L6-17": 131, "L6-18": 132, "L5-18": 133, "L5-19": 134, "L6-19": 135,
-  "L7-1": 136, "L7-2": 138, "L7-3": 140, "L7-4": 142, "L7-5": 144, "L7-6": 146, "L7-7": 148, "L7-8": 150,
+/* ═══════════ 로케이션 번호 동적 자동 발행 (2026-09-05, 작업지시-로케이션-동적발행) ═══════════
+ * 좌표·칸은 고정, 제품 배치만 유동 → 로케이션 번호는 배치(data)에서 파생되는 **계산값**.
+ *  - 동별 카논 좌표 순서로 모든 칸을 순회하며 번호 발행
+ *  - 한 칸이 쓰는 번호 개수 = 그 칸의 실제 품목 수 (빈 칸도 자기 번호 1개 보장)
+ *  - 어떤 칸의 품목이 늘면 그 뒤(높은 쪽) 번호가 자동으로 순차 밀림 (재계산)
+ *  - 동 구간: A동 = 1부터, 이후 동은 앞 동 마지막 번호 + 1부터 (전역 연속)
+ *  - 번호는 어디에도 저장하지 않는다 (표시·검색·엑셀·인쇄·미니맵·모바일 공용 계산 결과)
+ *  정적 맵(A_LOCNO_MAP/A_LOCNOS_MAP/A_COORD_NOS)은 폐기 — 아래가 유일한 계산 경로. */
+
+/** 좌표 키("X-Y") → (X,Y). 형식이 아니면 null. */
+function coordXY(coord: string): { x: number; y: number } | null {
+  const m = /^(\d+)-(\d+)$/.exec(coord);
+  return m ? { x: Number(m[1]), y: Number(m[2]) } : null;
+}
+
+/** A동 좌표 카논 순서 키 (사용자 확정 2026-09-04). 작을수록 먼저 발행, -1 = 번호 미발행 좌표.
+ *  ① X9/X7(L1/L2) 열쌍 — 위(Y21)에서 아래(Y3)로 지그재그
+ *  ② X6/X4(L3/L4) 열쌍 — 아래(Y3)에서 위(Y21)로 지그재그
+ *  ③ X3/X1(L5/L6) 열쌍 — 아래(Y3)에서 위(Y21)로 지그재그
+ *  L7(Y1, X1~X8)은 마지막에 좌→우. 통로 열(X2·X5·X8)·Y2 통로 행은 번호 발행 제외. */
+function aCanonOrder(coord: string): number {
+  const c = coordXY(coord);
+  if (!c) return -1;
+  const { x, y } = c;
+  if (y === 1) return x >= 1 && x <= 8 ? 300000 + x : -1; // L7 하단
+  if (y < 3 || y > 21) return -1;
+  const inPair = (cols: number[], off: number) => {
+    const idx = cols.indexOf(x);
+    if (idx < 0) return -1;
+    // 열쌍 진행 축: ①은 위(Y21)→아래, ②③은 아래(Y3)→위. 홀수 행은 진행 역순(뱀)
+    const step = cols[0] === 9 ? 21 - y : y - 3;
+    if (step < 0 || step > 18) return -1;
+    const parity = step % 2;
+    const pos = idx === 0 ? parity : 1 - parity;
+    return off + step * 2 + pos;
+  };
+  let o = inPair([9, 7], 0);
+  if (o >= 0) return o;
+  o = inPair([6, 4], 10000);
+  if (o >= 0) return o;
+  o = inPair([3, 1], 20000);
+  if (o >= 0) return o;
+  return -1;
+}
+
+/** B/C/D동 좌표 카논 순서 키 — 실제 layout 칸(전부 번호 대상), 아래 행부터 위로·같은 행은 좌→우. */
+function bcdCanonOrder(coord: string): number {
+  const c = coordXY(coord);
+  if (!c) return -1;
+  return c.y * 1000 + c.x;
+}
+
+type LocNosDongRange = { start: number; end: number };
+type LocNosAll = {
+  /** 존 ID → 로케이션 번호 배열 (번호 미발행 좌표·칸 제외) */
+  byZone: Map<string, number[]>;
+  /** 동 키 → (좌표 "X-Y" → 로케이션 번호 배열) — 좌표 기준 오버레이용 */
+  byCoord: Map<string, Map<string, number[]>>;
+  /** 동 키 → 구간 (발행 칸이 없는 동은 미포함) */
+  dongRange: Record<string, LocNosDongRange>;
 };
 
-/**
- * A동 다품목 칸 개별 로케이션 번호 (2026-09-01 배치도 뱀 형식)
- * key = "L{line}-{slot}", value = 각 품목별 로케이션 번호 배열 (제품번호 낮은 순 = 낮은 번호)
- */
-const A_LOCNOS_MAP: Record<string, number[]> = {
-  "L4-16": [69, 70], "L3-16": [71, 72],
-  // ③구간 (2026-09-04 카논): 77~135 아래→위 뱀 — L5-1(3,3)=77 시작
-  "L5-1": [77, 78], "L6-1": [79, 80], "L5-2": [83, 84], "L6-2": [81, 82],
-  "L6-3": [86, 87], "L5-4": [90, 91], "L6-4": [88, 89], "L5-5": [92, 93],
-  "L6-5": [94, 95], "L5-6": [97, 98, 99], "L5-7": [100, 101], "L6-7": [102, 103],
-  "L6-8": [104, 105], "L5-8": [106, 107], "L5-9": [108, 109], "L6-9": [110, 111],
-  "L6-10": [112, 113], "L5-10": [114, 115], "L5-11": [116, 117], "L6-11": [118, 119],
-  "L7-1": [136, 137], "L7-2": [138, 139], "L7-3": [140, 141], "L7-4": [142, 143],
-  "L7-5": [144, 145], "L7-6": [146, 147], "L7-7": [148, 149], "L7-8": [150, 151],
-};
+/** 전 동 동적 로케이션 번호 계산 (2026-09-05). layout·data가 바뀌면 항상 최신 기준으로 재계산. */
+function computeLocNosAll(
+  layouts: DongLayout[],
+  data: PlacementMap,
+  locExceptions: Set<string>
+): LocNosAll {
+  const byZone = new Map<string, number[]>();
+  const byCoord = new Map<string, Map<string, number[]>>();
+  const dongRange: Record<string, LocNosDongRange> = {};
+  const ORDER: DongKey[] = ["A", "B", "C", "D", "E"];
+  let cursor = 1;
+  for (const key of ORDER) {
+    const lay = layouts.find((l) => l.key === key);
+    const zones = lay?.zones ?? [];
+    const sys = buildGridCoordSystem(key, zones);
+    type Cell = { zoneId: string; coord: string; rank: number; count: number };
+    const cells: Cell[] = [];
+    if (sys) {
+      for (const z of zones) {
+        const coord = sys.coordOf.get(z.id);
+        if (!coord) continue;
+        const rank = key === "A" ? aCanonOrder(coord) : bcdCanonOrder(coord);
+        if (rank < 0) continue;
+        const items = (data[z.id] || "").split(",").map((s) => s.trim()).filter(Boolean);
+        // 빈 칸도 자기 자리 번호 1개. 예외칸(locExceptions)은 품목이 있어도 1개만 소진.
+        const count = locExceptions.has(z.id) ? 1 : Math.max(1, items.length);
+        cells.push({ zoneId: z.id, coord, rank, count });
+      }
+    }
+    cells.sort((a, b) => a.rank - b.rank);
+    const coordMap = new Map<string, number[]>();
+    let start = cursor;
+    let end = cursor - 1;
+    for (const c of cells) {
+      const nos: number[] = [];
+      for (let i = 0; i < c.count; i++) nos.push(cursor++);
+      byZone.set(c.zoneId, nos);
+      coordMap.set(c.coord, nos);
+      end = cursor - 1;
+    }
+    byCoord.set(key, coordMap);
+    if (cells.length) dongRange[key] = { start, end };
+  }
+  return { byZone, byCoord, dongRange };
+}
 
-/** 좌표↔로케이션 번호 기준표 (2026-09-04): 번호는 좌표에 귀속 — 존 이동·유무와 무관.
- *  슬롯 키(L{라인}-{슬롯}) → 표준 좌표("X-Y") → 번호 배열. 라인→X: L1=9·L2=7·L3=6·L4=4·L5=3·L6=1,
- *  세로 열 슬롯 s → Y=s+2 (Y2=통로), L7-n → 하단 행 (X=n, Y=1). L1-1=37(빈 칸 표기 — 사용자 확정). */
-const A_COORD_NOS: Map<string, number[]> = (() => {
-  const colMap: Record<string, number> = { L1: 9, L2: 7, L3: 6, L4: 4, L5: 3, L6: 1 };
-  const m = new Map<string, number[]>();
-  const put = (coord: string, nos: number[]) => { m.set(coord, nos); };
-  for (const [key, no] of Object.entries(A_LOCNO_MAP)) {
-    const lm = /^(L\d+)-(\d+)$/.exec(key);
-    if (!lm) continue;
-    const l7 = lm[1] === "L7";
-    const cx = l7 ? Number(lm[2]) : colMap[lm[1]];
-    if (!cx) continue;
-    put(`${cx}-${l7 ? 1 : Number(lm[2]) + 2}`, [no]);
-  }
-  for (const [key, nos] of Object.entries(A_LOCNOS_MAP)) {
-    const lm = /^(L\d+)-(\d+)$/.exec(key);
-    if (!lm) continue;
-    const l7 = lm[1] === "L7";
-    const cx = l7 ? Number(lm[2]) : colMap[lm[1]];
-    if (!cx) continue;
-    put(`${cx}-${l7 ? 1 : Number(lm[2]) + 2}`, nos);
-  }
-  return m;
-})();
+/** 로케이션 번호는 파생값 — 저장/복원 시 zone.locNo/locNos 필드 제거 (2026-09-05) */
+function stripZoneLocNos(layouts: DongLayout[]): DongLayout[] {
+  return layouts.map((d) => ({
+    ...d,
+    zones: d.zones.map((z) => {
+      if (z.locNo == null && !z.locNos) return z;
+      const c = { ...z };
+      delete c.locNo;
+      delete c.locNos;
+      return c;
+    }),
+  }));
+}
 
 /* ═══════════ A동 존 표준 그리드 재정렬 (2026-09-05, 작업지시-존배치-정렬) ═══════════
  * 문제: layout에 영속된 A동 존(left/top)이 표준 좌표(좌표계 규칙 확정 20260903)를 벗어나
@@ -1400,15 +1452,15 @@ export default function ProductDisplayPage() {
             ),
           }));
           // A동 존 표준 그리드 재정렬 (2026-09-05) — 저장본의 뒤섞인 존 좌표를 복원 시 정상화
-          return canonicalizeALayoutZones(cleaned);
+          return stripZoneLocNos(canonicalizeALayoutZones(cleaned));
         }
       }
     } catch {
       /* 손상 시 기본값 */
     }
-    return canonicalizeALayoutZones(
+    return stripZoneLocNos(canonicalizeALayoutZones(
       DONG_LAYOUTS.map((d) => ({ ...d, zones: d.zones.map((z) => ({ ...z, style: { ...z.style } })) }))
-    );
+    ));
   });
   // 데이터 자동 저장 (소실 안전망) — 모든 변경 즉시 localStorage 반영
   useEffect(() => {
@@ -1494,8 +1546,8 @@ export default function ProductDisplayPage() {
   const buildSnapshot = useCallback((): PdSnapshotPayload => {
     const snap: PdSnapshotPayload = {
       data,
-      // A동 존 표준 그리드 재정렬 (2026-09-05) — 저장 시에도 표준 좌표 강제 (방어)
-      layout: canonicalizeALayoutZones(layoutState),
+      // A동 존 표준 그리드 재정렬 (2026-09-05) + 번호 필드 제거(파생값 — 저장 안 함)
+      layout: stripZoneLocNos(canonicalizeALayoutZones(layoutState)),
       lineConfig,
       staging,
       locExceptions: Array.from(locExceptions),
@@ -1605,7 +1657,7 @@ export default function ProductDisplayPage() {
     const cleanData = sanitizePlacementMap(p.data);
     setData(cleanData);
     // A동 존 표준 그리드 재정렬 (2026-09-05) — 서버판 복원 시 저장본 뒤섞인 좌표 정상화
-    const canonLayout = canonicalizeALayoutZones(hydrateZoneSplitDir(p.layout));
+    const canonLayout = stripZoneLocNos(canonicalizeALayoutZones(hydrateZoneSplitDir(p.layout)));
     setLayoutState(canonLayout);
     setLineConfig(p.lineConfig);
     setStaging(p.staging);
@@ -1969,23 +2021,14 @@ export default function ProductDisplayPage() {
     }));
   }, [masterMap, no3mPnums]);
 
-  // 좌표 귀속 번호 (2026-09-04): 각 존이 현재 차지한 좌표의 기준표 번호 — 이동·유무와 무관.
-  // 기준표는 A동 전용 — B/C/D는 좌표로만 식별 (기존 결정) — 동 간 좌표 충돌 방지
-  const coordNosByZone = useMemo(() => {
-    const m = new Map<string, number[]>();
-    for (const lay of layoutState) {
-      if (lay.key !== "A") continue;
-      const sys = buildGridCoordSystem(lay.key, lay.zones);
-      if (!sys) continue;
-      for (const z of lay.zones) {
-        const coord = sys.coordOf.get(z.id);
-        if (!coord) continue;
-        const nos = A_COORD_NOS.get(coord);
-        if (nos && nos.length) m.set(z.id, nos);
-      }
-    }
-    return m;
-  }, [layoutState]);
+  // 동적 로케이션 번호 (2026-09-05): 좌표·칸 고정 + 제품 유동 → 번호는 배치(data)에서 파생 재계산.
+  // layoutState·data가 바뀌면 항상 최신 기준으로 발행된다 (번호는 저장값이 아님).
+  const dynLocNos = useMemo(
+    () => computeLocNosAll(layoutState, data, locExceptions),
+    [layoutState, data, locExceptions]
+  );
+  // 존 ID → 로케이션 번호 배열 (전 동) — 표시·검색·모바일 공용
+  const coordNosByZone = dynLocNos.byZone;
 
   // 제품번호 → 배치도 위치번호 맵(전 동) — 좌표 귀속 (2026-09-04): 존의 현재 좌표의 기준표 번호
   const pnumLocNoMap = useMemo(() => {
@@ -2151,9 +2194,11 @@ export default function ProductDisplayPage() {
       // coordOf: 존 ID → 물리 좌표 내부 키 "X-Y" — 라벨과 동일 규칙(buildGridCoordSystem)이라
       // 표시 좌표가 라벨과 항상 일치한다.
 
-      // 좌표 기준 오버레이 (2026-09-04): A_COORD_NOS 전체 키를 그리드 픽셀에 직접 렌더 — 존 위치·유무 무관
+      // 좌표 기준 오버레이 (2026-09-05): A동 동적 발행 번호를 그리드 픽셀에 직접 렌더 —
+      // 배치(data)·layout 기준 재계산(computeLocNosAll) 결과를 공용 사용 (존 위치·유무 무관)
       if (dong === "A") {
-        A_COORD_NOS.forEach((nos, coord) => {
+        const aCoordNos = dynLocNos.byCoord.get("A");
+        if (aCoordNos) aCoordNos.forEach((nos, coord) => {
           const cMatch = /^(\d+)-(\d+)$/.exec(coord);
           if (!cMatch) return;
           const cxi = Number(cMatch[1]);
@@ -2179,7 +2224,7 @@ export default function ProductDisplayPage() {
 
       // 로케이션 번호 표시는 좌표 기준 오버레이로 단일 렌더 (2026-09-04 — ZoneCell 측면 칩 폐기)
       return { labels, coordOf, locOuter: new Set<string>() };
-    }, [dong, current.zones]);
+    }, [dong, current.zones, dynLocNos]);
 
   // 전 동 칸 좌표 맵 (2026-08-31): 존 ID(A-L4-12 등) 표시 개념 폐지 — 위치는 좌표(X열, Y행)로만 확인한다.
   // 2026-09-03: gridLabels와 동일 규칙(buildGridCoordSystem 단일 구현)으로 통일 —
@@ -2372,7 +2417,7 @@ export default function ProductDisplayPage() {
           else next[src.zoneId] = items.filter((x) => x !== src.pnum).join(",");
         }
         setStaging((s) => (s.includes(src.pnum) ? s : [...s, src.pnum]));
-        setLayoutState((prevL) => syncLocNosAfterDataChange(prevL, prev, next, Object.keys(next).filter((k) => next[k] !== prev[k])));
+        
         persistLocal(next);
         return next;
       });
@@ -2408,7 +2453,7 @@ export default function ProductDisplayPage() {
         }
         // 크로스동 중복 제거: 새 pnum이 B/C/D동에도 있으면 제거(전역 1칸 유일)
         removeCrossDongDupes(next, [src.pnum], dst.zoneId);
-        setLayoutState((prevL) => syncLocNosAfterDataChange(prevL, prev, next, Object.keys(next).filter((k) => next[k] !== prev[k])));
+        
         persistLocal(next);
         return next;
       });
@@ -2435,7 +2480,7 @@ export default function ProductDisplayPage() {
             const pns = val.split(",").map((s) => s.trim()).filter(Boolean);
             setStaging((s) => Array.from(new Set([...s, ...pns])));
             delete next[src.zoneId];
-            setLayoutState((prevL) => syncLocNosAfterDataChange(prevL, prev, next, Object.keys(next).filter((k) => next[k] !== prev[k])));
+            
             persistLocal(next);
             return next;
           }
@@ -2521,7 +2566,7 @@ export default function ProductDisplayPage() {
           setOverflow((ov) => ov.filter((o) => o.pnum !== src.pnum));
           // 크로스동 중복 제거: 새 pnum이 B/C/D동에도 있으면 제거(전역 1칸 유일)
           removeCrossDongDupes(next, [src.pnum], dst.zoneId);
-          setLayoutState((prevL) => syncLocNosAfterDataChange(prevL, prev, next, Object.keys(next).filter((k) => next[k] !== prev[k])));
+          
           persistLocal(next);
         }
         return next;
@@ -2556,7 +2601,7 @@ export default function ProductDisplayPage() {
         const { next: n2, overflow: ov } = aChainInsert(aSeq, next0, dst.zoneId, src.pnum);
         if (ov.length || n2[dst.zoneId] !== src.pnum) {
           pushOverflow(ov);
-          setLayoutState((prevL) => syncLocNosAfterDataChange(prevL, prev, n2, Object.keys(n2).filter((k) => n2[k] !== prev[k])));
+          
           persistLocal(n2);
           return n2;
         }
@@ -2597,7 +2642,7 @@ export default function ProductDisplayPage() {
           removeCrossDongDupes(next, [srcItem], dst.zoneId);
           changed = true;
         }
-      setLayoutState((prevL) => syncLocNosAfterDataChange(prevL, prev, next, Object.keys(next).filter((k) => next[k] !== prev[k])));
+      
       if (changed) persistLocal(next);
       return next;
     });
@@ -3347,7 +3392,7 @@ export default function ProductDisplayPage() {
         const merged = Array.from(new Set([...s, ...removedFromZone]));
         return stagedAdded.length ? merged.filter((pn) => !stagedAdded.includes(pn)) : merged;
       });
-      setLayoutState((prevL) => syncLocNosAfterDataChange(prevL, prev, next, Object.keys(next).filter((k) => next[k] !== prev[k])));
+      
       return next;
     });
     editingZoneRef.current = null;
@@ -3411,7 +3456,7 @@ export default function ProductDisplayPage() {
     }
     setData((prev) => {
       const next = applyPlacementEdit(prev, zid, [movePnum], movePnum);
-      setLayoutState((prevL) => syncLocNosAfterDataChange(prevL, prev, next, Object.keys(next).filter((k) => next[k] !== prev[k])));
+      
       return next;
     });
     setOverflow((ov) => ov.filter((o) => o.pnum !== movePnum));
@@ -3587,12 +3632,13 @@ export default function ProductDisplayPage() {
     let restIdx = 0;
 
     if (dong === "A") {
-      // A동: 로케이션 번호(locNo) 순서로 정렬 후 배치
-      // 상위 N개 → L1-L2 (locNo 1~38), 나머지 → L3-L6 (locNo 39~114)
-      // L1-L2 zone을 locNo 순으로 정렬
+      // A동: 동적 로케이션 번호(computeLocNosAll) 순서로 정렬 후 배치 (2026-09-05)
+      // 상위 N개 → L1-L2 (번호 구간 시작), 나머지 → L3-L6
+      const dongNoOf = (z: ZoneDef) => dynLocNos.byZone.get(z.id)?.[0] ?? Number.POSITIVE_INFINITY;
+      // L1-L2 zone을 로케이션 번호 순으로 정렬
       const l1l2Zones = dongLayout.zones
         .filter((z) => z.line === 1 || z.line === 2)
-        .sort((a, b) => (a.locNo ?? 999) - (b.locNo ?? 999));
+        .sort((a, b) => dongNoOf(a) - dongNoOf(b));
 
       for (const zone of l1l2Zones) {
         if (topIdx < topN.length) {
@@ -3627,10 +3673,10 @@ export default function ProductDisplayPage() {
         sortedRest.push(...items);
       }
 
-      // L3~L6 zone을 locNo 순으로 정렬
+      // L3~L6 zone을 로케이션 번호 순으로 정렬
       const l3l6Zones = dongLayout.zones
         .filter((z) => z.line >= 3 && z.line <= 6)
-        .sort((a, b) => (a.locNo ?? 999) - (b.locNo ?? 999));
+        .sort((a, b) => dongNoOf(a) - dongNoOf(b));
 
       // 정렬된 rest로 배치
       let sortedRestIdx = 0;
@@ -3803,25 +3849,19 @@ export default function ProductDisplayPage() {
       ? sourceZones.map((z) => z.id)
       : sourceZones.filter((z) => z.id.startsWith(`${activeDong}-`)).map((z) => z.id);
     const activeZoneDefs = zonesToExport.map((id) => zoneById.get(id)).filter((z): z is ZoneDef => !!z);
-    // 동별 개별 계산 (2026-08-28 수정) — 프론트 표시(dongLocNos)와 동일 경로.
-    // 기존: 전 존 단일 계산 → 총괄 모드에서 동별 시작번호(A=1/B=200/C=500/D=900)·A동 뱀정렬 누락으로 번호 불일치
+    // 로케이션 번호 = 동적 발행 결과(computeLocNosAll) 공용 사용 (2026-09-05)
+    // 좌표 매핑 (배치도 파란 좌표 그대로, 2026-08-28) — gridLabels와 동일 규칙으로 통일
+    // (2026-09-03: 구 rowLabelOf 슬롯번호계 제거. 업로드 적용(coordToZoneAll)과 왕복 일치 필수)
     const byDong = new Map<string, ZoneDef[]>();
     for (const z of activeZoneDefs) {
       const dk = z.id.split("-")[0];
       if (!byDong.has(dk)) byDong.set(dk, []);
       byDong.get(dk)!.push(z);
     }
-    const dongLocNos: Record<string, number[]> = {};
-    // 좌표 매핑 (배치도 파란 좌표 그대로, 2026-08-28) — gridLabels와 동일 규칙으로 통일
-    // (2026-09-03: 구 rowLabelOf 슬롯번호계 제거. 업로드 적용(coordToZoneAll)과 왕복 일치 필수)
     const coordOf = new Map<string, string>();
     for (const [dk, zs] of byDong) {
       const sys = buildGridCoordSystem(dk as DongKey, zs);
       if (!sys) continue;
-      sys.coordOf.forEach((v, zid) => {
-        const nos = A_COORD_NOS.get(v);
-        if (nos) dongLocNos[zid] = nos;
-      });
       sys.coordOf.forEach((v, zid) => coordOf.set(zid, v));
     }
     type Row = { dong: string; no: number; cat: string; cellName: string; name: string; barcode: string; boxes: number; pn: string };
@@ -3831,7 +3871,7 @@ export default function ProductDisplayPage() {
       if (!val) continue;
       const pns = val.split(",").map((s) => s.trim()).filter(Boolean);
       if (!pns.length) continue;
-      const zoneNos = dongLocNos[zoneId];
+      const zoneNos = dynLocNos.byZone.get(zoneId);
       const zoneDong = zoneId.split("-")[0];
       pns.forEach((pn, i) => {
         const m = resolveMasterForZone(pn, zoneId);
@@ -3934,10 +3974,12 @@ export default function ProductDisplayPage() {
     }
     const activeZoneDefs = current.zones.filter(z => z.id.startsWith(`${activeDong}-`));
     const sortedZones = [...activeZoneDefs];
-    const dongLocNos = storedLocNos(sortedZones);
+    // 로케이션 번호 → 칸 역매핑: 동적 발행 번호(computeLocNosAll) 기준 (2026-09-05)
     const noToZone = new Map<number, string>();
-    for (const [zid, nos] of Object.entries(dongLocNos)) {
-      for (const n of nos) noToZone.set(n, zid);
+    for (const z of sortedZones) {
+      const nos = dynLocNos.byZone.get(z.id);
+      if (!nos) continue;
+      for (const n of nos) noToZone.set(n, z.id);
     }
     const next: PlacementMap = { ...data };
     for (const z of Object.keys(next)) {
@@ -3953,13 +3995,7 @@ export default function ProductDisplayPage() {
       if (p.cellName && coordMatch && coordMatch.startsWith(`${activeDong}-`)) {
         zoneId = coordMatch; // 좌표 매칭 — 유일한 칸 참조 방식 (2026-08-31 좌표 통일)
       } else if (p.locNo > 0) {
-        zoneId = noToZone.get(p.locNo) || "";
-        if (!zoneId) {
-          const zoneIdx = p.locNo - (isA ? 1 : 200);
-          if (zoneIdx >= 0 && zoneIdx < sortedZones.length) {
-            zoneId = sortedZones[zoneIdx].id;
-          }
-        }
+        zoneId = noToZone.get(p.locNo) || ""; // 동적 발행 번호 기준 매칭
       }
       if (!zoneId) {
         outOfRange.push(p.pn);
@@ -4133,17 +4169,16 @@ export default function ProductDisplayPage() {
     return parts.join("\n\n");
   };
 
-  // 로케이션 리스트 데이터 — 동별(총괄=전 동) 누적 번호순 행 목록
+  // 로케이션 리스트 데이터 — 동별(총괄=전 동) 누적 번호순 행 목록 (동적 발행 번호 사용, 2026-09-05)
   const locListSections = useMemo(() => {
     const dks = (dong === "ALL" ? ["A", "B", "C", "D"] : [dong]) as Array<"A" | "B" | "C" | "D">;
     return dks.map((dk) => {
       const lay = dk === dong ? current : layoutState.find((r) => r.key === dk);
       if (!lay) return { dk, rows: [] as { no: number; pn: string; name: string; lg: string; md: string; zone: string }[] };
       const zs = lay.zones;
-      const dyn = storedLocNos(zs);
       const rows: { no: number; pn: string; name: string; lg: string; md: string; zone: string }[] = [];
       for (const z of zs) {
-        const nos = dyn[z.id];
+        const nos = dynLocNos.byZone.get(z.id);
         if (!nos || nos.length === 0) continue;
         const pns = (data[z.id] || "").split(",").map((s) => s.trim()).filter(Boolean);
         pns.forEach((pn, i) => {
@@ -4154,19 +4189,19 @@ export default function ProductDisplayPage() {
       rows.sort((a, b) => a.no - b.no);
       return { dk, rows };
     });
-  }, [dong, current, layoutState, data, locExceptions, masterMap]);
+  }, [dong, current, layoutState, data, dynLocNos, masterMap]);
 
-  /** 인쇄용 동 코어 데이터 (레이아웃·누적번호·품목행 공통 조립) */
+  /** 인쇄용 동 코어 데이터 (레이아웃·동적 번호·품목행 공통 조립) */
   const getDongPrintCore = useCallback(
     (dk: "A" | "B" | "C" | "D") => {
       const lay = layoutState.find((r) => r.key === dk);
       if (!lay) return null;
       const zs = lay.zones;
-      const dyn = storedLocNos(zs);
+      const dyn = dynLocNos.byZone;
       const esc = (s: string) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       const items: { no: string; pn: string; nm: string; cat: string }[] = [];
       for (const z of zs) {
-        const nos = dyn[z.id];
+        const nos = dyn.get(z.id);
         if (!nos || !nos.length) continue;
         const pns = (data[z.id] || "").split(",").map((s) => s.trim()).filter(Boolean);
         pns.forEach((pn, i) => {
@@ -4176,7 +4211,7 @@ export default function ProductDisplayPage() {
       }
       return { lay, zs, dyn, esc, items };
     },
-    [layoutState, data, locExceptions, masterMap]
+    [layoutState, data, dynLocNos, masterMap]
   );
 
   /** 인쇄 창 열기 + 자동 print 호출 */
@@ -4251,7 +4286,7 @@ export default function ProductDisplayPage() {
         .map((z) => {
           const st = z.style as { left: number; top: number; width: number; height: number };
           const pns = (data[z.id] || "").split(",").map((s) => s.trim()).filter(Boolean);
-          const n = dyn[z.id];
+          const n = dyn.get(z.id);
           return (
             `<div class="cell${pns.length ? " on" : ""}" style="left:${Math.round((st.left + PADL) * sc)}px;top:${Math.round((st.top + PADT) * sc)}px;width:${Math.round(st.width * sc)}px;height:${Math.round(st.height * sc)}px">` +
             `<span class="no">${core.esc(n && n.length ? n.join(",") : "")}</span>` +
@@ -4928,11 +4963,12 @@ export default function ProductDisplayPage() {
                           transformOrigin: "top left",
                         }}
                       >
-                        {/* 좌표 기준 오버레이 (2026-09-04): 총괄 미니맵도 단독 뷰와 동일한 번호 라벨 — 존 위치·유무 무관 */}
+                        {/* 좌표 기준 오버레이 (2026-09-05): A동 동적 발행 번호 — 단독 뷰와 동일 소스(computeLocNosAll) */}
                         {k === "A" && (() => {
+                          const aCoordNos = dynLocNos.byCoord.get("A");
                           const sysO = buildGridCoordSystem("A", dl.zones);
-                          if (!sysO) return null;
-                          return Array.from(A_COORD_NOS.entries()).map(([coordO, nosO]) => {
+                          if (!aCoordNos || !sysO) return null;
+                          return Array.from(aCoordNos.entries()).map(([coordO, nosO]) => {
                             const cMatchO = /^(\d+)-(\d+)$/.exec(coordO);
                             if (!cMatchO) return null;
                             const colPxO = sysO.colReps[Number(cMatchO[1]) - 1];
@@ -5770,16 +5806,6 @@ export default function ProductDisplayPage() {
     </div>
   );
 }
-/* ===== 로케이션 번호 (표시 전용) — 번호는 칸 데이터(zone.locNo)의 수기 지정값만 사용하며, 어떤 코드도 자동 계산·부여하지 않는다 (2026-08-31). ===== */
-function storedLocNos(zones: ZoneDef[]): Record<string, number[]> {
-  const out: Record<string, number[]> = {};
-  for (const z of zones) {
-    if (z.locNos && z.locNos.length > 0) out[z.id] = z.locNos;
-    else if (z.locNo != null) out[z.id] = [z.locNo];
-  }
-  return out;
-}
-
 /* ===== 드래그앤드롭 셀 컴포넌트 (2026-08-17) — 편집 모드 확장 예정 ===== */
 /** 총괄(ALL) 미니맵 셀: 드롭 대상(drop-ov-) + 점유 시 드래그 소스 (크로스동 이동) */
 function MiniZoneCell({
