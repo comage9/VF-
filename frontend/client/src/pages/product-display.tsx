@@ -408,6 +408,8 @@ function buildGridCoordSystem(
 } | null {
   const gc = computeGridCoords(zones);
   if (!gc) return null;
+  // A동: X열 9열 고정 (52px 피치, 2026-09-04) — 점유 열 클러스터 폐기 (재빌드 시 열 붕괴 방지)
+  const colReps = dong === "A" ? [28, 80, 132, 184, 236, 288, 340, 392, 444] : gc.cols;
   const PX = SLOT.h + SLOT.gapY; // 세로 한 칸 주기 38px (칸 34 + 간격 4)
   const centerYOf = (z: ZoneDef) => Number(z.style.top ?? 0) + Number(z.style.height ?? SLOT.h) / 2;
   const cys = zones.map(centerYOf);
@@ -431,11 +433,11 @@ function buildGridCoordSystem(
   const coordOf = new Map<string, string>();
   zones.forEach((z) => {
     const zcx = Number(z.style.left ?? 0) + Number(z.style.width ?? SLOT.w) / 2;
-    const x = nearestIdx(zcx, gc.cols) + 1;
+    const x = nearestIdx(zcx, colReps) + 1;
     const y = nearestIdx(centerYOf(z), rowRepsDesc) + 1;
     coordOf.set(z.id, `${x}-${y}`);
   });
-  return { gc, rowRepsDesc, colReps: gc.cols, coordOf };
+  return { gc, rowRepsDesc, colReps, coordOf };
 }
 
 /** 서버 스냅샷 적용 → 4개 로컬 키 동기화 (실패 무시) */
@@ -1996,21 +1998,6 @@ export default function ProductDisplayPage() {
     [dong, layoutState]
   );
 
-  // 로케이션 번호 지도 — 좌표 귀속 (2026-09-04): 각 존이 현재 차지한 좌표의 기준표 번호.
-  // 존 이동·유무와 무관하게 번호는 좌표에 고정 ((4,14)=61·37번 빈 칸 표기 — 사용자 확정).
-  const dongLocNos = useMemo(() => {
-    const out: Record<string, number[]> = {};
-    const sys = buildGridCoordSystem(dong, current.zones);
-    if (!sys) return out;
-    for (const z of current.zones) {
-      const coord = sys.coordOf.get(z.id);
-      if (!coord) continue;
-      const nos = A_COORD_NOS.get(coord);
-      if (nos && nos.length) out[z.id] = nos;
-    }
-    return out;
-  }, [dong, current.zones]);
-
   // 물리 그리드 좌표 라벨 — 전 동 통일 "행-열" 숫자 체계 (2026-08-28)
   // 2026-09-03 좌표계 규칙 확정(공유/배치도-좌표계-규칙-확정-20260903.md) 반영:
   //   X = 좌→우 1..N (점유 열 픽셀 클러스터), Y = 아래(top큰)=1 ~ 위(top작)=N.
@@ -2046,9 +2033,35 @@ export default function ProductDisplayPage() {
       // coordOf: 존 ID → 물리 좌표 내부 키 "X-Y" — 라벨과 동일 규칙(buildGridCoordSystem)이라
       // 표시 좌표가 라벨과 항상 일치한다.
 
-      // 로케이션 번호 표시는 ZoneCell 측면 칩으로 단일 렌더 (2026-09-04 정리 — 이중 렌더 제거)
+      // 좌표 기준 오버레이 (2026-09-04): A_COORD_NOS 전체 키를 그리드 픽셀에 직접 렌더 — 존 위치·유무 무관
+      if (dong === "A") {
+        A_COORD_NOS.forEach((nos, coord) => {
+          const cMatch = /^(\d+)-(\d+)$/.exec(coord);
+          if (!cMatch) return;
+          const cxi = Number(cMatch[1]);
+          const ryi = Number(cMatch[2]);
+          const colPx = colReps[cxi - 1];
+          const rowPx = rowRepsDesc[ryi - 1];
+          if (colPx == null || rowPx == null) return;
+          labels.push({
+            text: fmtLocNos(nos),
+            style: {
+              left: colPx - SLOT.w / 2 + 2,
+              top: rowPx - SLOT.h / 2 + 3,
+              width: SLOT.w - 4,
+              textAlign: "left",
+              fontSize: 8,
+              fontWeight: 700,
+              color: "#d97706",
+              fontFamily: "ui-monospace, monospace",
+            },
+          });
+        });
+      }
+
+      // 로케이션 번호 표시는 좌표 기준 오버레이로 단일 렌더 (2026-09-04 — ZoneCell 측면 칩 폐기)
       return { labels, coordOf, locOuter: new Set<string>() };
-    }, [dong, current.zones, dongLocNos]);
+    }, [dong, current.zones]);
 
   // 전 동 칸 좌표 맵 (2026-08-31): 존 ID(A-L4-12 등) 표시 개념 폐지 — 위치는 좌표(X열, Y행)로만 확인한다.
   // 2026-09-03: gridLabels와 동일 규칙(buildGridCoordSystem 단일 구현)으로 통일 —
@@ -4891,8 +4904,7 @@ export default function ProductDisplayPage() {
                 onEditCommit={() => commitInlineEdit(z.id)}
                 onEditCancel={() => { setEditingZone(null); setEditVal(""); }}
                 tip={makeTooltip(zz)}
-                locNos={dongLocNos[z.id]}
-                chipSide={Number((gridLabels.coordOf.get(z.id) || "0-0").split("-")[0]) % 3 === 0 ? "left" : "right"}
+                locNos={coordNosByZone.get(z.id)}
               />
               );
             })}
@@ -5653,16 +5665,14 @@ function MiniZoneCell({
       }
       style={z.style}
     >
-      {/* 로케이션 번호 — ZoneCell과 동일 규칙 (전 동 누적값) */}
-      {isA && ((locNos && locNos.length > 0) || z.locNo != null) && (
+      {/* 로케이션 번호 — 좌표 귀속(coordNosByZone)만 사용, z.locNo 폴백 제거 (스테일 차단) —
+          칸 내부 상단 배치 (단독 뷰 좌표 오버레이와 동일, 2026-09-04) */}
+      {isA && locNos && locNos.length > 0 && (
         <span
-          className="absolute text-[9px] leading-none font-mono font-bold text-amber-600 pointer-events-none"
-          style={{
-            top: 1,
-            ...(Math.abs(z.line) % 2 === 1 ? { left: -18 } : { right: -18 }),
-          }}
+          className="absolute text-[8px] leading-none font-mono font-bold text-amber-600 pointer-events-none"
+          style={{ top: 1, left: 2, width: SLOT.w - 4, textAlign: "left" }}
         >
-          {locNos && locNos.length > 0 ? fmtLocNos(locNos) : z.locNo}
+          {fmtLocNos(locNos)}
         </span>
       )}
       {!isA && locNos && locNos.length > 0 && (
@@ -6235,7 +6245,6 @@ function ZoneCell({
   onEditCommit,
   onEditCancel,
   locNos,
-  chipSide,
 }: {
   z: ZoneDef;
   value: string;
@@ -6253,7 +6262,6 @@ function ZoneCell({
   onEditCommit: () => void;
   onEditCancel: () => void;
   locNos?: number[];
-  chipSide?: "left" | "right";
 }) {
   const assigned = Boolean(value);
   const items = value ? value.split(",").map((s) => s.trim()).filter(Boolean) : [];
@@ -6405,18 +6413,6 @@ function ZoneCell({
         )
       ) : (
         <span className="text-[9px] text-slate-300 leading-none">·</span>
-      )}
-      {/* 로케이션 번호 — 단일 품목 칸 (좌표 귀속 번호, 2026-09-04): 사이드는 가까운 통로 방향 */}
-      {items.length <= 1 && isA && locNos && locNos.length > 0 && (
-        <span
-          className="absolute text-[9px] leading-none font-mono font-bold text-amber-600 pointer-events-none"
-          style={{
-            top: 1,
-            ...(chipSide === "left" ? { left: -18 } : { right: -18 }),
-          }}
-        >
-          {fmtLocNos(locNos)}
-        </span>
       )}
       {!isA && locNos && locNos.length > 0 && (
         <span className="absolute top-0.5 right-0.5 text-[7px] leading-none font-mono font-bold text-amber-600 pointer-events-none">
