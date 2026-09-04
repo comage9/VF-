@@ -1849,10 +1849,12 @@ export default function ProductDisplayPage() {
     }));
   }, [masterMap, no3mPnums]);
 
-  // 좌표 귀속 번호 (2026-09-04): 각 존이 현재 차지한 좌표의 기준표 번호 — 이동·유무와 무관
+  // 좌표 귀속 번호 (2026-09-04): 각 존이 현재 차지한 좌표의 기준표 번호 — 이동·유무와 무관.
+  // 기준표는 A동 전용 — B/C/D는 좌표로만 식별 (기존 결정) — 동 간 좌표 충돌 방지
   const coordNosByZone = useMemo(() => {
     const m = new Map<string, number[]>();
     for (const lay of layoutState) {
+      if (lay.key !== "A") continue;
       const sys = buildGridCoordSystem(lay.key, lay.zones);
       if (!sys) continue;
       for (const z of lay.zones) {
@@ -2044,42 +2046,8 @@ export default function ProductDisplayPage() {
       // coordOf: 존 ID → 물리 좌표 내부 키 "X-Y" — 라벨과 동일 규칙(buildGridCoordSystem)이라
       // 표시 좌표가 라벨과 항상 일치한다.
 
-      // 로케이션 번호 통로 배치 (A동 포함): 칸 위쪽 통로 여유 >= 13px면 칸 밖에 표시
-      const locOuter = new Set<string>();
-      const TOLC = SLOT.w * 0.6;
-      current.zones.forEach((z) => {
-        const nos = dongLocNos[z.id];
-        if (!nos || nos.length === 0) return;
-        // 다품목 칸은 칸 내부에 구획별 로케이션 표시 — 통로 외부 라벨 생략 (2026-08-29)
-        const multiCount = (data[z.id] || "").split(",").map((s) => s.trim()).filter(Boolean).length;
-        if (multiCount > 1) return;
-        const zx = Number(z.style.left ?? 0);
-        const zy = Number(z.style.top ?? 0);
-        const zw = Number(z.style.width ?? SLOT.w);
-        let aboveBottom = 0;
-        for (const o of current.zones) {
-          if (o.id === z.id) continue;
-          const ox = Number(o.style.left ?? 0);
-          if (Math.abs(ox - zx) > TOLC) continue;
-          const ob = Number(o.style.top ?? 0) + Number(o.style.height ?? SLOT.h);
-          if (ob <= zy + 2 && ob > aboveBottom) aboveBottom = ob;
-        }
-        if (zy - aboveBottom >= 13) {
-          locOuter.add(z.id);
-          labels.push({
-            text: fmtLocNos(nos),
-            style: { left: zx, top: zy - 10, width: zw, textAlign: "center", fontSize: 8, fontWeight: 700, color: "#d97706", fontFamily: "ui-monospace, monospace" },
-          });
-        } else {
-          // 통로 여유가 부족하면 칸 내부에 로케이션 번호 표시
-          labels.push({
-            text: fmtLocNos(nos),
-            style: { left: zx + 2, top: zy + 4, width: zw - 4, textAlign: "center", fontSize: 7, fontWeight: 600, color: "#d97706", fontFamily: "ui-monospace, monospace" },
-          });
-        }
-      });
-
-      return { labels, coordOf, locOuter };
+      // 로케이션 번호 표시는 ZoneCell 측면 칩으로 단일 렌더 (2026-09-04 정리 — 이중 렌더 제거)
+      return { labels, coordOf, locOuter: new Set<string>() };
     }, [dong, current.zones, dongLocNos]);
 
   // 전 동 칸 좌표 맵 (2026-08-31): 존 ID(A-L4-12 등) 표시 개념 폐지 — 위치는 좌표(X열, Y행)로만 확인한다.
@@ -4917,7 +4885,8 @@ export default function ProductDisplayPage() {
                 onEditCommit={() => commitInlineEdit(z.id)}
                 onEditCancel={() => { setEditingZone(null); setEditVal(""); }}
                 tip={makeTooltip(zz)}
-                locNos={gridLabels.locOuter.has(z.id) ? undefined : dongLocNos[z.id]}
+                locNos={dongLocNos[z.id]}
+                chipSide={Number((gridLabels.coordOf.get(z.id) || "0-0").split("-")[0]) % 3 === 0 ? "left" : "right"}
               />
               );
             })}
@@ -5684,7 +5653,7 @@ function MiniZoneCell({
           className="absolute text-[9px] leading-none font-mono font-bold text-amber-600 pointer-events-none"
           style={{
             top: 1,
-            ...(z.line % 2 === 1 ? { left: -18 } : { right: -18 }),
+            ...(Math.abs(z.line) % 2 === 1 ? { left: -18 } : { right: -18 }),
           }}
         >
           {locNos && locNos.length > 0 ? fmtLocNos(locNos) : z.locNo}
@@ -6260,6 +6229,7 @@ function ZoneCell({
   onEditCommit,
   onEditCancel,
   locNos,
+  chipSide,
 }: {
   z: ZoneDef;
   value: string;
@@ -6277,6 +6247,7 @@ function ZoneCell({
   onEditCommit: () => void;
   onEditCancel: () => void;
   locNos?: number[];
+  chipSide?: "left" | "right";
 }) {
   const assigned = Boolean(value);
   const items = value ? value.split(",").map((s) => s.trim()).filter(Boolean) : [];
@@ -6428,6 +6399,18 @@ function ZoneCell({
         )
       ) : (
         <span className="text-[9px] text-slate-300 leading-none">·</span>
+      )}
+      {/* 로케이션 번호 — 단일 품목 칸 (좌표 귀속 번호, 2026-09-04): 사이드는 가까운 통로 방향 */}
+      {items.length <= 1 && isA && locNos && locNos.length > 0 && (
+        <span
+          className="absolute text-[9px] leading-none font-mono font-bold text-amber-600 pointer-events-none"
+          style={{
+            top: 1,
+            ...(chipSide === "left" ? { left: -18 } : { right: -18 }),
+          }}
+        >
+          {fmtLocNos(locNos)}
+        </span>
       )}
       {!isA && locNos && locNos.length > 0 && (
         <span className="absolute top-0.5 right-0.5 text-[7px] leading-none font-mono font-bold text-amber-600 pointer-events-none">
