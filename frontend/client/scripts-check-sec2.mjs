@@ -10,7 +10,7 @@ const coord={};
 const put=(c,n)=>{coord[c]=n;};
 for(const[k,v]of Object.entries(M1)){const m2=/^(L\d+)-(\d+)$/.exec(k);const l7=m2[1]==="L7";const cx=l7?Number(m2[2]):colMap[m2[1]];put(`${cx}-${l7?1:Number(m2[2])+2}`,v);}
 for(const[k,v]of Object.entries(M2)){const m2=/^(L\d+)-(\d+)$/.exec(k);const l7=m2[1]==="L7";const cx=l7?Number(m2[2]):colMap[m2[1]];put(`${cx}-${l7?1:Number(m2[2])+2}`,v);}
-const checks=[["9-3",[37]],["4-14",[61]],["4-16",[65]],["9-21",[1]],["9-12",[20]],["3-3",[77,78]],["1-3",[79,80]],["4-18",[69,70]],["6-18",[71,72]],["4-19",[73]],["6-19",[74]],["4-20",[75]],["6-20",[76]],["1-1",[136,137]],["6-14",[62]]];
+const checks=[["9-3",[37]],["4-14",[61]],["4-16",[65]],["9-21",[1]],["9-12",[20]],["3-3",[77,78]],["1-3",[79,80]],["4-18",[69,70]],["6-18",[71,72]],["4-19",[74]],["6-19",[73]],["4-20",[75]],["6-20",[76]],["6-15",[63]],["4-15",[64]],["6-17",[67]],["4-17",[68]],["1-1",[136,137]],["6-14",[62]]];
 let pass=true;
 for(const[c,e]of checks){const g=coord[c]||null;const ok=JSON.stringify(g)===JSON.stringify(e);if(!ok)pass=false;console.log(`${c}: ${JSON.stringify(g)} 기대 ${JSON.stringify(e)} ${ok?'OK':'FAIL'}`);}
 const all=[].concat(...Object.values(coord)).sort((a,b)=>a-b);
