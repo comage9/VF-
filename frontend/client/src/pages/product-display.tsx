@@ -242,7 +242,9 @@ type PdSnapshotPayload = {
   lineConfig: LineConfigMap;
   staging: string[];
   locExceptions?: string[];
-  manualLocNos?: Record<string, number>;
+  // 수동 로케이션 번호 (2026-09-05): zoneId → 지정 번호 배열. "82 83 84" 입력 시 [82,83,84].
+  // 단일 값(기존 "시작 번호")도 [n]으로 정규화되어 호환.
+  manualLocNos?: Record<string, number[]>;
   savedAt: string;
 };
 type PdHistoryItem = { version: number; saved_by: string; created_at: string; size?: number };
@@ -280,9 +282,20 @@ function parsePdPayload(payloadStr: string | null | undefined): PdSnapshotPayloa
       locExceptions: Array.isArray(p.locExceptions)
         ? (p.locExceptions as unknown[]).filter((x): x is string => typeof x === "string")
         : undefined,
-      manualLocNos: typeof p.manualLocNos === "object" && p.manualLocNos != null && !Array.isArray(p.manualLocNos)
-        ? (p.manualLocNos as Record<string, number>)
-        : undefined,
+      manualLocNos: (() => {
+        const ml = p.manualLocNos;
+        if (typeof ml !== "object" || ml == null || Array.isArray(ml)) return undefined;
+        const out: Record<string, number[]> = {};
+        for (const [k, v] of Object.entries(ml)) {
+          // 배열 → 그대로, 단일 number(기존 버전) → [n] 정규화
+          out[k] = Array.isArray(v)
+            ? (v as unknown[]).filter((x): x is number => typeof x === "number" && Number.isFinite(x))
+            : typeof v === "number" && Number.isFinite(v) && v > 0
+              ? [v]
+              : [];
+        }
+        return out;
+      })(),
       savedAt: typeof p.savedAt === "string" ? p.savedAt : "",
     };
   } catch {
@@ -772,13 +785,14 @@ type LocNosAll = {
 };
 
 /** 전 동 동적 로케이션 번호 계산 (2026-09-05). layout·data가 바뀌면 항상 최신 기준으로 재계산.
- *  manualLocNos: zoneId → 사용자 지정 첫 번호. 해당 칸은 그 값부터 품목 수만큼 연속 발행되고,
- *  이후 칸 번호는 자연스럽게 밀린다. (빈 칸도 manual값 1개, 이후 연속) */
+ *  manualLocNos: zoneId → 지정 번호 배열. 카논(표준 좌표) 칸은 [0]을 시작 번호로 삼아
+ *  품목 수만큼 연속 발행(기존 규칙 유지), 비표준 칸(A-X1/X2·A-NEW 등 카논 밖)은 배열을
+ *  그대로 표시해 "82 83 84" 입력 시 세 번호 모두 배정된다. */
 function computeLocNosAll(
   layouts: DongLayout[],
   data: PlacementMap,
   locExceptions: Set<string>,
-  manualLocNos: Record<string, number>
+  manualLocNos: Record<string, number[]>
 ): LocNosAll {
   const byZone = new Map<string, number[]>();
   const byCoord = new Map<string, Map<string, number[]>>();
@@ -791,13 +805,19 @@ function computeLocNosAll(
     const sys = buildGridCoordSystem(key, zones);
     type Cell = { zoneId: string; coord: string; rank: number; count: number };
     const cells: Cell[] = [];
+    const manualOnly: { zoneId: string; coord: string; nos: number[] }[] = [];
     if (sys) {
       for (const z of zones) {
         const coord = sys.coordOf.get(z.id);
         if (!coord) continue;
         const rank = key === "A" ? aCanonOrder(coord) : bcdCanonOrder(coord);
-        if (rank < 0) continue;
         const items = (data[z.id] || "").split(",").map((s) => s.trim()).filter(Boolean);
+        const manual = manualLocNos[z.id];
+        // 비표준 칸(카논 밖): 수동 지정 배열이 있으면 그대로 표시 (자동 발행은 안 함)
+        if (rank < 0) {
+          if (manual && manual.length > 0) manualOnly.push({ zoneId: z.id, coord, nos: manual });
+          continue;
+        }
         // 빈 칸도 자기 자리 번호 1개. 예외칸(locExceptions)은 품목이 있어도 1개만 소진.
         const count = locExceptions.has(z.id) ? 1 : Math.max(1, items.length);
         cells.push({ zoneId: z.id, coord, rank, count });
@@ -809,15 +829,20 @@ function computeLocNosAll(
     let end = cursor - 1;
     for (const c of cells) {
       const manual = manualLocNos[c.zoneId];
-      if (manual != null && manual > 0 && manual >= cursor) cursor = manual;
+      if (manual && manual.length > 0 && manual[0] > 0 && manual[0] >= cursor) cursor = manual[0];
       const nos: number[] = [];
       for (let i = 0; i < c.count; i++) nos.push(cursor++);
       byZone.set(c.zoneId, nos);
       coordMap.set(c.coord, nos);
       end = cursor - 1;
     }
+    // 비표준 칸 수동 지정: 표시 전용으로 추가 (이미 좌표에 자동 번호가 있으면 덮지 않게)
+    for (const mo of manualOnly) {
+      byZone.set(mo.zoneId, mo.nos);
+      coordMap.set(mo.coord, mo.nos);
+    }
     byCoord.set(key, coordMap);
-    if (cells.length) dongRange[key] = { start, end };
+    if (cells.length || manualOnly.length) dongRange[key] = { start, end };
   }
   return { byZone, byCoord, dongRange };
 }
@@ -1521,13 +1546,24 @@ export default function ProductDisplayPage() {
     }
   }, [locExceptions]);
 
-  // 수동 로케이션 번호 (사용자 지정 — zoneId → 첫 번호, 이후 품목 수만큼 연속·자동 밀림)
-  const [manualLocNos, setManualLocNos] = useState<Record<string, number>>(() => {
+  // 수동 로케이션 번호 (사용자 지정 — zoneId → 번호 배열. 비우면 자동 모드)
+  const [manualLocNos, setManualLocNos] = useState<Record<string, number[]>>(() => {
     try {
       const raw = localStorage.getItem(MANUAL_LOC_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (typeof parsed === "object" && parsed != null && !Array.isArray(parsed)) return parsed as Record<string, number>;
+        if (typeof parsed === "object" && parsed != null && !Array.isArray(parsed)) {
+          // 단일 number(구버전) → [n] 정규화
+          const out: Record<string, number[]> = {};
+          for (const [k, v] of Object.entries(parsed)) {
+            out[k] = Array.isArray(v)
+              ? (v as unknown[]).filter((x): x is number => typeof x === "number" && Number.isFinite(x))
+              : typeof v === "number" && Number.isFinite(v) && v > 0
+                ? [v]
+                : [];
+          }
+          return out;
+        }
       }
     } catch {
       /* 무시 */
@@ -1699,7 +1735,7 @@ export default function ProductDisplayPage() {
     setLineConfig(p.lineConfig);
     setStaging(p.staging);
     setLocExceptions(new Set(p.locExceptions || []));
-    setManualLocNos(typeof p.manualLocNos === "object" && p.manualLocNos != null ? { ...p.manualLocNos as Record<string, number> } : {});
+    setManualLocNos(typeof p.manualLocNos === "object" && p.manualLocNos != null ? { ...p.manualLocNos } : {});
     writeLocalFromPayload({ ...p, data: cleanData, layout: canonLayout });
     if (typeof version === "number") {
       serverVerRef.current = version;
@@ -3375,7 +3411,7 @@ export default function ProductDisplayPage() {
     editingZoneRef.current = zid;
     setEditingZone(zid);
     setEditVal(data[zid] || "");
-    setEditLocVal(manualLocNos[zid] != null ? String(manualLocNos[zid]) : "");
+    setEditLocVal(manualLocNos[zid] != null && manualLocNos[zid].length > 0 ? manualLocNos[zid].join(" ") : "");
   };
 
   // A동 칸 정렬 (L1-1 → L1-19 → L2-1 → … → L7-8-2 → X1 → X2, 사용자 추가 칸은 뒤)
@@ -3480,8 +3516,9 @@ export default function ProductDisplayPage() {
       return next;
     });
     // 수동 로케이션 번호 커밋 (A동 전용): 빈 값=자동 모드 복귀.
-    // 구분 입력 지원 (2026-09-05): "70,71" / "70 71" / "70-71" → 첫 번호(70)로 해석.
-    // (다품목 칸은 시작 번호만 저장하면 품목 수만큼 자동 연속 — 70 입력 시 70,71 자동)
+    // 구분 입력 지원 (2026-09-05): "70,71" / "70 71" / "70-71" → 번호 배열로 저장.
+    // 표준(카논) 칸은 [0]을 시작 번호로 품목 수만큼 자동 연속,
+    // 비표준 칸(A-X1 등)은 배열 그대로 배정 (예: 3품목에 "82 83 84" → 82,83,84)
     const locParts = editLocVal
       .split(/[,\s\-~]+/)
       .map((s) => s.trim())
@@ -3522,7 +3559,7 @@ export default function ProductDisplayPage() {
         window.setTimeout(() => setSaveMsg(""), 3000);
         return;
       } else {
-        setManualLocNos((prev) => ({ ...prev, [zid]: locNum }));
+        setManualLocNos((prev) => ({ ...prev, [zid]: locParts }));
       }
     } else {
       setManualLocNos((prev) => {
