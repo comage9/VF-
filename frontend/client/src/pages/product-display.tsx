@@ -1389,6 +1389,9 @@ export default function ProductDisplayPage() {
   const [saveMsg, setSaveMsg] = useState("");
   // 총괄 우측 패널: 배치/미배치 대분류별 목록 + 선택 상세
   const [panelTab, setPanelTab] = useState<"placed" | "unplaced" | "overflow" | "staging" | "noout3m" | "list" | "server">("placed");
+  // 우측 배치/미배치 카드 접기 (2026-09-05): 개별동에서 배치도가 카드와 겹쳐 우측 칸을
+  // 가리는 문제 해결 — 접으면 배치도가 전체 폭을 사용. (총괄 뷰는 항상 펼침)
+  const [panelOpen, setPanelOpen] = useState(true);
   const [openLg, setOpenLg] = useState<string | null>(null); // 분류 아코디언 (null=전부 접힘)
   const [selPnum, setSelPnum] = useState<string | null>(null);
   const [selZone, setSelZone] = useState<string | null>(null);
@@ -5149,15 +5152,23 @@ export default function ProductDisplayPage() {
             <span className="text-xs text-slate-600 w-12 text-center">{Math.round(zoomFactor * 100)}%</span>
             <button type="button" onClick={zoomIn} className="px-2 py-0.5 text-xs rounded border bg-white hover:bg-slate-100" title="배치도 확대">＋</button>
             <button type="button" onClick={zoomReset} className="px-2 py-0.5 text-xs rounded border bg-white hover:bg-slate-100" title="기본 배율">기본</button>
-            <span className="text-[10px] text-slate-400 ml-1">배치도 전용 확대/축소</span>
-          </div>
+                        <span className="text-[10px] text-slate-400 ml-1">배치도 전용 확대/축소</span>
+            <button
+              type="button"
+              onClick={() => setPanelOpen((v) => !v)}
+              className="px-2 py-0.5 text-xs rounded border bg-white hover:bg-slate-100"
+              title="우측 배치/미배치 내역 펼치기·접기 (접으면 배치도가 전체 폭을 씀)"
+            >
+              {panelOpen ? "📋 내역 접기 ◀" : "📋 내역 펼치기 ▶"}
+            </button>
+                      </div>
           <DndContext sensors={sensors} autoScroll={false} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div className="flex gap-3 items-start">
-          {/* 배치도 블록 — 우측 카드 침범 방지(2026-09-05): 배치도 콘텐츠가 flex 부모 폭(우측 카드
-              w-[560px]+gap-3 제외분)을 넘으면 이 블록 안에서만 가로 스크롤 → 우측 카드와 겹치지 않음 */}
+          {/* 배치도 블록 — 우측 카드 침범 방지(2026-09-05): 카드 펼침 시 카드 폭(560+gap)만큼 제한,
+              접으면 전체 폭 사용. 콘텐츠가 블록 폭을 넘으면 블록 안에서만 가로 스크롤 */}
           <div
             className="flex flex-col gap-2 shrink-0 min-w-0 overflow-auto"
-            style={{ maxWidth: "calc(100% - 572px)" }}
+            style={panelOpen ? { maxWidth: "calc(100% - 572px)" } : { maxWidth: "100%" }}
           >
           <div style={{ width: (current.width + gridPad.l + gridPad.r) * fitScale * zoomFactor, height: (current.height + gridPad.t + gridPad.b) * fitScale * zoomFactor }}>
           <div
@@ -5255,7 +5266,7 @@ export default function ProductDisplayPage() {
            </div>
            </div>
            </div>
-          {renderRightPanel(dongRows)}
+          {panelOpen && renderRightPanel(dongRows)}
           </div>
           </DndContext>
         </div>
