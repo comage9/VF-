@@ -2197,6 +2197,25 @@ export default function ProductDisplayPage() {
     [dong, layoutState]
   );
 
+  // 실제 존 포함 그리드 콘텐츠 크기 (2026-09-05): C동처럼 우측 확장 칸(C-R14-C21 등)이
+  // layout 폭(current.width)을 넘으면 그리드 경계 밖으로 나가 클릭불가 → 최대 존 right/bottom까지 확장.
+  const gridContentW = useMemo(() => {
+    const base = (current.width || 0) + (gridPad.l || 0) + (gridPad.r || 0);
+    const maxRight = Math.max(
+      base,
+      ...current.zones.map((z) => Number(z.style.left ?? 0) + Number(z.style.width ?? SLOT.w) + (gridPad.r || 0))
+    );
+    return maxRight;
+  }, [current, gridPad]);
+  const gridContentH = useMemo(() => {
+    const base = (current.height || 0) + (gridPad.t || 0) + (gridPad.b || 0);
+    const maxBottom = Math.max(
+      base,
+      ...current.zones.map((z) => Number(z.style.top ?? 0) + Number(z.style.height ?? SLOT.h) + (gridPad.b || 0))
+    );
+    return maxBottom;
+  }, [current, gridPad]);
+
   // 물리 그리드 좌표 라벨 — 전 동 통일 "행-열" 숫자 체계 (2026-08-28)
   // 2026-09-03 좌표계 규칙 확정(공유/배치도-좌표계-규칙-확정-20260903.md) 반영:
   //   X = 좌→우 1..N (점유 열 픽셀 클러스터), Y = 아래(top큰)=1 ~ 위(top작)=N.
@@ -2333,8 +2352,9 @@ export default function ProductDisplayPage() {
   const [fitScale, setFitScale] = useState(1);
   // 배치도 전용 수동 줌 — 동별 출고 비율 테이블과 독립적으로 배치도만 확대/축소 (2026-08-28)
   const [zoomFactor, setZoomFactor] = useState(1);
-  /** 동별 기본 배율 (2026-09-04): A120%·B220%·C130%·D220% — 동 전환 시 적용 */
-  const DONG_DEFAULT_ZOOM: Record<string, number> = { A: 1.2, B: 2.2, C: 1.3, D: 2.2 };
+  /** 동별 기본 배율 (2026-09-05): C는 1.2로 하향 — 1.3이면 그리드(원본 폭 1136)가 scale 후
+   *  컨테이너를 넘어 우측 맥스 라인(C-R14-C21 등)이 화면 밖/클릭불가가 됨 */
+  const DONG_DEFAULT_ZOOM: Record<string, number> = { A: 1.2, B: 2.2, C: 1.2, D: 2.2 };
   useEffect(() => {
     const def = DONG_DEFAULT_ZOOM[dong];
     if (def) setZoomFactor(def);
@@ -5170,18 +5190,18 @@ export default function ProductDisplayPage() {
             className="flex flex-col gap-2 shrink-0 min-w-0 overflow-auto"
             style={panelOpen ? { maxWidth: "calc(100% - 572px)" } : { maxWidth: "100%" }}
           >
-          <div style={{ width: (current.width + gridPad.l + gridPad.r) * fitScale * zoomFactor, height: (current.height + gridPad.t + gridPad.b) * fitScale * zoomFactor }}>
-          <div
-            ref={gridRef}
-            className="relative rounded-xl border bg-slate-50 shrink-0"
-            style={{
-              height: current.height + gridPad.t + gridPad.b,
-              width: current.width + gridPad.l + gridPad.r,
-              minWidth: current.width + gridPad.l + gridPad.r,
-              minHeight: current.height + gridPad.t + gridPad.b,
-              transform: `scale(${fitScale * zoomFactor})`,
-              transformOrigin: "top left",
-            }}
+          <div style={{ width: gridContentW * fitScale * zoomFactor, height: gridContentH * fitScale * zoomFactor }}>
+                    <div
+                      ref={gridRef}
+                      className="relative rounded-xl border bg-slate-50 shrink-0"
+                      style={{
+                        height: gridContentH,
+                        width: gridContentW,
+                        minWidth: gridContentW,
+                        minHeight: gridContentH,
+                        transform: `scale(${fitScale * zoomFactor})`,
+                        transformOrigin: "top left",
+                      }}
             onPointerDownCapture={handleSelDownCapture}
             onPointerDown={handleSelDown}
             onPointerMove={handleSelMove}
