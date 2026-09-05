@@ -61,6 +61,7 @@ const STAGING_VERSION = "staging-v3";
 /** 라인 구성(라인별 칸 수·숨김 슬롯·라벨) 저장 키 — 기본 LineSpec 상수를 오버라이드 (편집 패널: 수정 모드 "라인 설정") */
 const LINE_CONFIG_KEY = "vf_pd_line_config_v1";
 const LOC_EXC_KEY = "vf_pd_loc_exceptions_v1";
+const MANUAL_LOC_KEY = "vf_pd_manual_loc_nos_v1";
 const LINE_CONFIG_VERSION = "line-config-v1";
 /** 로컬 마지막 저장 시각 키 — 서버 로드 시 서버판 vs 로컬판 비교 기준 (서버 영속화, 2026-08-23) */
 const SAVEDAT_KEY = "vf_pd_savedat_v1";
@@ -241,6 +242,7 @@ type PdSnapshotPayload = {
   lineConfig: LineConfigMap;
   staging: string[];
   locExceptions?: string[];
+  manualLocNos?: Record<string, number>;
   savedAt: string;
 };
 type PdHistoryItem = { version: number; saved_by: string; created_at: string; size?: number };
@@ -277,6 +279,9 @@ function parsePdPayload(payloadStr: string | null | undefined): PdSnapshotPayloa
       staging: (p.staging as unknown[]).filter((x): x is string => typeof x === "string"),
       locExceptions: Array.isArray(p.locExceptions)
         ? (p.locExceptions as unknown[]).filter((x): x is string => typeof x === "string")
+        : undefined,
+      manualLocNos: typeof p.manualLocNos === "object" && p.manualLocNos != null && !Array.isArray(p.manualLocNos)
+        ? (p.manualLocNos as Record<string, number>)
         : undefined,
       savedAt: typeof p.savedAt === "string" ? p.savedAt : "",
     };
@@ -448,6 +453,7 @@ function writeLocalFromPayload(p: PdSnapshotPayload) {
     localStorage.setItem(STAGING_KEY, JSON.stringify({ __v: STAGING_VERSION, items: p.staging }));
     localStorage.setItem(LINE_CONFIG_KEY, JSON.stringify({ __v: LINE_CONFIG_VERSION, data: p.lineConfig }));
     if (p.locExceptions) localStorage.setItem(LOC_EXC_KEY, JSON.stringify(p.locExceptions));
+    if (p.manualLocNos) localStorage.setItem(MANUAL_LOC_KEY, JSON.stringify(p.manualLocNos));
     if (p.savedAt) localStorage.setItem(SAVEDAT_KEY, p.savedAt);
   } catch {
     /* 저장 실패 무시 */
@@ -765,11 +771,14 @@ type LocNosAll = {
   dongRange: Record<string, LocNosDongRange>;
 };
 
-/** 전 동 동적 로케이션 번호 계산 (2026-09-05). layout·data가 바뀌면 항상 최신 기준으로 재계산. */
+/** 전 동 동적 로케이션 번호 계산 (2026-09-05). layout·data가 바뀌면 항상 최신 기준으로 재계산.
+ *  manualLocNos: zoneId → 사용자 지정 첫 번호. 해당 칸은 그 값부터 품목 수만큼 연속 발행되고,
+ *  이후 칸 번호는 자연스럽게 밀린다. (빈 칸도 manual값 1개, 이후 연속) */
 function computeLocNosAll(
   layouts: DongLayout[],
   data: PlacementMap,
-  locExceptions: Set<string>
+  locExceptions: Set<string>,
+  manualLocNos: Record<string, number>
 ): LocNosAll {
   const byZone = new Map<string, number[]>();
   const byCoord = new Map<string, Map<string, number[]>>();
@@ -799,6 +808,8 @@ function computeLocNosAll(
     let start = cursor;
     let end = cursor - 1;
     for (const c of cells) {
+      const manual = manualLocNos[c.zoneId];
+      if (manual != null && manual > 0) cursor = manual;
       const nos: number[] = [];
       for (let i = 0; i < c.count; i++) nos.push(cursor++);
       byZone.set(c.zoneId, nos);
@@ -1426,6 +1437,7 @@ export default function ProductDisplayPage() {
   // 칸 직접 입력 (수기 편집): 클릭 → 인라인 input → "19,28" 콤마 구분 저장
   const [editingZone, setEditingZone] = useState<string | null>(null);
   const [editVal, setEditVal] = useState("");
+  const [editLocVal, setEditLocVal] = useState("");
   const editingZoneRef = useRef<string | null>(null); // Enter→blur race-safe 가드 (M1)
   // 그리드 여유 공간 (확장 버튼으로 필요할 때만 증가, 기본 0 = 현재 그리드만 표시)
   const [gridPad, setGridPad] = useState({ t: 0, r: 0, b: 0, l: 0 });
@@ -1506,6 +1518,27 @@ export default function ProductDisplayPage() {
     }
   }, [locExceptions]);
 
+  // 수동 로케이션 번호 (사용자 지정 — zoneId → 첫 번호, 이후 품목 수만큼 연속·자동 밀림)
+  const [manualLocNos, setManualLocNos] = useState<Record<string, number>>(() => {
+    try {
+      const raw = localStorage.getItem(MANUAL_LOC_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === "object" && parsed != null && !Array.isArray(parsed)) return parsed as Record<string, number>;
+      }
+    } catch {
+      /* 무시 */
+    }
+    return {};
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(MANUAL_LOC_KEY, JSON.stringify(manualLocNos));
+    } catch {
+      /* 무시 */
+    }
+  }, [manualLocNos]);
+
   // 라인 구성 오버라이드 (초기값 = localStorage 저장분 — 반영은 레이아웃 재빌드 시)
   // ※ 편집 패널: 수정 모드 우측 "라인 설정" (2026-08-23)
   const [lineConfig, setLineConfig] = useState<LineConfigMap>(INITIAL_LINE_CONFIG);
@@ -1551,6 +1584,7 @@ export default function ProductDisplayPage() {
       lineConfig,
       staging,
       locExceptions: Array.from(locExceptions),
+      manualLocNos: Object.keys(manualLocNos).length ? { ...manualLocNos } : undefined,
       savedAt: new Date().toISOString(),
     };
     snapshotRef.current = snap;
@@ -1560,7 +1594,7 @@ export default function ProductDisplayPage() {
       /* 무시 */
     }
     return snap;
-  }, [data, layoutState, lineConfig, staging, locExceptions]);
+  }, [data, layoutState, lineConfig, staging, locExceptions, manualLocNos]);
 
   /** 서버 저장 (낙관적 락) — 409: 충돌 배너 / 네트워크 실패: 재시도·경고 */
   const pdSaveToServer = useCallback(
@@ -1662,6 +1696,7 @@ export default function ProductDisplayPage() {
     setLineConfig(p.lineConfig);
     setStaging(p.staging);
     setLocExceptions(new Set(p.locExceptions || []));
+    setManualLocNos(typeof p.manualLocNos === "object" && p.manualLocNos != null ? { ...p.manualLocNos as Record<string, number> } : {});
     writeLocalFromPayload({ ...p, data: cleanData, layout: canonLayout });
     if (typeof version === "number") {
       serverVerRef.current = version;
@@ -2024,8 +2059,8 @@ export default function ProductDisplayPage() {
   // 동적 로케이션 번호 (2026-09-05): 좌표·칸 고정 + 제품 유동 → 번호는 배치(data)에서 파생 재계산.
   // layoutState·data가 바뀌면 항상 최신 기준으로 발행된다 (번호는 저장값이 아님).
   const dynLocNos = useMemo(
-    () => computeLocNosAll(layoutState, data, locExceptions),
-    [layoutState, data, locExceptions]
+    () => computeLocNosAll(layoutState, data, locExceptions, manualLocNos),
+    [layoutState, data, locExceptions, manualLocNos]
   );
   // 존 ID → 로케이션 번호 배열 (전 동) — 표시·검색·모바일 공용
   const coordNosByZone = dynLocNos.byZone;
@@ -3292,6 +3327,7 @@ export default function ProductDisplayPage() {
     editingZoneRef.current = zid;
     setEditingZone(zid);
     setEditVal(data[zid] || "");
+    setEditLocVal(manualLocNos[zid] != null ? String(manualLocNos[zid]) : "");
   };
 
   // A동 칸 정렬 (L1-1 → L1-19 → L2-1 → … → L7-8-2 → X1 → X2, 사용자 추가 칸은 뒤)
@@ -3395,9 +3431,19 @@ export default function ProductDisplayPage() {
       
       return next;
     });
+    // 수동 로케이션 번호 커밋 (A동 전용): 빈 값=자동 모드 복귀
+    const rawLoc = editLocVal.replace(/[^0-9]/g, "");
+    const locNum = rawLoc ? parseInt(rawLoc, 10) : 0;
+    setManualLocNos((prev) => {
+      if (locNum > 0) return { ...prev, [zid]: locNum };
+      const next = { ...prev };
+      delete next[zid];
+      return next;
+    });
     editingZoneRef.current = null;
     setEditingZone(null);
     setEditVal("");
+    setEditLocVal("");
     setSaveMsg(`✅ ${zid} 저장: ${newVal || "(비움)"}${overMsg}`);
     window.setTimeout(() => setSaveMsg(""), 2000);
   };
@@ -5108,9 +5154,11 @@ export default function ProductDisplayPage() {
                 onToggleSelect={() => handleCellClick(z.id)}
                 editing={editingZone === z.id}
                 editValue={editVal}
+                editLocValue={editLocVal}
                 onEditChange={setEditVal}
+                onEditLocChange={setEditLocVal}
                 onEditCommit={() => commitInlineEdit(z.id)}
-                onEditCancel={() => { setEditingZone(null); setEditVal(""); }}
+                onEditCancel={() => { setEditingZone(null); setEditVal(""); setEditLocVal(""); }}
                 tip={makeTooltip(zz)}
                 locNos={coordNosByZone.get(z.id)}
               />
@@ -6430,7 +6478,9 @@ function ZoneCell({
   tip,
   editing,
   editValue,
+  editLocValue,
   onEditChange,
+  onEditLocChange,
   onEditCommit,
   onEditCancel,
   locNos,
@@ -6447,7 +6497,9 @@ function ZoneCell({
   tip: string;
   editing: boolean;
   editValue: string;
+  editLocValue: string;
   onEditChange: (v: string) => void;
+  onEditLocChange: (v: string) => void;
   onEditCommit: () => void;
   onEditCancel: () => void;
   locNos?: number[];
@@ -6473,18 +6525,31 @@ function ZoneCell({
     cellDrag.setNodeRef(node);
   };
   // 수기 편집 중: 인라인 input (콤마 구분 다품목) — 클릭 시 바로 입력 (수정 모드에서만)
+  // A동은 로케이션 번호 수동 입력 필드도 함께 표시 (2026-09-05)
+  const editBoxRef = useRef<HTMLDivElement | null>(null);
+  // 수기 편집 중: 인라인 input (콤마 구분 다품목) — 클릭 시 바로 입력 (수정 모드에서만)
+  // A동은 로케이션 번호 수동 입력 필드도 함께 표시 (2026-09-05)
   if (editing && editMode) {
     return (
       <div
-        ref={dropRef}
+        ref={(el) => {
+          dropRef(el);
+          editBoxRef.current = el;
+        }}
         data-zone-id={z.id}
         className={
-          "absolute flex items-center justify-center rounded border text-center " +
+          "absolute flex flex-col items-center justify-center rounded border text-center overflow-hidden " +
           (assigned
             ? "border-blue-700 bg-blue-50 ring-2 ring-amber-400 ring-offset-1"
             : "border-slate-500 bg-white ring-2 ring-amber-400 ring-offset-1")
         }
         style={z.style}
+        onBlur={(e) => {
+          // 포커스가 편집 박스 밖으로 나갈 때만 저장 (두 input 간 이동은 무시)
+          const next = e.relatedTarget as Node | null;
+          if (next && editBoxRef.current && editBoxRef.current.contains(next)) return;
+          onEditCommit();
+        }}
       >
         <input
           autoFocus
@@ -6500,15 +6565,31 @@ function ZoneCell({
               onEditCancel();
             }
           }}
-          onBlur={() => {
-            // 포커스 잃어도 저장 (확인 버튼 대신 — 클릭 밖 = 저장)
-            onEditCommit();
-          }}
           onPointerDown={(e) => e.stopPropagation()}
-          className="w-[92%] h-[72%] min-w-0 text-[10px] text-center border rounded border-blue-400 outline-none focus:ring-2 focus:ring-blue-500 tabular-nums"
+          className="w-[94%] h-[44%] min-w-0 text-[9px] text-center border rounded border-blue-400 outline-none focus:ring-2 focus:ring-blue-500 tabular-nums"
           placeholder="19,28"
-          title="제품번호 콤마 구분 입력 (예: 19,28) — Enter 저장 / Esc 취소. 빠진 제품은 📦임시보관함으로 이동"
+          title="제품번호 콤마 구분 입력 (예: 19,28) — Enter 저장 / Esc 취소"
         />
+        {isA ? (
+          <input
+            value={editLocValue}
+            onChange={(e) => onEditLocChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                e.stopPropagation();
+                onEditCommit();
+              } else if (e.key === "Escape") {
+                e.stopPropagation();
+                onEditCancel();
+              }
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="w-[94%] h-[38%] min-w-0 text-[8px] text-center border rounded border-amber-300 outline-none focus:ring-2 focus:ring-amber-500 tabular-nums mt-0.5"
+            placeholder="로케이션 첫 번호"
+            title="로케이션 번호: 첫 번호만 입력, 품목 수만큼 자동 연속 (예: 70). 비우면 자동 모드"
+          />
+        ) : null}
       </div>
     );
   }
