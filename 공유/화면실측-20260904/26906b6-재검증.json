@@ -1,0 +1,67 @@
+{
+ "cellRows": 123,
+ "mismatchCount": 40,
+ "mismSample": [
+  {
+   "cell": "219218",
+   "nProd": 1,
+   "amber": [
+    "101→102"
+   ]
+  },
+  {
+   "cell": "225257",
+   "nProd": 1,
+   "amber": [
+    "103→104"
+   ]
+  },
+  {
+   "cell": "250256",
+   "nProd": 1,
+   "amber": [
+    "109→110"
+   ]
+  },
+  {
+   "cell": "186182",
+   "nProd": 1,
+   "amber": [
+    "114→115"
+   ]
+  },
+  {
+   "cell": "187183",
+   "nProd": 1,
+   "amber": [
+    "119→120"
+   ]
+  },
+  {
+   "cell": "190189188",
+   "nProd": 1,
+   "amber": [
+    "121→123"
+   ]
+  },
+  {
+   "cell": "20742079",
+   "nProd": 1,
+   "amber": [
+    "127→128"
+   ]
+  },
+  {
+   "cell": "20722077",
+   "nProd": 1,
+   "amber": [
+    "129→130"
+   ]
+  }
+ ],
+ "totalNos": 123,
+ "min": 1,
+ "max": 145,
+ "sequential": false,
+ "dupCount": 1
+}

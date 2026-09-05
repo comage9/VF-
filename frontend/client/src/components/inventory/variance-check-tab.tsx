@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   AlertTriangle,
@@ -314,6 +314,63 @@ export default function VarianceCheckTab() {
     }
   };
 
+  // A동 배치도 위치번호 (2026-08-30): 배치도 칸의 저장 locNo = 칸 고정 번호.
+  // WMS 업로드 여부와 무관하게 배치도 실시간 최신 배치를 번호순으로 보여주는 게 기준 화면.
+  const [adongPnLoc, setAdongPnLoc] = useState<Map<string, number>>(new Map());
+  const [pnRows, setPnRows] = useState<Map<string, { name: string; barcode: string }[]>>(new Map());
+  const [adongLoading, setAdongLoading] = useState(false);
+  const loadAdongBasis = useCallback(async () => {
+    setAdongLoading(true);
+    try {
+      const pj = await (await fetch("/api/product-display/latest")).json();
+      const p = JSON.parse(pj?.payload || "{}");
+      const data: Record<string, string | string[]> = p?.data || {};
+      const m = new Map<string, number>();
+      for (const d of p?.layout || []) {
+        for (const z of d?.zones || []) {
+          const zid = String(z?.id || "");
+          if (!zid.startsWith("A-") || zid === "A-X1" || zid === "A-X2") continue;
+          const nos: number[] =
+            Array.isArray(z.locNos) && z.locNos.length > 0
+              ? z.locNos
+              : z.locNo != null
+                ? [z.locNo]
+                : [];
+          if (nos.length === 0 || nos[0] > 150) continue;
+          const pns = String(data[zid] || "")
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+          pns.forEach((pn, i) => {
+            m.set(pn, nos.length === 1 ? nos[0] : nos[i] ?? nos[nos.length - 1]); // 다품목 칸 제품별 번호
+          });
+        }
+      }
+      setAdongPnLoc(m);
+      const mj = await (await fetch("/api/master/specs")).json();
+      const arr = Array.isArray(mj) ? mj : mj?.data ?? mj?.results ?? [];
+      const pm = new Map<string, { name: string; barcode: string }[]>();
+      const bm = new Map<string, string>();
+      for (const it of arr) {
+        const bc = String(it.barcode || "").trim();
+        const pn = it.product_number != null ? String(it.product_number) : "";
+        if (bc && pn) bm.set(bc, pn);
+        if (!pn) continue;
+        const list = pm.get(pn) || [];
+        list.push({ name: it.product_name || "", barcode: bc });
+        pm.set(pn, list);
+      }
+      setPnRows(pm);
+    } catch {
+      /* 조회 실패 시 기존 값 유지 */
+    } finally {
+      setAdongLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    void loadAdongBasis();
+  }, [loadAdongBasis]);
+
   const applyLocation = async (barcode: string, location: string) => {
     setApplying((s) => new Set(s).add(barcode));
     try {
@@ -332,7 +389,7 @@ export default function VarianceCheckTab() {
         prev
           ? {
               ...prev,
-              items: prev.items.map((it) =>
+              items: (prev.items ?? []).map((it) =>
                 it.barcode === barcode
                   ? { ...it, masterLocation: location, locationConflict: false }
                   : it
@@ -371,6 +428,43 @@ export default function VarianceCheckTab() {
     groups.sort((a, b) => b.items.length - a.items.length || a.location.localeCompare(b.location));
     return groups;
   }, [result, locShareAllow]);
+
+  /** A동 배치도 실시간 목록 (1~150): 번호 → 현재 배치된 품목(바코드별 행) + WMS 대조 상태 */
+  const wmsByBarcode = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const it of result?.items || []) {
+      m.set(it.barcode, it.wmsLocations || []);
+    }
+    return m;
+  }, [result]);
+
+  const adongRows = useMemo(() => {
+    const byNo = new Map<number, { pn: string; name: string; barcode: string; loc: string }[]>();
+    for (const [pn, no] of adongPnLoc) {
+      if (no == null || no > 150) continue;
+      const loc = `320-A1-1-${no}`;
+      for (const r of pnRows.get(pn) || []) {
+        const list = byNo.get(no) || [];
+        list.push({ pn, name: r.name, barcode: r.barcode, loc });
+        byNo.set(no, list);
+      }
+    }
+    return Array.from(byNo.entries())
+      .sort((a, b) => a[0] - b[0])
+      .flatMap(([no, rows]) =>
+        rows.map((r) => ({
+          no,
+          ...r,
+          wms: wmsByBarcode.get(r.barcode) || null,
+          checked: wmsByBarcode.has(r.barcode),
+        }))
+      );
+  }, [adongPnLoc, pnRows, wmsByBarcode]);
+
+  const adongMismatchCount = useMemo(
+    () => adongRows.filter((r) => (r.wms || []).some((loc) => loc !== r.loc)).length,
+    [adongRows]
+  );
 
   const runCheck = async () => {
     if (!file) {
@@ -638,6 +732,103 @@ export default function VarianceCheckTab() {
         </p>
       )}
 
+      {/* A동 배치도 순 (1~150): WMS 업로드와 무관하게 배치도 실시간 최신 배치를 번호순 표시 + WMS 불일치 표시 (2026-08-30) */}
+      <div className="overflow-x-auto rounded-lg border border-amber-300 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+          <span>
+            A동 배치도 순 (위치번호 1~150) — 실시간 최신 배치 {adongRows.length}품목
+            {result
+              ? ` · WMS 불일치 ${adongMismatchCount}건`
+              : " · WMS 파일 대조 전 (대조 실행 시 불일치 표시)"}
+          </span>
+          <button
+            type="button"
+            onClick={() => void loadAdongBasis()}
+            disabled={adongLoading}
+            className="rounded border border-amber-300 bg-white px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+          >
+            {adongLoading ? "불러오는 중…" : "↻ 최신 배치 새로고침"}
+          </button>
+        </div>
+        <table className="min-w-full text-sm">
+          <thead className="bg-amber-50/60 text-left text-xs font-semibold uppercase text-amber-900">
+            <tr>
+              <th className="px-3 py-2" scope="col">
+                배치도 번호
+              </th>
+              <th className="px-3 py-2" scope="col">
+                제품명
+              </th>
+              <th className="min-w-[220px] px-3 py-2 text-center" scope="col">
+                상품 바코드
+                <span className="mt-0.5 block font-normal normal-case text-amber-700">
+                  CODE128
+                </span>
+              </th>
+              <th className="min-w-[200px] px-3 py-2 text-center" scope="col">
+                이동할 로케이션
+                <span className="mt-0.5 block font-normal normal-case text-amber-700">
+                  배치도 · 마스터 CODE128
+                </span>
+              </th>
+              <th className="min-w-[220px] px-3 py-2 text-center text-red-900" scope="col">
+                현재 WMS 로케이션
+                <span className="mt-0.5 block font-normal normal-case text-red-700">
+                  틀린 곳 · CODE128 (복수 전부)
+                </span>
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {adongRows.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-3 py-6 text-center text-sm text-gray-500">
+                  {adongLoading ? "배치도·마스터 불러오는 중…" : "표시할 배치 데이터가 없습니다."}
+                </td>
+              </tr>
+            ) : (
+              adongRows.map((r) => {
+                const wrong = (r.wms || []).filter((loc) => loc !== r.loc);
+                return (
+                  <tr
+                    key={`adong-${r.no}-${r.barcode}`}
+                    className={`align-top ${wrong.length > 0 ? "bg-red-50/40" : "hover:bg-amber-50/40"}`}
+                  >
+                    <td className="px-3 py-2 font-mono text-base font-bold text-amber-700 tabular-nums">
+                      {r.no}
+                    </td>
+                    <td className="px-3 py-2">
+                      <p className="font-medium text-gray-900 leading-snug">{r.name || "—"}</p>
+                    </td>
+                    <td className="px-3 py-2 text-center align-middle">
+                      <BarcodeCell value={r.barcode} tone="default" />
+                    </td>
+                    <td className="px-3 py-2 text-center align-middle">
+                      <BarcodeCell value={r.loc} tone="ok" />
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex flex-col items-start gap-1">
+                        {!r.checked ? (
+                          <span className="text-xs text-gray-400">— (대조 전)</span>
+                        ) : wrong.length > 0 ? (
+                          wrong.map((loc, i) => (
+                            <BarcodeCell key={`${r.barcode}-adong-w-${i}`} value={loc} tone="bad" />
+                          ))
+                        ) : (r.wms || []).length > 0 ? (
+                          <span className="text-xs font-semibold text-emerald-700">✓ 일치</span>
+                        ) : (
+                          <span className="text-xs text-gray-400">WMS 파일에 없음</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
       {/* 한 로케이션에 2개 이상 품목 감지 (허용 목록 제외) */}
       {result && locShareGroups.length > 0 && (
         <Card className="border border-orange-200 bg-orange-50/40">
@@ -719,6 +910,7 @@ export default function VarianceCheckTab() {
                 표시합니다.
                 {filteredItems.length > 0 ? ` (${filteredItems.length}건)` : ""}
               </p>
+
               {filteredItems.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-gray-300 bg-white px-6 py-12 text-center text-sm text-gray-500">
                   로케이션 불일치 품목이 없습니다.

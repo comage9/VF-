@@ -1,0 +1,204 @@
+{
+ "schema_version": 1,
+ "diagram_type": "sequence",
+ "meta": {
+  "title": "좌표 요청·표시 시퀀스",
+  "viewBox": [
+   820,
+   700
+  ],
+  "quality_profile": "showcase"
+ },
+ "participants": [
+  {
+   "id": "user",
+   "type": "external",
+   "label": "현장 사용자",
+   "sublabel": "텔레그램·브라우저"
+  },
+  {
+   "id": "ui",
+   "type": "frontend",
+   "label": "배치도 화면",
+   "sublabel": "gridLabels·툴팁"
+  },
+  {
+   "id": "sys",
+   "type": "backend",
+   "label": "좌표 SSOT",
+   "sublabel": "단일 좌표 구현"
+  },
+  {
+   "id": "rule",
+   "type": "database",
+   "label": "좌표 규칙",
+   "sublabel": "21행·Y2통로"
+  },
+  {
+   "id": "db",
+   "type": "database",
+   "label": "스냅샷 v326",
+   "sublabel": "payload 저장"
+  }
+ ],
+ "segments": [
+  {
+   "from": 150,
+   "to": 330,
+   "label": "좌표 계산"
+  },
+  {
+   "from": 350,
+   "to": 520,
+   "label": "동일 좌표 보장"
+  },
+  {
+   "from": 540,
+   "to": 645,
+   "label": "저장·왕복"
+  }
+ ],
+ "messages": [
+  {
+   "id": "m1",
+   "from": "user",
+   "to": "ui",
+   "y": 175,
+   "label": "칸 클릭/호버",
+   "variant": "default"
+  },
+  {
+   "id": "m2",
+   "from": "ui",
+   "to": "sys",
+   "y": 215,
+   "label": "좌표 계산 요청",
+   "variant": "emphasis"
+  },
+  {
+   "id": "m3",
+   "from": "sys",
+   "to": "rule",
+   "y": 258,
+   "label": "규칙 적용 (아래=1·통로 포함)",
+   "variant": "security"
+  },
+  {
+   "id": "m4",
+   "from": "rule",
+   "to": "sys",
+   "y": 295,
+   "label": "X,Y 산출",
+   "variant": "return"
+  },
+  {
+   "id": "m5",
+   "from": "sys",
+   "to": "ui",
+   "y": 335,
+   "label": "내부 키 9-21",
+   "variant": "return"
+  },
+  {
+   "id": "m6",
+   "from": "ui",
+   "to": "user",
+   "y": 372,
+   "label": "표시 'X9, Y21'",
+   "variant": "return"
+  },
+  {
+   "id": "m7",
+   "from": "user",
+   "to": "ui",
+   "y": 418,
+   "label": "제품 검색",
+   "variant": "default"
+  },
+  {
+   "id": "m8",
+   "from": "ui",
+   "to": "sys",
+   "y": 455,
+   "label": "coordOfAll 조회",
+   "variant": "emphasis"
+  },
+  {
+   "id": "m9",
+   "from": "sys",
+   "to": "ui",
+   "y": 490,
+   "label": "동일 좌표 반환",
+   "variant": "return"
+  },
+  {
+   "id": "m10",
+   "from": "ui",
+   "to": "user",
+   "y": 525,
+   "label": "검색 결과 'X9, Y21'",
+   "variant": "return"
+  },
+  {
+   "id": "m11",
+   "from": "ui",
+   "to": "db",
+   "y": 575,
+   "label": "엑셀 export 'X9, Y21'",
+   "variant": "dashed"
+  },
+  {
+   "id": "m12",
+   "from": "db",
+   "to": "ui",
+   "y": 608,
+   "label": "업로드 역매칭",
+   "variant": "return"
+  }
+ ],
+ "activations": [
+  {
+   "participant": "ui",
+   "from": 170,
+   "to": 625,
+   "type": "frontend"
+  },
+  {
+   "participant": "sys",
+   "from": 210,
+   "to": 495,
+   "type": "backend"
+  },
+  {
+   "participant": "rule",
+   "from": 253,
+   "to": 300,
+   "type": "database"
+  },
+  {
+   "participant": "db",
+   "from": 570,
+   "to": 622,
+   "type": "database"
+  }
+ ],
+ "cards": [
+  {
+   "dot": "emerald",
+   "title": "동일 좌표 보장",
+   "items": [
+    "화면·검색이 같은 SSOT 조회",
+    "표시 시점에만 'X9, Y21' 변환"
+   ]
+  },
+  {
+   "dot": "amber",
+   "title": "왕복 호환",
+   "items": [
+    "엑셀 export 'X9, Y21'",
+    "업로드는 normCoordKey로 역매칭",
+    "구 하이픈 파일도 수용"
+   ]
+  }
+ ]
+}

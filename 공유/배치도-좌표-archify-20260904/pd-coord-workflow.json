@@ -1,0 +1,39 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": { "title": "배치도 좌표 개편 작업 흐름", "quality_profile": "showcase" },
+  "lanes": [
+    { "id": "diag", "label": "진단" },
+    { "id": "rules", "label": "규칙 확정" },
+    { "id": "impl", "label": "구현" },
+    { "id": "verify", "label": "검증·마감" }
+  ],
+  "phases": [
+    { "id": "intake", "label": "진단", "fromCol": 0, "toCol": 1 },
+    { "id": "confirm", "label": "규칙 확정", "fromCol": 2, "toCol": 3 },
+    { "id": "unify", "label": "구현·통일", "fromCol": 4, "toCol": 5 }
+  ],
+  "mainPath": ["report", "analyze", "rules", "dbverify", "ssot", "unify", "commit"],
+  "nodes": [
+    { "id": "report", "lane": "diag", "col": 0, "type": "external", "label": "현장 보고", "sublabel": "좌표 혼선·라벨 소실", "width": 128 },
+    { "id": "analyze", "lane": "diag", "col": 1, "type": "backend", "label": "다중 에이전트 분석", "sublabel": "4대 결함 확정", "width": 128 },
+    { "id": "rules", "lane": "rules", "col": 2, "type": "database", "label": "좌표 규칙 확정", "sublabel": "X좌→우·Y아래1→21", "tag": "Y2=통로", "width": 128 },
+    { "id": "dbverify", "lane": "rules", "col": 3, "type": "database", "label": "DB 원점 검증", "sublabel": "예시 4제품 대조", "width": 128 },
+    { "id": "ssot", "lane": "impl", "col": 3, "type": "backend", "label": "SSOT 구현", "sublabel": "buildGridCoordSystem", "tag": "단일 좌표 구현", "width": 128 },
+    { "id": "unify", "lane": "impl", "col": 4, "type": "frontend", "label": "5경로 통일", "sublabel": "화면·검색·엑셀·이동·인쇄", "width": 128 },
+    { "id": "commit", "lane": "verify", "col": 5, "type": "database", "label": "검증·커밋", "sublabel": "빌드+ALL PASS·872a314", "width": 128 }
+  ],
+  "edges": [
+    { "id": "e1", "from": "report", "to": "analyze", "variant": "emphasis" },
+    { "id": "e2", "from": "analyze", "to": "rules", "label": "3대 근본 문제" },
+    { "id": "e3", "from": "rules", "to": "dbverify", "label": "X9,Y21 등" },
+    { "id": "e4", "from": "dbverify", "to": "ssot", "variant": "emphasis" },
+    { "id": "e5", "from": "ssot", "to": "unify", "label": "단일 규칙 적용" },
+    { "id": "e6", "from": "unify", "to": "commit", "variant": "emphasis" },
+    { "id": "e7", "from": "commit", "to": "ssot", "label": "재수정", "variant": "dashed", "role": "error", "fromSide": "bottom", "toSide": "bottom", "route": "bottom-channel", "labelSegment": 1 }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "확정 규칙", "items": ["모든 칸+통로가 고유 (X,Y)", "표기 'X9, Y21' 전역 통일", "A동 21행·Y2 통로"] },
+    { "dot": "violet", "title": "단일 구현", "items": ["buildGridCoordSystem 1벌", "5경로 동일 좌표값 보장"] }
+  ]
+}

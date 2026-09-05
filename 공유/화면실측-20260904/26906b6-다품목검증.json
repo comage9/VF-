@@ -1,0 +1,220 @@
+{
+ "results": [
+  {
+   "zid": "A-L3-16",
+   "expectN": 2,
+   "gotN": 1,
+   "nos": [
+    72,
+    73
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L3-18",
+   "expectN": 2,
+   "gotN": 1,
+   "nos": [
+    79,
+    80
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L4-15",
+   "expectN": 2,
+   "gotN": 1,
+   "nos": [
+    68,
+    69
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L4-16",
+   "expectN": 2,
+   "gotN": 1,
+   "nos": [
+    57
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L4-17",
+   "expectN": 3,
+   "gotN": 1,
+   "nos": [
+    75,
+    76,
+    77
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L5-11",
+   "expectN": 2,
+   "gotN": 1,
+   "nos": [
+    106,
+    107
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L5-15",
+   "expectN": 2,
+   "gotN": 1,
+   "nos": [
+    117,
+    118
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L5-17",
+   "expectN": 2,
+   "gotN": 1,
+   "nos": [
+    125,
+    126
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L5-18",
+   "expectN": 2,
+   "gotN": 1,
+   "nos": [
+    131,
+    132
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L5-9",
+   "expectN": 2,
+   "gotN": 1,
+   "nos": [
+    99,
+    100
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L6-10",
+   "expectN": 2,
+   "gotN": 1,
+   "nos": [
+    103,
+    104
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L6-12",
+   "expectN": 2,
+   "gotN": 1,
+   "nos": [
+    109,
+    110
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L6-14",
+   "expectN": 2,
+   "gotN": 1,
+   "nos": [
+    114,
+    115
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L6-15",
+   "expectN": 2,
+   "gotN": 1,
+   "nos": [
+    119,
+    120
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L6-16",
+   "expectN": 3,
+   "gotN": 1,
+   "nos": [
+    121,
+    122,
+    123
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L6-17",
+   "expectN": 2,
+   "gotN": 1,
+   "nos": [
+    127,
+    128
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L6-18",
+   "expectN": 2,
+   "gotN": 1,
+   "nos": [
+    129,
+    130
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L6-9",
+   "expectN": 2,
+   "gotN": 1,
+   "nos": [
+    101,
+    102
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L7-1",
+   "expectN": 2,
+   "gotN": 1,
+   "nos": [
+    135,
+    136
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L7-3",
+   "expectN": 2,
+   "gotN": 1,
+   "nos": [
+    138,
+    139
+   ],
+   "found": true
+  },
+  {
+   "zid": "A-L7-8",
+   "expectN": 2,
+   "gotN": 1,
+   "nos": [
+    144,
+    145
+   ],
+   "found": true
+  }
+ ],
+ "totalAmber": 145,
+ "min": 1,
+ "max": 145,
+ "uniqCount": 145,
+ "hasDup": false
+}

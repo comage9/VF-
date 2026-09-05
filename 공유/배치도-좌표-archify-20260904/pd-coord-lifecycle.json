@@ -1,0 +1,134 @@
+{
+ "schema_version": 1,
+ "diagram_type": "lifecycle",
+ "meta": {
+  "title": "칸(존) 좌표 상태 생애주기",
+  "viewBox": [
+   980,
+   640
+  ],
+  "quality_profile": "showcase"
+ },
+ "lanes": [
+  {
+   "id": "main",
+   "label": "좌표 생애주기"
+  }
+ ],
+ "states": [
+  {
+   "id": "created",
+   "type": "start",
+   "label": "스냅샷 로드",
+   "sublabel": "layout 복원",
+   "lane": "main",
+   "col": 0,
+   "step": "01",
+   "tag": "시작"
+  },
+  {
+   "id": "assigned",
+   "type": "active",
+   "label": "좌표 부여",
+   "sublabel": "그리드 계산",
+   "lane": "main",
+   "col": 1,
+   "step": "02",
+   "tag": "SSOT"
+  },
+  {
+   "id": "displayed",
+   "type": "active",
+   "label": "표시중",
+   "sublabel": "'X9, Y21' 라벨·툴팁",
+   "lane": "main",
+   "col": 2,
+   "step": "03"
+  },
+  {
+   "id": "moved",
+   "type": "decision",
+   "label": "이동·편집",
+   "sublabel": "드래그/좌표입력",
+   "lane": "main",
+   "col": 3,
+   "step": "04"
+  },
+  {
+   "id": "saved",
+   "type": "active",
+   "label": "저장",
+   "sublabel": "스냅샷 기록",
+   "lane": "main",
+   "col": 4,
+   "step": "05",
+   "tag": "완료"
+  }
+ ],
+ "transitions": [
+  {
+   "id": "t1",
+   "from": "created",
+   "to": "assigned",
+   "variant": "emphasis",
+   "label": "좌표 부여",
+   "labelDy": 60,
+   "labelDx": -60
+  },
+  {
+   "id": "t2",
+   "from": "assigned",
+   "to": "displayed",
+   "variant": "emphasis",
+   "label": "라벨 렌더",
+   "route": "straight",
+   "labelDy": 55,
+   "labelDx": -140
+  },
+  {
+   "id": "t3",
+   "from": "displayed",
+   "to": "moved",
+   "variant": "default",
+   "label": "사용자 조작",
+   "labelDy": -25
+  },
+  {
+   "id": "t4",
+   "from": "moved",
+   "to": "saved",
+   "variant": "emphasis",
+   "label": "자동 저장",
+   "labelDy": 55
+  },
+  {
+   "id": "t5",
+   "from": "moved",
+   "to": "assigned",
+   "variant": "dashed",
+   "label": "좌표 재계산 루프",
+   "fromSide": "bottom",
+   "toSide": "bottom",
+   "route": "bottom-channel",
+   "labelDy": 30
+  }
+ ],
+ "cards": [
+  {
+   "dot": "emerald",
+   "title": "주 경로",
+   "items": [
+    "로드→부여→표시→이동→저장",
+    "이동 후 즉시 재계산 루프"
+   ]
+  },
+  {
+   "dot": "amber",
+   "title": "규칙",
+   "items": [
+    "레이아웃 변경·좌표 충돌 시 재계산",
+    "충돌 좌표는 숨기지 않고 노출"
+   ]
+  }
+ ]
+}

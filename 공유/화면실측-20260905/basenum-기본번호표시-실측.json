@@ -1,0 +1,35 @@
+{
+ "target": "A-L6-1",
+ "hasManualTarget": false,
+ "aClicked": true,
+ "step1": {
+  "zid": "A-L6-1",
+  "placeholder": "기본 84",
+  "value": "",
+  "cellRect": {
+   "x": 384,
+   "y": 81,
+   "width": 144,
+   "height": 102
+  },
+  "amberNear": {
+   "txt": "84",
+   "dist": 78
+  }
+ },
+ "step2": {
+  "beforeValue": "",
+  "beforePlaceholder": "기본 84",
+  "afterManualAtCell": null
+ },
+ "step3": {
+  "valueShown": "200",
+  "placeholder": "로케이션 첫 번호",
+  "manualAtCell": 200
+ },
+ "step4": {
+  "placeholderAfterCleanup": "기본 84",
+  "valueAfterCleanup": "",
+  "manualAll": {}
+ }
+}

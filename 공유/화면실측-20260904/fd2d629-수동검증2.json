@@ -1,0 +1,25 @@
+{
+ "before": {
+  "data": "2031",
+  "manual": {}
+ },
+ "step1": {
+  "manual": {
+   "A-L4-12": 200
+  },
+  "min": 1,
+  "max": 284,
+  "count": 145,
+  "has200": true,
+  "amberSample": [
+   "1",
+   "2",
+   "3"
+  ]
+ },
+ "step2": {
+  "manual": 200,
+  "warn": ""
+ },
+ "cleanup": {}
+}

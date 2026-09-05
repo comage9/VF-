@@ -1,0 +1,1709 @@
+{
+ "results": [
+  {
+   "zid": "A-L6-1",
+   "pns": [
+    "242"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "84"
+   ],
+   "nos": [
+    84
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L6-2",
+   "pns": [
+    "252"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "85"
+   ],
+   "nos": [
+    85
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L6-3",
+   "pns": [
+    "240"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "88"
+   ],
+   "nos": [
+    88
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L6-4",
+   "pns": [
+    "245"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "89"
+   ],
+   "nos": [
+    89
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L6-5",
+   "pns": [
+    "224"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "92"
+   ],
+   "nos": [
+    92
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L6-6",
+   "pns": [
+    "230"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "93"
+   ],
+   "nos": [
+    93
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L6-7",
+   "pns": [
+    "255"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "96"
+   ],
+   "nos": [
+    96
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L6-8",
+   "pns": [
+    "214"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "97"
+   ],
+   "nos": [
+    97
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L6-9",
+   "pns": [
+    "219",
+    "218"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L6-10",
+   "pns": [
+    "225",
+    "257"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L6-12",
+   "pns": [
+    "250",
+    "256"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L6-13",
+   "pns": [
+    "184"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "113"
+   ],
+   "nos": [
+    113
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L6-14",
+   "pns": [
+    "186",
+    "182"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L6-15",
+   "pns": [
+    "187",
+    "183"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L6-16",
+   "pns": [
+    "190",
+    "189",
+    "188"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L6-17",
+   "pns": [
+    "2074",
+    "2079"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L6-18",
+   "pns": [
+    "2072",
+    "2077"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L6-19",
+   "pns": [
+    "292"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "134"
+   ],
+   "nos": [
+    134
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L5-1",
+   "pns": [
+    "202"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "40",
+    "83"
+   ],
+   "nos": [
+    40,
+    83
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L5-2",
+   "pns": [
+    "200"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "41",
+    "86"
+   ],
+   "nos": [
+    41,
+    86
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L5-3",
+   "pns": [
+    "237"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "44",
+    "87"
+   ],
+   "nos": [
+    44,
+    87
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L5-4",
+   "pns": [
+    "236"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "45",
+    "90"
+   ],
+   "nos": [
+    45,
+    90
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L5-5",
+   "pns": [
+    "222"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "48",
+    "91"
+   ],
+   "nos": [
+    48,
+    91
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L5-6",
+   "pns": [
+    "216"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "49",
+    "94"
+   ],
+   "nos": [
+    49,
+    94
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L5-7",
+   "pns": [
+    "210"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "52",
+    "95"
+   ],
+   "nos": [
+    52,
+    95
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L5-8",
+   "pns": [
+    "212"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "53",
+    "98"
+   ],
+   "nos": [
+    53,
+    98
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L5-9",
+   "pns": [
+    "221",
+    "220"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L5-10",
+   "pns": [
+    "232"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "57",
+    "105"
+   ],
+   "nos": [
+    57,
+    105
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L5-11",
+   "pns": [
+    "235",
+    "234"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L5-12",
+   "pns": [
+    "223"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "61",
+    "111"
+   ],
+   "nos": [
+    61,
+    111
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L5-13",
+   "pns": [
+    "180"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "64",
+    "112"
+   ],
+   "nos": [
+    64,
+    112
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L5-14",
+   "pns": [
+    "176"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "65",
+    "116"
+   ],
+   "nos": [
+    65,
+    116
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L5-15",
+   "pns": [
+    "181",
+    "185"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L5-16",
+   "pns": [
+    "2070"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "70→71",
+    "124"
+   ],
+   "nos": [
+    70,
+    71,
+    124
+   ],
+   "nShown": 3,
+   "found": true
+  },
+  {
+   "zid": "A-L5-17",
+   "pns": [
+    "2071",
+    "2076"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L5-18",
+   "pns": [
+    "2073",
+    "2078"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L4-1",
+   "pns": [
+    "692"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "40"
+   ],
+   "nos": [
+    40
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L4-2",
+   "pns": [
+    "2146"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "41"
+   ],
+   "nos": [
+    41
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L4-3",
+   "pns": [
+    "2145"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "44"
+   ],
+   "nos": [
+    44
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L4-4",
+   "pns": [
+    "699"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "45"
+   ],
+   "nos": [
+    45
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L4-5",
+   "pns": [
+    "173"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "48"
+   ],
+   "nos": [
+    48
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L4-6",
+   "pns": [
+    "162"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "49"
+   ],
+   "nos": [
+    49
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L4-7",
+   "pns": [
+    "288"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "52"
+   ],
+   "nos": [
+    52
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L4-8",
+   "pns": [
+    "289"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "53"
+   ],
+   "nos": [
+    53
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L4-9",
+   "pns": [
+    "2090"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "56"
+   ],
+   "nos": [
+    56
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L4-10",
+   "pns": [
+    "2115"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "57"
+   ],
+   "nos": [
+    57
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L4-11",
+   "pns": [
+    "2110"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "60"
+   ],
+   "nos": [
+    60
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L4-12",
+   "pns": [
+    "2031"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "61"
+   ],
+   "nos": [
+    61
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L4-13",
+   "pns": [
+    "504"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "64"
+   ],
+   "nos": [
+    64
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L4-14",
+   "pns": [
+    "516"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "65"
+   ],
+   "nos": [
+    65
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L4-15",
+   "pns": [
+    "2039",
+    "2048"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L4-16",
+   "pns": [
+    "115",
+    "111"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L4-17",
+   "pns": [
+    "213",
+    "233",
+    "251"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L4-19",
+   "pns": [
+    "2034"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "82"
+   ],
+   "nos": [
+    82
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L3-1",
+   "pns": [
+    "691"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "38",
+    "39"
+   ],
+   "nos": [
+    38,
+    39
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L3-2",
+   "pns": [
+    "695"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "35",
+    "42"
+   ],
+   "nos": [
+    35,
+    42
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L3-3",
+   "pns": [
+    "698"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "34",
+    "43"
+   ],
+   "nos": [
+    34,
+    43
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L3-4",
+   "pns": [
+    "2149"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "31",
+    "46"
+   ],
+   "nos": [
+    31,
+    46
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L3-5",
+   "pns": [
+    "287"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "30",
+    "47"
+   ],
+   "nos": [
+    30,
+    47
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L3-6",
+   "pns": [
+    "306"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "27",
+    "50"
+   ],
+   "nos": [
+    27,
+    50
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L3-7",
+   "pns": [
+    "268"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "26",
+    "51"
+   ],
+   "nos": [
+    26,
+    51
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L3-8",
+   "pns": [
+    "171"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "23",
+    "54"
+   ],
+   "nos": [
+    23,
+    54
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L3-9",
+   "pns": [
+    "2080"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "22",
+    "55"
+   ],
+   "nos": [
+    22,
+    55
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L3-10",
+   "pns": [
+    "2081"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "19",
+    "58"
+   ],
+   "nos": [
+    19,
+    58
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L3-11",
+   "pns": [
+    "2116"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "18",
+    "59"
+   ],
+   "nos": [
+    18,
+    59
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L3-12",
+   "pns": [
+    "178"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "15",
+    "62"
+   ],
+   "nos": [
+    15,
+    62
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L3-13",
+   "pns": [
+    "264"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "14",
+    "63"
+   ],
+   "nos": [
+    14,
+    63
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L3-14",
+   "pns": [
+    "500"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "11",
+    "66"
+   ],
+   "nos": [
+    11,
+    66
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L3-15",
+   "pns": [
+    "508"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "10",
+    "67"
+   ],
+   "nos": [
+    10,
+    67
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L3-16",
+   "pns": [
+    "241",
+    "246"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L3-17",
+   "pns": [
+    "2014"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "6",
+    "74"
+   ],
+   "nos": [
+    6,
+    74
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L3-18",
+   "pns": [
+    "231",
+    "215"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L2-1",
+   "pns": [
+    "690"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "38"
+   ],
+   "nos": [
+    38
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L2-2",
+   "pns": [
+    "161"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "35"
+   ],
+   "nos": [
+    35
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L2-3",
+   "pns": [
+    "164"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "34"
+   ],
+   "nos": [
+    34
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L2-4",
+   "pns": [
+    "152"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "31"
+   ],
+   "nos": [
+    31
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L2-5",
+   "pns": [
+    "151"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "30"
+   ],
+   "nos": [
+    30
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L2-6",
+   "pns": [
+    "150"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "27"
+   ],
+   "nos": [
+    27
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L2-7",
+   "pns": [
+    "153"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "26"
+   ],
+   "nos": [
+    26
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L2-8",
+   "pns": [
+    "660"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "23"
+   ],
+   "nos": [
+    23
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L2-9",
+   "pns": [
+    "33"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "22"
+   ],
+   "nos": [
+    22
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L2-10",
+   "pns": [
+    "605"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "19"
+   ],
+   "nos": [
+    19
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L2-11",
+   "pns": [
+    "12"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "18"
+   ],
+   "nos": [
+    18
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L2-12",
+   "pns": [
+    "31"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "15"
+   ],
+   "nos": [
+    15
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L2-13",
+   "pns": [
+    "4"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "14"
+   ],
+   "nos": [
+    14
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L2-14",
+   "pns": [
+    "617"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "11"
+   ],
+   "nos": [
+    11
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L2-15",
+   "pns": [
+    "7"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "10"
+   ],
+   "nos": [
+    10
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L2-16",
+   "pns": [
+    "603"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "7"
+   ],
+   "nos": [
+    7
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L2-17",
+   "pns": [
+    "6"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "6"
+   ],
+   "nos": [
+    6
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L2-18",
+   "pns": [
+    "601"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "3"
+   ],
+   "nos": [
+    3
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L2-19",
+   "pns": [
+    "2"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "2"
+   ],
+   "nos": [
+    2
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L1-2",
+   "pns": [
+    "672"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "36"
+   ],
+   "nos": [
+    36
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L1-3",
+   "pns": [
+    "170"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "33"
+   ],
+   "nos": [
+    33
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L1-4",
+   "pns": [
+    "284"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "32"
+   ],
+   "nos": [
+    32
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L1-5",
+   "pns": [
+    "301"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "29"
+   ],
+   "nos": [
+    29
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L1-6",
+   "pns": [
+    "300"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "28"
+   ],
+   "nos": [
+    28
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L1-7",
+   "pns": [
+    "163"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "25"
+   ],
+   "nos": [
+    25
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L1-8",
+   "pns": [
+    "30"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "24"
+   ],
+   "nos": [
+    24
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L1-9",
+   "pns": [
+    "28"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "21"
+   ],
+   "nos": [
+    21
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L1-11",
+   "pns": [
+    "14"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "17"
+   ],
+   "nos": [
+    17
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L1-12",
+   "pns": [
+    "39"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "16"
+   ],
+   "nos": [
+    16
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L1-13",
+   "pns": [
+    "666"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "13"
+   ],
+   "nos": [
+    13
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L1-14",
+   "pns": [
+    "669"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "12"
+   ],
+   "nos": [
+    12
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L1-15",
+   "pns": [
+    "9"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "9"
+   ],
+   "nos": [
+    9
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L1-16",
+   "pns": [
+    "614"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "8"
+   ],
+   "nos": [
+    8
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L1-17",
+   "pns": [
+    "10"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "5"
+   ],
+   "nos": [
+    5
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L1-18",
+   "pns": [
+    "3"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "4"
+   ],
+   "nos": [
+    4
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L1-19",
+   "pns": [
+    "1"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "1"
+   ],
+   "nos": [
+    1
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-L7-1",
+   "pns": [
+    "244",
+    "254"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L7-2",
+   "pns": [
+    "354"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "137",
+    "138→139"
+   ],
+   "nos": [
+    137,
+    138,
+    139
+   ],
+   "nShown": 3,
+   "found": true
+  },
+  {
+   "zid": "A-L7-3",
+   "pns": [
+    "285",
+    "272"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-L7-4",
+   "pns": [
+    "752"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "140",
+    "141"
+   ],
+   "nos": [
+    140,
+    141
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L7-5",
+   "pns": [
+    "2150"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "141",
+    "142"
+   ],
+   "nos": [
+    141,
+    142
+   ],
+   "nShown": 2,
+   "found": true
+  },
+  {
+   "zid": "A-L7-7",
+   "pns": [
+    "762"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "143",
+    "144→145"
+   ],
+   "nos": [
+    143,
+    144,
+    145
+   ],
+   "nShown": 3,
+   "found": true
+  },
+  {
+   "zid": "A-L7-8",
+   "pns": [
+    "280",
+    "281"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-X1",
+   "pns": [
+    "253",
+    "217",
+    "211"
+   ],
+   "found": false
+  },
+  {
+   "zid": "A-NEW-41901",
+   "pns": [
+    "2075"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "78"
+   ],
+   "nos": [
+    78
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-NEW-91001",
+   "pns": [
+    "620"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "20"
+   ],
+   "nos": [
+    20
+   ],
+   "nShown": 1,
+   "found": true
+  },
+  {
+   "zid": "A-NEW-15274",
+   "pns": [
+    "177"
+   ],
+   "nProd": 1,
+   "amberRaw": [
+    "2",
+    "81"
+   ],
+   "nos": [
+    2,
+    81
+   ],
+   "nShown": 2,
+   "found": true
+  }
+ ]
+}

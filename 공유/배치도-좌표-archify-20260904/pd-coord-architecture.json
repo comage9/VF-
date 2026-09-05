@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "배치도 좌표 SSOT — 단일 좌표 시스템",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    { "id": "ui", "type": "frontend", "label": "배치도 화면", "sublabel": "product-display.tsx", "pos": [60, 180], "size": [150, 64] },
+    { "id": "gridLabels", "type": "frontend", "label": "gridLabels", "sublabel": "화면라벨·툴팁", "pos": [60, 320], "size": [140, 56] },
+    { "id": "coordAll", "type": "frontend", "label": "coordOfAll", "sublabel": "검색·총괄", "pos": [260, 320], "size": [140, 56] },
+    { "id": "excel", "type": "frontend", "label": "엑셀 왕복", "sublabel": "export/import", "pos": [470, 320], "size": [140, 56] },
+    { "id": "print", "type": "frontend", "label": "인쇄 라벨", "sublabel": "PDF", "pos": [690, 320], "size": [140, 56] },
+    { "id": "ssot", "type": "backend", "label": "buildGridCoordSystem", "sublabel": "단일 좌표 구현", "pos": [470, 180], "size": [140, 64] },
+    { "id": "rule", "type": "database", "label": "좌표 규칙", "sublabel": "X→우·Y1→21·통로·X..,Y..", "pos": [690, 180], "size": [140, 64] }
+  ],
+  "connections": [
+    { "id": "ui-syst", "from": "ui", "to": "ssot", "label": "좌표 요청" },
+    { "id": "gridLabels-ssot", "from": "gridLabels", "to": "ssot", "label": "화면 좌표" },
+    { "id": "coordAll-ssot", "from": "coordAll", "to": "ssot", "label": "검색 좌표" },
+    { "id": "ssot-excel", "from": "excel", "to": "ssot", "label": "왕복 매칭" },
+    { "id": "ssot-print", "from": "print", "to": "ssot", "label": "인쇄 좌표" },
+    { "id": "ssot-rule", "from": "ssot", "to": "rule", "label": "좌표계 규칙", "labelAt": [775, 158] }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "달성", "items": ["좌표 5경로 하나로 통일", "동일 좌표값 보장"] },
+    { "dot": "violet", "title": "표기", "items": ["표시 'X9, Y21'", "통로도 좌표 보유"] }
+  ]
+}

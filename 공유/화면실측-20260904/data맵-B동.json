@@ -1,0 +1,59 @@
+{
+ "keys": [
+  "vf_product_display_v1",
+  "vf_pd_line_config_v1",
+  "vf_product_display_staging_v1",
+  "vf_pd_loc_exceptions_v1",
+  "vf_product_display_layout_v1",
+  "vf_pd_savedat_v1"
+ ],
+ "candidates": {
+  "vf_product_display_v1": {
+   "ver": "rank-a-v29",
+   "total": 310,
+   "bCount": 42,
+   "bFilled": 42,
+   "sample": [
+    [
+     "B-B상단-1",
+     "420,422,423,430,431"
+    ],
+    [
+     "B-B상단-2",
+     "432,433,440,441"
+    ],
+    [
+     "B-B상단-3",
+     "442,443,450,452"
+    ],
+    [
+     "B-B상단-6",
+     "472,473,474"
+    ],
+    [
+     "B-B상단-7",
+     "480,481,482,483"
+    ],
+    [
+     "B-B상단-8",
+     "484,454,464"
+    ],
+    [
+     "B-B우측-4",
+     "329,328,327,326"
+    ],
+    [
+     "B-B우측-5",
+     "325,324,323,322"
+    ]
+   ]
+  },
+  "vf_pd_line_config_v1": {
+   "ver": "line-config-v1",
+   "total": 0,
+   "bCount": 0,
+   "bFilled": 0,
+   "sample": []
+  }
+ }
+}

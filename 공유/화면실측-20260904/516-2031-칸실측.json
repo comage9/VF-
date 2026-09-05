@@ -1,0 +1,32 @@
+{
+ "cellCount": 134,
+ "amberCount": 120,
+ "blueCount": 60,
+ "r2031": {
+  "pnum": "2031",
+  "found": true,
+  "cellTxt": "2031",
+  "cx": 548,
+  "cy": 689,
+  "insideAmber": [
+   "65"
+  ],
+  "nearBlueX": [
+   "16"
+  ]
+ },
+ "r516": {
+  "pnum": "516",
+  "found": true,
+  "cellTxt": "516",
+  "cx": 673,
+  "cy": 598,
+  "insideAmber": [
+   "7",
+   "71→72"
+  ],
+  "nearBlueX": [
+   "18"
+  ]
+ }
+}

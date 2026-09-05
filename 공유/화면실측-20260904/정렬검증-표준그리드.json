@@ -1,0 +1,81 @@
+{
+ "cells": {
+  "A-L4-12": {
+   "found": true,
+   "cellTxt": "2031",
+   "cx": 548,
+   "cy": 780,
+   "amberIn": [
+    "61"
+   ]
+  },
+  "A-L4-14": {
+   "found": true,
+   "cellTxt": "516",
+   "cx": 548,
+   "cy": 689,
+   "amberIn": [
+    "65"
+   ]
+  },
+  "A-L4-19": {
+   "found": true,
+   "cellTxt": "2034",
+   "cx": 548,
+   "cy": 461,
+   "amberIn": []
+  },
+  "A-L3-13": {
+   "found": true,
+   "cellTxt": "264",
+   "cx": 673,
+   "cy": 735,
+   "amberIn": [
+    "63"
+   ]
+  },
+  "A-L5-16": {
+   "found": true,
+   "cellTxt": "2070",
+   "cx": 485,
+   "cy": 598,
+   "amberIn": [
+    "129"
+   ]
+  },
+  "A-L7-2": {
+   "found": true,
+   "cellTxt": "354",
+   "cx": 423,
+   "cy": 1373,
+   "amberIn": [
+    "138→139"
+   ]
+  },
+  "A-NEW-91001": {
+   "found": true,
+   "cellTxt": "620",
+   "cx": 860,
+   "cy": 872,
+   "amberIn": [
+    "20"
+   ]
+  },
+  "A-NEW-41901": {
+   "found": true,
+   "cellTxt": "2075",
+   "cx": 548,
+   "cy": 507,
+   "amberIn": [
+    "75"
+   ]
+  },
+  "A-NEW-15274": {
+   "found": true,
+   "cellTxt": "177",
+   "cx": 673,
+   "cy": 461,
+   "amberIn": []
+  }
+ }
+}

@@ -1,0 +1,194 @@
+{
+ "schema_version": 1,
+ "diagram_type": "dataflow",
+ "meta": {
+  "title": "좌표 데이터 흐름",
+  "viewBox": [
+   1040,
+   720
+  ],
+  "quality_profile": "showcase"
+ },
+ "stages": [
+  {
+   "label": "데이터 원본"
+  },
+  {
+   "label": "파싱"
+  },
+  {
+   "label": "좌표 계산 (SSOT)"
+  },
+  {
+   "label": "소비자"
+  }
+ ],
+ "nodes": [
+  {
+   "id": "snapshot",
+   "type": "database",
+   "label": "스냅샷 v326",
+   "sublabel": "payload: data+layout",
+   "stage": 0,
+   "row": 0,
+   "tag": "PostgreSQL"
+  },
+  {
+   "id": "local",
+   "type": "database",
+   "label": "localStorage",
+   "sublabel": "작업본 캐시",
+   "stage": 0,
+   "row": 2
+  },
+  {
+   "id": "parser",
+   "type": "backend",
+   "label": "layout → zones",
+   "sublabel": "존 정규화",
+   "stage": 1,
+   "row": 1
+  },
+  {
+   "id": "sys",
+   "type": "backend",
+   "label": "좌표 SSOT",
+   "sublabel": "단일 좌표 구현",
+   "stage": 2,
+   "row": 1,
+   "tag": "SSOT"
+  },
+  {
+   "id": "labels",
+   "type": "frontend",
+   "label": "화면 라벨·툴팁",
+   "sublabel": "gridLabels",
+   "stage": 3,
+   "row": 0
+  },
+  {
+   "id": "search",
+   "type": "frontend",
+   "label": "검색·총괄",
+   "sublabel": "coordOfAll",
+   "stage": 3,
+   "row": 1
+  },
+  {
+   "id": "excel",
+   "type": "external",
+   "label": "엑셀 배치표",
+   "sublabel": "export/import",
+   "stage": 3,
+   "row": 2
+  },
+  {
+   "id": "print",
+   "type": "external",
+   "label": "인쇄 HTML",
+   "sublabel": "축 라벨",
+   "stage": 3,
+   "row": 3
+  }
+ ],
+ "flows": [
+  {
+   "from": "snapshot",
+   "to": "parser",
+   "label": "payload 로드",
+   "classification": "읽기 전용",
+   "variant": "emphasis"
+  },
+  {
+   "from": "local",
+   "to": "parser",
+   "label": "작업본 복원",
+   "classification": "클라이언트",
+   "variant": "default"
+  },
+  {
+   "from": "parser",
+   "to": "sys",
+   "label": "zones",
+   "classification": "픽셀 스타일",
+   "variant": "emphasis",
+   "route": "straight"
+  },
+  {
+   "from": "sys",
+   "to": "labels",
+   "label": "'X9, Y21'",
+   "classification": "표기 변환",
+   "variant": "emphasis",
+   "route": "vertical-channel",
+   "labelSegment": 1
+  },
+  {
+   "from": "sys",
+   "to": "search",
+   "classification": "역매칭용",
+   "variant": "emphasis",
+   "route": "vertical-channel",
+   "label": "좌표",
+   "labelAt": [
+    670,
+    314
+   ]
+  },
+  {
+   "from": "sys",
+   "to": "excel",
+   "classification": "'X9, Y21'",
+   "variant": "default",
+   "route": "vertical-channel",
+   "label": "엑셀",
+   "labelAt": [
+    520,
+    330
+   ]
+  },
+  {
+   "from": "sys",
+   "to": "print",
+   "classification": "아래=1",
+   "variant": "default",
+   "route": "vertical-channel",
+   "label": "인쇄",
+   "labelAt": [
+    520,
+    400
+   ]
+  },
+  {
+   "from": "excel",
+   "to": "sys",
+   "label": "업로드 역매칭",
+   "classification": "normCoordKey",
+   "variant": "dashed",
+   "route": "bottom-channel",
+   "labelDy": 30,
+   "labelAt": [
+    490,
+    505
+   ]
+  }
+ ],
+ "cards": [
+  {
+   "dot": "emerald",
+   "title": "단일 출발점",
+   "items": [
+    "모든 소비자가 SSOT만 조회",
+    "좌표는 저장 없이 파생 계산"
+   ]
+  },
+  {
+   "dot": "rose",
+   "title": "왕복 안전",
+   "items": [
+    "내부 키와 표기 분리",
+    "업로드 역매칭 정규화"
+   ]
+  }
+ ]
+}

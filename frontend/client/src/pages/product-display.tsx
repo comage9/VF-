@@ -6622,8 +6622,20 @@ function ZoneCell({
             }}
             onPointerDown={(e) => e.stopPropagation()}
             className="w-[94%] h-[38%] min-w-0 text-[8px] text-center border rounded border-amber-300 outline-none focus:ring-2 focus:ring-amber-500 tabular-nums mt-0.5"
-            placeholder="로케이션 첫 번호"
-            title="로케이션 번호: 첫 번호만 입력, 품목 수만큼 자동 연속 (예: 70). 비우면 자동 모드"
+            placeholder={
+              // 기본 배정 번호 표시 (2026-09-05) — 편집 시 그 칸의 자동 기본 번호를 알려줌
+              // manual 값이 채워진 칸은 value가 우선 표시되고, 비면(자동 모드) 기본 번호를 placeholder로 보여줌
+              !editLocValue && locNos && locNos.length > 0
+                ? locNos.length === 1
+                  ? `기본 ${locNos[0]}`
+                  : `기본 ${locNos[0]}~${locNos[locNos.length - 1]}`
+                : "로케이션 첫 번호"
+            }
+            title={
+              locNos && locNos.length > 0
+                ? `기본 배정 ${fmtLocNos(locNos)} — 그대로 쓰려면 비우고 저장, 바꾸려면 첫 번호 입력(품목 수만큼 자동 연속)`
+                : "로케이션 번호: 첫 번호만 입력, 품목 수만큼 자동 연속 (예: 70). 비우면 자동 모드"
+            }
           />
         ) : null}
       </div>
