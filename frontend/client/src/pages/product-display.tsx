@@ -3006,54 +3006,72 @@ export default function ProductDisplayPage() {
   };
 
   // 새 빈 칸 추가: 기존 라인에 맞춰 정렬된 위치에 생성 (2026-08-19)
-  // - y는 기준 라인(가장 아래 라인, 칸 선택 시 그 칸의 라인)에 맞추고
-  //   x는 그 라인의 마지막 칸 다음 위치
+  // - y는 기준 라인(칸 선택 시 그 칸의 라인, 없으면 캔버스 안쪽 하단 라인)에 맞추고
+  //   x는 그 라인의 마지막 칸 다음 위치 (캔버스 오른쪽에 떠 있는 과잉 C-NEW 잔존 라인 제외)
+  // - 생성 직후 새 칸이 화면에 보이도록 자동 스크롤 + flash (2026-09-05):
+  //   우측 카드 뒤/화면 밖에 숨지 않게
   const addCell = () => {
+    const d = current;
+    if (!d || d.key !== dong) {
+      setSaveMsg("빈 칸 추가는 동별 배치 화면에서 사용하세요");
+      window.setTimeout(() => setSaveMsg(""), 2000);
+      return;
+    }
+    const id = `${d.key}-NEW-${Date.now().toString().slice(-5)}`;
+    const zones = d.zones;
+    let left = SLOT.padL;
+    let top = SLOT.padT;
+    if (zones.length > 0) {
+      const ROW_TOL = SLOT.h / 2; // 같은 가로 라인 판정 허용 오차
+      const topOf = (z: ZoneDef) => Number(z.style.top ?? 0);
+      const leftOf = (z: ZoneDef) => Number(z.style.left ?? 0);
+      const widthOf = (z: ZoneDef) => Number(z.style.width ?? SLOT.w);
+      // 가로 라인 그룹핑 (y 기준)
+      const rows: ZoneDef[][] = [];
+      for (const z of zones) {
+        const row = rows.find((r) => Math.abs(topOf(r[0]) - topOf(z)) <= ROW_TOL);
+        if (row) row.push(z);
+        else rows.push([z]);
+      }
+      // 캔버스 논리 폭(격자 테두리). 이를 크게 넘는 라인은 과잉 잔존(C-NEW 우측 여백) — 붙일 후보 제외
+      const canvasRight = d.width + gridPad.l + gridPad.r;
+      const rowRightOf = (r: ZoneDef[]) => Math.max(...r.map((z) => leftOf(z) + widthOf(z)));
+      // 붙일 라인: 칸 선택 상태면 선택 칸 라인, 없으면 캔버스 안쪽 하단 라인(전부 밖이면 하단 라인)
+      let targetRow: ZoneDef[] | null = null;
+      if (selectedZones.length) {
+        targetRow = rows.find((r) => r.some((z) => selectedZones.includes(z.id))) ?? null;
+      }
+      if (!targetRow) {
+        const inCanvas = rows.filter((r) => rowRightOf(r) <= canvasRight + SLOT.w * 2);
+        const pool = inCanvas.length ? inCanvas : rows;
+        targetRow = pool.reduce((a, b) => (topOf(b[0]) > topOf(a[0]) ? b : a));
+      }
+      const rowTop = topOf(targetRow[0]);
+      const rowRight = rowRightOf(targetRow);
+      // 그리드 정렬 (2026-08-28): 새 칸은 52px(가로) 가상 그리드에 정확히 스냅 —
+      // 드래그 스냅 주기(52px)와 일치해야 추가 후 이동 시 포인터↔칸 어긋남이 없음
+      const STEP_X = SLOT.w + 4;
+      const originX = Math.min(...zones.map(leftOf));
+      left = originX + Math.ceil((rowRight - originX) / STEP_X) * STEP_X;
+      top = rowTop;
+    }
+    const zone: ZoneDef = {
+      id, num: "＋", line: -1, showNumAsProduct: false,
+      style: { left, top, width: SLOT.w, height: SLOT.h },
+    };
     setLayoutState((prev) =>
-      prev.map((d) => {
-        if (d.key !== dong) return d;
-        const id = `${d.key}-NEW-${Date.now().toString().slice(-5)}`;
-        if (d.zones.length === 0) {
-          const zone: ZoneDef = {
-            id, num: "＋", line: -1, showNumAsProduct: false,
-            style: { left: SLOT.padL, top: SLOT.padT, width: SLOT.w, height: SLOT.h },
-          };
-          return { ...d, zones: [zone] };
-        }
-        const ROW_TOL = SLOT.h / 2; // 같은 가로 라인 판정 허용 오차
-        const topOf = (z: ZoneDef) => Number(z.style.top ?? 0);
-        const leftOf = (z: ZoneDef) => Number(z.style.left ?? 0);
-        // 가로 라인 그룹핑 (y 기준)
-        const rows: ZoneDef[][] = [];
-        for (const z of d.zones) {
-          const row = rows.find((r) => Math.abs(topOf(r[0]) - topOf(z)) <= ROW_TOL);
-          if (row) row.push(z);
-          else rows.push([z]);
-        }
-        // 붙일 라인: 칸 선택 상태면 선택 칸 라인, 없으면 가장 아래 라인
-        let targetRow = rows.reduce((a, b) => (topOf(b[0]) > topOf(a[0]) ? b : a));
-        if (selectedZones.length) {
-          const selRow = rows.find((r) => r.some((z) => selectedZones.includes(z.id)));
-          if (selRow) targetRow = selRow;
-        }
-        const rowTop = topOf(targetRow[0]);
-        const rowRight = Math.max(
-          ...targetRow.map((z) => leftOf(z) + Number(z.style.width ?? SLOT.w))
-        );
-        // 그리드 정렬 (2026-08-28): 새 칸은 52px(가로) 가상 그리드에 정확히 스냅 —
-        // 드래그 스냅 주기(52px)와 일치해야 추가 후 이동 시 포인터↔칸 어긋남이 없음
-        const STEP_X = SLOT.w + 4;
-        const originX = Math.min(...d.zones.map(leftOf));
-        const snappedLeft = originX + Math.ceil((rowRight - originX) / STEP_X) * STEP_X;
-        const zone: ZoneDef = {
-          id, num: "＋", line: -1, showNumAsProduct: false,
-          style: { left: snappedLeft, top: rowTop, width: SLOT.w, height: SLOT.h },
-        };
-        return { ...d, zones: [...d.zones, zone] };
-      })
+      prev.map((dd) => (dd.key === dong ? { ...dd, zones: [...dd.zones, zone] } : dd))
     );
-    setSaveMsg("빈 칸 추가됨 — 라인 끝에 정렬 (드래그로 이동 가능)");
-    window.setTimeout(() => setSaveMsg(""), 2000);
+    // 생성 직후 DOM 반영을 기다렸다가 새 칸으로 자동 스크롤 + flash (2026-09-05)
+    window.setTimeout(() => {
+      const el = gridRef.current?.querySelector<HTMLElement>(`[data-zone-id="${id}"]`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+      setFlashZone(null);
+      requestAnimationFrame(() => setFlashZone(id));
+      window.setTimeout(() => setFlashZone(null), 8000);
+    }, 80);
+    setSaveMsg("빈 칸 추가됨 — 새 칸으로 자동 이동 (드래그로 원하는 위치에 배치)");
+    window.setTimeout(() => setSaveMsg(""), 2600);
   };
 
   // 그리드 여유 공간 확장 (상/하/좌/우 필요할 때만)
@@ -5135,7 +5153,12 @@ export default function ProductDisplayPage() {
           </div>
           <DndContext sensors={sensors} autoScroll={false} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div className="flex gap-3 items-start">
-          <div className="flex flex-col gap-2 shrink-0">
+          {/* 배치도 블록 — 우측 카드 침범 방지(2026-09-05): 배치도 콘텐츠가 flex 부모 폭(우측 카드
+              w-[560px]+gap-3 제외분)을 넘으면 이 블록 안에서만 가로 스크롤 → 우측 카드와 겹치지 않음 */}
+          <div
+            className="flex flex-col gap-2 shrink-0 min-w-0 overflow-auto"
+            style={{ maxWidth: "calc(100% - 572px)" }}
+          >
           <div style={{ width: (current.width + gridPad.l + gridPad.r) * fitScale * zoomFactor, height: (current.height + gridPad.t + gridPad.b) * fitScale * zoomFactor }}>
           <div
             ref={gridRef}
