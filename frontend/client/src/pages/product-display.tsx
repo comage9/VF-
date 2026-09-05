@@ -809,7 +809,7 @@ function computeLocNosAll(
     let end = cursor - 1;
     for (const c of cells) {
       const manual = manualLocNos[c.zoneId];
-      if (manual != null && manual > 0) cursor = manual;
+      if (manual != null && manual > 0 && manual >= cursor) cursor = manual;
       const nos: number[] = [];
       for (let i = 0; i < c.count; i++) nos.push(cursor++);
       byZone.set(c.zoneId, nos);
@@ -3434,12 +3434,48 @@ export default function ProductDisplayPage() {
     // 수동 로케이션 번호 커밋 (A동 전용): 빈 값=자동 모드 복귀
     const rawLoc = editLocVal.replace(/[^0-9]/g, "");
     const locNum = rawLoc ? parseInt(rawLoc, 10) : 0;
-    setManualLocNos((prev) => {
-      if (locNum > 0) return { ...prev, [zid]: locNum };
-      const next = { ...prev };
-      delete next[zid];
-      return next;
-    });
+    // 앞번호 중복 방지: 입력 값이 자연 커서(앞 칸들이 쓴 마지막 번호+1)보다 작으면 거부 (2026-09-05)
+    if (locNum > 0) {
+      const aLay = layoutState.find((l) => l.key === "A");
+      const aZones = aLay?.zones ?? [];
+      const sys = buildGridCoordSystem("A", aZones);
+      let cursor = 1;
+      let reached = false;
+      if (sys) {
+        const aCells: { zoneId: string; count: number; rank: number }[] = [];
+        for (const z of aZones) {
+          const coord = sys.coordOf.get(z.id);
+          if (!coord) continue;
+          const rank = aCanonOrder(coord);
+          if (rank < 0) continue;
+          const items = (data[z.id] || "").split(",").map((s) => s.trim()).filter(Boolean);
+          const count = locExceptions.has(z.id) ? 1 : Math.max(1, items.length);
+          aCells.push({ zoneId: z.id, count, rank });
+        }
+        aCells.sort((a, b) => a.rank - b.rank);
+        for (const c of aCells) {
+          if (c.zoneId === zid) { reached = true; break; }
+          cursor += c.count;
+        }
+      }
+      if (reached && locNum < cursor) {
+        setEditLocVal("");
+        editingZoneRef.current = null;
+        setEditingZone(null);
+        setEditVal("");
+        setSaveMsg(`⚠ ${zid}: 앞번호(${cursor - 1})보다 작은 값(${locNum}) — 자동 모드 유지`);
+        window.setTimeout(() => setSaveMsg(""), 3000);
+        return;
+      } else {
+        setManualLocNos((prev) => ({ ...prev, [zid]: locNum }));
+      }
+    } else {
+      setManualLocNos((prev) => {
+        const next = { ...prev };
+        delete next[zid];
+        return next;
+      });
+    }
     editingZoneRef.current = null;
     setEditingZone(null);
     setEditVal("");
