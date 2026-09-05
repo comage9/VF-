@@ -3479,9 +3479,16 @@ export default function ProductDisplayPage() {
       
       return next;
     });
-    // 수동 로케이션 번호 커밋 (A동 전용): 빈 값=자동 모드 복귀
-    const rawLoc = editLocVal.replace(/[^0-9]/g, "");
-    const locNum = rawLoc ? parseInt(rawLoc, 10) : 0;
+    // 수동 로케이션 번호 커밋 (A동 전용): 빈 값=자동 모드 복귀.
+    // 구분 입력 지원 (2026-09-05): "70,71" / "70 71" / "70-71" → 첫 번호(70)로 해석.
+    // (다품목 칸은 시작 번호만 저장하면 품목 수만큼 자동 연속 — 70 입력 시 70,71 자동)
+    const locParts = editLocVal
+      .split(/[,\s\-~]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => parseInt(s, 10))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    const locNum = locParts.length > 0 ? locParts[0] : 0;
     // 앞번호 중복 방지: 입력 값이 자연 커서(앞 칸들이 쓴 마지막 번호+1)보다 작으면 거부 (2026-09-05)
     if (locNum > 0) {
       const aLay = layoutState.find((l) => l.key === "A");
