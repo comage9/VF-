@@ -2283,6 +2283,13 @@ export default function ProductDisplayPage() {
     });
     return m;
   }, [coordOfAll]);
+  // 사용자 표시용 위치 라벨 (2026-09-05): 존 ID(A-L4-17 형식) 화면 표기 금지 — 좌표(X,Y)로만.
+  // coordOfAll에 없는 커스텀 칸은 "칸"으로 표시 (존 ID 미노출).
+  const zoneDisplayName = (zid: string | null): string => {
+    if (!zid) return "칸";
+    const c = coordOfAll.get(zid);
+    return c ? `좌표 ${fmtCoordKey(c)}` : "칸";
+  };
 
   // 가상 그리드 (2026-08-28, 수정 모드 전용): 현재 칸들이 차지한 열·행을 기준으로
   // 여백 공간까지 그리드를 확장해 점선 칸 표시 — 라인/칸을 빈 그리드 자리로 이동 가능하게 함.
@@ -3463,7 +3470,7 @@ export default function ProductDisplayPage() {
         editingZoneRef.current = null;
         setEditingZone(null);
         setEditVal("");
-        setSaveMsg(`⚠ ${zid}: 앞번호(${cursor - 1})보다 작은 값(${locNum}) — 자동 모드 유지`);
+        setSaveMsg(`⚠ ${zoneDisplayName(zid)}: 앞번호(${cursor - 1})보다 작은 값(${locNum}) — 자동 모드 유지`);
         window.setTimeout(() => setSaveMsg(""), 3000);
         return;
       } else {
@@ -3480,7 +3487,7 @@ export default function ProductDisplayPage() {
     setEditingZone(null);
     setEditVal("");
     setEditLocVal("");
-    setSaveMsg(`✅ ${zid} 저장: ${newVal || "(비움)"}${overMsg}`);
+    setSaveMsg(`✅ ${zoneDisplayName(zid)} 저장: ${newVal || "(비움)"}${overMsg}`);
     window.setTimeout(() => setSaveMsg(""), 2000);
   };
 
@@ -3571,7 +3578,7 @@ export default function ProductDisplayPage() {
     });
     setModalOpen(false);
     setAssignSearch("");
-    setSaveMsg(`✅ ${currentZone} 저장: ${newVal || "(비움)"}`);
+    setSaveMsg(`✅ ${zoneDisplayName(currentZone)} 저장: ${newVal || "(비움)"}`);
     window.setTimeout(() => setSaveMsg(""), 2000);
   };
 
@@ -5449,7 +5456,7 @@ export default function ProductDisplayPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {currentZone ? `${currentZone} 제품 배정` : "제품 배정"}
+              {currentZone ? `${zoneDisplayName(currentZone)} 제품 배정` : "제품 배정"}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-2 py-2">
@@ -5495,7 +5502,7 @@ export default function ProductDisplayPage() {
               />
             </div>
             {inputVal ? (
-              <p className="text-xs text-green-700">선택됨: {inputVal}번 — 확인 시 {currentZone}에 배정됩니다.</p>
+              <p className="text-xs text-green-700">선택됨: {inputVal}번 — 확인 시 {zoneDisplayName(currentZone)}에 배정됩니다.</p>
             ) : (
               <p className="text-xs text-muted-foreground">비우고 확인하면 배정이 해제됩니다. (기존 제품은 자리이탈로 이동)</p>
             )}
