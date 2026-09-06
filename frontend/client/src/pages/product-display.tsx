@@ -787,7 +787,9 @@ type LocNosAll = {
 /** 전 동 동적 로케이션 번호 계산 (2026-09-05). layout·data가 바뀌면 항상 최신 기준으로 재계산.
  *  manualLocNos: zoneId → 지정 번호 배열. 카논(표준 좌표) 칸은 [0]을 시작 번호로 삼아
  *  품목 수만큼 연속 발행(기존 규칙 유지), 비표준 칸(A-X1/X2·A-NEW 등 카논 밖)은 배열을
- *  그대로 표시해 "82 83 84" 입력 시 세 번호 모두 배정된다. */
+ *  그대로 표시해 "82 83 84" 입력 시 세 번호 모두 배정된다.
+ *  핀(2026-09-06): 고정(🔒 fixed) 칸 + 수동 번호 = 절대 번호 — 순서·커서 무관 항상 유지,
+ *  나머지 자동 발행은 핀 번호를 건너뛰며 재계산. (예: (3,3) 고정+86 → 86 영구, 다른 칸 86 제외 자동) */
 function computeLocNosAll(
   layouts: DongLayout[],
   data: PlacementMap,
@@ -799,6 +801,7 @@ function computeLocNosAll(
   const dongRange: Record<string, LocNosDongRange> = {};
   const ORDER: DongKey[] = ["A", "B", "C", "D", "E"];
   let cursor = 1;
+  const used = new Set<number>(); // 핀(고정+수동) 번호 — 전 동 자동 발행이 건너뜀 (2026-09-06)
   for (const key of ORDER) {
     const lay = layouts.find((l) => l.key === key);
     const zones = lay?.zones ?? [];
@@ -806,6 +809,7 @@ function computeLocNosAll(
     type Cell = { zoneId: string; coord: string; rank: number; count: number };
     const cells: Cell[] = [];
     const manualOnly: { zoneId: string; coord: string; nos: number[] }[] = [];
+    const pinned: { zoneId: string; coord: string; start: number; count: number }[] = [];
     if (sys) {
       for (const z of zones) {
         const coord = sys.coordOf.get(z.id);
@@ -813,36 +817,64 @@ function computeLocNosAll(
         const rank = key === "A" ? aCanonOrder(coord) : bcdCanonOrder(coord);
         const items = (data[z.id] || "").split(",").map((s) => s.trim()).filter(Boolean);
         const manual = manualLocNos[z.id];
-        // 비표준 칸(카논 밖): 수동 지정 배열이 있으면 그대로 표시 (자동 발행은 안 함)
+        const isPin = Boolean(z.fixed) && manual && manual.length > 0;
+        // 비표준 칸(카논 밖): 수동 지정 배열 그대로 표시 (자동 발행은 안 함)
         if (rank < 0) {
-          if (manual && manual.length > 0) manualOnly.push({ zoneId: z.id, coord, nos: manual });
+          if (manual && manual.length > 0) {
+            manualOnly.push({ zoneId: z.id, coord, nos: manual });
+            if (isPin) manual.forEach((n) => used.add(n)); // 고정+수동 = 핀 — 자동이 건너뜀
+          }
           continue;
         }
         // 빈 칸도 자기 자리 번호 1개. 예외칸(locExceptions)은 품목이 있어도 1개만 소진.
         const count = locExceptions.has(z.id) ? 1 : Math.max(1, items.length);
-        cells.push({ zoneId: z.id, coord, rank, count });
+        if (isPin) {
+          // 고정+수동 = 핀: manual[0]부터 count개 연속 — 순서·커서 무관 절대 유지
+          const start = manual[0];
+          for (let i = 0; i < count; i++) used.add(start + i);
+          pinned.push({ zoneId: z.id, coord, start, count });
+        } else {
+          cells.push({ zoneId: z.id, coord, rank, count });
+        }
       }
     }
     cells.sort((a, b) => a.rank - b.rank);
     const coordMap = new Map<string, number[]>();
     let start = cursor;
     let end = cursor - 1;
+    // ① 핀 먼저 확정 (절대 번호)
+    for (const p of pinned) {
+      const nos: number[] = [];
+      for (let i = 0; i < p.count; i++) nos.push(p.start + i);
+      byZone.set(p.zoneId, nos);
+      coordMap.set(p.coord, nos);
+    }
+    // ② 자동 발행 — 핀 번호는 건너뛰며 순차 (기존 수동 시작점 점프 규칙 유지)
     for (const c of cells) {
       const manual = manualLocNos[c.zoneId];
       if (manual && manual.length > 0 && manual[0] > 0 && manual[0] >= cursor) cursor = manual[0];
       const nos: number[] = [];
-      for (let i = 0; i < c.count; i++) nos.push(cursor++);
+      for (let i = 0; i < c.count; i++) {
+        while (used.has(cursor)) cursor++;
+        nos.push(cursor++);
+      }
       byZone.set(c.zoneId, nos);
       coordMap.set(c.coord, nos);
       end = cursor - 1;
     }
-    // 비표준 칸 수동 지정: 표시 전용으로 추가 (이미 좌표에 자동 번호가 있으면 덮지 않게)
+    // 핀이 동 마지막 번호를 넘어서면(자동 셀이 적은 경우) 동 구간·다음 동 시작을 핀 최대값 기준으로
+    if (pinned.length) {
+      const maxPin = Math.max(...pinned.map((p) => p.start + p.count - 1));
+      end = Math.max(end, maxPin);
+      cursor = end + 1;
+    }
+    // 비표준 칸 수동 지정: 표시 전용으로 추가
     for (const mo of manualOnly) {
       byZone.set(mo.zoneId, mo.nos);
       coordMap.set(mo.coord, mo.nos);
     }
     byCoord.set(key, coordMap);
-    if (cells.length || manualOnly.length) dongRange[key] = { start, end };
+    if (cells.length || manualOnly.length || pinned.length) dongRange[key] = { start, end };
   }
   return { byZone, byCoord, dongRange };
 }
@@ -3526,10 +3558,12 @@ export default function ProductDisplayPage() {
       .map((s) => parseInt(s, 10))
       .filter((n) => Number.isFinite(n) && n > 0);
     const locNum = locParts.length > 0 ? locParts[0] : 0;
+    const aLay = layoutState.find((l) => l.key === "A");
+    const aZones = aLay?.zones ?? [];
+    // 고정(🔒) 칸 = 핀 — 값 무관 절대 저장 (2026-09-06). 비고정 칸만 앞번호 가드 적용.
+    const zFixed = aZones.find((z) => z.id === zid)?.fixed;
     // 앞번호 중복 방지: 입력 값이 자연 커서(앞 칸들이 쓴 마지막 번호+1)보다 작으면 거부 (2026-09-05)
-    if (locNum > 0) {
-      const aLay = layoutState.find((l) => l.key === "A");
-      const aZones = aLay?.zones ?? [];
+    if (locNum > 0 && !zFixed) {
       const sys = buildGridCoordSystem("A", aZones);
       let cursor = 1;
       let reached = false;
@@ -3561,6 +3595,9 @@ export default function ProductDisplayPage() {
       } else {
         setManualLocNos((prev) => ({ ...prev, [zid]: locParts }));
       }
+    } else if (locNum > 0) {
+      // 고정 칸: 핀 — 앞번호 가드 없이 절대 저장
+      setManualLocNos((prev) => ({ ...prev, [zid]: locParts }));
     } else {
       setManualLocNos((prev) => {
         const next = { ...prev };
