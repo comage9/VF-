@@ -43,6 +43,7 @@ def _load_project_env(path: Path):
             'DEBUG', 'SECRET_KEY', 'DJANGO_SECRET_KEY',
             'ALLOWED_HOSTS', 'CORS_ALLOW_ALL_ORIGINS', 'CORS_ALLOWED_ORIGINS',
             'DESTRUCTIVE_API_KEY',
+            'VF_WRITE_TOKEN', 'VF_PRINT_TOKEN', 'REGION_DIR',
             'DB_NAME', 'DB_USER', 'DB_PASSWORD', 'DB_HOST', 'DB_PORT',
         }
         allowed_prefixes = ('ANTHROPIC_', 'OLLAMA_', 'OPENROUTER_', 'AI_', 'DB_')
@@ -105,6 +106,10 @@ DESTRUCTIVE_API_KEY = (os.environ.get("DESTRUCTIVE_API_KEY") or "").strip()
 
 # 제품배치도 스냅샷 쓰기 토큰: 설정 시 POST/restore에 X-VF-Token 헤더 검증, 미설정 시 무검증(사내망 기본)
 VF_WRITE_TOKEN = (os.environ.get("VF_WRITE_TOKEN") or "").strip()
+
+# 원격 무음 인쇄 토큰 (2026-09-06): POST /api/print 은 X-VF-Token == VF_PRINT_TOKEN 일 때만 허용.
+# 미설정 시 /api/print 는 503 반환 (물리 출력이라 무검증 허용 금지). GET /api/print/status 는 토큰 불필요.
+VF_PRINT_TOKEN = (os.environ.get("VF_PRINT_TOKEN") or "").strip()
 
 
 # Application definition

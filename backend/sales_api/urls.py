@@ -2,6 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
 from . import views_master
+from . import print_views
 from .agents import views as agent_views
 
 router = DefaultRouter()
@@ -357,4 +358,8 @@ urlpatterns = [
     path("product-display/history", views.product_display_history, name="product-display-history"),
     path("product-display/restore", views.product_display_restore, name="product-display-restore"),
     path("product-display/config", views.product_display_config, name="product-display-config"),
+
+    # 원격 무음 인쇄 API (2026-09-06) — 프린터 있는 Windows 실서버에서 로컬 파일 인쇄
+    path("print/status", print_views.print_status, name="print-status"),
+    path("print", print_views.print_job, name="print-job"),
 ]
